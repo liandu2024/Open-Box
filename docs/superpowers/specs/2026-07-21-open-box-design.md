@@ -150,10 +150,10 @@ DNS 分流策略:国内域名走国内 DNS(运营商/公共 UDP),国外域名走
 
 ```bash
 # 直连版
-curl -fsSL https://raw.githubusercontent.com/<org>/Open-Box/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/liandu2024/Open-Box/main/scripts/install.sh | sh
 
-# 镜像加速版
-curl -fsSL https://<mirror>/https://raw.githubusercontent.com/<org>/Open-Box/main/scripts/install.sh | sh -s -- --mirror
+# 镜像加速版(镜像站域名在发布前确定当期可用站点,写入脚本默认值,且可通过参数覆盖)
+curl -fsSL https://<镜像前缀>/https://raw.githubusercontent.com/liandu2024/Open-Box/main/scripts/install.sh | sh -s -- --mirror
 ```
 
 安装流程:

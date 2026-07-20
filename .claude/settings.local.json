@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls -la /Users/ange/Code/ 2>&1 | head -20; echo \"---\"; ls -la /Users/ange/Code/AnGe-Board 2>&1)"
+    ]
+  }
+}
