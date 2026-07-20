@@ -1,0 +1,220 @@
+# Open-Box 设计文档
+
+日期:2026-07-21
+状态:已与产品负责人对齐,待实现规划
+
+## 1. 产品定位
+
+Open-Box 是面向小白用户的 OpenWrt 一体化透明代理方案:
+
+- 一条 `curl | sh` 命令,在路由器上装完 sing-box 内核 + 管理面板
+- 浏览器打开 `http://路由器IP:2026` 完成全部管理,无需 SSH、无需手改配置
+- 面板 fork 自 AnGe-ClashBoard,但在 Open-Box 中**只服务本机 sing-box(单后端)**
+
+与 AnGe-ClashBoard 的关系:
+
+- Open-Box 是独立 monorepo,面板代码搬入后独立演进
+- AnGe-ClashBoard 原项目继续独立维护,定位为多后端面板(对接 OpenClash / Nikki / 远程 Clash API);需要"一块面板管多台设备"的用户使用 AnGe-ClashBoard
+- 两个项目双线维护,互不阻塞
+
+### 非目标(明确不做)
+
+- 不支持 fake-ip 模式
+- 不支持 armv7 及更低端设备
+- 不做 Docker 部署形态(Open-Box 只有 OpenWrt 原生形态)
+- 不做多后端管理(引导用户使用 AnGe-ClashBoard)
+- 不提供 IPv6 泄漏直连选项
+- 不做 opkg/ipk 正规包与 SDK 构建链(唯一安装路径为一键脚本)
+
+## 2. 目标环境与硬件门槛
+
+| 项目 | 要求 |
+| --- | --- |
+| 系统 | OpenWrt 21.02+(LuCI JS 框架) |
+| 架构 | x86_64、aarch64(arm64),仅此两种 |
+| 存储 | ≥ 512MB 可用空间 |
+| 内存 | ≥ 512MB RAM |
+
+安装脚本开头预检以上条件,不达标时输出友好错误信息并退出,不留半成品。
+
+典型目标设备:x86 软路由、R2S/R4S/R5S 等 arm64 盒子、高端 arm64 路由器。
+
+## 3. 总体架构
+
+```
+┌────────────────────────── OpenWrt 路由器 ──────────────────────────┐
+│                                                                    │
+│  /opt/open-box/                                                    │
+│  ├── node/          Node.js 运行时(官方预编译,随安装包分发)      │
+│  ├── panel/         面板(前端 dist + Node 后端 server)           │
+│  ├── bin/sing-box   sing-box 内核(钦定版本)                      │
+│  ├── etc/           生成的 sing-box config.json、模板              │
+│  └── data/          SQLite、订阅缓存、规则集(.srs)、日志(升级保留)│
+│                                                                    │
+│  /etc/init.d/openbox         sing-box 服务(procd)                │
+│  /etc/init.d/openbox-panel   面板服务(procd)                     │
+│  luci-app-openbox            LuCI 极简兜底页(JS + rpcd ACL)      │
+│                                                                    │
+│  浏览器 ──> 面板 :2026 ──┬──> 本地文件读写 + init.d 控制(配置面) │
+│                          └──> 127.0.0.1:9095 clash_api(运行态)   │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+- **配置面**:面板后端以 root 运行,直接写 `/opt/open-box/etc/config.json`,执行 `/etc/init.d/openbox` 启停。零 SSH、零凭据。
+- **运行态**:生成的 sing-box 配置固定开启 `experimental.clash_api`,监听 `127.0.0.1:9095`,secret 随机生成;面板后端中转,浏览器只访问 2026 端口,9095 不对外。
+- AnGe-ClashBoard 原有的 SSH 远程读取 OpenClash/Nikki 的能力,以及多后端切换 UI,在 Open-Box 中移除。
+
+## 4. 代理与 DNS 方案
+
+### 4.1 流量接管
+
+- sing-box `tun` 入站,`auto_route` 接管全局流量
+- 不使用 fake-ip,DNS 返回真实 IP;域名分流依赖 sniff + 域名规则,IP 分流依赖 rule-set
+
+### 4.2 DNS 接管(可配置,二选一)
+
+| 模式 | 行为 | 说明 |
+| --- | --- | --- |
+| 劫持模式(默认) | 路由规则劫持所有出站 53 端口流量到 sing-box DNS | 不改动 dnsmasq,侵入最小 |
+| dnsmasq 上游模式 | 修改 dnsmasq 上游为 sing-box DNS 监听端口(如 127.0.0.1:7853) | OpenClash 经典做法,停用时自动还原 dnsmasq 配置 |
+
+DNS 分流策略:国内域名走国内 DNS(运营商/公共 UDP),国外域名走加密 DNS(DoH/DoT)并经代理出站,防污染。
+
+### 4.3 IPv6(可配置开关)
+
+- **开(默认)**:tun 同时接管 v4+v6,AAAA 正常解析,无泄漏
+- **关**:仅代理 v4,同时下发防火墙规则**拦截 v6 出站**防止泄漏
+- 不提供"v6 放行直连"的泄漏选项
+
+## 5. sing-box 内核管理
+
+- **钦定版本制**:每个 Open-Box release 锁定一个测试过的 sing-box 版本,写入 release 元数据;配置模板与该版本严格匹配
+- 安装/升级只装钦定版本,不提供"拉取 latest"入口
+- 内核二进制从 sing-box 官方 GitHub Release 下载(按架构),经安装时选定的镜像通道
+
+## 6. 面板功能(Open-Box 版)
+
+### 6.1 订阅管理
+
+- 支持三种订阅格式:Clash YAML、分享链接(`ss://`、`vmess://`、`vless://`、`trojan://`、`hysteria2://`、`tuic://` 及 base64 合集)、sing-box JSON
+- 协议覆盖:ss、vmess、vless、trojan、hysteria2、tuic、wireguard;长尾协议(anytls、ssh 等)不做
+- 订阅解析在面板后端完成,统一转换为 sing-box outbounds
+
+### 6.2 配置生成:模板 + 可视化编辑
+
+- 内置常用分流模板(国内直连 / 国外代理 / 广告拦截等,基于 sing-box rule-set)
+- 策略组、规则集可视化增删改
+- 高级用户可直接编辑最终 JSON,保存前强制 `sing-box check` 校验
+- 生成链路:订阅节点 + 模板 + 用户自定义 → 完整 `config.json` → 校验 → 写入 → 重启服务
+
+### 6.3 规则集本地化
+
+- 所有 `.srs` 规则集由面板后端下载到 `/opt/open-box/data/rulesets/`
+- 生成的配置中 rule_set 一律引用本地文件路径,运行时零外部网络依赖
+- 规则集更新由面板调度,更新后触发配置重载
+
+### 6.4 运行态观测(继承自 AnGe-ClashBoard)
+
+- 连接列表、实时流量、策略组切换节点、延迟测试、日志流
+- 全部经面板后端中转本机 clash_api(127.0.0.1:9095)
+
+### 6.5 自动更新调度(全部可配置)
+
+| 项目 | 出厂默认 |
+| --- | --- |
+| 订阅更新 | 每 24 小时,每条订阅可单独设置间隔或关闭 |
+| 规则集更新 | 每 7 天,可关 |
+| 执行时间 | 凌晨 3–5 点随机偏移,避免集中打机场服务器 |
+| 下载通道 | 沿用安装时选定的直连/镜像通道 |
+
+订阅更新失败时保留旧节点并在面板标红提示,不生成残缺配置。
+
+### 6.6 多语言与主题
+
+- **界面语言**:英语、简体中文、繁体中文三种,默认跟随浏览器语言,可手动切换(继承 zashboard i18n 体系,裁剪收敛到这三种并补全 Open-Box 新增页面的词条)
+- **主题**:跟随系统 / 亮色 / 暗色三档(继承 zashboard 主题体系,收敛为这三档)
+- LuCI 兜底页同样提供 en / zh-cn / zh-tw 翻译(LuCI 标准 i18n 机制)
+
+### 6.7 一键升级
+
+- 面板"系统"页提供「检查更新」:查询 Open-Box GitHub Release,有新版显示红点提示,用户手动点击升级(不自动静默升级)
+- 升级内容:面板本体 + 插件脚本 + sing-box 内核(若新 release 钦定了新内核版本则一并升级)
+- 命令行兜底:`update.sh` 重跑等效流程
+- 升级沿用安装镜像通道,保留 `/opt/open-box/data/`
+
+## 7. 安装 / 升级 / 卸载
+
+### 7.1 一键安装
+
+提供两条命令(README 并列展示):
+
+```bash
+# 直连版
+curl -fsSL https://raw.githubusercontent.com/<org>/Open-Box/main/scripts/install.sh | sh
+
+# 镜像加速版
+curl -fsSL https://<mirror>/https://raw.githubusercontent.com/<org>/Open-Box/main/scripts/install.sh | sh -s -- --mirror
+```
+
+安装流程:
+
+1. 预检:架构、存储、内存、OpenWrt 版本;记录镜像通道选择(持久化,供后续更新沿用)
+2. 下载对应架构的发布包(Node 运行时 + 面板 + LuCI 文件打包)与钦定版本 sing-box
+3. 铺文件到 `/opt/open-box/`,安装 init 脚本与 LuCI 页面
+4. 生成随机面板密码,写入防火墙规则(2026 仅 LAN 可访问)
+5. 启动面板服务,终端醒目输出:面板地址、初始密码
+6. 检测已安装的冲突插件,如存在则输出警告(不阻断安装)
+
+### 7.2 卸载
+
+`uninstall.sh`:停止两个服务 → 清理路由/防火墙/dnsmasq 改动 → 删除 init 脚本与 LuCI 文件 → 删除 `/opt/open-box/`(询问是否保留 data)。
+
+## 8. 安全
+
+1. **面板认证**:安装时生成随机密码,面板登录墙,面板内可改密
+2. **防火墙默认仅 LAN**:2026 端口不对 WAN 开放;文档明确警告公网访问需自行上 HTTPS 反代/VPN,严禁裸端口转发(面板后端具有路由器 root 权限)
+3. **clash_api 不出回环**:9095 仅监听 127.0.0.1,secret 随机
+4. **下载完整性**:发布包带 SHA256 校验,安装/升级脚本核对后再铺装
+
+## 9. 故障保护与兜底
+
+1. **下发前校验**:每次生成/编辑配置后先 `sing-box check`,失败则拒绝重启,错误回显到面板
+2. **启动失败恢复直连**:服务启动失败或进程异常退出 → 停止服务 + 清理路由/防火墙/DNS 改动,恢复启动前的裸直连状态;面板始终可达(LAN 访问面板 IP 不经 tun),用户可进面板查看错误
+3. **冲突检测**:启动 sing-box 前检测 openclash / nikki / passwall / ssr-plus / homeproxy 服务是否运行,在跑则拒绝启动,面板与 LuCI 指名提示"请先停止 XXX"
+4. **LuCI 兜底页**(`luci-app-openbox`,LuCI JS + rpcd ACL,挂"服务"菜单):
+   - sing-box 服务:启/停 + 开机自启开关
+   - 面板服务:启/停 + 开机自启开关(面板进程挂掉时的救场入口)
+   - 「紧急停止并恢复直连」按钮
+   - 「打开 Open-Box 面板」跳转链接
+
+## 10. 仓库结构(monorepo)
+
+```
+Open-Box/
+├── panel/            面板(fork 自 AnGe-ClashBoard,砍多后端,加本地管理)
+│   ├── src/          前端 Vue 3 + TS + Vite
+│   └── server/       Node 后端(node:sqlite,本地下发、订阅解析、调度)
+├── openwrt/
+│   ├── initd/        openbox、openbox-panel init 脚本
+│   └── luci/         luci-app-openbox(JS 页面 + rpcd ACL)
+├── scripts/          install.sh / update.sh / uninstall.sh
+├── templates/        sing-box 配置模板(与钦定内核版本对应)
+├── .github/          发布流水线:构建面板、打包各架构发布物、发 Release
+└── docs/
+```
+
+发布物(GitHub Release assets,每架构一个 tarball):Node 运行时 + 面板构建产物 + init/LuCI 文件 + 模板 + 元数据(钦定 sing-box 版本、SHA256)。
+
+## 11. 交付范围
+
+一次性交付全部:
+
+1. OpenWrt 侧:init 脚本、LuCI 兜底页、install/update/uninstall 脚本、发布流水线
+2. 面板侧:单后端裁剪、订阅解析(三格式七协议)、模板 + 可视化编辑、规则集本地化、本地下发与服务控制、clash_api 中转、自动更新调度、一键升级、登录认证、三语言(英/简/繁)与三主题(系统/亮/暗)
+3. 文档:README(两条安装命令、硬件要求、常见问题)、公网访问安全警告
+
+## 12. 测试策略
+
+- **面板后端**:订阅解析(各格式/协议样本)、配置生成(模板合并、DNS 两模式、IPv6 开关)单元测试;`sing-box check` 作为配置生成的金标准集成测试
+- **脚本**:install/update/uninstall 在 x86_64 与 arm64 的 OpenWrt 实机/虚拟机上走全流程冒烟(装 → 配 → 起 → 断网恢复 → 升 → 卸)
+- **故障注入**:坏配置下发、内核进程被 kill、订阅源 4xx/超时,验证兜底行为符合第 9 节
