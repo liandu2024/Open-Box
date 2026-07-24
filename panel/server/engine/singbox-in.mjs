@@ -27,5 +27,24 @@ export const parseSingboxOutbounds = (jsonText) => {
       skipped.push({ name: tag, type })
     }
   }
+  const endpoints = doc && Array.isArray(doc.endpoints) ? doc.endpoints : []
+  for (const e of endpoints) {
+    if (!e || typeof e !== 'object' || e.type !== 'wireguard') continue
+    const peer = Array.isArray(e.peers) && e.peers[0] ? e.peers[0] : {}
+    try {
+      nodes.push(createNode({
+        tag: e.tag, type: 'wireguard', server: peer.address, server_port: peer.port,
+        fields: {
+          private_key: e.private_key,
+          peer_public_key: peer.public_key,
+          local_address: Array.isArray(e.address) ? e.address : [],
+          ...(peer.pre_shared_key ? { pre_shared_key: peer.pre_shared_key } : {}),
+        },
+        source: 'singbox',
+      }))
+    } catch {
+      skipped.push({ name: e.tag, type: 'wireguard' })
+    }
+  }
   return { nodes, skipped }
 }

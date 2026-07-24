@@ -104,8 +104,9 @@ const parseVmess = (uri) => {
 }
 
 const buildTransportFromQuery = (query) => {
-  const type = query.get('type')
+  let type = query.get('type')
   if (!type || type === 'tcp') return undefined
+  if (type === 'h2') type = 'http'
   const transport = { type }
   const path = query.get('path')
   if (path) transport.path = path
@@ -124,6 +125,17 @@ const buildTlsFromQuery = (query, fallbackSni) => {
   if (sni) tls.server_name = sni
   const alpn = query.get('alpn')
   if (alpn) tls.alpn = alpn.split(',').map((s) => s.trim()).filter(Boolean)
+  if (query.get('allowInsecure') === '1' || query.get('insecure') === '1') tls.insecure = true
+  const fp = query.get('fp')
+  if (fp) tls.utls = { enabled: true, fingerprint: fp }
+  if (security === 'reality') {
+    tls.reality = { enabled: true }
+    const pbk = query.get('pbk')
+    if (pbk) tls.reality.public_key = pbk
+    const sid = query.get('sid')
+    if (sid) tls.reality.short_id = sid
+    if (!tls.utls) tls.utls = { enabled: true, fingerprint: 'chrome' }  // reality 需要 utls
+  }
   return tls
 }
 
@@ -144,7 +156,8 @@ const parseTrojan = (uri) => {
   const fields = { password: safeDecode(u.userinfo) }
   const transport = buildTransportFromQuery(u.query)
   if (transport) fields.transport = transport
-  // trojan 默认走 TLS;security 缺省也视为 tls
+  // trojan 默认走 TLS;security 缺省也视为 tls,以便 insecure/reality/utls 等 tls 字段仍被采集
+  if (!u.query.get('security')) u.query.set('security', 'tls')
   const tls = buildTlsFromQuery(u.query, u.host) || { enabled: true, ...(u.host ? { server_name: u.host } : {}) }
   fields.tls = tls
   return createNode({ tag: u.fragment, type: 'trojan', server: u.host, server_port: u.port, fields, source: 'sharelink' })

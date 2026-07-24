@@ -116,3 +116,23 @@ test('ss:// SIP002 IPv6 主机剥括号(修复3)', () => {
   assert.equal(n.server, '2001:db8::1')
   assert.equal(n.server_port, 8443)
 })
+
+test('vless reality + utls + alpn 字段采集', () => {
+  const n = parseShareLink('vless://11111111-1111-1111-1111-111111111111@a.com:443?security=reality&pbk=abcPUBKEY&sid=0123&fp=chrome&type=tcp&flow=xtls-rprx-vision#R')
+  assert.equal(n.fields.tls.reality.public_key, 'abcPUBKEY')
+  assert.equal(n.fields.tls.reality.short_id, '0123')
+  assert.equal(n.fields.tls.utls.fingerprint, 'chrome')
+  assert.equal(n.fields.tls.reality.enabled, true)
+  assert.equal(n.fields.tls.utls.enabled, true)
+})
+
+test('insecure 采集', () => {
+  const n = parseShareLink('trojan://pw@a.com:443?sni=a.com&allowInsecure=1#I')
+  assert.equal(n.fields.tls.insecure, true)
+})
+
+test('h2 传输归一为 http', () => {
+  const n = parseShareLink('vless://11111111-1111-1111-1111-111111111111@a.com:443?security=tls&sni=a.com&type=h2&path=%2Fp&host=h.com#H')
+  assert.equal(n.fields.transport.type, 'http')
+  assert.equal(n.fields.transport.path, '/p')
+})
