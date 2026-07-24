@@ -9,7 +9,8 @@
 | 阶段 | 名称 | 产出 | 依赖 |
 | --- | --- | --- | --- |
 | P1 | 仓库落地与面板导入 | monorepo 脚手架;AnGe-ClashBoard 代码导入 `panel/`;构建/测试/本地开发闭环跑通;品牌与端口改为 Open-Box/2026 | 无 |
-| P2 | 后端核心引擎 | 订阅解析(Clash YAML/分享链接/sing-box JSON × 七协议)→ 节点重命名引擎 → 策略组装配 → sing-box 配置生成(两层分流/DNS/IPv6/clash_api 9095);`sing-box check` 金标准集成测试;全部纯 Node 可在 macOS TDD | P1 |
+| P2a | 后端引擎:订阅与节点 | 订阅解析(Clash YAML/分享链接/sing-box JSON × 七协议)→ 归一化节点模型 → 节点重命名引擎(区域归一+特征提取+模板+预览)→ 区域节点组自动生成;纯函数模块 `panel/server/engine/`,完整测试向量 TDD | P1 |
+| P2b | 后端引擎:配置生成 | 节点→sing-box outbound;两层分流(策略分流+可选 DNS 分流)、IPv6、tun 入站、clash_api 9095 配置组装;钦定 sing-box 二进制 + `sing-box check` 金标准集成测试;边查官方 schema 边 TDD | P2a |
 | P3 | 本地系统集成层 | system adapter:配置写入、init.d 服务控制、DNS 接管两模式的应用/还原、防火墙规则、冲突检测、启动失败恢复直连;OpenWrt 命令封装 + macOS mock 双实现 | P2 |
 | P4 | 面板前端 | 单后端裁剪;首次引导向导;订阅管理与重命名规则 UI(含实时预览);策略分流可视化;DNS/IPv6 设置;内核管理页;登录认证;i18n 收敛(en/zh-Hans/zh-Hant)与三主题 | P2(接口),P3(联调) |
 | P5 | OpenWrt 侧 | procd init 脚本(openbox / openbox-panel)、tun 与 DNS 接管落地脚本、LuCI 兜底页(luci-app-openbox,JS + rpcd ACL)、紧急停止 | P3 |
