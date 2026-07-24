@@ -1,0 +1,92 @@
+name: 缺陷报告
+description: 创建一个报告来帮助我们改进
+title: '[Bug]: '
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢您报告bug！在提交之前，请搜索[现有issues](https://github.com/Zephyruso/zashboard/issues)看看您的问题是否已经被报告过。
+
+  - type: input
+    id: zashboard-version
+    attributes:
+      label: zashboard版本
+      description: 您使用的zashboard版本（例如：1.81.0 或 gh-pages commit hash）
+      placeholder: '例如：1.81.0'
+    validations:
+      required: true
+
+  - type: input
+    id: system-info
+    attributes:
+      label: 系统信息
+      description: 您的操作系统和版本
+      placeholder: '例如：Windows 10, macOS Catalina 10.15.7, Ubuntu 20.04'
+    validations:
+      required: true
+
+  - type: input
+    id: zashboard-usage
+    attributes:
+      label: zashboard 使用方式
+      description: 您使用zashboard的方式 (e.g., sing-box cli, mihomo cli, openwrt插件如Nikki, Docker)
+      placeholder: 'e.g., sing-box cli, mihomo cli, openwrt插件如Nikki, Docker'
+    validations:
+      required: true
+
+  - type: input
+    id: browser-info
+    attributes:
+      label: 浏览器信息
+      description: 您的浏览器和版本
+      placeholder: '例如：Chrome 91.0, Firefox 89.0, Safari 14.1'
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps-to-reproduce
+    attributes:
+      label: 重现步骤
+      description: 重现这个bug的详细步骤
+      placeholder: |
+        1. 第一步
+        2. 第二步
+        3. 第三步
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: 期望行为
+      description: 您期望发生的事情
+      placeholder: '描述您期望看到的行为'
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual-behavior
+    attributes:
+      label: 实际行为
+      description: 实际发生的事情
+      placeholder: '描述实际发生的行为'
+    validations:
+      required: true
+
+  - type: textarea
+    id: screenshot
+    attributes:
+      label: Bug截图
+      description: 如果有的话，请粘贴截图到这里
+      placeholder: '粘贴截图到这里'
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: 额外信息
+      description: 任何其他可能有助于解决此问题的上下文或信息
+      placeholder: '其他相关信息'
+    validations:
+      required: false

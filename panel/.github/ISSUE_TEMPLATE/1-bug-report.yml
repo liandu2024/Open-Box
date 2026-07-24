@@ -1,0 +1,92 @@
+name: Bug Report
+description: Create a report to help us improve
+title: '[Bug]: '
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug! Before submitting, please search [existing issues](https://github.com/Zephyruso/zashboard/issues) to see if your problem has already been reported.
+
+  - type: input
+    id: zashboard-version
+    attributes:
+      label: zashboard Version
+      description: The version of zashboard you are using (e.g., 1.81.0 or gh-pages commit hash)
+      placeholder: 'e.g., 1.81.0'
+    validations:
+      required: true
+
+  - type: input
+    id: system-info
+    attributes:
+      label: System Information
+      description: Your operating system and version
+      placeholder: 'e.g., Windows 10, macOS Catalina 10.15.7, Ubuntu 20.04'
+    validations:
+      required: true
+
+  - type: input
+    id: zashboard-usage
+    attributes:
+      label: zashboard Usage
+      description: How you are using zashboard (e.g., sing-box cli, mihomo cli, openwrt plugin like Nikki, Docker)
+      placeholder: 'e.g., sing-box cli, mihomo cli, openwrt plugin like Nikki, Docker'
+    validations:
+      required: true
+
+  - type: input
+    id: browser-info
+    attributes:
+      label: Browser Information
+      description: Your browser and version
+      placeholder: 'e.g., Chrome 91.0, Firefox 89.0, Safari 14.1'
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps-to-reproduce
+    attributes:
+      label: Steps to Reproduce
+      description: Detailed steps to reproduce this bug
+      placeholder: |
+        1. First step
+        2. Second step
+        3. Third step
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: Expected Behavior
+      description: What you expected to happen
+      placeholder: 'Describe the behavior you expected to see'
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual-behavior
+    attributes:
+      label: Actual Behavior
+      description: What actually happened
+      placeholder: 'Describe what actually happened'
+    validations:
+      required: true
+
+  - type: textarea
+    id: screenshot
+    attributes:
+      label: Bug Screenshot
+      description: If available, please paste the screenshot here
+      placeholder: 'Paste the screenshot here'
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Any other context or information that might be helpful in resolving the issue
+      placeholder: 'Other relevant information'
+    validations:
+      required: false

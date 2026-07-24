@@ -1,0 +1,17 @@
+name: 功能请求
+description: 为这个项目提出一个想法
+title: '[Feature]: '
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢您提出功能建议！在提交之前，请搜索[现有issues](https://github.com/Zephyruso/zashboard/issues)看看您的想法是否已经被提出过。
+
+  - type: textarea
+    id: feature-description
+    attributes:
+      label: 功能描述
+      description: 请提供您想要请求的功能的清晰简洁的描述
+      placeholder: '请详细描述您想要的功能'
+    validations:
+      required: true
