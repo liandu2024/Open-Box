@@ -1,0 +1,172 @@
+{
+  "log": {
+    "level": "warn"
+  },
+  "dns": {
+    "servers": [
+      {
+        "type": "udp",
+        "tag": "dns-direct",
+        "server": "223.5.5.5"
+      },
+      {
+        "type": "https",
+        "tag": "dns-proxy",
+        "server": "1.1.1.1",
+        "detour": "PROXY"
+      }
+    ],
+    "rules": [
+      {
+        "rule_set": "geosite-cn",
+        "server": "dns-direct"
+      },
+      {
+        "rule_set": "geosite-ads",
+        "action": "reject"
+      }
+    ],
+    "final": "dns-proxy",
+    "strategy": "prefer_ipv4"
+  },
+  "inbounds": [
+    {
+      "type": "tun",
+      "tag": "tun-in",
+      "address": [
+        "172.19.0.1/30",
+        "fdfe:dcba:9876::1/126"
+      ],
+      "auto_route": true,
+      "strict_route": true,
+      "stack": "mixed"
+    }
+  ],
+  "endpoints": [
+    {
+      "type": "wireguard",
+      "tag": "wg-node",
+      "system": false,
+      "address": [
+        "10.0.0.2/32"
+      ],
+      "private_key": "+r+kq2RO7f7Na9/ypbnhSAJmgv1mUmBAsrg3sBaXSbQ=",
+      "peers": [
+        {
+          "address": "wg.com",
+          "port": 51820,
+          "public_key": "T/jRx58haTBlljCsl8y2y56BtTxdAgeev+3DtEt8NKw=",
+          "allowed_ips": [
+            "0.0.0.0/0"
+          ]
+        }
+      ]
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "direct"
+    },
+    {
+      "type": "selector",
+      "tag": "PROXY",
+      "outbounds": [
+        "US",
+        "JP",
+        "wg-node",
+        "direct"
+      ]
+    },
+    {
+      "type": "urltest",
+      "tag": "US",
+      "outbounds": [
+        "ss1"
+      ],
+      "url": "https://www.gstatic.com/generate_204",
+      "interval": "5m"
+    },
+    {
+      "type": "urltest",
+      "tag": "JP",
+      "outbounds": [
+        "vl1"
+      ]
+    },
+    {
+      "type": "shadowsocks",
+      "tag": "ss1",
+      "server": "1.2.3.4",
+      "server_port": 8388,
+      "method": "aes-256-gcm",
+      "password": "pw"
+    },
+    {
+      "type": "vless",
+      "tag": "vl1",
+      "server": "a.com",
+      "server_port": 443,
+      "uuid": "b831381d-6324-4d53-ad4f-8cda48b30811",
+      "tls": {
+        "enabled": true,
+        "server_name": "a.com",
+        "reality": {
+          "enabled": true,
+          "public_key": "PEVEAWnbLpJAIpIQRZbn6Pl5PxtVFuJfE7RQz4trfXQ",
+          "short_id": "ab"
+        },
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        }
+      }
+    }
+  ],
+  "route": {
+    "auto_detect_interface": true,
+    "default_domain_resolver": "dns-direct",
+    "rule_set": [
+      {
+        "type": "local",
+        "tag": "geosite-cn",
+        "format": "binary",
+        "path": "/tmp/geosite-cn.srs"
+      },
+      {
+        "type": "local",
+        "tag": "geosite-ads",
+        "format": "binary",
+        "path": "/tmp/geosite-cn.srs"
+      }
+    ],
+    "rules": [
+      {
+        "action": "sniff"
+      },
+      {
+        "protocol": "dns",
+        "action": "hijack-dns"
+      },
+      {
+        "ip_is_private": true,
+        "outbound": "direct"
+      },
+      {
+        "rule_set": "geosite-ads",
+        "action": "reject"
+      },
+      {
+        "rule_set": "geosite-cn",
+        "outbound": "direct"
+      }
+    ],
+    "final": "PROXY"
+  },
+  "experimental": {
+    "clash_api": {
+      "external_controller": "127.0.0.1:9095",
+      "secret": "s3cr3t"
+    }
+  }
+}
