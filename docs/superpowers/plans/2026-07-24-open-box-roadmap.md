@@ -31,9 +31,23 @@
 
 - [x] 设计规格完成并确认
 - [x] P1 完成并合并(仓库落地、panel/ fork 基线、构建测试闭环、品牌化 2026、dev-panel.sh)
-- [ ] P2–P7 计划:待各自前置阶段完成后制定
+- [x] P2a 完成并合并(引擎:订阅解析三格式七协议、归一化节点模型、重命名引擎、区域节点组;73 测试)
+- [ ] P2b 计划:待制定(节点→sing-box outbound、两层分流、DNS、tun、clash_api、sing-box check 金标准)
+- [ ] P3–P7 计划:待各自前置阶段完成后制定
 
 ## 记录在案的延期项(来自 P1 评审)
 
 - P4(面板前端)必须包含:删除 `panel/scripts/install.sh` 与 `panel/scripts/deploy-devboard.sh`(上游 Docker 时代遗留,残留 2048 引用);PWA manifest(vite.config.ts 的 name/short_name)与 index.html meta description 去 AnGe 品牌化
 - 后续加固候选(不阻塞):dev-panel.sh PID 复用校验、curl --max-time、HOST=127.0.0.1 绑定收敛
+
+## 记录在案的延期项(来自 P2a 终审)
+
+**P2b 首个任务必须是"parser 字段补全"**(P2a 计划已预留此回补口子),补全 emit 所需但 P2a 未采集的字段:
+- REALITY:`tls.reality {public_key, short_id}`(vless 分享链接 `pbk`/`sid`、Clash `reality-opts`)——REALITY 是当前最常见节点类型之一,不补则 P2b 无法 emit 可用出站
+- uTLS 指纹:`tls.utls.fingerprint`(分享链接 `fp`)
+- `tls.insecure`:分享链接 `insecure/allowInsecure` 未采集;Clash 已从 `skip-cert-verify` 采集 → 两来源发散,需对齐
+- HTTP/2 传输归一:Clash `network: h2` 与 vmess `net: h2` → sing-box `{type:'http'}`(当前三来源形状不一致)
+- sing-box ≥1.11 的 wireguard 在 `endpoints` 而非 `outbounds`,`parseSingboxOutbounds` 当前会漏采
+- Clash `ss` 的 `plugin`/`plugin-opts` 被静默丢弃 → 与分享链接 `?plugin` 丢弃决策对齐,计入 skipped
+
+**其余 P2a 遗留 minor(不阻塞,择机处理):** subscription.mjs detect 冗余正则删除;clash.mjs 非对象 proxy 项/缺 name 的 skipped 记录质量;词典数组 `Object.freeze` 加固;groups.mjs 分组依赖默认模板首段(可让 renameNodes 附带 region 字段解耦)。
