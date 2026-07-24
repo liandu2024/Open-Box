@@ -32,7 +32,8 @@
 - [x] 设计规格完成并确认
 - [x] P1 完成并合并(仓库落地、panel/ fork 基线、构建测试闭环、品牌化 2026、dev-panel.sh)
 - [x] P2a 完成并合并(引擎:订阅解析三格式七协议、归一化节点模型、重命名引擎、区域节点组;73 测试)
-- [ ] P2b 计划:待制定(节点→sing-box outbound、两层分流、DNS、tun、clash_api、sing-box check 金标准)
+- [x] P2b 计划已制定:`docs/superpowers/plans/2026-07-25-p2b-config-generation.md`(钦定 sing-box 1.13.14,schema 已用二进制验证)
+- [ ] P2b 执行中/待执行(8 任务:parser 补全→emit→路由→DNS→组装→sing-box check 金标准)
 - [ ] P3–P7 计划:待各自前置阶段完成后制定
 
 ## 记录在案的延期项(来自 P1 评审)
