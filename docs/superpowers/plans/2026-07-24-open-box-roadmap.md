@@ -29,7 +29,7 @@
 ## 当前状态
 
 - [x] 设计规格完成并确认
-- [ ] P1 计划:`docs/superpowers/plans/2026-07-24-p1-repo-and-panel-import.md`
+- [x] P1 完成并合并(仓库落地、panel/ fork 基线、构建测试闭环、品牌化 2026、dev-panel.sh)
 - [ ] P2–P7 计划:待各自前置阶段完成后制定
 
 ## 记录在案的延期项(来自 P1 评审)
