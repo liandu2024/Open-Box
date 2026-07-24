@@ -89,3 +89,30 @@ test('tuic:// uuid:password', () => {
   assert.equal(n.fields.tls.server_name, 'tu.example.com')
   assert.deepEqual(n.fields.tls.alpn, ['h3'])
 })
+
+test('trojan:// 密码含百分号编码字符需解码(修复1)', () => {
+  const n = parseShareLink('trojan://p%40ss%23word@t.com:443#PW')
+  assert.equal(n.fields.password, 'p@ss#word')
+})
+
+test('tuic:// uuid:password 含百分号编码字符需分别解码(修复1)', () => {
+  const n = parseShareLink('tuic://33333333-3333-3333-3333-333333333333:p%40ss%3Aw@tu.example.com:443#TUIC2')
+  assert.equal(n.fields.uuid, '33333333-3333-3333-3333-333333333333')
+  assert.equal(n.fields.password, 'p@ss:w')
+})
+
+test('ss:// SIP002 SS-2022 明文 userinfo(method:password,非 base64)(修复2)', () => {
+  const n = parseShareLink('ss://2022-blake3-aes-256-gcm:vfOznL8Sc9U=@example.com:8388#SS2022')
+  assert.equal(n.type, 'shadowsocks')
+  assert.equal(n.fields.method, '2022-blake3-aes-256-gcm')
+  assert.equal(n.fields.password, 'vfOznL8Sc9U=')
+  assert.equal(n.server, 'example.com')
+  assert.equal(n.server_port, 8388)
+})
+
+test('ss:// SIP002 IPv6 主机剥括号(修复3)', () => {
+  const b = Buffer.from('aes-256-gcm:secretpw').toString('base64')
+  const n = parseShareLink(`ss://${b}@[2001:db8::1]:8443#SSv6`)
+  assert.equal(n.server, '2001:db8::1')
+  assert.equal(n.server_port, 8443)
+})

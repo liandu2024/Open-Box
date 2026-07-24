@@ -3,6 +3,32 @@ import { decodeBase64, parseUri } from './codec.mjs'
 
 export const SHARELINK_SCHEMES = ['ss', 'vmess', 'vless', 'trojan', 'hysteria2', 'tuic']
 
+// decodeURIComponent 失败(非法 % 序列)时回退原值,而不是抛异常
+const safeDecode = (s) => {
+  try {
+    return decodeURIComponent(s)
+  } catch {
+    return s
+  }
+}
+
+// 判断字符串是否"可打印"(不含控制字符),用于校验 base64 解码结果确实是文本凭据而非乱码
+const isPrintable = (s) => typeof s === 'string' && !/[\x00-\x08\x0B\x0C\x0E-\x1F]/.test(s)
+
+// 拆分 host:port,IPv6 主机形如 [::1]:port 需剥括号(与 codec.parseUri 保持一致)
+const splitHostPort = (hostport) => {
+  if (hostport.startsWith('[')) {
+    const close = hostport.indexOf(']')
+    const host = hostport.slice(1, close)
+    const after = hostport.slice(close + 1)
+    const port = after.startsWith(':') ? after.slice(1) : ''
+    return [host, port]
+  }
+  const colon = hostport.lastIndexOf(':')
+  if (colon < 0) return [hostport, '']
+  return [hostport.slice(0, colon), hostport.slice(colon + 1)]
+}
+
 const parseSs = (uri) => {
   // ss://<...>#name  两种形态:SIP002(userinfo@host:port)或整体 base64
   let rest = uri.slice('ss://'.length)
@@ -17,17 +43,25 @@ const parseSs = (uri) => {
 
   let method, password, server, port
   if (rest.includes('@')) {
-    // SIP002: base64(method:password)@host:port
+    // SIP002: userinfo@host:port。userinfo 可能是 base64(method:password),
+    // 也可能是 SS-2022 的明文(可能 percent-encoded)method:password —— 先按明文尝试,
+    // 含 ':' 才当明文,否则再走 base64 并要求结果含 ':' 且可打印。
     const at = rest.lastIndexOf('@')
     const userinfo = rest.slice(0, at)
     const hostport = rest.slice(at + 1)
-    const creds = decodeBase64(userinfo)
+    const plain = safeDecode(userinfo)
+    let creds
+    if (plain.includes(':')) {
+      creds = plain
+    } else {
+      const decoded = decodeBase64(userinfo)
+      if (!decoded.includes(':') || !isPrintable(decoded)) return null
+      creds = decoded
+    }
     const ci = creds.indexOf(':')
     method = creds.slice(0, ci)
     password = creds.slice(ci + 1)
-    const colon = hostport.lastIndexOf(':')
-    server = hostport.slice(0, colon)
-    port = hostport.slice(colon + 1)
+    ;[server, port] = splitHostPort(hostport)
   } else {
     // 旧格式: base64(method:password@host:port)
     const decoded = decodeBase64(rest)
@@ -37,9 +71,7 @@ const parseSs = (uri) => {
     const ci = creds.indexOf(':')
     method = creds.slice(0, ci)
     password = creds.slice(ci + 1)
-    const colon = hostport.lastIndexOf(':')
-    server = hostport.slice(0, colon)
-    port = hostport.slice(colon + 1)
+    ;[server, port] = splitHostPort(hostport)
   }
   return createNode({
     tag: fragment, type: 'shadowsocks', server, server_port: port,
@@ -97,7 +129,7 @@ const buildTlsFromQuery = (query, fallbackSni) => {
 
 const parseVless = (uri) => {
   const u = parseUri(uri)
-  const fields = { uuid: u.userinfo }
+  const fields = { uuid: safeDecode(u.userinfo) }
   const flow = u.query.get('flow')
   if (flow) fields.flow = flow
   const transport = buildTransportFromQuery(u.query)
@@ -109,7 +141,7 @@ const parseVless = (uri) => {
 
 const parseTrojan = (uri) => {
   const u = parseUri(uri)
-  const fields = { password: u.userinfo }
+  const fields = { password: safeDecode(u.userinfo) }
   const transport = buildTransportFromQuery(u.query)
   if (transport) fields.transport = transport
   // trojan 默认走 TLS;security 缺省也视为 tls
@@ -120,7 +152,7 @@ const parseTrojan = (uri) => {
 
 const parseHysteria2 = (uri) => {
   const u = parseUri(uri)
-  const fields = { password: u.userinfo }
+  const fields = { password: safeDecode(u.userinfo) }
   const tls = { enabled: true }
   const sni = u.query.get('sni')
   if (sni) tls.server_name = sni
@@ -136,10 +168,11 @@ const parseHysteria2 = (uri) => {
 
 const parseTuic = (uri) => {
   const u = parseUri(uri)
+  // 先 split ':' 再逐段 decode,避免 uuid/password 中的 percent-encoded ':' 干扰分隔
   const ci = u.userinfo.indexOf(':')
   const fields = {
-    uuid: ci >= 0 ? u.userinfo.slice(0, ci) : u.userinfo,
-    password: ci >= 0 ? u.userinfo.slice(ci + 1) : '',
+    uuid: safeDecode(ci >= 0 ? u.userinfo.slice(0, ci) : u.userinfo),
+    password: ci >= 0 ? safeDecode(u.userinfo.slice(ci + 1)) : '',
   }
   const cc = u.query.get('congestion_control')
   if (cc) fields.congestion_control = cc

@@ -29,3 +29,11 @@ test('parseSubscription 无法识别的 sharelink 行计入 skipped', () => {
   assert.equal(nodes.length, 1)
   assert.equal(skipped.length, 1)
 })
+
+test('detectSubscriptionFormat/parseSubscription 首行为注释时仍识别 sharelink(修复8)', () => {
+  const text = '# remark\nss://YWVzLTI1Ni1nY206c2VjcmV0cHc=@example.com:8388#HK'
+  assert.equal(detectSubscriptionFormat(text), 'sharelink')
+  const { nodes, format } = parseSubscription(text)
+  assert.equal(format, 'sharelink')
+  assert.equal(nodes.length, 1)
+})

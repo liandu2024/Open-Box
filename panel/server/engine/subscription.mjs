@@ -15,8 +15,11 @@ export const detectSubscriptionFormat = (text) => {
     } catch { /* not json */ }
   }
   if (/^\s*proxies\s*:/m.test(trimmed) || /\n\s*proxies\s*:/.test('\n' + trimmed)) return 'clash'
-  const firstLine = trimmed.split(/\r?\n/).find((l) => l.trim().length > 0) || ''
-  if (SHARELINK_PREFIX.test(firstLine.trim())) return 'sharelink'
+  // 取第一条非空且非 #/// 注释的行来判断 sharelink 前缀,与 parseSharelinkLines 跳过注释的行为保持一致
+  const firstLine = trimmed.split(/\r?\n/)
+    .map((l) => l.trim())
+    .find((l) => l.length > 0 && !l.startsWith('#') && !l.startsWith('//')) || ''
+  if (SHARELINK_PREFIX.test(firstLine)) return 'sharelink'
   return 'unknown'
 }
 

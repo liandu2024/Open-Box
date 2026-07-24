@@ -13,6 +13,18 @@ test('matchRegion 覆盖缩写/中文/城市/emoji', () => {
   assert.equal(matchRegion('unknown-place', DEFAULT_REGION_DICT), null)
 })
 
+test('matchRegion 短 ASCII 码需 token 边界,避免子串误配(修复4)', () => {
+  assert.equal(matchRegion('Russia-01', DEFAULT_REGION_DICT), null)
+  assert.equal(matchRegion('Sweden', DEFAULT_REGION_DICT), null)
+  assert.equal(matchRegion('Ukraine', DEFAULT_REGION_DICT), null)
+  assert.equal(matchRegion('Australia', DEFAULT_REGION_DICT), null)
+  // 既有断言不回归
+  assert.equal(matchRegion('US-CA-01', DEFAULT_REGION_DICT).name, '美国')
+  assert.equal(matchRegion('洛杉矶 03', DEFAULT_REGION_DICT).name, '美国')
+  assert.equal(matchRegion('🇺🇸 premium', DEFAULT_REGION_DICT).name, '美国')
+  assert.equal(matchRegion('香港 IEPL', DEFAULT_REGION_DICT).name, '香港')
+})
+
 test('extractFeatures 多命中按序去重', () => {
   assert.deepEqual(extractFeatures('US-IEPL-x2', DEFAULT_FEATURE_DICT), ['专线', '2x'])
   assert.deepEqual(extractFeatures('普通节点', DEFAULT_FEATURE_DICT), [])
@@ -52,4 +64,10 @@ test('renameNodes 不改原对象', () => {
 test('previewRename 原名→新名', () => {
   const pv = previewRename([mk('US-01')])
   assert.deepEqual(pv, [{ originalTag: 'US-01', newTag: '美国-01' }])
+})
+
+test('applyTemplate 元字符 $&/$1 不被 String.replace 误解析(修复7)', () => {
+  const out = renameNodes([mk('node-$&-tag')])
+  // 未命中区域,原名整体进入 {feature} 位;修复前 $& 会被当替换模式吃掉,输出会混入字面 "{feature}"
+  assert.equal(out[0].tag, '其他-node-$&-tag-01')
 })
