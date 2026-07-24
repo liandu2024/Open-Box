@@ -1,0 +1,12 @@
+{
+  "name": "ange-clashboard-server-runtime",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "express": "5.2.1",
+    "ssh2": "^1.17.0",
+    "ws": "8.19.0",
+    "yaml": "2.8.2"
+  },
+  "packageManager": "pnpm@10.15.0"
+}

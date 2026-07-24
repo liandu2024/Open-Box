@@ -31,3 +31,8 @@
 - [x] 设计规格完成并确认
 - [ ] P1 计划:`docs/superpowers/plans/2026-07-24-p1-repo-and-panel-import.md`
 - [ ] P2–P7 计划:待各自前置阶段完成后制定
+
+## 记录在案的延期项(来自 P1 评审)
+
+- P4(面板前端)必须包含:删除 `panel/scripts/install.sh` 与 `panel/scripts/deploy-devboard.sh`(上游 Docker 时代遗留,残留 2048 引用);PWA manifest(vite.config.ts 的 name/short_name)与 index.html meta description 去 AnGe 品牌化
+- 后续加固候选(不阻塞):dev-panel.sh PID 复用校验、curl --max-time、HOST=127.0.0.1 绑定收敛

@@ -1,0 +1,17 @@
+node_modules
+dist
+data
+.git
+.github
+.husky
+.tmp
+.tmp-action-logs
+.tmp-action-logs-2
+.tmp-action-logs.zip
+.tmp-action-logs-2.zip
+.tmp-private.mrs
+.client.log
+.server.log
+.server.err.log
+readme
+.tools
