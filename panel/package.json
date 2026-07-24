@@ -23,8 +23,8 @@
     "prepare": "husky",
     "preview": "vite preview",
     "start": "node server/index.mjs",
-    "test": "node --test server/test/*.test.mjs",
-    "test:server": "node --test server/test/*.test.mjs",
+    "test": "node --test server/test/*.test.mjs server/engine/*.test.mjs",
+    "test:server": "node --test server/test/*.test.mjs server/engine/*.test.mjs",
     "type-check": "vue-tsc --build --force"
   },
   "dependencies": {
