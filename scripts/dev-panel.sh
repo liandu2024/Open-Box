@@ -9,10 +9,11 @@ port="${PORT:-2026}"
 export PATH="$HOME/.local/share/node-v24.18.0-darwin-arm64/bin:$PATH"
 
 cd "$panel_dir"
+[[ -d node_modules ]] || corepack pnpm install
 corepack pnpm run build
 
 if [[ -f "$pid_file" ]] && kill -0 "$(cat "$pid_file")" 2>/dev/null; then
-  kill "$(cat "$pid_file")"
+  kill "$(cat "$pid_file")" 2>/dev/null || true
   sleep 1
 fi
 
