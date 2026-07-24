@@ -46,3 +46,46 @@ test('未知协议返回 null', () => {
   assert.equal(parseShareLink('anytls://whatever@a.com:443#x'), null)
   assert.equal(parseShareLink('not-a-uri'), null)
 })
+
+test('vless:// ws+tls', () => {
+  const n = parseShareLink('vless://22222222-2222-2222-2222-222222222222@v.example.com:443?encryption=none&security=tls&sni=v.example.com&type=ws&path=%2Fvl&host=cdn.v.com&flow=xtls-rprx-vision#VL-US')
+  assert.equal(n.type, 'vless')
+  assert.equal(n.server, 'v.example.com')
+  assert.equal(n.server_port, 443)
+  assert.equal(n.fields.uuid, '22222222-2222-2222-2222-222222222222')
+  assert.equal(n.fields.flow, 'xtls-rprx-vision')
+  assert.equal(n.fields.transport.type, 'ws')
+  assert.equal(n.fields.transport.path, '/vl')
+  assert.equal(n.fields.transport.headers.Host, 'cdn.v.com')
+  assert.equal(n.fields.tls.enabled, true)
+  assert.equal(n.fields.tls.server_name, 'v.example.com')
+})
+
+test('trojan:// tls', () => {
+  const n = parseShareLink('trojan://secretpw@t.example.com:443?sni=t.example.com&type=tcp#TJ-JP')
+  assert.equal(n.type, 'trojan')
+  assert.equal(n.fields.password, 'secretpw')
+  assert.equal(n.fields.tls.enabled, true)
+  assert.equal(n.fields.tls.server_name, 't.example.com')
+})
+
+test('hysteria2:// 与 hy2 别名 + obfs', () => {
+  const a = parseShareLink('hysteria2://authpw@h.example.com:8443?sni=h.example.com&obfs=salamander&obfs-password=xyz#HY2')
+  assert.equal(a.type, 'hysteria2')
+  assert.equal(a.fields.password, 'authpw')
+  assert.equal(a.fields.tls.server_name, 'h.example.com')
+  assert.equal(a.fields.obfs.type, 'salamander')
+  assert.equal(a.fields.obfs.password, 'xyz')
+  const b = parseShareLink('hy2://authpw@h.example.com:8443#HY2b')
+  assert.equal(b.type, 'hysteria2')
+})
+
+test('tuic:// uuid:password', () => {
+  const n = parseShareLink('tuic://33333333-3333-3333-3333-333333333333:tpass@tu.example.com:443?congestion_control=bbr&sni=tu.example.com&alpn=h3#TUIC')
+  assert.equal(n.type, 'tuic')
+  assert.equal(n.fields.uuid, '33333333-3333-3333-3333-333333333333')
+  assert.equal(n.fields.password, 'tpass')
+  assert.equal(n.fields.congestion_control, 'bbr')
+  assert.equal(n.fields.tls.server_name, 'tu.example.com')
+  assert.deepEqual(n.fields.tls.alpn, ['h3'])
+})
