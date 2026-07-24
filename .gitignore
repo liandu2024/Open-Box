@@ -5,3 +5,5 @@ dist/
 .devboard-server.pid
 data/
 panel/data/
+.dev-panel.pid
+.dev-panel.log
