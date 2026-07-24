@@ -25,7 +25,7 @@ function Start-DevProcess {
   Write-Host "[dev-up] started $Title"
 }
 
-$serverPort = 2048
+$serverPort = 2026
 $clientPort = 5173
 
 if (-not (Test-ListeningPort -Port $serverPort)) {

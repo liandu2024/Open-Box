@@ -1,7 +1,7 @@
 {
-  "name": "ange-clashboard",
+  "name": "open-box-panel",
   "version": "2.04",
-  "description": "AnGe-ClashBoard - A dashboard for Clash API, Mihomo and sing-box",
+  "description": "Open-Box panel - integrated sing-box management for OpenWrt",
   "license": "MIT",
   "type": "module",
   "scripts": {
