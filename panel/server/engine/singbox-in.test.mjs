@@ -18,3 +18,18 @@ test('parseSingboxOutbounds 只取代理节点,忽略 selector/direct,未知代�
   assert.equal(nodes.find((n) => n.originalTag === 'SS-US').fields.method, 'aes-256-gcm')
   assert.deepEqual(skipped, [{ name: 'AT', type: 'anytls' }])
 })
+
+test('从 endpoints 采 wireguard', () => {
+  const doc = JSON.stringify({
+    endpoints: [{ type: 'wireguard', tag: 'WG', address: ['10.0.0.2/32'], private_key: 'PRIV=', peers: [{ address: 'wg.com', port: 51820, public_key: 'PUB=', allowed_ips: ['0.0.0.0/0'] }] }],
+    outbounds: [{ type: 'shadowsocks', tag: 'SS', server: 's.com', server_port: 8388, method: 'aes-256-gcm', password: 'pw' }],
+  })
+  const { nodes } = parseSingboxOutbounds(doc)
+  const wg = nodes.find((n) => n.originalTag === 'WG')
+  assert.equal(wg.type, 'wireguard')
+  assert.equal(wg.server, 'wg.com')
+  assert.equal(wg.server_port, 51820)
+  assert.equal(wg.fields.private_key, 'PRIV=')
+  assert.equal(wg.fields.peer_public_key, 'PUB=')
+  assert.deepEqual(wg.fields.local_address, ['10.0.0.2/32'])
+})

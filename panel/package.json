@@ -12,6 +12,7 @@
     "build:no-fonts": "vite build --mode SystemUI",
     "build:pingfang-only": "vite build --mode PingFang",
     "build:sarasa-only": "vite build --mode SarasaUi",
+    "check:config": "node --test server/engine/check-config.test.mjs",
     "deploy:devboard": "bash scripts/deploy-devboard.sh",
     "dev": "vite",
     "dev:client": "vite",

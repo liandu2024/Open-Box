@@ -127,3 +127,37 @@ test('parseClashProxies 映射七协议子集,跳过未知', () => {
 test('非 Clash 文本返回空', () => {
   assert.deepEqual(parseClashProxies('just: a string').nodes, [])
 })
+
+test('clash vless reality + h2 归一 + ss plugin 计入 skipped', () => {
+  const doc = `
+proxies:
+  - name: "R-VLESS"
+    type: vless
+    server: r.com
+    port: 443
+    uuid: 11111111-1111-1111-1111-111111111111
+    tls: true
+    servername: r.com
+    network: h2
+    h2-opts: { path: /h2, host: [cdn.com] }
+    reality-opts: { public-key: PUBK, short-id: "01ab" }
+    client-fingerprint: chrome
+    flow: xtls-rprx-vision
+  - name: "SS-Plugin"
+    type: ss
+    server: s.com
+    port: 8388
+    cipher: aes-256-gcm
+    password: pw
+    plugin: obfs
+`
+  const { nodes, skipped } = parseClashProxies(doc)
+  const r = nodes.find((n) => n.originalTag === 'R-VLESS')
+  assert.equal(r.fields.tls.reality.public_key, 'PUBK')
+  assert.equal(r.fields.tls.reality.short_id, '01ab')
+  assert.equal(r.fields.tls.utls.fingerprint, 'chrome')
+  assert.equal(r.fields.transport.type, 'http')
+  assert.equal(r.fields.transport.path, '/h2')
+  assert.equal(r.fields.transport.headers.Host, 'cdn.com')
+  assert.ok(skipped.some((s) => s.name === 'SS-Plugin'))
+})

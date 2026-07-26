@@ -4,8 +4,9 @@ import { createNode } from './node-model.mjs'
 const toArray = (v) => (Array.isArray(v) ? v : v == null ? [] : [v])
 
 const buildClashTransport = (p) => {
-  const net = p.network
+  let net = p.network
   if (!net || net === 'tcp') return undefined
+  if (net === 'h2') net = 'http'
   const transport = { type: net }
   if (net === 'ws') {
     const opts = p['ws-opts'] || {}
@@ -15,25 +16,38 @@ const buildClashTransport = (p) => {
     const opts = p['grpc-opts'] || {}
     if (opts['grpc-service-name']) transport.service_name = opts['grpc-service-name']
   } else if (net === 'http') {
-    const opts = p['http-opts'] || {}
+    const opts = p['h2-opts'] || p['http-opts'] || {}
     if (opts.path) transport.path = Array.isArray(opts.path) ? opts.path[0] : opts.path
+    const host = opts.host
+    if (host) transport.headers = { Host: Array.isArray(host) ? host[0] : host }
   }
   return transport
 }
 
 const buildClashTls = (p) => {
-  if (!p.tls && !p.sni && !p.servername) return undefined
-  const tls = { enabled: p.tls === true }
+  if (!p.tls && !p.sni && !p.servername && !p['reality-opts']) return undefined
+  const tls = { enabled: p.tls === true || !!p['reality-opts'] }
   const sni = p.servername || p.sni
   if (sni) tls.server_name = sni
   if (p.alpn) tls.alpn = toArray(p.alpn)
   if (p['skip-cert-verify'] === true) tls.insecure = true
+  if (p['client-fingerprint']) tls.utls = { enabled: true, fingerprint: p['client-fingerprint'] }
+  if (p['reality-opts']) {
+    const ro = p['reality-opts']
+    tls.reality = { enabled: true }
+    if (ro['public-key']) tls.reality.public_key = ro['public-key']
+    if (ro['short-id'] !== undefined) tls.reality.short_id = String(ro['short-id'])
+    if (!tls.utls) tls.utls = { enabled: true, fingerprint: 'chrome' }
+  }
   if (!tls.enabled) return undefined
   return tls
 }
 
 const MAPPERS = {
-  ss: (p) => ({ type: 'shadowsocks', fields: { method: p.cipher, password: p.password } }),
+  ss: (p) => {
+    if (p.plugin) throw new Error('ss plugin unsupported')
+    return { type: 'shadowsocks', fields: { method: p.cipher, password: p.password } }
+  },
   vmess: (p) => ({
     type: 'vmess',
     fields: {

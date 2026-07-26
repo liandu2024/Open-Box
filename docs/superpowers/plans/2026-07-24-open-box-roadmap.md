@@ -32,8 +32,7 @@
 - [x] 设计规格完成并确认
 - [x] P1 完成并合并(仓库落地、panel/ fork 基线、构建测试闭环、品牌化 2026、dev-panel.sh)
 - [x] P2a 完成并合并(引擎:订阅解析三格式七协议、归一化节点模型、重命名引擎、区域节点组;73 测试)
-- [x] P2b 计划已制定:`docs/superpowers/plans/2026-07-25-p2b-config-generation.md`(钦定 sing-box 1.13.14,schema 已用二进制验证)
-- [ ] P2b 执行中/待执行(8 任务:parser 补全→emit→路由→DNS→组装→sing-box check 金标准)
+- [x] P2b 完成并合并(配置生成:emit 六协议+wireguard endpoint、策略组、路由、可选 DNS 分流、tun/clash_api 组装;104 测试 + sing-box check 金标准 3/3)
 - [ ] P3–P7 计划:待各自前置阶段完成后制定
 
 ## 记录在案的延期项(来自 P1 评审)
@@ -52,3 +51,16 @@
 - Clash `ss` 的 `plugin`/`plugin-opts` 被静默丢弃 → 与分享链接 `?plugin` 丢弃决策对齐,计入 skipped
 
 **其余 P2a 遗留 minor(不阻塞,择机处理):** subscription.mjs detect 冗余正则删除;clash.mjs 非对象 proxy 项/缺 name 的 skipped 记录质量;词典数组 `Object.freeze` 加固;groups.mjs 分组依赖默认模板首段(可让 renameNodes 附带 region 字段解耦)。
+
+## 记录在案的延期项(来自 P2b 终审)
+
+**P3(本地系统集成层)的应用路径必须包含:**
+- **下发前逐节点归因**:整份配置里任一坏节点(如 reality 非法 pbk、未知 ss cipher、vmess 旧式 cipher)会让 `sing-box check` 拒绝整份配置且 FATAL 不指明是哪个节点。应用路径需"先 check 整体,失败则逐节点/单出站 check 定位坏节点并 drop-and-retry 或明确报告",不可整份静默失败。fail-closed(不下发坏配置)是底线。
+- **rulesetTags 供给**:P3 的规则集下载器需要知道配置引用了哪些 `.srs`;`buildRoute` 已返回 `rulesetTags`,或让 `buildConfig` 一并返回,避免二次调用。
+
+**P4(面板前端)导入层必须包含:**
+- **节点 tag 去重**:完全同名的上游节点会让 sing-box `duplicate outbound/endpoint tag` FATAL;导入/重命名后需保证 tag 唯一。
+
+**缺失字段回补清单(P3/P4 backlog,不阻塞当前):** hysteria2 `up`/`down` 带宽、tuic `udp-relay-mode`、wireguard `reserved`、ws `max_early_data`、vmess 旧式加密(如 `aes-128-cfb`,会 FATAL)。
+
+**表层 minor(择机):** emit 出的配置浅引用节点内部对象(headers/alpn/local_address/obfs),可在边界 spread 拷贝;`parseTrojan` 改写 `u.query`(可改传显式 flag)。
