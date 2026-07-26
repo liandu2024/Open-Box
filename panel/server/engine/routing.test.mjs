@@ -34,3 +34,8 @@ test('adBlock 关闭时无 reject 规则', () => {
   const { route } = buildRoute({ ...routing, adBlock: false }, '/d')
   assert.ok(!route.rules.some((r) => r.action === 'reject'))
 })
+
+test('options.dnsMode=dnsmasq 时不生成 hijack-dns 规则', () => {
+  const { route } = buildRoute(routing, '/data/rulesets', { dnsMode: 'dnsmasq' })
+  assert.ok(!route.rules.some((r) => r.action === 'hijack-dns'))
+})

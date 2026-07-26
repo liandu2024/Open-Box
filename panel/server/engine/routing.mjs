@@ -1,12 +1,12 @@
-export const buildRoute = (routing, rulesetDir) => {
+export const buildRoute = (routing, rulesetDir, options = {}) => {
   const rulesetTags = new Set()
   const addTag = (tag) => { if (tag) rulesetTags.add(tag) }
 
-  const rules = [
-    { action: 'sniff' },
-    { protocol: 'dns', action: 'hijack-dns' },
-    { ip_is_private: true, outbound: 'direct' },
-  ]
+  const rules = [{ action: 'sniff' }]
+  if ((options.dnsMode || 'hijack') === 'hijack') {
+    rules.push({ protocol: 'dns', action: 'hijack-dns' })
+  }
+  rules.push({ ip_is_private: true, outbound: 'direct' })
 
   if (routing.adBlock) {
     const adTag = routing.adRuleset || 'geosite-category-ads-all'

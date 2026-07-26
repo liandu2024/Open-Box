@@ -68,3 +68,24 @@ test('修复2: 合法 target/fallback 不被改写', () => {
   assert.equal(rule.outbound, '美国')
   assert.equal(c.route.final, '美国')
 })
+
+test('tun.autoRedirect 默认关闭,可开启', () => {
+  const c1 = buildConfig({ nodes, regionGroups, profile })
+  assert.equal(c1.inbounds[0].auto_redirect, undefined)
+  const c2 = buildConfig({ nodes, regionGroups, profile: { ...profile, tun: { autoRedirect: true } } })
+  assert.equal(c2.inbounds[0].auto_redirect, true)
+})
+
+test('dns.mode=hijack(默认)生成 hijack-dns 路由规则', () => {
+  const c = buildConfig({ nodes, regionGroups, profile })
+  assert.ok(c.route.rules.some((r) => r.action === 'hijack-dns'))
+  assert.ok(!c.inbounds.some((i) => i.type === 'direct'))
+})
+
+test('dns.mode=dnsmasq:无 hijack 规则,增 DNS 入站 127.0.0.1:7853', () => {
+  const c = buildConfig({ nodes, regionGroups, profile: { ...profile, dns: { ...profile.dns, mode: 'dnsmasq' } } })
+  assert.ok(!c.route.rules.some((r) => r.action === 'hijack-dns'))
+  const dnsIn = c.inbounds.find((i) => i.type === 'direct')
+  assert.equal(dnsIn.listen, '127.0.0.1')
+  assert.equal(dnsIn.listen_port, 7853)
+})
