@@ -37,3 +37,34 @@ test('ipv6 关:tun address 仅 v4', () => {
   assert.equal(c.inbounds[0].address.length, 1)
   assert.equal(c.dns.strategy, 'ipv4_only')
 })
+
+test('修复2: category.target 引用不存在的组时重映射为 proxyTag', () => {
+  const profileWithDanglingTarget = {
+    ...profile,
+    routing: { ...profile.routing, categories: [{ ruleset: 'geosite-netflix', target: '不存在的组' }] },
+  }
+  const c = buildConfig({ nodes, regionGroups, profile: profileWithDanglingTarget })
+  const rule = c.route.rules.find((r) => r.rule_set === 'geosite-netflix')
+  assert.ok(rule)
+  assert.equal(rule.outbound, 'PROXY')
+})
+
+test('修复2: fallback 引用不存在的 tag 时重映射为 proxyTag', () => {
+  const profileWithDanglingFallback = {
+    ...profile,
+    routing: { ...profile.routing, fallback: '也不存在' },
+  }
+  const c = buildConfig({ nodes, regionGroups, profile: profileWithDanglingFallback })
+  assert.equal(c.route.final, 'PROXY')
+})
+
+test('修复2: 合法 target/fallback 不被改写', () => {
+  const profileWithValidTarget = {
+    ...profile,
+    routing: { ...profile.routing, categories: [{ ruleset: 'geosite-netflix', target: '美国' }], fallback: '美国' },
+  }
+  const c = buildConfig({ nodes, regionGroups, profile: profileWithValidTarget })
+  const rule = c.route.rules.find((r) => r.rule_set === 'geosite-netflix')
+  assert.equal(rule.outbound, '美国')
+  assert.equal(c.route.final, '美国')
+})

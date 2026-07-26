@@ -81,7 +81,8 @@ const parseSs = (uri) => {
 
 const parseVmess = (uri) => {
   const conf = JSON.parse(decodeBase64(uri.slice('vmess://'.length)))
-  const net = conf.net || 'tcp'
+  let net = conf.net || 'tcp'
+  if (net === 'h2') net = 'http'
   const fields = {
     uuid: conf.id,
     alter_id: Number.parseInt(conf.aid ?? 0, 10) || 0,
@@ -125,7 +126,7 @@ const buildTlsFromQuery = (query, fallbackSni) => {
   if (sni) tls.server_name = sni
   const alpn = query.get('alpn')
   if (alpn) tls.alpn = alpn.split(',').map((s) => s.trim()).filter(Boolean)
-  if (query.get('allowInsecure') === '1' || query.get('insecure') === '1') tls.insecure = true
+  if (query.get('allowInsecure') === '1' || query.get('allowInsecure') === 'true' || query.get('insecure') === '1' || query.get('insecure') === 'true') tls.insecure = true
   const fp = query.get('fp')
   if (fp) tls.utls = { enabled: true, fingerprint: fp }
   if (security === 'reality') {

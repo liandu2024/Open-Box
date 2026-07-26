@@ -136,3 +136,18 @@ test('h2 传输归一为 http', () => {
   assert.equal(n.fields.transport.type, 'http')
   assert.equal(n.fields.transport.path, '/p')
 })
+
+test('vmess:// net:h2 传输归一为 http(修复1)', () => {
+  const conf = { v: '2', ps: 'H2-01', add: 'h2.example.com', port: '443', id: '11111111-1111-1111-1111-111111111111', aid: '0', net: 'h2', path: '/vm-h2', host: 'cdn-h2.example.com', scy: 'auto' }
+  const b = Buffer.from(JSON.stringify(conf)).toString('base64')
+  const n = parseShareLink(`vmess://${b}`)
+  assert.equal(n.type, 'vmess')
+  assert.equal(n.fields.transport.type, 'http')
+  assert.equal(n.fields.transport.path, '/vm-h2')
+  assert.equal(n.fields.transport.headers.Host, 'cdn-h2.example.com')
+})
+
+test('allowInsecure=true 变体也应置 insecure(修复6)', () => {
+  const n = parseShareLink('trojan://pw@a.com:443?sni=a.com&allowInsecure=true#I2')
+  assert.equal(n.fields.tls.insecure, true)
+})
