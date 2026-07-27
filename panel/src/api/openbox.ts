@@ -148,6 +148,17 @@ export interface OpenboxPolicyGroup {
   nodeCount: number
 }
 
+// Error bodies aren't consistent across these routes — profile.mjs/subscriptions.mjs answer
+// with {error}, deploy.mjs/service.mjs/penetration.mjs answer with {message} — so both are
+// checked here (error takes priority since it was the original convention) rather than picking
+// one and silently losing the server's actual reason on routes that use the other key.
+const extractErrorMessage = (data: unknown): string => {
+  if (!data || typeof data !== 'object') return ''
+  if ('error' in data && data.error) return String(data.error)
+  if ('message' in data && data.message) return String(data.message)
+  return ''
+}
+
 // Backend routes always answer with a JSON body (success or error) — this normalizes the
 // "throw with the server's own message" path so callers can show something meaningful instead
 // of a bare HTTP status.
@@ -164,8 +175,7 @@ const requestJson = async <T>(input: string, init?: RequestInit): Promise<T> => 
   const data = await response.json().catch(() => null)
 
   if (!response.ok) {
-    const message = (data && typeof data === 'object' && 'error' in data && String(data.error)) || ''
-    throw new Error(message || `request failed: ${response.status}`)
+    throw new Error(extractErrorMessage(data) || `request failed: ${response.status}`)
   }
 
   return data as T
@@ -290,4 +300,114 @@ export const extractPolicyGroups = (
         (o.type === 'selector' || o.type === 'urltest') && o.tag !== proxyTag && Array.isArray(o.outbounds),
     )
     .map((o) => ({ name: o.tag, type: o.type, nodeCount: o.outbounds.length }))
+}
+
+// --- Kernel/service management, emergency rollback & penetration query (P4b Task 7) ---
+
+export interface OpenboxServiceInfo {
+  running: boolean
+  raw: string
+}
+
+// Only ever populated with services detectConflicts actually found running (see
+// server/system/conflicts.mjs) — `running` is always true in practice, but kept in the type
+// since it's what the server literally sends.
+export interface OpenboxConflictService {
+  id: string
+  label: string
+  running: boolean
+}
+
+export interface OpenboxServiceStatus {
+  core: OpenboxServiceInfo
+  panel: OpenboxServiceInfo
+  conflicts: OpenboxConflictService[]
+}
+
+export type OpenboxServiceAction = 'start' | 'stop' | 'restart' | 'enable' | 'disable'
+
+export interface OpenboxServiceActionResult {
+  ok: boolean
+  code: number
+  stderr: string
+}
+
+export interface OpenboxKernelVersion {
+  version: string
+  raw: string
+}
+
+export interface OpenboxRollbackResult {
+  ok: boolean
+  actions: string[]
+}
+
+export const fetchServiceStatus = async (): Promise<OpenboxServiceStatus> => {
+  return requestJson<OpenboxServiceStatus>('/api/openbox/service/status')
+}
+
+// POST /service/core/:action always answers 200 with {ok,code,stderr} for the five valid
+// actions (see server/api/service.mjs) — a false `ok` here means the underlying init.d command
+// itself failed (e.g. this dev machine has no /etc/init.d), not a request-level error, so it's
+// never thrown; callers read `.ok` to decide how to render the result.
+export const runServiceAction = async (action: OpenboxServiceAction): Promise<OpenboxServiceActionResult> => {
+  return requestJson<OpenboxServiceActionResult>(`/api/openbox/service/core/${action}`, { method: 'POST' })
+}
+
+export const fetchKernelVersion = async (): Promise<OpenboxKernelVersion> => {
+  return requestJson<OpenboxKernelVersion>('/api/openbox/kernel/version')
+}
+
+// The "get my internet back" button: stops the core, restores dnsmasq, removes firewall rules,
+// and disables autostart (server/api/deploy.mjs's rollback route). rollbackToDirect itself is
+// best-effort per-step and never throws — only the trailing disableService call can, which the
+// server catches and answers 500 {ok:false,message}; requestJson turns that into a thrown Error
+// the caller can render.
+export const emergencyRollback = async (): Promise<OpenboxRollbackResult> => {
+  return requestJson<OpenboxRollbackResult>('/api/openbox/rollback', { method: 'POST' })
+}
+
+// Mirrors server/api/penetration.mjs's PENETRATION_TARGET_PATTERN — used client-side purely so
+// the UI can reject an obviously flag-like target (e.g. "--help") before it round-trips to the
+// server; the server's own check is still the actual authority.
+export const PENETRATION_TARGET_PATTERN = /^[A-Za-z0-9._:-]+$/
+export const isValidPenetrationTarget = (value: string): boolean => {
+  return Boolean(value) && !value.startsWith('-') && PENETRATION_TARGET_PATTERN.test(value)
+}
+
+// The rule condition object is one entry of buildRoute()'s `route.rules` (server/engine/routing.mjs)
+// — only the shape penetration.mjs ever echoes back (the private-IP check, or a rule-set match
+// with its outbound/reject action) is typed; unconditional rules (sniff/dns hijack) never match
+// so they never appear here.
+export interface OpenboxPenetrationRuleCondition {
+  ip_is_private?: boolean
+  rule_set?: string
+  outbound?: string
+  action?: string
+}
+
+export interface OpenboxPenetrationMatched {
+  index: number
+  rule: OpenboxPenetrationRuleCondition
+  outbound?: string
+  action?: string
+}
+
+export interface OpenboxPenetrationResult {
+  matched: OpenboxPenetrationMatched | null
+  // Starts with the resolved policy target (outbound) and drills down through clash_api's `now`
+  // field to the leaf node; empty when the match was an outright reject (nothing to route).
+  chain: string[]
+  finalOutbound: string | null
+  // Present only when the chain couldn't be fully resolved (clash_api unreachable/non-2xx/bad
+  // JSON) — `chain` still holds whatever was resolved before the failure (at least the starting
+  // group name).
+  chainError?: string
+}
+
+export const queryPenetration = async (target: string): Promise<OpenboxPenetrationResult> => {
+  return requestJson<OpenboxPenetrationResult>('/api/openbox/penetration', {
+    method: 'POST',
+    body: JSON.stringify({ target }),
+  })
 }

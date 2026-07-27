@@ -11,6 +11,7 @@ import { language } from '@/store/settings'
 import { hasAnySubscription, wizardDismissed } from '@/store/wizard'
 import ConnectionsPage from '@/views/ConnectionsPage.vue'
 import HomePage from '@/views/HomePage.vue'
+import KernelPage from '@/views/KernelPage.vue'
 import LoginPage from '@/views/LoginPage.vue'
 import LogsPage from '@/views/LogsPage.vue'
 import OverviewPage from '@/views/OverviewPage.vue'
@@ -72,6 +73,11 @@ const childrenRouter = [
     path: 'routing',
     name: ROUTE_NAME.routing,
     component: RoutingPage,
+  },
+  {
+    path: 'kernel',
+    name: ROUTE_NAME.kernel,
+    component: KernelPage,
   },
   {
     path: 'settings',

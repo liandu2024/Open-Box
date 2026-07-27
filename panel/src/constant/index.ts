@@ -1,6 +1,7 @@
 import {
   ArrowsRightLeftIcon,
   Cog6ToothIcon,
+  CpuChipIcon,
   CubeTransparentIcon,
   DocumentTextIcon,
   GlobeAltIcon,
@@ -124,6 +125,7 @@ export enum ROUTE_NAME {
   rules = 'rules',
   subscriptions = 'subscriptions',
   routing = 'routing',
+  kernel = 'kernel',
   settings = 'settings',
   login = 'login',
   setup = 'setup',
@@ -137,6 +139,7 @@ export const ROUTE_ICON_MAP = {
   [ROUTE_NAME.rules]: SwatchIcon,
   [ROUTE_NAME.subscriptions]: RssIcon,
   [ROUTE_NAME.routing]: MapIcon,
+  [ROUTE_NAME.kernel]: CpuChipIcon,
   [ROUTE_NAME.logs]: DocumentTextIcon,
   [ROUTE_NAME.settings]: Cog6ToothIcon,
   [ROUTE_NAME.login]: CubeTransparentIcon,
