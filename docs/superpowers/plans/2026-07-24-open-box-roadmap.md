@@ -78,3 +78,10 @@
 **P5 卫生项(终审 Minor 12):** `config.candidate.json`/`config.probe.json` 无清理;回滚后 `config.json` 仍是启动失败的那份(运行状态已恢复但文件未回退,可考虑 `config.json.prev`);`restoreDnsTakeover` 在 commit/重启结果未知前就删了备份。
 
 **其余表层项:** `rollbackToDirect.actions` 记录的是"尝试过"而非"成功"(exec 返回码被忽略),命名可改为 attempted 或按步记录 ok;`parseBackup` 的无引号裸值分支无测试。
+
+## P4b 清理清单(来自 P4a T1 大扫除)
+
+服务端已删除 SSH/OpenClash/规则缓存路由,以下前端与文档仍引用已消失的接口,P4b 必须一并处理:
+- `panel/README.md:201-222`:仍在文档 SSH 规则源与 `ZASHBOARD_OPENWRT_SSH_*`、`ZASHBOARD_OPENCLASH_*` 环境变量(后端已无实现)
+- 前端引用已删路由:`src/views/RulesPage.vue`、`src/views/SetupPage.vue`(整个删除)、`src/components/settings/EditBackendModal.vue`、`src/components/rules/RuleProvider.vue`、`src/store/rules.ts`、`src/store/setup.ts`(整个删除)、`src/i18n/*`(相关词条)、`src/types/index.d.ts`
+- 说明:P4a 期间应用的这些 UI 路径处于已知的过渡性损坏状态,属预期
