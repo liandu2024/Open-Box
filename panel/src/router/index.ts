@@ -117,12 +117,12 @@ const router = createRouter({
   ],
 })
 
-const title = useTitle('AnGe-ClashBoard')
+const title = useTitle('Open-Box')
 const setTitleByName = (name: string | symbol | undefined) => {
   if (typeof name === 'string') {
-    title.value = `AnGe-ClashBoard | ${i18n.global.t(name)}`
+    title.value = `Open-Box | ${i18n.global.t(name)}`
   } else {
-    title.value = 'AnGe-ClashBoard'
+    title.value = 'Open-Box'
   }
 }
 

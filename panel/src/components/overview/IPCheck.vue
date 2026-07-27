@@ -66,22 +66,27 @@ const handlerShowPrivacyTip = (e: Event) => {
   showTip(e, t('ipScreenshotTip'))
 }
 
-const QUERYING_IP_INFO = {
+// Built fresh on every call (not module-level constants) so the label reflects whatever
+// language is active *at check time* — if these were captured once at setup, switching
+// the panel language later would leave a stale-language "getting/failed" placeholder
+// sitting in ipForChina/ipForGlobal until the next manual refresh happened to be triggered
+// after a remount.
+const queryingIpInfo = () => ({
   ip: [t('getting'), ''],
   ipWithPrivacy: [t('getting'), ''],
-}
+})
 
-const FAILED_IP_INFO = {
+const failedIpInfo = () => ({
   ip: [t('testFailed'), ''],
   ipWithPrivacy: [t('testFailed'), ''],
-}
+})
 
 const getIPs = () => {
   ipForChina.value = {
-    ...QUERYING_IP_INFO,
+    ...queryingIpInfo(),
   }
   ipForGlobal.value = {
-    ...QUERYING_IP_INFO,
+    ...queryingIpInfo(),
   }
   getIPInfo()
     .then((res) => {
@@ -92,7 +97,7 @@ const getIPs = () => {
     })
     .catch(() => {
       ipForGlobal.value = {
-        ...FAILED_IP_INFO,
+        ...failedIpInfo(),
       }
     })
   getIPFromIpipnetAPI()
@@ -104,7 +109,7 @@ const getIPs = () => {
     })
     .catch(() => {
       ipForChina.value = {
-        ...FAILED_IP_INFO,
+        ...failedIpInfo(),
       }
     })
 }

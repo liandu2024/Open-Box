@@ -113,7 +113,7 @@ const en = {
   autoUpgrade: 'Auto upgrade',
   useServerProxy: 'Use server relay',
   useServerProxyTip:
-    'Let AnGe-ClashBoard server relay Mihomo/OpenClash API requests so public access does not need direct controller exposure.',
+    'Let the Open-Box server relay Mihomo/OpenClash API requests so public access does not need direct controller exposure.',
   logRetentionLimit: 'Log retention limit',
   DNSQuery: 'DNS query',
   confirm: 'Confirm',

@@ -13,15 +13,11 @@
           <span class="bg-secondary absolute h-2 w-2 animate-ping rounded-full"></span>
           <span class="bg-secondary h-2 w-2 rounded-full"></span>
         </span>
-        <a
-          href="https://github.com/liandu2024/AnGe-ClashBoard"
-          target="_blank"
-          class="flex flex-wrap items-center gap-x-3 gap-y-1 sm:flex-nowrap"
-        >
-          <span>AnGe-ClashBoard</span>
+        <span class="flex flex-wrap items-center gap-x-3 gap-y-1 sm:flex-nowrap">
+          <span>Open-Box</span>
           <span class="text-sm font-normal">{{ displayVersion }}</span>
           <span class="text-base-content/70 text-xs">{{ $t('basedOnZashboard') }}</span>
-        </a>
+        </span>
       </div>
       <button
         class="btn btn-sm absolute top-4 right-4"

@@ -115,7 +115,7 @@ const zh: LANG_MESSAGE = {
   autoUpgrade: '自动更新',
   useServerProxy: '后端中转控制器',
   useServerProxyTip:
-    '由 AnGe-ClashBoard 后端代连 Mihomo/OpenClash，公网访问面板时无需再直连控制器。',
+    '由 Open-Box 后端代连 Mihomo/OpenClash，公网访问面板时无需再直连控制器。',
   logRetentionLimit: '日志保留条数',
   DNSQuery: 'DNS 查询',
   confirm: '确定',
