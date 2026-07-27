@@ -36,7 +36,8 @@
 - [x] P2b 完成并合并(配置生成:emit 六协议+wireguard endpoint、策略组、路由、可选 DNS 分流、tun/clash_api 组装;104 测试 + sing-box check 金标准 3/3)
 - [x] P3 完成并合并(系统集成:SystemContext、服务控制、冲突检测、校验归因、DNS 接管、防火墙、部署编排;146 测试 + 金标准 4/4)
 - [x] P4 拆分为 P4a(后端 API,计划已制定:`docs/superpowers/plans/2026-07-27-p4a-backend-api.md`)与 P4b(前端 UI)
-- [ ] P4a 执行中;P4b 及 P5–P7 计划待制定
+- [x] P4a 完成并合并(后端 API:瘦身 5154→860 行、存储契约、订阅/profile/部署/服务/穿透 API、代理固化、首次设密;273 测试 + 金标准 4/4;两轮安全终审修复)
+- [ ] P4b 及 P5–P7 计划待制定
 - 产品决策(2026-07-27):穿透功能**保留并重写为 sing-box 版**(基于 `sing-box rule-set match` 本地 .srs 匹配);面板密码改为**首次访问强制设密**(不再由安装脚本预生成)
 
 ## 记录在案的延期项(来自 P1 评审)
@@ -85,3 +86,16 @@
 - `panel/README.md:201-222`:仍在文档 SSH 规则源与 `ZASHBOARD_OPENWRT_SSH_*`、`ZASHBOARD_OPENCLASH_*` 环境变量(后端已无实现)
 - 前端引用已删路由:`src/views/RulesPage.vue`、`src/views/SetupPage.vue`(整个删除)、`src/components/settings/EditBackendModal.vue`、`src/components/rules/RuleProvider.vue`、`src/store/rules.ts`、`src/store/setup.ts`(整个删除)、`src/i18n/*`(相关词条)、`src/types/index.d.ts`
 - 说明:P4a 期间应用的这些 UI 路径处于已知的过渡性损坏状态,属预期
+
+## 记录在案的延期项(来自 P4a 两轮安全终审)
+
+**P4b 必须处理:**
+- **改密 UI 对接**:服务端已新增 `POST /api/auth/change-password`(校验旧密码、重签会话 cookie);但设置页仍绑定 `config/access-password` 经 storage 同步(该键现已被服务端保护、写入静默丢弃),必须改为调用新端点,否则用户以为改了密码实际没改
+- 前端移除多后端(SetupPage/store/setup.ts)、清理已删路由的引用、README 的 SSH 章节(见上文 P4b 清理清单)
+- clash_api 代理的 `x-zashboard-target-base` 覆盖能力:前端不再需要,建议随多后端一起移除或加环境变量开关
+
+**已知残留(不阻塞,择机):**
+- profile 的 `proxyTag`/`fallback`/`categories[].target` 未做内容校验(仅作为出站 tag 名使用,无路径/命令面);`rulesetDir` 仅校验绝对路径+无 `..`,未限制在允许根目录内
+- `app_storage` 允许认证用户写入任意键(无白名单/长度限制),且这些键会回显给所有浏览器
+- `POST /rollback` 的部署态未在异常时更新
+- 生产部署注意:`server/` 以独立 pnpm workspace 包发布(`pnpm deploy --prod`),故 net-guard 未引入 `ipaddr.js`,用的是手写网段表
