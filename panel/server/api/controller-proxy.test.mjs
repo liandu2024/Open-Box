@@ -84,6 +84,10 @@ const fakeDefaultUpstream = await startFakeUpstream()
 const fakeOverrideUpstream = await startFakeUpstream()
 const { tempDir: tempDirB, dbPath: dbPathB } = await makeTempDbPath('b')
 const modB = await importServerModule({ dbPath: dbPathB, clashApiBase: fakeDefaultUpstream.baseUrl })
+// P4a Task 8:未设密时守卫会拦截除 /api/health、/api/auth/status、/api/auth/setup 外的一切 /api/*。
+// 本文件测的是代理转发本身,不是认证流程,这里只需要"已设密"这一前提条件就能绕开新守卫;
+// 不设置 access-password-enabled,保持鉴权本身关闭,不影响本文件原有的免鉴权断言。
+modB.replaceSnapshot({ 'config/access-password': 'controller-proxy-test-placeholder' })
 const baseUrlB = await listenEphemeral(modB.server)
 
 after(async () => {

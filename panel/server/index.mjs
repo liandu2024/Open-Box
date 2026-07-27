@@ -25,6 +25,13 @@ const ACCESS_SESSION_COOKIE_NAME = 'openbox_access_session'
 const ACCESS_SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000
 const ACCESS_PASSWORD_REQUIRED_CODE = 'ACCESS_PASSWORD_REQUIRED'
 const ACCESS_PASSWORD_INVALID_CODE = 'ACCESS_PASSWORD_INVALID'
+const PASSWORD_SETUP_REQUIRED_CODE = 'PASSWORD_SETUP_REQUIRED'
+const PASSWORD_ALREADY_SET_CODE = 'PASSWORD_ALREADY_SET'
+const PASSWORD_TOO_SHORT_CODE = 'PASSWORD_TOO_SHORT'
+const MIN_ACCESS_PASSWORD_LENGTH = 8
+// 首次访问强制设密:密码尚未设置前,除这三条(健康检查 + 查询状态 + 设密本身)外,
+// 一切 /api/* 一律拒绝 —— 面板对路由器有 root 级权限,不能裸奔。
+const PASSWORD_SETUP_EXEMPT_PATHS = new Set(['/api/health', '/api/auth/status', '/api/auth/setup'])
 const accessSessionSecret = randomBytes(32).toString('hex')
 const serviceWorkerCleanupScript = `
 self.addEventListener('install', () => {
@@ -281,6 +288,26 @@ const sendAccessPasswordRequired = (res) => {
     enabled: true,
     authenticated: false,
   })
+}
+
+const sendPasswordSetupRequired = (res) => {
+  res.setHeader('Cache-Control', 'no-store')
+  res.status(403).json({
+    error: PASSWORD_SETUP_REQUIRED_CODE,
+  })
+}
+
+const writeUpgradePasswordSetupRequired = (socket) => {
+  socket.write(
+    `HTTP/1.1 403 Forbidden\r
+Content-Type: application/json; charset=utf-8\r
+Connection: close\r
+\r
+${JSON.stringify({
+  error: PASSWORD_SETUP_REQUIRED_CODE,
+})}`,
+  )
+  socket.destroy()
 }
 
 const readSnapshot = () => {
@@ -577,6 +604,7 @@ app.use('/api/controller', express.raw({ type: '*/*', limit: '25mb' }))
 
 app.get('/api/auth/status', (req, res) => {
   const authStatus = getRequestAccessAuthStatus(req)
+  const { password } = readAccessAuthConfig()
 
   res.setHeader('Cache-Control', 'no-store')
 
@@ -584,13 +612,57 @@ app.get('/api/auth/status', (req, res) => {
     clearAccessSessionCookie(res)
   }
 
-  res.json(authStatus)
+  res.json({
+    ...authStatus,
+    passwordSet: Boolean(password),
+  })
+})
+
+app.post('/api/auth/setup', (req, res) => {
+  const { password: existingPassword } = readAccessAuthConfig()
+
+  res.setHeader('Cache-Control', 'no-store')
+
+  if (existingPassword) {
+    res.status(409).json({
+      error: PASSWORD_ALREADY_SET_CODE,
+      message: 'Access password is already configured',
+    })
+    return
+  }
+
+  const inputPassword = typeof req.body?.password === 'string' ? req.body.password : ''
+
+  if (inputPassword.length < MIN_ACCESS_PASSWORD_LENGTH) {
+    res.status(400).json({
+      error: PASSWORD_TOO_SHORT_CODE,
+      message: `Password must be at least ${MIN_ACCESS_PASSWORD_LENGTH} characters`,
+    })
+    return
+  }
+
+  upsertStorageValueStatement.run(ACCESS_PASSWORD_KEY, inputPassword)
+  upsertStorageValueStatement.run(ACCESS_PASSWORD_ENABLED_KEY, 'true')
+
+  setAccessSessionCookie(res, inputPassword)
+  res.json({
+    enabled: true,
+    authenticated: true,
+    passwordSet: true,
+  })
 })
 
 app.post('/api/auth/login', (req, res) => {
   const { enabled, password } = readAccessAuthConfig()
 
   res.setHeader('Cache-Control', 'no-store')
+
+  // login/logout 注册在通用守卫之前(它们必须始终可达才能起到登录/登出的作用),
+  // 所以"未设密时全部拒绝"这条规则要在这里单独补一次,通用守卫管不到它们。
+  if (!password) {
+    sendPasswordSetupRequired(res)
+    return
+  }
 
   if (!enabled) {
     clearAccessSessionCookie(res)
@@ -622,10 +694,16 @@ app.post('/api/auth/login', (req, res) => {
 })
 
 app.post('/api/auth/logout', (_req, res) => {
-  clearAccessSessionCookie(res)
   res.setHeader('Cache-Control', 'no-store')
 
-  const { enabled } = readAccessAuthConfig()
+  const { enabled, password } = readAccessAuthConfig()
+
+  if (!password) {
+    sendPasswordSetupRequired(res)
+    return
+  }
+
+  clearAccessSessionCookie(res)
   res.json({
     enabled,
     authenticated: !enabled,
@@ -638,12 +716,21 @@ app.use((req, res, next) => {
     return
   }
 
-  if (
-    req.path === '/api/health' ||
-    req.path === '/api/auth/status' ||
-    req.path === '/api/auth/login' ||
-    req.path === '/api/auth/logout'
-  ) {
+  // /api/health、/api/auth/status、/api/auth/setup 永远可达:
+  // 不论是否已设密,前端都得能查状态、走设密流程;setup 路由自己会在已设密时拒绝(409)。
+  if (PASSWORD_SETUP_EXEMPT_PATHS.has(req.path)) {
+    next()
+    return
+  }
+
+  const { password } = readAccessAuthConfig()
+
+  if (!password) {
+    sendPasswordSetupRequired(res)
+    return
+  }
+
+  if (req.path === '/api/auth/login' || req.path === '/api/auth/logout') {
     next()
     return
   }
@@ -789,6 +876,13 @@ server.on('upgrade', (request, socket, head) => {
       return
     }
 
+    const { password } = readAccessAuthConfig()
+
+    if (!password) {
+      writeUpgradePasswordSetupRequired(socket)
+      return
+    }
+
     const authStatus = getUpgradeAccessAuthStatus(request)
 
     if (authStatus.enabled && !authStatus.authenticated) {
@@ -874,6 +968,9 @@ export {
   getProxyTarget as getProxyTargetForTesting,
   getRequestAccessAuthStatus as getRequestAccessAuthStatusForTesting,
   getWebSocketProxyTarget as getWebSocketProxyTargetForTesting,
+  PASSWORD_ALREADY_SET_CODE,
+  PASSWORD_SETUP_REQUIRED_CODE,
+  PASSWORD_TOO_SHORT_CODE,
   readSnapshot,
   replaceSnapshot,
   server,
