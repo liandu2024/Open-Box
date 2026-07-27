@@ -6,6 +6,7 @@ import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { fileURLToPath } from 'node:url'
 import { WebSocket, WebSocketServer } from 'ws'
+import { createStore } from './store/openbox-store.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const rootDir = path.resolve(__dirname, '..')
@@ -14,6 +15,9 @@ const dataDir = path.join(rootDir, 'data')
 const dbPath = process.env.ZASHBOARD_DB_PATH || path.join(dataDir, 'zashboard.sqlite')
 const host = process.env.HOST || '0.0.0.0'
 const port = Number(process.env.PORT || 2026)
+// Open-Box 只管理本机唯一的 sing-box,clash_api 固定监听 127.0.0.1:9095;
+// 环境变量覆盖仅用于测试(指向假上游),生产环境不应设置。
+const DEFAULT_CLASH_API_BASE = process.env.OPENBOX_CLASH_API_BASE || 'http://127.0.0.1:9095'
 const backgroundImageStorageKey = '__background_image__'
 const ACCESS_PASSWORD_ENABLED_KEY = 'config/access-password-enabled'
 const ACCESS_PASSWORD_KEY = 'config/access-password'
@@ -101,6 +105,13 @@ const deleteStorageValueStatement = db.prepare(`
   DELETE FROM app_storage
   WHERE key = ?
 `)
+
+// openbox-store 复用同一张 app_storage KV 表;controller 代理靠它拿本机 clash_api 的 secret。
+const store = createStore({
+  get: (key) => getStorageValueStatement.get(key)?.value ?? null,
+  set: (key, value) => upsertStorageValueStatement.run(key, value),
+  del: (key) => deleteStorageValueStatement.run(key),
+})
 
 const parseStoredBoolean = (value) => {
   if (typeof value !== 'string') {
@@ -327,8 +338,13 @@ const HOP_BY_HOP_HEADERS = new Set([
 const getProxyTarget = (req) => {
   const rawBase = req.header('x-zashboard-target-base')
 
+  // 缺省即本机:Open-Box 只管理唯一的本地 sing-box,secret 从 store 里取。
+  // header 仅作为本地调试的逃生舱,传了才以传入为准。
   if (!rawBase) {
-    throw new Error('Missing x-zashboard-target-base header')
+    return {
+      base: new URL(DEFAULT_CLASH_API_BASE),
+      secret: store.getClashSecret(),
+    }
   }
 
   const target = new URL(rawBase)
@@ -432,8 +448,12 @@ const proxyControllerRequest = async (req, res) => {
 const getWebSocketProxyTarget = (requestUrl) => {
   const targetBaseRaw = requestUrl.searchParams.get('targetBase')
 
+  // 同 getProxyTarget:缺省即本机 clash_api,query 仅作为本地调试逃生舱。
   if (!targetBaseRaw) {
-    throw new Error('Missing targetBase query parameter')
+    return {
+      base: new URL(DEFAULT_CLASH_API_BASE),
+      secret: store.getClashSecret(),
+    }
   }
 
   const targetBase = new URL(targetBaseRaw)
@@ -851,10 +871,13 @@ export {
   app,
   createAccessSessionToken as createAccessSessionTokenForTesting,
   db,
+  getProxyTarget as getProxyTargetForTesting,
   getRequestAccessAuthStatus as getRequestAccessAuthStatusForTesting,
+  getWebSocketProxyTarget as getWebSocketProxyTargetForTesting,
   readSnapshot,
   replaceSnapshot,
   server,
   shutdownServer,
   startServer,
+  store as storeForTesting,
 }
