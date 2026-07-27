@@ -49,6 +49,7 @@
         :chain="result.chain"
         :final-outbound="result.finalOutbound"
         :chain-error="result.chainError"
+        :match-error="result.matchError"
       />
       <p
         v-else-if="!loading"

@@ -69,6 +69,7 @@
 
 <script setup lang="ts">
 import { createSubscription, previewSubscription } from '@/api/openbox'
+import { routingPendingDeploy } from '@/store/routing'
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -118,6 +119,10 @@ const handleImport = async () => {
       url: url.value.trim(),
       name: name.value.trim() || t('wizardSubscriptionDefaultName'),
     })
+    // Importing nodes here changes what a deploy would ship, same as adding a subscription from
+    // SubscriptionsPage does (Important 2, P4b final review) — even though the wizard hasn't
+    // deployed yet at this point, this keeps the flag accurate for whenever it does.
+    routingPendingDeploy.value = true
     emit('next')
   } catch (error) {
     errorMessage.value = t('wizardSubscriptionImportFailed', {

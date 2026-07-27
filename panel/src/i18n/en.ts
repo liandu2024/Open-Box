@@ -382,6 +382,7 @@ const en = {
     "Based on where you are, here's what we suggest. You can use it as-is and change it later in settings.",
   wizardStepConfirmLoadFailed: "Couldn't load the recommendation. Try again.",
   wizardStepConfirmSaveFailed: "Couldn't save this. Try again.",
+  wizardStepConfirmRetry: 'Try again',
   wizardChangeRegion: 'Change region',
   wizardAccept: 'Sounds good, continue',
   wizardConfirmDirectSummary: '{region} sites connect directly — no detour.',
@@ -413,7 +414,7 @@ const en = {
   wizardDeployConflict: 'Stop a conflicting service first',
   wizardDeployValidateFailed: "Some nodes didn't pass validation: {tags}",
   wizardDeployFallback:
-    "The core couldn't start, so it fell back to a direct connection. You can retry later in settings.",
+    "The core couldn't start, so it fell back to a direct connection. You can retry from the banner on the Routing page, or from the Kernel page.",
 
   // --- Subscriptions & rename rules (P4b Task 5) ---
   subscriptions: 'Subscriptions',
@@ -580,11 +581,13 @@ const en = {
   penetrationNoRuleMatched: 'No rule matched — falls through to the default',
   penetrationRulePrivateIp: 'Private / local address',
   penetrationRuleMatched: 'Rule #{index} matched — {ruleset}',
+  penetrationRuleUnknown: "Couldn't determine the result",
   penetrationBlockedTitle: 'Blocked',
   penetrationPolicyTarget: 'Policy target',
   penetrationExitNode: 'Exit node',
   penetrationChainHop: 'Via',
   penetrationChainError: "Couldn't resolve further: {message}",
+  penetrationMatchError: "Couldn't check whether a rule matched: {message}",
 }
 
 export type LANG_MESSAGE = typeof en

@@ -15,14 +15,25 @@
 
       <ArrowRightIcon class="text-base-content/25 mx-auto h-4 w-4 shrink-0 rotate-90 sm:mx-1 sm:rotate-0" />
 
-      <div :class="nodeClasses(matched ? 'decided' : 'ghost')">
-        <SwatchIcon class="h-4 w-4 shrink-0 sm:h-5 sm:w-5" />
+      <div :class="nodeClasses(matched ? 'decided' : hasMatchError ? 'unknown' : 'ghost')">
+        <component
+          :is="hasMatchError ? QuestionMarkCircleIcon : SwatchIcon"
+          class="h-4 w-4 shrink-0 sm:h-5 sm:w-5"
+        />
         <span class="leading-tight">{{ ruleLabel }}</span>
       </div>
     </div>
 
     <div class="flex flex-col items-center gap-2 sm:pl-10">
       <ArrowDownIcon class="text-base-content/25 h-4 w-4 shrink-0" />
+
+      <div
+        v-if="hasMatchError"
+        class="alert alert-warning max-w-xs py-2 text-xs"
+      >
+        <QuestionMarkCircleIcon class="h-4 w-4 shrink-0" />
+        <span>{{ $t('penetrationMatchError', { message: matchError }) }}</span>
+      </div>
 
       <div
         v-if="isBlocked"
@@ -86,6 +97,7 @@ import {
   GlobeAltIcon,
   HomeIcon,
   NoSymbolIcon,
+  QuestionMarkCircleIcon,
   SwatchIcon,
 } from '@heroicons/vue/24/outline'
 import { computed } from 'vue'
@@ -102,14 +114,22 @@ const props = defineProps<{
   chain: string[]
   finalOutbound: string | null
   chainError?: string
+  // Set when the server couldn't actually run the check for some rule (missing sing-box binary,
+  // missing compiled .srs, or the check process crashing with no output) — see
+  // api/openbox.ts's OpenboxPenetrationResult.matchError. `matched` is null in this state too,
+  // but it means "couldn't determine", not "confirmed no rule matches" — must render distinctly
+  // from penetrationNoRuleMatched (P4b final review, Important 1).
+  matchError?: string
 }>()
 
 const { t } = useI18n()
 
 const isBlocked = computed(() => props.matched?.action === 'reject')
+const hasMatchError = computed(() => Boolean(props.matchError))
 
 const ruleLabel = computed(() => {
   const matched = props.matched
+  if (hasMatchError.value) return t('penetrationRuleUnknown')
   if (!matched) return t('penetrationNoRuleMatched')
   if (matched.rule.ip_is_private) return t('penetrationRulePrivateIp')
   return t('penetrationRuleMatched', { index: matched.index + 1, ruleset: matched.rule.rule_set || '—' })
@@ -137,6 +157,7 @@ const KIND_CLASSES = {
   direct: 'border-success/30 bg-success/10 text-success',
   proxy: 'border-info/30 bg-info/10 text-info',
   reject: 'border-error/30 bg-error/10 text-error',
+  unknown: 'border-warning/30 bg-warning/10 text-warning',
 } as const
 
 const nodeClasses = (kind: keyof typeof KIND_CLASSES, stacked = false) =>

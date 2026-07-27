@@ -116,6 +116,7 @@ import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import AddSubscriptionDialog from '@/components/subscription/AddSubscriptionDialog.vue'
 import SubscriptionCard from '@/components/subscription/SubscriptionCard.vue'
 import { usePaddingForViews } from '@/composables/paddingViews'
+import { routingPendingDeploy } from '@/store/routing'
 import { PlusIcon, RssIcon } from '@heroicons/vue/24/outline'
 import { onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -148,6 +149,10 @@ onMounted(loadSubscriptions)
 
 const showAddDialog = ref(false)
 const handleSaved = () => {
+  // A new subscription changes the node set that feeds policy groups into the deployed config
+  // (Important 2, P4b final review) — the routing/kernel banners need to know a redeploy is due,
+  // same as an edit made through RoutingPage itself.
+  routingPendingDeploy.value = true
   void loadSubscriptions()
 }
 
@@ -162,6 +167,9 @@ const handleRefresh = async (id: string) => {
 
   try {
     await refreshSubscription(id)
+    // Refreshing can add/remove/change nodes just like adding or deleting a subscription does —
+    // same undeployed-changes signal (Important 2, P4b final review).
+    routingPendingDeploy.value = true
     await loadSubscriptions()
   } catch (error) {
     refreshErrors[id] = t('subscriptionRefreshFailed', {
@@ -191,6 +199,9 @@ const confirmDelete = async () => {
 
   try {
     await deleteSubscription(pendingDelete.value.id)
+    // Deleting removes that subscription's nodes from what would be deployed — same
+    // undeployed-changes signal as add/refresh (Important 2, P4b final review).
+    routingPendingDeploy.value = true
     showDeleteDialog.value = false
     await loadSubscriptions()
   } catch (error) {

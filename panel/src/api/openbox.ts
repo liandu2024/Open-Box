@@ -403,6 +403,13 @@ export interface OpenboxPenetrationResult {
   // JSON) — `chain` still holds whatever was resolved before the failure (at least the starting
   // group name).
   chainError?: string
+  // Present only when the server couldn't actually run `sing-box rule-set match` for some rule
+  // along the way (missing binary, missing compiled .srs, or the process exiting abnormally with
+  // no output — server/api/penetration.mjs's matchRuleSet). When this is set, `matched` is
+  // deliberately left `null` and `finalOutbound` is `null` too — NOT a confident "nothing
+  // matched, falls through to the default" answer, just "couldn't check". Render this distinctly
+  // from a genuine no-match (P4b final review, Important 1).
+  matchError?: string
 }
 
 export const queryPenetration = async (target: string): Promise<OpenboxPenetrationResult> => {

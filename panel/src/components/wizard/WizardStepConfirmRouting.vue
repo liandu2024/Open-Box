@@ -13,6 +13,31 @@
       {{ $t('wizardLoading') }}
     </div>
 
+    <!-- fetchProfileDefaults failed: no defaults to show or accept, and the summary list below
+         reads straight from `defaults` — rendering it here would show a guess dressed up as a
+         recommendation. Offer a retry instead of a list + an Accept button that silently no-ops
+         (Minor 3, P4b final review). -->
+    <template v-else-if="!defaults">
+      <p class="text-error text-sm">
+        {{ errorMessage }}
+      </p>
+
+      <div class="flex items-center gap-2">
+        <button
+          class="btn btn-ghost btn-sm"
+          @click="$emit('back')"
+        >
+          {{ $t('wizardChangeRegion') }}
+        </button>
+        <button
+          class="btn btn-primary btn-sm flex-1"
+          @click="load"
+        >
+          {{ $t('wizardStepConfirmRetry') }}
+        </button>
+      </div>
+    </template>
+
     <template v-else>
       <ul class="flex flex-col gap-2 text-sm">
         <li class="bg-base-200/60 flex items-start gap-2 rounded-lg px-3 py-2">

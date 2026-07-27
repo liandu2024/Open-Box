@@ -378,6 +378,7 @@ const zh: LANG_MESSAGE = {
   wizardStepConfirmDescription: '\u6839\u636e\u4f60\u9009\u7684\u5730\u533a,\u6211\u4eec\u5efa\u8bae\u8fd9\u6837\u5206\u6d41\u3002\u53ef\u4ee5\u76f4\u63a5\u7528,\u4ee5\u540e\u4e5f\u80fd\u5728\u8bbe\u7f6e\u91cc\u6539\u3002',
   wizardStepConfirmLoadFailed: '\u6ca1\u52a0\u8f7d\u51fa\u63a8\u8350\u65b9\u6848,\u91cd\u8bd5\u4e00\u4e0b\u3002',
   wizardStepConfirmSaveFailed: '\u6ca1\u4fdd\u5b58\u6210\u529f,\u91cd\u8bd5\u4e00\u4e0b\u3002',
+  wizardStepConfirmRetry: '\u91cd\u8bd5',
   wizardChangeRegion: '\u6362\u4e2a\u5730\u533a',
   wizardAccept: '\u5c31\u8fd9\u6837,\u7ee7\u7eed',
   wizardConfirmDirectSummary: '{region}\u7f51\u7ad9\u76f4\u63a5\u8fde,\u4e0d\u7ed5\u8fdc\u8def',
@@ -405,7 +406,7 @@ const zh: LANG_MESSAGE = {
   wizardDeploySuccess: '\u5df2\u751f\u6548,\u6b63\u5728\u4f7f\u7528\u4f60\u7684\u8282\u70b9\u3002',
   wizardDeployConflict: '\u9700\u8981\u5148\u505c\u6389\u51b2\u7a81\u7684\u670d\u52a1',
   wizardDeployValidateFailed: '\u6709\u8282\u70b9\u6ca1\u901a\u8fc7\u6821\u9a8c:{tags}',
-  wizardDeployFallback: '\u5185\u6838\u6ca1\u80fd\u6b63\u5e38\u542f\u52a8,\u5df2\u81ea\u52a8\u5207\u56de\u76f4\u8fde,\u53ef\u4ee5\u7a0d\u540e\u5728\u8bbe\u7f6e\u91cc\u91cd\u8bd5\u3002',
+  wizardDeployFallback: '\u5185\u6838\u6ca1\u80fd\u6b63\u5e38\u542f\u52a8,\u5df2\u81ea\u52a8\u5207\u56de\u76f4\u8fde,\u53ef\u4ee5\u7a0d\u540e\u5728\u5206\u6d41\u9875\u9876\u90e8\u7684\u63d0\u793a\u6761\u6216\u5185\u6838\u9875\u91cd\u8bd5\u3002',
 
   // --- \u8ba2\u9605\u4e0e\u91cd\u547d\u540d\u89c4\u5219(P4b Task 5) ---
   subscriptions: '\u8ba2\u9605',
@@ -563,11 +564,13 @@ const zh: LANG_MESSAGE = {
   penetrationNoRuleMatched: '\u6ca1\u6709\u89c4\u5219\u547d\u4e2d\u2014\u2014\u843d\u5230\u9ed8\u8ba4\u7b56\u7565',
   penetrationRulePrivateIp: '\u79c1\u6709/\u672c\u5730\u5730\u5740',
   penetrationRuleMatched: '\u547d\u4e2d\u7b2c {index} \u6761\u89c4\u5219\u2014\u2014{ruleset}',
+  penetrationRuleUnknown: '\u65e0\u6cd5\u786e\u5b9a\u547d\u4e2d\u7ed3\u679c',
   penetrationBlockedTitle: '\u5df2\u62e6\u622a',
   penetrationPolicyTarget: '\u7b56\u7565\u76ee\u6807',
   penetrationExitNode: '\u6700\u7ec8\u51fa\u53e3',
   penetrationChainHop: '\u7ecf\u7531',
   penetrationChainError: '\u6ca1\u80fd\u7ee7\u7eed\u89e3\u6790:{message}',
+  penetrationMatchError: '\u6ca1\u80fd\u786e\u5b9a\u662f\u5426\u547d\u4e2d\u89c4\u5219:{message}',
 }
 
 export default zh
