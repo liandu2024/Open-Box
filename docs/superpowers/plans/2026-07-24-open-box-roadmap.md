@@ -37,7 +37,8 @@
 - [x] P3 完成并合并(系统集成:SystemContext、服务控制、冲突检测、校验归因、DNS 接管、防火墙、部署编排;146 测试 + 金标准 4/4)
 - [x] P4 拆分为 P4a(后端 API,计划已制定:`docs/superpowers/plans/2026-07-27-p4a-backend-api.md`)与 P4b(前端 UI)
 - [x] P4a 完成并合并(后端 API:瘦身 5154→860 行、存储契约、订阅/profile/部署/服务/穿透 API、代理固化、首次设密;273 测试 + 金标准 4/4;两轮安全终审修复)
-- [ ] P4b 及 P5–P7 计划待制定
+- [x] P4b 完成并合并(前端:去多后端、三语言三主题、强制设密+改密、首次引导向导、订阅/分流/内核/穿透 UI、品牌收尾;283 测试 + 金标准 4/4)
+- [ ] P5–P7 计划待制定
 - 产品决策(2026-07-27):穿透功能**保留并重写为 sing-box 版**(基于 `sing-box rule-set match` 本地 .srs 匹配);面板密码改为**首次访问强制设密**(不再由安装脚本预生成)
 
 ## 记录在案的延期项(来自 P1 评审)
@@ -99,3 +100,13 @@
 - `app_storage` 允许认证用户写入任意键(无白名单/长度限制),且这些键会回显给所有浏览器
 - `POST /rollback` 的部署态未在异常时更新
 - 生产部署注意:`server/` 以独立 pnpm workspace 包发布(`pnpm deploy --prod`),故 net-guard 未引入 `ipaddr.js`,用的是手写网段表
+
+## 记录在案的延期项(来自 P4b 终审)
+
+**P5/P6 处理:**
+- 向导门控标志(`config/wizard-dismissed` 等)存在浏览器 localStorage 并经 storage 同步推给后端:工厂重置后,之前用过的浏览器会**抑制新机的引导流程**。应改为以后端状态为准(独立 openbox 字段)
+- 设置页"后端"分区仍有 fork 遗留的 mihomo 控件(端口、更新核心、指向 metacubex/mihomo 的链接),内核未检测到时会显示为死按钮
+- `UI_RELEASES_API` 仍轮询上游仓库做自更新检查;install/uninstall/update 脚本与 Dockerfile 仍是 `ange-clashboard` 命名(P6 领域);`ZASHBOARD_DB_PATH`/`zashboard.sqlite` 后端命名
+- `panel/README.md` 残留:提到已删除的"规则缓存落盘 SQLite";穿透查询写了"按关键字"(实际不支持,target 校验会拒)
+
+**其他:** 服务端错误详情未本地化(中文句子 + 英文 server detail 混排);内核页在无 init.d 环境显示面板"已停止"(真机上正确,可考虑显示"未知")
