@@ -687,6 +687,59 @@ app.post('/api/auth/setup', (req, res) => {
   })
 })
 
+// P4a round2 复审 Important 2(连带损伤):C2 修复后 config/access-password 不再能经
+// PUT /api/storage 写入(受保护键),但此前服务端只有 setup(已设密则 409)/login/logout,
+// 没有任何改密端点——前端设置页却仍绑定这个 key、写入后照常提示"已保存",用户以为改了密码,
+// 实际上从未生效。这里补一个真正的改密端点(前端接线归 P4b,见 sdd 清单)。
+//
+// 和 setup/login/logout 一样注册在通用守卫中间件之前:未设密时这里要能给出专属的 409,
+// 而不是被守卫统一拦成 403 PASSWORD_SETUP_REQUIRED。
+app.post('/api/auth/change-password', (req, res) => {
+  const { password: currentStoredPassword } = readAccessAuthConfig()
+
+  res.setHeader('Cache-Control', 'no-store')
+
+  if (!currentStoredPassword) {
+    res.status(409).json({
+      error: PASSWORD_SETUP_REQUIRED_CODE,
+      message: 'Access password has not been configured yet',
+    })
+    return
+  }
+
+  const currentPassword = typeof req.body?.currentPassword === 'string' ? req.body.currentPassword : ''
+  const newPassword = typeof req.body?.newPassword === 'string' ? req.body.newPassword : ''
+
+  if (!safeTokenEquals(currentPassword, currentStoredPassword)) {
+    res.status(401).json({
+      code: ACCESS_PASSWORD_INVALID_CODE,
+      message: 'Current password is incorrect',
+    })
+    return
+  }
+
+  if (newPassword.length < MIN_ACCESS_PASSWORD_LENGTH) {
+    res.status(400).json({
+      error: PASSWORD_TOO_SHORT_CODE,
+      message: `New password must be at least ${MIN_ACCESS_PASSWORD_LENGTH} characters`,
+    })
+    return
+  }
+
+  upsertStorageValueStatement.run(ACCESS_PASSWORD_KEY, newPassword)
+
+  // 会话 token 是 HMAC(密码) 派生的(见 createAccessSessionToken):改密后旧 token 自动
+  // 失效,若不在这里重新签发,发起这次改密请求的当前会话本身也会瞬间掉线——必须立刻
+  // 签发一份绑定新密码的 cookie,把当前会话续上。
+  setAccessSessionCookie(res, newPassword)
+
+  res.json({
+    ok: true,
+    enabled: true,
+    authenticated: true,
+  })
+})
+
 app.post('/api/auth/login', (req, res) => {
   const { enabled, password } = readAccessAuthConfig()
 
@@ -863,14 +916,20 @@ registerPenetrationRoutes(app, { store, ctx: obCtx, paths: obPaths, fetchImpl: g
 // 未被自己 try/catch 的异常(同步抛出,或调用 next(err))原本会落到 Express 默认错误处理器,
 // 回一个带调用栈的 HTML 错误页——面板对路由器有 root 权限,堆栈不能泄露给客户端。
 // 非 /api 请求维持 Express 默认行为(交还 next(err)),不影响 SPA 静态资源服务。
-app.use((err, req, res, next) => {
-  if (!req.path.startsWith('/api/')) {
+//
+// P4a round2 复审:此前硬编码 500,把 body-parser 自己抛出的 400(JSON 格式错,
+// entity.parse.failed)、413(超大 body,entity.too.large)都吞成了 500——这两种错误对象
+// 本身带 err.status/err.statusCode,必须原样透传,不能覆盖成一律 500。
+// res.headersSent 判定同样必须保留:若响应头已经发出(极端情况下某个 handler 在异常前已
+// 开始流式写入),Express 要求错误中间件把 err 转交给下一个,自己不能再调用 res.status()。
+app.use('/api', (err, req, res, next) => {
+  if (res.headersSent) {
     next(err)
     return
   }
 
-  const message = err instanceof Error ? err.message : String(err)
-  res.status(500).json({ ok: false, message })
+  const status = Number(err && (err.status || err.statusCode)) || 500
+  res.status(status).json({ error: err && err.message ? String(err.message) : 'internal error' })
 })
 
 app.get('/sw.js', (_req, res) => {

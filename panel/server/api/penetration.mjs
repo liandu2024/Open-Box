@@ -1,54 +1,14 @@
-import net from 'node:net'
 import express from 'express'
 import { buildRoute } from '../engine/routing.mjs'
 import { groupNodesByRegion } from '../engine/groups.mjs'
+import { isPrivateOrLoopbackIp } from './net-guard.mjs'
 
 // Open-Box 只管理本机唯一的 sing-box,clash_api 固定监听 127.0.0.1:9095(见 engine/config.mjs)。
 const CLASH_API_BASE = 'http://127.0.0.1:9095'
 
-const ipv4ToInt = (ip) => ip.split('.').reduce((acc, part) => (acc << 8) + Number(part), 0) >>> 0
-
-// RFC1918 私有段 + 127.0.0.0/8 回环 + 169.254.0.0/16 链路本地。
-const IPV4_PRIVATE_RANGES = [
-  ['10.0.0.0', 8],
-  ['172.16.0.0', 12],
-  ['192.168.0.0', 16],
-  ['127.0.0.0', 8],
-  ['169.254.0.0', 16],
-]
-
-const ipv4InRange = (ipInt, base, bits) => {
-  const mask = bits === 0 ? 0 : (~0 << (32 - bits)) >>> 0
-  return (ipInt & mask) === (ipv4ToInt(base) & mask)
-}
-
-const isPrivateIPv4 = (ip) => {
-  const ipInt = ipv4ToInt(ip)
-  return IPV4_PRIVATE_RANGES.some(([base, bits]) => ipv4InRange(ipInt, base, bits))
-}
-
-const isPrivateIPv6 = (ip) => {
-  const lower = ip.toLowerCase()
-  if (lower === '::1') return true
-  const mapped = lower.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/)
-  if (mapped) return isPrivateIPv4(mapped[1])
-  const firstGroup = lower.split(':').find((g) => g.length > 0)
-  if (!firstGroup) return false
-  const n = parseInt(firstGroup, 16)
-  if (Number.isNaN(n)) return false
-  if ((n & 0xfe00) === 0xfc00) return true // fc00::/7 唯一本地地址
-  if ((n & 0xffc0) === 0xfe80) return true // fe80::/10 链路本地
-  return false
-}
-
-// target 若不是合法 IP(即为域名),ip_is_private 规则在未解析前不应命中——
-// 只有当用户直接输入一个私有/回环 IP 时才判定命中。
-export const isPrivateOrLoopbackIp = (target) => {
-  const version = net.isIP(String(target).trim())
-  if (version === 4) return isPrivateIPv4(target.trim())
-  if (version === 6) return isPrivateIPv6(target.trim())
-  return false
-}
+// 字面 IP 私有/回环/链路本地/CGNAT 判定抽到 net-guard.mjs,和 subscriptions.mjs 共用同一份
+// 范围表与 IPv4-mapped IPv6 归一化逻辑(P4a 复审 Important 1:两处判定曾经各自维护,
+// 逐渐产生偏差、留下绕过缺口)。
 
 // 核心回归点:`sing-box rule-set match` 命中与不命中退出码都是 0,
 // 命中判定只能看 stdout 是否含 "match rules." 开头的行,严禁用退出码判定。
@@ -105,7 +65,7 @@ const resolveChain = async ({ tag, fetchImpl, secret }) => {
 }
 
 export const registerPenetrationRoutes = (app, { store, ctx, paths, fetchImpl = globalThis.fetch } = {}) => {
-  const router = express.Router()
+  const router = express.Router({ caseSensitive: true })
   router.use(express.json({ limit: '1mb' }))
 
   router.post('/penetration', async (req, res) => {

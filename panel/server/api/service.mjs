@@ -3,7 +3,7 @@ import { serviceStatus, startService, stopService, restartService, enableService
 import { detectConflicts } from '../system/conflicts.mjs'
 
 export const registerServiceRoutes = (app, { ctx, paths } = {}) => {
-  const router = express.Router()
+  const router = express.Router({ caseSensitive: true })
   router.use(express.json({ limit: '1mb' }))
 
   // GET /api/openbox/service/status

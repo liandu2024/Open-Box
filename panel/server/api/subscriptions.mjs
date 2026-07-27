@@ -1,38 +1,19 @@
 import { randomUUID } from 'node:crypto'
+import dns from 'node:dns/promises'
 import express from 'express'
 import { parseSubscription } from '../engine/subscription.mjs'
 import { renameNodes, previewRename } from '../engine/rename.mjs'
 import { groupNodesByRegion } from '../engine/groups.mjs'
-import { isPrivateOrLoopbackIp } from './penetration.mjs'
+import { assertPublicUrl } from './net-guard.mjs'
 
 // 面板本身跑在网关上,订阅拉取又是"服务端发起、URL 客户端可控"的经典 SSRF 面——
-// 不加限制的话可以拿它当跳板探测回环/内网端口。只做"字面 IP"层面的拒绝(域名不解析,
-// 与 penetration.mjs 的 isPrivateOrLoopbackIp 同一套风险模型),协议只允许 http/https。
+// 不加限制的话可以拿它当跳板探测回环/内网端口。P4a 复审证明了仅做"字面 IP"层面拒绝远远
+// 不够(域名不解析就直接放行、IPv6 十六进制形式的 IPv4-mapped 地址漏判、redirect 不复检
+// 等四种绕过均有 PoC),所以这里改为:assertPublicUrl 真正解析 hostname(node:dns/promises
+// lookup + {all:true}),对每一个解析出的地址都判定;拉取时手动处理重定向,每一跳都重新校验。
 const SUBSCRIPTION_FETCH_TIMEOUT_MS = 15000
 const MAX_SUBSCRIPTION_RESPONSE_BYTES = 5 * 1024 * 1024
-
-const validateSubscriptionUrl = (urlString) => {
-  let parsed
-  try {
-    parsed = new URL(urlString)
-  } catch {
-    return 'invalid subscription url'
-  }
-
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    return 'only http and https subscription urls are supported'
-  }
-
-  // URL 的 hostname 对 IPv6 字面量会带方括号(如 "[::1]"),isPrivateOrLoopbackIp 内部用
-  // net.isIP 判定、不认方括号,这里先剥掉才能正确识别 IPv6 回环/内网地址。
-  const hostname = parsed.hostname.replace(/^\[|\]$/g, '')
-
-  if (isPrivateOrLoopbackIp(hostname)) {
-    return 'subscription url must not target a private, loopback, or link-local address'
-  }
-
-  return null
-}
+const MAX_SUBSCRIPTION_REDIRECTS = 3
 
 // 响应体大小上限:优先走真实 fetch 的可读流累计计数(边读边截断,避免恶意/超大响应把
 // 进程内存吃满);测试注入的 fetchImpl 通常只给一个 text() 方法、没有可读流,退化为读完
@@ -94,33 +75,68 @@ export const dedupeNodeTags = (nodes) => {
 
 const errorMessage = (err) => (err instanceof Error ? err.message : String(err))
 
-const fetchSubscriptionText = async (url, fetchImpl) => {
-  const validationError = validateSubscriptionUrl(url)
-  if (validationError) {
-    throw new Error(validationError)
-  }
+// 拉取订阅内容,手动处理重定向:默认 fetch 会自动跟随 3xx,首跳校验通过后就对
+// Location 完全不设防——P4a 复审的 PoC 正是靠一个"看起来公网"的地址 302 到回环端口
+// 拿到命中。这里用 redirect:'manual' 拿到原始 3xx 响应,每一跳(含首跳)都先跑
+// assertPublicUrl,再决定要不要继续跟——最多跟 3 跳,超出或缺 Location 头一律拒绝。
+const fetchSubscriptionResponse = async (initialUrl, fetchImpl, lookup) => {
+  let currentUrl = initialUrl
+  let redirectsFollowed = 0
 
-  let res
-  try {
-    res = await fetchImpl(url, { signal: AbortSignal.timeout(SUBSCRIPTION_FETCH_TIMEOUT_MS) })
-  } catch (err) {
-    throw new Error(`failed to fetch subscription: ${errorMessage(err)}`)
+  for (;;) {
+    await assertPublicUrl(currentUrl, { lookup })
+
+    let res
+    try {
+      res = await fetchImpl(currentUrl, {
+        redirect: 'manual',
+        signal: AbortSignal.timeout(SUBSCRIPTION_FETCH_TIMEOUT_MS),
+      })
+    } catch (err) {
+      throw new Error(`failed to fetch subscription: ${errorMessage(err)}`)
+    }
+
+    if (!res) {
+      throw new Error('failed to fetch subscription: no response')
+    }
+
+    if (res.status >= 300 && res.status < 400) {
+      if (redirectsFollowed >= MAX_SUBSCRIPTION_REDIRECTS) {
+        throw new Error('too many redirects while fetching subscription')
+      }
+
+      const location = typeof res.headers?.get === 'function' ? res.headers.get('location') : null
+      if (!location) {
+        throw new Error('redirect response missing Location header')
+      }
+
+      currentUrl = new URL(location, currentUrl).toString()
+      redirectsFollowed += 1
+      continue
+    }
+
+    if (!res.ok) {
+      throw new Error(`failed to fetch subscription: HTTP ${res.status}`)
+    }
+
+    return res
   }
-  if (!res || !res.ok) {
-    throw new Error(`failed to fetch subscription: HTTP ${res ? res.status : 'unknown'}`)
-  }
+}
+
+const fetchSubscriptionText = async (url, fetchImpl, lookup) => {
+  const res = await fetchSubscriptionResponse(url, fetchImpl, lookup)
   return readSubscriptionBody(res, MAX_SUBSCRIPTION_RESPONSE_BYTES)
 }
 
 // preview/create/refresh 共用的解析管道:优先用直传的 content,否则用 fetchImpl 拉取 url;
 // 再走 parseSubscription → renameNodes/previewRename。拉取或校验失败在这里抛出,
 // 调用方在 store 写入之前捕获,天然保证"失败不破坏已存状态"。
-const resolveNodes = async ({ url, content }, fetchImpl, renameOptions) => {
+const resolveNodes = async ({ url, content }, fetchImpl, renameOptions, lookup) => {
   let text
   if (typeof content === 'string' && content.trim()) {
     text = content
   } else if (typeof url === 'string' && url.trim()) {
-    text = await fetchSubscriptionText(url, fetchImpl)
+    text = await fetchSubscriptionText(url, fetchImpl, lookup)
   } else {
     throw new Error('url or content is required')
   }
@@ -155,15 +171,15 @@ const rebuildNodePool = (existingNodes, subscriptionsInOrder, subscriptionId, ne
 
 const nodeSummary = (n) => ({ tag: n.tag, originalTag: n.originalTag, type: n.type, server: n.server })
 
-export const registerSubscriptionRoutes = (app, { store, fetchImpl = globalThis.fetch } = {}) => {
-  const router = express.Router()
+export const registerSubscriptionRoutes = (app, { store, fetchImpl = globalThis.fetch, lookup = dns.lookup } = {}) => {
+  const router = express.Router({ caseSensitive: true })
   router.use(express.json({ limit: '10mb' }))
 
   // 预览:纯解析/改名/分组,不落库。
   router.post('/preview', async (req, res) => {
     try {
       const { url, content, renameOptions } = req.body || {}
-      const resolved = await resolveNodes({ url, content }, fetchImpl, renameOptions)
+      const resolved = await resolveNodes({ url, content }, fetchImpl, renameOptions, lookup)
       const { renamed, skipped, format, preview } = resolved
       const { groups } = groupNodesByRegion(renamed, resolved.renameOptions)
       res.json({
@@ -185,7 +201,7 @@ export const registerSubscriptionRoutes = (app, { store, fetchImpl = globalThis.
       if (typeof url !== 'string' || !url.trim()) throw new Error('url is required')
       if (typeof name !== 'string' || !name.trim()) throw new Error('name is required')
 
-      const resolved = await resolveNodes({ url }, fetchImpl, renameOptions)
+      const resolved = await resolveNodes({ url }, fetchImpl, renameOptions, lookup)
       const { renamed, skipped, format } = resolved
 
       const id = randomUUID()
@@ -238,7 +254,7 @@ export const registerSubscriptionRoutes = (app, { store, fetchImpl = globalThis.
     try {
       const existing = subs[idx]
       const requestedRenameOptions = (req.body && req.body.renameOptions) || existing.renameOptions || {}
-      const resolved = await resolveNodes({ url: existing.url }, fetchImpl, requestedRenameOptions)
+      const resolved = await resolveNodes({ url: existing.url }, fetchImpl, requestedRenameOptions, lookup)
       const { renamed, skipped, format } = resolved
       const renameOptions = resolved.renameOptions || {}
 

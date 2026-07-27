@@ -104,6 +104,60 @@ test('POST /api/openbox/deploy 成功路径 → 200,持久化部署态,内核开
   }
 })
 
+// -------- P4a round2 复审 Minor 5:enable/disable 抛错不应覆盖已落盘的部署结果 --------
+// enableService/disableService 只是"开机自启"标志位的同步动作,发生在 setDeployState
+// 已经落盘之后。此前它们和主逻辑共用同一个 try/catch,一旦抛错,外层 catch 会把刚刚
+// 写入的成功状态(stage:'running')整个改写成 'error'——但配置其实已经部署成功、
+// 内核也已经在跑,只是"开机自启"这一件小事没标上,不该覆盖已经落盘的成功结果。
+test('POST /api/openbox/deploy 部署成功但 enableService 抛错 → 响应仍是 200/running,GET /deploy/state 也仍是 running(不被误标为 error)', async () => {
+  const ctx = okCtx()
+  const originalExec = ctx.exec.bind(ctx)
+  ctx.exec = async (cmd, args = []) => {
+    if (args[0] === 'enable') {
+      throw new Error('enable failed: procd communication error')
+    }
+    return originalExec(cmd, args)
+  }
+  const { baseUrl, store, close } = await startApp(ctx)
+  try {
+    const res = await fetch(`${baseUrl}/api/openbox/deploy`, { method: 'POST' })
+    assert.equal(res.status, 200)
+    const body = await res.json()
+    assert.equal(body.ok, true)
+    assert.equal(body.stage, 'running') // 没有被 enableService 的异常改写成 error
+
+    assert.equal(store.getDeployState().stage, 'running')
+
+    const stateRes = await fetch(`${baseUrl}/api/openbox/deploy/state`)
+    const stateBody = await stateRes.json()
+    assert.equal(stateBody.state.stage, 'running')
+  } finally {
+    await close()
+  }
+})
+
+test('POST /api/openbox/rollback 中 disableService 抛错 → 500 JSON(handler 级 try/catch,而不是未处理异常)', async () => {
+  const ctx = createMockContext({ defaultExec: { code: 0 } })
+  const originalExec = ctx.exec.bind(ctx)
+  ctx.exec = async (cmd, args = []) => {
+    if (args[0] === 'disable') {
+      throw new Error('disable failed: procd communication error')
+    }
+    return originalExec(cmd, args)
+  }
+  const { baseUrl, close } = await startApp(ctx)
+  try {
+    const res = await fetch(`${baseUrl}/api/openbox/rollback`, { method: 'POST' })
+    assert.equal(res.status, 500)
+    assert.match(res.headers.get('content-type') || '', /application\/json/)
+    const body = await res.json()
+    assert.equal(body.ok, false)
+    assert.match(body.message, /disable failed/)
+  } finally {
+    await close()
+  }
+})
+
 test('POST /api/openbox/deploy 冲突路径 → 409,未写任何文件,不 enable/disable', async () => {
   const ctx = createMockContext({
     files: { '/etc/init.d/openclash': '#!' },

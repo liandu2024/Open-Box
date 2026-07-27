@@ -97,7 +97,7 @@ const buildRegionDefaults = (regionParam) => {
 }
 
 export const registerProfileRoutes = (app, { store } = {}) => {
-  const router = express.Router()
+  const router = express.Router({ caseSensitive: true })
   router.use(express.json({ limit: '1mb' }))
 
   // 区域推荐默认——放在 GET / 前面注册,和 subscriptions.mjs 里 /preview 先于 / 的顺序一致,

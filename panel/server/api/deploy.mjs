@@ -31,7 +31,7 @@ const buildCurrentConfig = (store) => {
 }
 
 export const registerDeployRoutes = (app, { store, ctx, paths } = {}) => {
-  const router = express.Router()
+  const router = express.Router({ caseSensitive: true })
   router.use(express.json({ limit: '1mb' }))
 
   // 预览:仅组装并返回,不落盘、不触碰系统。
@@ -43,26 +43,18 @@ export const registerDeployRoutes = (app, { store, ctx, paths } = {}) => {
   // 部署:用当前 store 状态组装配置,交给 P3 的安全部署编排(冲突检测/校验归因/落盘/
   // DNS接管/防火墙/重启/失败回滚),把结果持久化后返回。
   router.post('/deploy', async (_req, res) => {
+    let result
+
     try {
       const { config, profile } = buildCurrentConfig(store)
-      const result = await deployConfig(ctx, paths, { config, profile })
-      const badTags = result.badTags || []
+      result = await deployConfig(ctx, paths, { config, profile })
 
       store.setDeployState({
         stage: result.stage,
         message: result.message || '',
         at: Date.now(),
-        badTags,
+        badTags: result.badTags || [],
       })
-
-      if (result.ok) {
-        await enableService(ctx, paths.initd.core)
-      } else if (ROLLED_BACK_STAGES.has(result.stage)) {
-        await disableService(ctx, paths.initd.core)
-      }
-
-      const status = result.ok ? 200 : (STATUS_BY_STAGE[result.stage] || 500)
-      res.status(status).json({ ok: result.ok, stage: result.stage, message: result.message, badTags })
     } catch (error) {
       // deployConfig 只在"落盘"之后的步骤自行 try/catch;冲突检测(detectConflicts)、
       // mkdirp、validateConfigObject 这些落盘之前的步骤抛出的异常会直接冒泡到这里。
@@ -71,7 +63,29 @@ export const registerDeployRoutes = (app, { store, ctx, paths } = {}) => {
       const message = error instanceof Error ? error.message : String(error)
       store.setDeployState({ stage: 'error', message, at: Date.now(), badTags: [] })
       res.status(500).json({ ok: false, stage: 'error', message })
+      return
     }
+
+    // enableService/disableService 只是"开机自启"标志位的同步动作,发生在部署结果已经
+    // setDeployState 落盘之后——它失败不代表部署本身失败(内核已经在跑、配置已经生效)。
+    // P4a round2 复审实证:这里原先在外层 try 里,enableService 抛错会被外层 catch 捕获、
+    // 把刚刚写入的成功状态(stage:'running')整个改写成 'error',而配置其实已经部署成功、
+    // 接管也已生效——纯属"开机自启没标上"这一件小事,不该覆盖已经落盘的成功结果。
+    try {
+      if (result.ok) {
+        await enableService(ctx, paths.initd.core)
+      } else if (ROLLED_BACK_STAGES.has(result.stage)) {
+        await disableService(ctx, paths.initd.core)
+      }
+    } catch (error) {
+      console.warn(
+        'deploy: enable/disable service (autostart flag) failed:',
+        error instanceof Error ? error.message : error,
+      )
+    }
+
+    const status = result.ok ? 200 : (STATUS_BY_STAGE[result.stage] || 500)
+    res.status(status).json({ ok: result.ok, stage: result.stage, message: result.message, badTags: result.badTags || [] })
   })
 
   // 最近一次部署结果(供面板轮询/展示)。
@@ -81,10 +95,18 @@ export const registerDeployRoutes = (app, { store, ctx, paths } = {}) => {
 
   // 手动回滚到直连:与部署内部触发的回滚一样,也要 disable 开机自启,
   // 否则重启设备后 procd 会重新拉起一个已被撤销接管的内核。
+  // rollbackToDirect 内部每一步都已经是"尽力而为"(各自 try/catch),实际上只有
+  // disableService 还可能抛错——handler 级 try/catch 兜底,避免一次开机自启命令失败
+  // 就让整个请求变成带调用栈的默认 HTML 错误页。
   router.post('/rollback', async (_req, res) => {
-    const result = await rollbackToDirect(ctx, paths)
-    await disableService(ctx, paths.initd.core)
-    res.json({ ok: result.ok, actions: result.actions })
+    try {
+      const result = await rollbackToDirect(ctx, paths)
+      await disableService(ctx, paths.initd.core)
+      res.json({ ok: result.ok, actions: result.actions })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      res.status(500).json({ ok: false, message })
+    }
   })
 
   app.use('/api/openbox', router)

@@ -119,3 +119,30 @@ test('SPA fallback 对非 /api 路径仍生效', async () => {
   const text = await res.text()
   assert.ok(text.includes('<'))
 })
+
+// -------- P4a round2 复审 Minor 4:子路由未设 caseSensitive --------
+// app 本身开了 case-sensitive routing(Critical 1 修复的一部分),但 express.Router() 默认
+// 大小写不敏感——mount 前缀本身按 app 的设置精确匹配(全大写会在守卫层面被拦住,这是
+// Critical 1 已经验证过的),可一旦匹配上 mount 前缀、进入子路由内部,子路由自己的路由
+// 匹配此前仍是大小写不敏感的,导致 /api/openbox/deploy/STATE 这类变体在"已认证"状态下
+// 仍会命中真实 handler(只是没有构成认证绕过,因为守卫已经放行了这次请求)。
+test('已认证下:GET /api/openbox/deploy/STATE(大写路径段)应为 404,而不是命中 /deploy/state handler', async () => {
+  const res = await fetch(`${baseUrl}/api/openbox/deploy/STATE`, { headers: { cookie: authCookie } })
+  assert.equal(res.status, 404)
+})
+
+test('已认证下:GET /api/openbox/service/STATUS(大写路径段)应为 404,而不是命中 /service/status handler', async () => {
+  const res = await fetch(`${baseUrl}/api/openbox/service/STATUS`, { headers: { cookie: authCookie } })
+  assert.equal(res.status, 404)
+})
+
+test('已认证下:POST /api/openbox/subscriptions/PREVIEW(大写路径段)应为 404,而不是命中 /preview handler', async () => {
+  // 注意用 POST(该路由实际注册的方法):若误用 GET,不管 caseSensitive 与否都会因为
+  // "方法不存在"而 404,测不出案例真正要验证的东西。
+  const res = await fetch(`${baseUrl}/api/openbox/subscriptions/PREVIEW`, {
+    method: 'POST',
+    headers: { cookie: authCookie, 'content-type': 'application/json' },
+    body: JSON.stringify({}),
+  })
+  assert.equal(res.status, 404)
+})

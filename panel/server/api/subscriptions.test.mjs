@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import net from 'node:net'
 import test from 'node:test'
 import express from 'express'
 import { registerSubscriptionRoutes, dedupeNodeTags } from './subscriptions.mjs'
@@ -13,12 +14,25 @@ const memStore = () => {
   })
 }
 
+// 测试环境不能依赖真实 DNS:沙箱/CI 网络里常见"任意域名都被解析成某个地址"的透明代理/
+// 合成 resolver(实测过——不存在的域名被解析到 198.18.0.0/15 基准测试网段),真连外网也
+// 慢且不确定。这里注入一个假 lookup:字面 IP 原样透传(SSRF 负向用例靠它验证回环/内网
+// 地址仍被拒绝),域名一律解析成一个真正的公网地址(8.8.8.8)。
+const fakePublicLookup = async (hostname) => {
+  const trimmed = String(hostname).replace(/^\[|\]$/g, '').trim()
+  const version = net.isIP(trimmed)
+  if (version) {
+    return [{ address: trimmed, family: version }]
+  }
+  return [{ address: '8.8.8.8', family: 4 }]
+}
+
 // 起一个绑定临时端口的最小 express app,注册待测路由,返回 baseUrl 供 fetch 打真实 HTTP 请求;
 // close() 必须在 finally 里调用,防止测试遗留监听中的 server。
-const startApp = async (fetchImpl) => {
+const startApp = async (fetchImpl, lookup = fakePublicLookup) => {
   const store = memStore()
   const app = express()
-  registerSubscriptionRoutes(app, { store, fetchImpl })
+  registerSubscriptionRoutes(app, { store, fetchImpl, lookup })
   const server = app.listen(0)
   await new Promise((resolve, reject) => {
     server.once('listening', resolve)
@@ -401,6 +415,166 @@ test('refresh 成功后只替换该订阅节点,其它订阅节点不受影响',
     const bNode = nodes.find((n) => n.subscriptionId !== createA.id)
     assert.equal(aNodes.length, 2) // 该订阅节点已替换为新的两个
     assert.equal(bNode.tag, '日本-01') // 另一条订阅的节点未受影响
+  } finally {
+    await close()
+  }
+})
+
+// -------- P4a round2 复审 Important 1:SSRF 防护的四种已证明绕过 --------
+// 复审给出了针对旧实现的四条可复现 PoC:主机名不解析(只查字面 IP)、IPv6 十六进制形式的
+// IPv4-mapped 地址漏判、缺失网段(0.0.0.0/::/CGNAT)、重定向不复检。下面每条对应一个用例,
+// 全部断言 400 + fetchImpl 从未真正被调用到"危险目的地"。
+
+test('round2 绕过 1/4:主机名解析后指向回环(localhost → 127.0.0.1)→ 400,且从未真正拉取', async () => {
+  let called = false
+  const fetchImpl = async () => { called = true; return { ok: true, status: 200, text: async () => HK_LINE } }
+  // 模拟真实世界里 "localhost" 会被解析成回环地址(不同平台可能给 ::1 和/或 127.0.0.1)——
+  // 旧实现只看字面量、从不解析,这条 PoC 就是靠这一点直接放行的。
+  const lookup = async (hostname) => {
+    assert.equal(hostname, 'localhost') // 断言：确实是先剥括号再传给 lookup 的裸主机名
+    return [{ address: '127.0.0.1', family: 4 }]
+  }
+  const { baseUrl, close } = await startApp(fetchImpl, lookup)
+  try {
+    const res = await postJson(baseUrl, '/api/openbox/subscriptions/preview', { url: 'http://localhost:9999/sub' })
+    assert.equal(res.status, 400)
+    const body = await res.json()
+    assert.ok(body.error)
+    assert.equal(called, false)
+  } finally {
+    await close()
+  }
+})
+
+test('round2 绕过 2/4:IPv6 十六进制形式的 IPv4-mapped 地址(::ffff:7f00:1 即 127.0.0.1)→ 400', async () => {
+  let called = false
+  const fetchImpl = async () => { called = true; return { ok: true, status: 200, text: async () => HK_LINE } }
+  const { baseUrl, close } = await startApp(fetchImpl) // 默认 fakePublicLookup 对字面 IP 原样透传
+  try {
+    const res = await postJson(baseUrl, '/api/openbox/subscriptions/preview', { url: 'http://[::ffff:7f00:1]:9999/sub' })
+    assert.equal(res.status, 400)
+    const body = await res.json()
+    assert.ok(body.error)
+    assert.equal(called, false)
+  } finally {
+    await close()
+  }
+})
+
+test('round2 绕过 3/4:此前遗漏的网段(0.0.0.0、::、100.64.0.0/10 CGNAT)全部 → 400', async () => {
+  const targets = ['0.0.0.0', '[::]', '100.64.0.1', '100.100.100.100']
+  for (const host of targets) {
+    let called = false
+    const fetchImpl = async () => { called = true; return { ok: true, status: 200, text: async () => HK_LINE } }
+    const { baseUrl, close } = await startApp(fetchImpl)
+    try {
+      const res = await postJson(baseUrl, '/api/openbox/subscriptions/preview', { url: `http://${host}:9999/sub` })
+      assert.equal(res.status, 400, `host=${host} 应被拒绝`)
+      assert.equal(called, false, `host=${host} 不应真正拉取`)
+    } finally {
+      await close()
+    }
+  }
+})
+
+test('round2 绕过 4/4:302 重定向指向回环地址 → 400,从未真正打到重定向目标(zero hits)', async () => {
+  let redirectTargetHit = false
+  // 这个 mock 刻意模拟真实 fetch 的规范行为:只有显式传 redirect:'manual' 时才把原始
+  // 3xx + Location 头原样交回;否则(旧实现没传这个选项,默认值是 'follow')就悄悄跟到
+  // Location、把最终响应直接返回给调用方——回环目标在这种默认行为下从未被重新校验过,
+  // 这正是复审 PoC 利用的点。用这种"条件化"mock 而不是无脑返回 302,才能让这条用例在
+  // 旧代码上真实复现漏洞(得到 200),在新代码上验证修复(得到 400 + zero hits)。
+  const fetchImpl = async (url, options) => {
+    if (url === 'https://public.example.com/sub') {
+      if (options && options.redirect === 'manual') {
+        return {
+          ok: false,
+          status: 302,
+          headers: { get: (name) => (name.toLowerCase() === 'location' ? 'http://127.0.0.1:9095/evil' : null) },
+        }
+      }
+      redirectTargetHit = true
+      return { ok: true, status: 200, text: async () => HK_LINE }
+    }
+    redirectTargetHit = true
+    return { ok: true, status: 200, text: async () => HK_LINE }
+  }
+  const { baseUrl, close } = await startApp(fetchImpl)
+  try {
+    const res = await postJson(baseUrl, '/api/openbox/subscriptions/preview', { url: 'https://public.example.com/sub' })
+    assert.equal(res.status, 400)
+    const body = await res.json()
+    assert.ok(body.error)
+    assert.equal(redirectTargetHit, false) // 从未真正打到重定向目标
+  } finally {
+    await close()
+  }
+})
+
+test('round2:合法的 302 重定向链(公网 → 公网)仍然放行', async () => {
+  let hops = 0
+  const fetchImpl = async (url) => {
+    hops += 1
+    if (url === 'https://public-a.example.com/sub') {
+      return {
+        ok: false,
+        status: 302,
+        headers: { get: (name) => (name.toLowerCase() === 'location' ? 'https://public-b.example.com/sub' : null) },
+      }
+    }
+    return { ok: true, status: 200, text: async () => HK_LINE }
+  }
+  const { baseUrl, close } = await startApp(fetchImpl)
+  try {
+    const res = await postJson(baseUrl, '/api/openbox/subscriptions/preview', { url: 'https://public-a.example.com/sub' })
+    assert.equal(res.status, 200)
+    const body = await res.json()
+    assert.equal(body.nodes.length, 1)
+    assert.equal(hops, 2) // 首跳 + 跟随一次重定向
+  } finally {
+    await close()
+  }
+})
+
+test('round2:重定向跳数超过上限(4 跳全部合法目标)→ 400', async () => {
+  const fetchImpl = async (url) => {
+    const match = url.match(/^https:\/\/hop-(\d+)\.example\.com\/sub$/)
+    const n = match ? Number(match[1]) : 0
+    if (n < 5) {
+      return {
+        ok: false,
+        status: 302,
+        headers: { get: (name) => (name.toLowerCase() === 'location' ? `https://hop-${n + 1}.example.com/sub` : null) },
+      }
+    }
+    return { ok: true, status: 200, text: async () => HK_LINE }
+  }
+  const { baseUrl, close } = await startApp(fetchImpl)
+  try {
+    const res = await postJson(baseUrl, '/api/openbox/subscriptions/preview', { url: 'https://hop-0.example.com/sub' })
+    assert.equal(res.status, 400)
+    const body = await res.json()
+    assert.match(body.error, /too many redirects/)
+  } finally {
+    await close()
+  }
+})
+
+test('round2:域名解析失败(NXDOMAIN 等) → 400,且从未真正拉取', async () => {
+  let called = false
+  const fetchImpl = async () => { called = true; return { ok: true, status: 200, text: async () => HK_LINE } }
+  const lookup = async () => {
+    const err = new Error('getaddrinfo ENOTFOUND nx.invalid')
+    err.code = 'ENOTFOUND'
+    throw err
+  }
+  const { baseUrl, close } = await startApp(fetchImpl, lookup)
+  try {
+    const res = await postJson(baseUrl, '/api/openbox/subscriptions/preview', { url: 'https://nx.invalid/sub' })
+    assert.equal(res.status, 400)
+    const body = await res.json()
+    assert.ok(body.error)
+    assert.equal(called, false)
   } finally {
     await close()
   }
