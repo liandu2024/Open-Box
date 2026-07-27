@@ -89,9 +89,7 @@
   "packageManager": "pnpm@10.15.0",
   "pnpm": {
     "onlyBuiltDependencies": [
-      "cpu-features",
-      "esbuild",
-      "ssh2"
+      "esbuild"
     ]
   }
 }
