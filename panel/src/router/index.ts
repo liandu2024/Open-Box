@@ -8,6 +8,7 @@ import {
   serverPasswordSet,
 } from '@/store/auth'
 import { language } from '@/store/settings'
+import { hasAnySubscription, wizardDismissed } from '@/store/wizard'
 import ConnectionsPage from '@/views/ConnectionsPage.vue'
 import HomePage from '@/views/HomePage.vue'
 import LoginPage from '@/views/LoginPage.vue'
@@ -17,6 +18,7 @@ import ProxiesPage from '@/views/ProxiesPage.vue'
 import RulesPage from '@/views/RulesPage.vue'
 import SettingsPage from '@/views/SettingsPage.vue'
 import SetupPasswordPage from '@/views/SetupPasswordPage.vue'
+import WizardPage from '@/views/WizardPage.vue'
 import { useTitle } from '@vueuse/core'
 import { watch } from 'vue'
 import { createRouter, createWebHashHistory } from 'vue-router'
@@ -84,6 +86,11 @@ const router = createRouter({
       path: '/setup',
       name: ROUTE_NAME.setup,
       component: SetupPasswordPage,
+    },
+    {
+      path: '/wizard',
+      name: ROUTE_NAME.wizard,
+      component: WizardPage,
     },
     {
       path: '/:catchAll(.*)',
@@ -154,10 +161,34 @@ router.beforeEach((to, from) => {
       name: getLastRouteName(),
     }
   }
+
+  // First-run onboarding: a password alone doesn't mean the box is actually usable — with no
+  // subscription there's nothing to proxy through yet. Force the wizard until the user either
+  // finishes it or explicitly skips (wizardDismissed) — never once either is true, so a fully
+  // set-up user (or one who chose to configure things manually later) is never trapped here.
+  if (
+    serverAuthInitialized.value &&
+    serverPasswordSet.value &&
+    (!serverAccessPasswordEnabled.value || serverAuthenticated.value) &&
+    !wizardDismissed.value &&
+    !hasAnySubscription.value &&
+    to.name !== ROUTE_NAME.wizard &&
+    to.name !== ROUTE_NAME.setup &&
+    to.name !== ROUTE_NAME.login
+  ) {
+    return {
+      name: ROUTE_NAME.wizard,
+    }
+  }
 })
 
 router.afterEach((to) => {
-  if (typeof to.name === 'string' && to.name !== ROUTE_NAME.login && to.name !== ROUTE_NAME.setup) {
+  if (
+    typeof to.name === 'string' &&
+    to.name !== ROUTE_NAME.login &&
+    to.name !== ROUTE_NAME.setup &&
+    to.name !== ROUTE_NAME.wizard
+  ) {
     window.localStorage.setItem(LAST_ROUTE_NAME_KEY, to.name)
   }
 

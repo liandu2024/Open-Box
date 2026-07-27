@@ -4,6 +4,7 @@ import './assets/main.css'
 import './assets/theme.css'
 import { initializePersistentStorage } from './helper/persistentStorage'
 import { initializeServerAuthState } from './store/auth'
+import { initializeWizardGateState } from './store/wizard'
 
 const cleanupLegacyServiceWorkers = async () => {
   if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
@@ -27,7 +28,9 @@ const cleanupLegacyServiceWorkers = async () => {
 const bootstrap = async () => {
   await cleanupLegacyServiceWorkers()
   await initializeServerAuthState()
-  await initializePersistentStorage()
+  // Both only read config/openbox state (no UI depends on them yet), so they can run
+  // concurrently rather than adding another serial round trip to bootstrap.
+  await Promise.all([initializePersistentStorage(), initializeWizardGateState()])
   await import('@/helper/dayjs')
 
   const [{ createApp }, { default: App }, { loadFonts }, { i18n }, router] = await Promise.all([
