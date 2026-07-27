@@ -40,17 +40,27 @@ export const buildConfig = ({ nodes, regionGroups, profile }) => {
       : profile.routing.fallback,
   }
 
-  const { route } = buildRoute(sanitizedRouting, profile.rulesetDir)
+  const dnsMode = (profile.dns && profile.dns.mode) || 'hijack'
+  const { route } = buildRoute(sanitizedRouting, profile.rulesetDir, { dnsMode })
   const dns = buildDns(profile)
 
   const tunAddress = profile.ipv6 ? [TUN_V4, TUN_V6] : [TUN_V4]
 
+  const tunInbound = {
+    type: 'tun', tag: 'tun-in', address: tunAddress,
+    auto_route: true, strict_route: true, stack: 'mixed',
+  }
+  if (profile.tun && profile.tun.autoRedirect) tunInbound.auto_redirect = true
+
+  const inbounds = [tunInbound]
+  if (dnsMode === 'dnsmasq') {
+    inbounds.push({ type: 'direct', tag: 'dns-in', listen: '127.0.0.1', listen_port: 7853 })
+  }
+
   const config = {
     log: { level: 'warn' },
     dns,
-    inbounds: [
-      { type: 'tun', tag: 'tun-in', address: tunAddress, auto_route: true, strict_route: true, stack: 'mixed' },
-    ],
+    inbounds,
     outbounds,
     route,
     experimental: {
