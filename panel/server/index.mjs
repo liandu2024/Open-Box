@@ -6,7 +6,14 @@ import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { fileURLToPath } from 'node:url'
 import { WebSocket, WebSocketServer } from 'ws'
+import { registerDeployRoutes } from './api/deploy.mjs'
+import { registerPenetrationRoutes } from './api/penetration.mjs'
+import { registerProfileRoutes } from './api/profile.mjs'
+import { registerServiceRoutes } from './api/service.mjs'
+import { registerSubscriptionRoutes } from './api/subscriptions.mjs'
 import { createStore } from './store/openbox-store.mjs'
+import { createRealContext } from './system/context-real.mjs'
+import { createPaths } from './system/paths.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const rootDir = path.resolve(__dirname, '..')
@@ -119,6 +126,11 @@ const store = createStore({
   set: (key, value) => upsertStorageValueStatement.run(key, value),
   del: (key) => deleteStorageValueStatement.run(key),
 })
+
+// Open-Box 系统层依赖:paths 描述 OpenWrt 上的固定安装布局,ctx 是真实的 exec/fs 抽象
+// (与测试用的 createMockContext 同接口),两者都是无状态的纯对象/闭包,可安全全局复用。
+const obPaths = createPaths(process.env.OPENBOX_ROOT || '/opt/open-box')
+const obCtx = createRealContext()
 
 const parseStoredBoolean = (value) => {
   if (typeof value !== 'string') {
@@ -811,6 +823,14 @@ app.delete('/api/background-image', (_req, res) => {
     ok: true,
   })
 })
+
+// Open-Box 业务路由:全部挂在守卫中间件之后、静态资源/SPA fallback 之前,
+// 因此天然继承"未设密一律 403、已设密未认证一律 401"的保护,无需各自重复鉴权。
+registerSubscriptionRoutes(app, { store, fetchImpl: globalThis.fetch })
+registerProfileRoutes(app, { store })
+registerDeployRoutes(app, { store, ctx: obCtx, paths: obPaths })
+registerServiceRoutes(app, { ctx: obCtx, paths: obPaths })
+registerPenetrationRoutes(app, { store, ctx: obCtx, paths: obPaths, fetchImpl: globalThis.fetch })
 
 app.get('/sw.js', (_req, res) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
