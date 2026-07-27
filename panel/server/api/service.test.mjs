@@ -149,6 +149,7 @@ test('GET /api/openbox/kernel/version → exec paths.singbox version, parse firs
     assert.equal(res.status, 200)
     const body = await res.json()
     assert.equal(body.version, 'sing-box 1.9.4')
+    assert.equal(body.ok, true)
     assert.ok(body.raw)
     assert.ok(cmds(ctx).includes(`${paths.singbox} version`))
   } finally {
@@ -165,8 +166,10 @@ test('GET /api/openbox/kernel/version handles missing singbox gracefully', async
     const res = await fetch(`${baseUrl}/api/openbox/kernel/version`)
     assert.equal(res.status, 200)
     const body = await res.json()
-    assert.ok(body.version !== undefined)
-    assert.ok(body.raw !== undefined)
+    // 读不到版本时必须明确说读不到,而不是给一个看起来正常的空版本
+    assert.equal(body.ok, false)
+    assert.equal(body.version, '')
+    assert.match(body.raw, /command not found/)
   } finally {
     await close()
   }

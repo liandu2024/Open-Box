@@ -51,10 +51,6 @@ const getCurrentProxyGroups = () => {
   return filterGroups([...proxyGroupList.value, GLOBAL])
 }
 
-const getCurrentGroupSet = () => {
-  return new Set(getCurrentProxyGroups())
-}
-
 const getChildGroupNames = (name: string, currentGroupSet: Set<string>) => {
   const proxyGroup = proxyMap.value[name]
 

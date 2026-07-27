@@ -335,6 +335,8 @@ export interface OpenboxServiceActionResult {
 export interface OpenboxKernelVersion {
   version: string
   raw: string
+  // false 表示没读到版本(sing-box 缺失或无法执行),此时 version 为空字符串。
+  ok: boolean
 }
 
 export interface OpenboxRollbackResult {

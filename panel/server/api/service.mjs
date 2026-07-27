@@ -43,8 +43,11 @@ export const registerServiceRoutes = (app, { ctx, paths } = {}) => {
   router.get('/kernel/version', async (_req, res) => {
     const { code, stdout, stderr } = await ctx.exec(paths.singbox, ['version'])
     const raw = `${stdout}${stderr}`
-    const version = stdout.split('\n')[0] || ''
-    res.json({ version, raw })
+    // 退出码非 0 表示没读到版本(二进制缺失/无法执行),此时 version 为空,
+    // ok:false 让调用方能区分「版本是空的」与「根本没读到」。
+    const ok = code === 0
+    const version = ok ? (stdout.split('\n')[0] || '').trim() : ''
+    res.json({ version, raw, ok })
   })
 
   app.use('/api/openbox', router)
