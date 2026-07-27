@@ -27,14 +27,7 @@
           class="text-base-content/60 truncate text-xs"
           :class="proxyGroup.icon && 'pr-10'"
         >
-          <button
-            type="button"
-            class="btn btn-sm bg-base-200 border-base-200 text-base-content/80 hover:text-base-content hover:bg-base-300 hover:border-base-300 h-5 min-h-5 cursor-pointer px-2 text-xs font-medium shadow-none"
-            @click.stop="openRulePenetrationDialog"
-          >
-            {{ t('domainPenetration') }}
-          </button>
-          <span class="ml-1">{{ proxyGroup.type }}</span>
+          <span>{{ proxyGroup.type }}</span>
         </div>
         <div class="flex items-center">
           <div class="flex flex-1 items-center gap-1 truncate">
@@ -104,13 +97,11 @@ import { disableProxiesPageScroll } from '@/composables/proxies'
 import { useRenderProxies } from '@/composables/renderProxies'
 import { isHiddenGroup } from '@/helper'
 import { SCROLLABLE_PARENT_CLASS } from '@/helper/utils'
-import { openProxyGroupRulePenetrationDialog } from '@/store/proxyGroupRulePenetration'
 import { hiddenGroupMap, proxyGroupLatencyTest, proxyMap } from '@/store/proxies'
 import { blurIntensity, groupProxiesByProvider, manageHiddenGroup } from '@/store/settings'
 import { EyeIcon, EyeSlashIcon } from '@heroicons/vue/24/outline'
 import { twMerge } from 'tailwind-merge'
 import { computed, nextTick, ref } from 'vue'
-import { useI18n } from 'vue-i18n'
 import LatencyTag from './LatencyTag.vue'
 import ProxiesByProvider from './ProxiesByProvider.vue'
 import ProxiesContent from './ProxiesContent.vue'
@@ -121,15 +112,10 @@ import ProxyPenetrationSection from './ProxyPenetrationSection.vue'
 const props = defineProps<{
   name: string
 }>()
-const { t } = useI18n()
 const proxyGroup = computed(() => proxyMap.value[props.name])
 const allProxies = computed(() => proxyGroup.value.all ?? [])
 const { renderProxies } = useRenderProxies(allProxies, props.name)
 const isLatencyTesting = ref(false)
-
-const openRulePenetrationDialog = () => {
-  openProxyGroupRulePenetrationDialog(props.name)
-}
 
 const modalMode = ref(false)
 const displayContent = ref(false)

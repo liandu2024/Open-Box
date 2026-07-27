@@ -13,15 +13,11 @@
           <span class="bg-secondary absolute h-2 w-2 animate-ping rounded-full"></span>
           <span class="bg-secondary h-2 w-2 rounded-full"></span>
         </span>
-        <a
-          href="https://github.com/liandu2024/AnGe-ClashBoard"
-          target="_blank"
-          class="flex flex-wrap items-center gap-x-3 gap-y-1 sm:flex-nowrap"
-        >
-          <span>AnGe-ClashBoard</span>
+        <span class="flex flex-wrap items-center gap-x-3 gap-y-1 sm:flex-nowrap">
+          <span>Open-Box</span>
           <span class="text-sm font-normal">{{ displayVersion }}</span>
           <span class="text-base-content/70 text-xs">{{ $t('basedOnZashboard') }}</span>
-        </a>
+        </span>
       </div>
       <button
         class="btn btn-sm absolute top-4 right-4"
@@ -179,47 +175,13 @@
         </div>
       </div>
       <div
-        v-if="isVisibleDefaultTheme"
+        v-if="isVisibleTheme"
         class="setting-item"
       >
         <div class="setting-item-label">
-          {{ $t('defaultTheme') }}
+          {{ $t('theme') }}
         </div>
-        <div class="join">
-          <ThemeSelector
-            class="w-38!"
-            v-model:value="defaultTheme"
-          />
-          <button
-            class="btn btn-sm join-item"
-            @click="customThemeModal = !customThemeModal"
-          >
-            <PlusIcon class="h-4 w-4" />
-          </button>
-        </div>
-        <CustomTheme v-model:value="customThemeModal" />
-      </div>
-      <div
-        v-if="autoTheme && isVisibleDarkTheme"
-        class="setting-item"
-      >
-        <div class="setting-item-label">
-          {{ $t('darkTheme') }}
-        </div>
-        <ThemeSelector v-model:value="darkTheme" />
-      </div>
-      <div
-        v-if="isVisibleAutoSwitchTheme"
-        class="setting-item"
-      >
-        <div class="setting-item-label">
-          {{ $t('autoSwitchTheme') }}
-        </div>
-        <input
-          type="checkbox"
-          v-model="autoTheme"
-          class="toggle"
-        />
+        <ThemeSelector />
       </div>
       <div
         v-if="isVisibleAutoUpgrade"
@@ -309,31 +271,21 @@ import { handlerUpgradeSuccess } from '@/helper'
 import { deleteBase64FromIndexedDB, LOCAL_IMAGE, saveBase64ToIndexedDB } from '@/helper/indexeddb'
 import { exportSettings, isPWA } from '@/helper/utils'
 import {
-  autoTheme,
   autoUpgrade,
   blurIntensity,
   customBackgroundURL,
-  darkTheme,
   dashboardTransparent,
-  defaultTheme,
   emoji,
   font,
   globalRadius,
 } from '@/store/settings'
-import {
-  AdjustmentsHorizontalIcon,
-  ArrowPathIcon,
-  ArrowUpTrayIcon,
-  PlusIcon,
-} from '@heroicons/vue/24/outline'
+import { AdjustmentsHorizontalIcon, ArrowPathIcon, ArrowUpTrayIcon } from '@heroicons/vue/24/outline'
 import { twMerge } from 'tailwind-merge'
 import { computed, ref, watch } from 'vue'
 import ImportSettings from '../common/ImportSettings.vue'
 import TextInput from '../common/TextInput.vue'
-import CustomTheme from './CustomTheme.vue'
 import ThemeSelector from './ThemeSelector.vue'
 
-const customThemeModal = ref(false)
 const k = GENERAL_ITEM_KEYS
 const isVisibleLanguage = useIsSettingVisible(k.language)
 const isVisibleFonts = useIsSettingVisible(k.fonts)
@@ -342,9 +294,7 @@ const isVisibleCustomBackgroundURL = useIsSettingVisible(k.customBackgroundURL)
 const isVisibleTransparent = useIsSettingVisible(k.transparent)
 const isVisibleBlurIntensity = useIsSettingVisible(k.blurIntensity)
 const isVisibleGlobalRadius = useIsSettingVisible(k.globalRadius)
-const isVisibleDefaultTheme = useIsSettingVisible(k.defaultTheme)
-const isVisibleDarkTheme = useIsSettingVisible(k.darkTheme)
-const isVisibleAutoSwitchTheme = useIsSettingVisible(k.autoSwitchTheme)
+const isVisibleTheme = useIsSettingVisible(k.theme)
 const isVisibleAutoUpgrade = useIsSettingVisible(k.autoUpgrade)
 const isVisibleUpgradeUI = useIsSettingVisible(k.upgradeUI)
 const isVisibleExportSettings = useIsSettingVisible(k.exportSettings)
@@ -364,9 +314,7 @@ const hasVisibleItems = computed(() => {
     (customBackgroundURL.value && displayBgProperty.value && isVisibleTransparent.value) ||
     (customBackgroundURL.value && displayBgProperty.value && isVisibleBlurIntensity.value) ||
     isVisibleGlobalRadius.value ||
-    isVisibleDefaultTheme.value ||
-    (autoTheme.value && isVisibleDarkTheme.value) ||
-    isVisibleAutoSwitchTheme.value ||
+    isVisibleTheme.value ||
     isVisibleAutoUpgrade.value ||
     isVisibleUpgradeUI.value ||
     isVisibleExportSettings.value ||

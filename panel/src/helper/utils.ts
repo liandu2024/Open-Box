@@ -1,13 +1,32 @@
-import { MIN_PROXY_CARD_WIDTH, PROXY_CARD_SIZE } from '@/constant'
+import { LANG, MIN_PROXY_CARD_WIDTH, PROXY_CARD_SIZE } from '@/constant'
 import { getManagedStorageSnapshot } from '@/helper/persistentStorage'
-import type { Backend } from '@/types'
 import { useMediaQuery } from '@vueuse/core'
 import dayjs from 'dayjs'
 import prettyBytes, { type Options } from 'pretty-bytes'
 
-const SENSITIVE_EXPORT_KEYS = ['setup/api-list', 'setup/active-uuid']
-
 export const isPreferredDark = useMediaQuery('(prefers-color-scheme: dark)')
+
+/**
+ * Maps a raw `navigator.language` value to one of the three supported UI
+ * languages, by prefix:
+ *   - zh-TW / zh-HK / zh-Hant* -> zh-tw
+ *   - any other zh*           -> zh
+ *   - everything else         -> en
+ */
+export const detectDefaultLanguage = (navigatorLanguage: string): LANG => {
+  const lang = (navigatorLanguage || '').toLowerCase()
+
+  if (!lang.startsWith('zh')) {
+    return LANG.EN_US
+  }
+
+  if (lang.includes('tw') || lang.includes('hk') || lang.includes('hant')) {
+    return LANG.ZH_TW
+  }
+
+  return LANG.ZH_CN
+}
+
 export const isMiddleScreen = useMediaQuery('(max-width: 768px)')
 export const isPWA = (() => {
   return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone
@@ -27,11 +46,7 @@ export const fromNow = (timestamp: string) => {
 export const exportSettings = (options: { desensitized?: boolean } = {}) => {
   const settings = getManagedStorageSnapshot()
 
-  if (options.desensitized) {
-    SENSITIVE_EXPORT_KEYS.forEach((key) => {
-      delete settings[key]
-    })
-  }
+  void options.desensitized
 
   const blob = new Blob([JSON.stringify(settings, null, 2)], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
@@ -40,20 +55,6 @@ export const exportSettings = (options: { desensitized?: boolean } = {}) => {
   a.download = 'ange-clashboard-settings'
   a.click()
   URL.revokeObjectURL(url)
-}
-
-export const getUrlFromBackend = (end: Omit<Backend, 'uuid'>) => {
-  return `${end.protocol}://${end.host}:${end.port}${end.secondaryPath || ''}`
-}
-
-export const shouldUseServerProxy = (end: Omit<Backend, 'uuid'> | Backend | null | undefined) => {
-  void end
-
-  return true
-}
-
-export const getLabelFromBackend = (end: Omit<Backend, 'uuid'>) => {
-  return end.label || getUrlFromBackend(end)
 }
 
 export const getMinCardWidth = (size: PROXY_CARD_SIZE) => {
@@ -95,28 +96,4 @@ export const findScrollableParent = (el: HTMLElement | null): HTMLElement | null
   }
 
   return parent ? findScrollableParent(parent) : null
-}
-
-export const getBackendFromUrl = () => {
-  const query = new URLSearchParams(
-    window.location.search || location.hash.match(/\?.*$/)?.[0]?.replace('?', ''),
-  )
-
-  if (query.has('hostname')) {
-    return {
-      protocol: query.get('http')
-        ? 'http'
-        : query.get('https')
-          ? 'https'
-          : window.location.protocol.replace(':', ''),
-      secondaryPath: query.get('secondaryPath') || '',
-      host: query.get('hostname') as string,
-      port: query.get('port') as string,
-      password: query.get('secret') || '',
-      label: query.get('label') || '',
-      disableUpgradeCore:
-        query.get('disableUpgradeCore') === '1' || query.get('disableUpgradeCore') === 'core',
-    }
-  }
-  return null
 }

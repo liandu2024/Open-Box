@@ -5,18 +5,23 @@ import {
   serverAccessPasswordEnabled,
   serverAuthenticated,
   serverAuthInitialized,
+  serverPasswordSet,
 } from '@/store/auth'
 import { language } from '@/store/settings'
-import { activeBackend } from '@/store/setup'
+import { hasAnySubscription, wizardDismissed } from '@/store/wizard'
 import ConnectionsPage from '@/views/ConnectionsPage.vue'
 import HomePage from '@/views/HomePage.vue'
+import KernelPage from '@/views/KernelPage.vue'
 import LoginPage from '@/views/LoginPage.vue'
 import LogsPage from '@/views/LogsPage.vue'
 import OverviewPage from '@/views/OverviewPage.vue'
 import ProxiesPage from '@/views/ProxiesPage.vue'
+import RoutingPage from '@/views/RoutingPage.vue'
 import RulesPage from '@/views/RulesPage.vue'
 import SettingsPage from '@/views/SettingsPage.vue'
-import SetupPage from '@/views/SetupPage.vue'
+import SetupPasswordPage from '@/views/SetupPasswordPage.vue'
+import SubscriptionsPage from '@/views/SubscriptionsPage.vue'
+import WizardPage from '@/views/WizardPage.vue'
 import { useTitle } from '@vueuse/core'
 import { watch } from 'vue'
 import { createRouter, createWebHashHistory } from 'vue-router'
@@ -60,6 +65,21 @@ const childrenRouter = [
     component: RulesPage,
   },
   {
+    path: 'subscriptions',
+    name: ROUTE_NAME.subscriptions,
+    component: SubscriptionsPage,
+  },
+  {
+    path: 'routing',
+    name: ROUTE_NAME.routing,
+    component: RoutingPage,
+  },
+  {
+    path: 'kernel',
+    name: ROUTE_NAME.kernel,
+    component: KernelPage,
+  },
+  {
     path: 'settings',
     name: ROUTE_NAME.settings,
     component: SettingsPage,
@@ -76,14 +96,19 @@ const router = createRouter({
       children: childrenRouter,
     },
     {
-      path: '/setup',
-      name: ROUTE_NAME.setup,
-      component: SetupPage,
-    },
-    {
       path: '/login',
       name: ROUTE_NAME.login,
       component: LoginPage,
+    },
+    {
+      path: '/setup',
+      name: ROUTE_NAME.setup,
+      component: SetupPasswordPage,
+    },
+    {
+      path: '/wizard',
+      name: ROUTE_NAME.wizard,
+      component: WizardPage,
     },
     {
       path: '/:catchAll(.*)',
@@ -92,12 +117,12 @@ const router = createRouter({
   ],
 })
 
-const title = useTitle('AnGe-ClashBoard')
+const title = useTitle('Open-Box')
 const setTitleByName = (name: string | symbol | undefined) => {
-  if (typeof name === 'string' && activeBackend.value) {
-    title.value = `AnGe-ClashBoard | ${i18n.global.t(name)}`
+  if (typeof name === 'string') {
+    title.value = `Open-Box | ${i18n.global.t(name)}`
   } else {
-    title.value = 'AnGe-ClashBoard'
+    title.value = 'Open-Box'
   }
 }
 
@@ -111,6 +136,25 @@ router.beforeEach((to, from) => {
     to.meta.transition = 'slide-right'
   } else if (toIndex !== fromIndex) {
     to.meta.transition = toIndex < fromIndex ? 'slide-right' : 'slide-left'
+  }
+
+  // No access password configured yet: every route (other than setup itself)
+  // is forced into the setup flow, regardless of what was requested. This
+  // takes priority over the login check below — until a password exists,
+  // there is nothing to log in with.
+  if (serverAuthInitialized.value && !serverPasswordSet.value && to.name !== ROUTE_NAME.setup) {
+    return {
+      name: ROUTE_NAME.setup,
+      query: {
+        redirect: to.fullPath,
+      },
+    }
+  }
+
+  if (to.name === ROUTE_NAME.setup && serverAuthInitialized.value && serverPasswordSet.value) {
+    return {
+      name: getLastRouteName(),
+    }
   }
 
   if (
@@ -132,19 +176,36 @@ router.beforeEach((to, from) => {
     (!serverAccessPasswordEnabled.value || serverAuthenticated.value)
   ) {
     return {
-      name: activeBackend.value ? getLastRouteName() : ROUTE_NAME.setup,
+      name: getLastRouteName(),
     }
   }
 
-  if (!activeBackend.value && ![ROUTE_NAME.setup, ROUTE_NAME.login].includes(to.name as ROUTE_NAME)) {
-    return { name: ROUTE_NAME.setup }
+  // First-run onboarding: a password alone doesn't mean the box is actually usable — with no
+  // subscription there's nothing to proxy through yet. Force the wizard until the user either
+  // finishes it or explicitly skips (wizardDismissed) — never once either is true, so a fully
+  // set-up user (or one who chose to configure things manually later) is never trapped here.
+  if (
+    serverAuthInitialized.value &&
+    serverPasswordSet.value &&
+    (!serverAccessPasswordEnabled.value || serverAuthenticated.value) &&
+    !wizardDismissed.value &&
+    !hasAnySubscription.value &&
+    to.name !== ROUTE_NAME.wizard &&
+    to.name !== ROUTE_NAME.setup &&
+    to.name !== ROUTE_NAME.login
+  ) {
+    return {
+      name: ROUTE_NAME.wizard,
+    }
   }
 })
 
 router.afterEach((to) => {
   if (
     typeof to.name === 'string' &&
-    ![ROUTE_NAME.setup, ROUTE_NAME.login].includes(to.name as ROUTE_NAME)
+    to.name !== ROUTE_NAME.login &&
+    to.name !== ROUTE_NAME.setup &&
+    to.name !== ROUTE_NAME.wizard
   ) {
     window.localStorage.setItem(LAST_ROUTE_NAME_KEY, to.name)
   }

@@ -49,9 +49,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'favicon-dark.svg'],
       manifest: {
-        name: 'AnGe-ClashBoard',
-        short_name: 'AnGeBoard',
-        description: 'AnGe-ClashBoard - a dashboard for Clash API, Mihomo and sing-box',
+        name: 'Open-Box',
+        short_name: 'Open-Box',
+        description: 'Open-Box - integrated sing-box management for OpenWrt',
         theme_color: '#000000',
         icons: [
           {

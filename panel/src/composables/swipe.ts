@@ -1,8 +1,7 @@
-import { CONNECTION_TAB_TYPE, PROXY_TAB_TYPE, ROUTE_NAME, RULE_TAB_TYPE } from '@/constant'
+import { CONNECTION_TAB_TYPE, PROXY_TAB_TYPE, ROUTE_NAME } from '@/constant'
 import { renderRoutes } from '@/helper'
 import { connectionTabShow } from '@/store/connections'
 import { proxiesTabShow, proxyProviederList } from '@/store/proxies'
-import { hasReferencedRuleProviders, ruleProviderList, rulesTabShow } from '@/store/rules'
 import { swipeInPages, swipeInTabs } from '@/store/settings'
 import { useSwipe } from '@vueuse/core'
 import { flatten } from 'lodash'
@@ -41,20 +40,6 @@ export const useSwipeRouter = () => {
                 },
               ]
             })
-          } else if (
-            r === ROUTE_NAME.rules &&
-            ruleProviderList.value.length > 0 &&
-            hasReferencedRuleProviders.value
-          ) {
-            return Object.values(RULE_TAB_TYPE).map((tab) => {
-              return [
-                () => route.name === ROUTE_NAME.rules && rulesTabShow.value === tab,
-                () => {
-                  router.push({ name: ROUTE_NAME.rules })
-                  rulesTabShow.value = tab
-                },
-              ]
-            })
           }
         }
 
@@ -68,21 +53,9 @@ export const useSwipeRouter = () => {
   }
 
   const getNextRouteName = () => {
-    const routeName = route.name as ROUTE_NAME
-
-    if (routeName === ROUTE_NAME.setup) {
-      return router.push({ name: ROUTE_NAME.proxies })
-    }
-
     return swipeList.value[(getNextIndexInSwipeList() + 1) % swipeList.value.length]?.[1]?.()
   }
   const getPrevRouteName = () => {
-    const routeName = route.name as ROUTE_NAME
-
-    if (routeName === ROUTE_NAME.setup) {
-      return router.push({ name: ROUTE_NAME.proxies })
-    }
-
     return swipeList.value[
       (getNextIndexInSwipeList() - 1 + swipeList.value.length) % swipeList.value.length
     ]?.[1]?.()

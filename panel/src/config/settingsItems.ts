@@ -36,16 +36,8 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
         label: 'globalRadius',
       },
       {
-        key: `${SETTINGS_MENU_KEY.general}.zashboardSettings.defaultTheme`,
-        label: 'defaultTheme',
-      },
-      {
-        key: `${SETTINGS_MENU_KEY.general}.zashboardSettings.darkTheme`,
-        label: 'darkTheme',
-      },
-      {
-        key: `${SETTINGS_MENU_KEY.general}.zashboardSettings.autoSwitchTheme`,
-        label: 'autoSwitchTheme',
+        key: `${SETTINGS_MENU_KEY.general}.zashboardSettings.theme`,
+        label: 'theme',
       },
       {
         key: `${SETTINGS_MENU_KEY.general}.zashboardSettings.autoUpgrade`,
@@ -68,12 +60,8 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
         label: 'autoDisconnectIdleUDP',
       },
       {
-        key: `${SETTINGS_MENU_KEY.general}.passwordAccess`,
-        label: 'passwordAccess',
-      },
-      {
-        key: `${SETTINGS_MENU_KEY.general}.accessPassword`,
-        label: 'accessPassword',
+        key: `${SETTINGS_MENU_KEY.general}.changePassword`,
+        label: 'changePassword',
       },
       {
         key: `${SETTINGS_MENU_KEY.general}.autoDisconnectIdleUDPTime`,
@@ -125,7 +113,6 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
     key: SETTINGS_MENU_KEY.backend,
     label: 'backendSettings',
     items: [
-      { key: `${SETTINGS_MENU_KEY.backend}.backendSwitch`, label: 'backend' },
       { key: `${SETTINGS_MENU_KEY.backend}.ports`, label: 'ports' },
       { key: `${SETTINGS_MENU_KEY.backend}.tunMode`, label: 'tunMode' },
       { key: `${SETTINGS_MENU_KEY.backend}.allowLan`, label: 'allowLan' },

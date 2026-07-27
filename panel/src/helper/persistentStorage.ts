@@ -1,10 +1,8 @@
 import { fetchServerApi, serverAccessPasswordEnabled, serverAuthenticated } from '@/store/auth'
 
-const STORAGE_PREFIXES = ['config/', 'setup/']
+const STORAGE_PREFIXES = ['config/']
 const STORAGE_API_URL = '/api/storage'
 const SYNC_DELAY_MS = 400
-const BACKEND_LIST_KEY = 'setup/api-list'
-const ACTIVE_UUID_KEY = 'setup/active-uuid'
 const LEGACY_ACCESS_AUTH_KEY = 'config/access-password-authenticated'
 
 let syncTimer: number | undefined
@@ -54,60 +52,14 @@ export const normalizeManagedStorageSnapshot = (snapshot: Record<string, unknown
   return normalized
 }
 
-const parseBackendList = (value?: string) => {
-  if (!value) {
-    return []
-  }
-
-  try {
-    const parsed = JSON.parse(value)
-
-    if (!Array.isArray(parsed)) {
-      return []
-    }
-
-    return parsed.filter(
-      (item) =>
-        item &&
-        typeof item === 'object' &&
-        typeof item.uuid === 'string' &&
-        item.uuid.length > 0,
-    ) as { uuid: string }[]
-  } catch {
-    return []
-  }
-}
-
 export const stabilizeManagedStorageSnapshot = (
   snapshot: Record<string, string>,
   fallbackSnapshot: Record<string, string> = {},
 ) => {
+  void fallbackSnapshot
+
   const stabilized = { ...snapshot }
   delete stabilized[LEGACY_ACCESS_AUTH_KEY]
-  const importedBackendList = parseBackendList(stabilized[BACKEND_LIST_KEY])
-  const fallbackBackendList = parseBackendList(fallbackSnapshot[BACKEND_LIST_KEY])
-
-  if (importedBackendList.length === 0 && fallbackBackendList.length > 0) {
-    stabilized[BACKEND_LIST_KEY] = fallbackSnapshot[BACKEND_LIST_KEY]
-
-    if (fallbackSnapshot[ACTIVE_UUID_KEY]) {
-      stabilized[ACTIVE_UUID_KEY] = fallbackSnapshot[ACTIVE_UUID_KEY]
-    }
-
-    return stabilized
-  }
-
-  if (importedBackendList.length === 0) {
-    delete stabilized[ACTIVE_UUID_KEY]
-    return stabilized
-  }
-
-  const activeUuid = stabilized[ACTIVE_UUID_KEY]
-  const hasActiveUuid = importedBackendList.some((backend) => backend.uuid === activeUuid)
-
-  if (!hasActiveUuid) {
-    stabilized[ACTIVE_UUID_KEY] = importedBackendList[0].uuid
-  }
 
   return stabilized
 }

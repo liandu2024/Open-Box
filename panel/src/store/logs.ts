@@ -6,7 +6,6 @@ import dayjs from 'dayjs'
 import { throttle } from 'lodash'
 import { ref, watch } from 'vue'
 import { logRetentionLimit, sourceIPLabelList } from './settings'
-import { activeBackend } from './setup'
 
 export const logs = ref<LogWithSeq[]>([])
 export const logFilter = ref('')
@@ -27,8 +26,7 @@ const sliceLogs = throttle(() => {
 const ipSourceMatchs: [RegExp, string][] = []
 const restructMatchs = () => {
   ipSourceMatchs.length = 0
-  for (const { key, label, scope } of sourceIPLabelList.value) {
-    if (scope && !scope.includes(activeBackend.value?.uuid as string)) continue
+  for (const { key, label } of sourceIPLabelList.value) {
     if (key.startsWith('/')) continue
 
     if (key.includes(':')) {
@@ -42,7 +40,7 @@ const restructMatchs = () => {
 }
 
 watch(
-  () => [sourceIPLabelList.value, activeBackend.value],
+  () => sourceIPLabelList.value,
   () => {
     restructMatchs()
   },

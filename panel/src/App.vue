@@ -6,7 +6,7 @@ import { EMOJIS, FONTS, IS_APPLE_DEVICE } from './constant'
 import { autoImportSettings, importSettingsFromUrl } from './helper/autoImportSettings'
 import { backgroundImage } from './helper/indexeddb'
 import { initNotification } from './helper/notification'
-import { getBackendFromUrl, isMiddleScreen, isPreferredDark } from './helper/utils'
+import { isMiddleScreen, isPreferredDark } from './helper/utils'
 import { initializeWindowResizeState, isWindowResizing } from './helper/windowResizeState'
 import {
   blurIntensity,
@@ -17,8 +17,6 @@ import {
   globalRadius,
   theme,
 } from './store/settings'
-import { activeUuid, backendList } from './store/setup'
-import type { Backend } from './types'
 
 const app = ref<HTMLElement>()
 const toast = ref<HTMLElement>()
@@ -91,31 +89,6 @@ watch(
     immediate: true,
   },
 )
-
-const isSameBackend = (b1: Omit<Backend, 'uuid'>, b2: Omit<Backend, 'uuid'>) => {
-  return (
-    b1.host === b2.host &&
-    b1.port === b2.port &&
-    b1.password === b2.password &&
-    b1.protocol === b2.protocol &&
-    b1.secondaryPath === b2.secondaryPath
-  )
-}
-
-const autoSwitchToURLBackendIfExists = () => {
-  const backend = getBackendFromUrl()
-
-  if (backend) {
-    for (const b of backendList.value) {
-      if (isSameBackend(b, backend)) {
-        activeUuid.value = b.uuid
-        return
-      }
-    }
-  }
-}
-
-autoSwitchToURLBackendIfExists()
 
 onMounted(() => {
   cleanupWindowResizeState = initializeWindowResizeState()

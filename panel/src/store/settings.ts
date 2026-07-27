@@ -16,9 +16,9 @@ import {
   TABLE_SIZE,
   TABLE_WIDTH_MODE,
   TEST_URL,
-  type THEME,
+  THEME_MODE,
 } from '@/constant'
-import { getMinCardWidth, isMiddleScreen, isPreferredDark } from '@/helper/utils'
+import { detectDefaultLanguage, getMinCardWidth, isMiddleScreen, isPreferredDark } from '@/helper/utils'
 import type { SourceIPLabel } from '@/types'
 import { useStorage } from '@vueuse/core'
 import { computed } from 'vue'
@@ -34,14 +34,33 @@ export const theme = computed(() => {
   return defaultTheme.value
 })
 
-export const customThemes = useStorage<THEME[]>('config/custom-themes', [])
+// UI-facing appearance choice: exactly three options (跟随系统 / 亮色 / 暗色).
+// Maps onto the existing default-theme/dark-theme/auto-theme storage keys so
+// the underlying daisyUI theming mechanism doesn't need to change.
+export const themeMode = computed<THEME_MODE>({
+  get: () => {
+    if (autoTheme.value) {
+      return THEME_MODE.AUTO
+    }
+    return defaultTheme.value === 'dark' ? THEME_MODE.DARK : THEME_MODE.LIGHT
+  },
+  set: (mode) => {
+    if (mode === THEME_MODE.AUTO) {
+      // Explicit 亮色/暗色 picks reuse `defaultTheme` (see below), which is
+      // also the "light branch" auto mode reads. Reset both branches to
+      // their canonical values so re-entering auto always honors
+      // prefers-color-scheme instead of replaying a stale explicit pick.
+      autoTheme.value = true
+      defaultTheme.value = 'light'
+      darkTheme.value = 'dark'
+      return
+    }
+    autoTheme.value = false
+    defaultTheme.value = mode === THEME_MODE.DARK ? 'dark' : 'light'
+  },
+})
 
-export const language = useStorage<LANG>(
-  'config/language',
-  Object.values(LANG).includes(navigator.language as LANG)
-    ? (navigator.language as LANG)
-    : LANG.EN_US,
-)
+export const language = useStorage<LANG>('config/language', detectDefaultLanguage(navigator.language))
 export const isSidebarCollapsedConfig = useStorage('config/is-sidebar-collapsed', true)
 export const isSidebarCollapsed = computed({
   get: () => {
@@ -87,27 +106,6 @@ export const scrollAnimationEffect = useStorage('config/scroll-animation-effect'
 export const IPInfoAPI = useStorage('config/geoip-info-api', IP_INFO_API.IPSB)
 export const autoDisconnectIdleUDP = useStorage('config/auto-disconnect-idle-udp', false)
 export const autoDisconnectIdleUDPTime = useStorage('config/auto-disconnect-idle-udp-time', 300)
-export const accessPasswordEnabled = useStorage('config/access-password-enabled', false)
-export const accessPassword = useStorage('config/access-password', '123456')
-
-const ACCESS_AUTHENTICATED_KEY = 'access-password-authenticated'
-
-export const setAccessAuthenticated = (authenticated: boolean) => {
-  if (authenticated) {
-    window.localStorage.setItem(ACCESS_AUTHENTICATED_KEY, accessPassword.value)
-    return
-  }
-
-  window.localStorage.removeItem(ACCESS_AUTHENTICATED_KEY)
-}
-
-export const isAccessAuthenticated = () => {
-  if (!accessPasswordEnabled.value) {
-    return true
-  }
-
-  return window.localStorage.getItem(ACCESS_AUTHENTICATED_KEY) === accessPassword.value
-}
 
 // overview
 export const splitOverviewPage = useStorage('config/split-overview-page', false)
