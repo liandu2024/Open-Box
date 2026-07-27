@@ -42,7 +42,6 @@
 import { ROUTE_NAME } from '@/constant'
 import router from '@/router'
 import { loginWithAccessPassword } from '@/store/auth'
-import { activeBackend } from '@/store/setup'
 import { ref } from 'vue'
 
 const password = ref('')
@@ -69,7 +68,7 @@ const handleLogin = async () => {
       typeof redirect === 'string' && redirect
         ? redirect
         : router.resolve({
-            name: activeBackend.value ? ROUTE_NAME.proxies : ROUTE_NAME.setup,
+            name: ROUTE_NAME.proxies,
           }).fullPath
 
     window.location.hash = target

@@ -31,12 +31,12 @@
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import BackendSettings from '@/components/settings/BackendSettings.vue'
 import { useTooltip } from '@/helper/tooltip'
-import { getLabelFromBackend } from '@/helper/utils'
 import { isSidebarCollapsed } from '@/store/settings'
-import { activeBackend } from '@/store/setup'
 import { ArrowLeftCircleIcon, ArrowRightCircleIcon, ServerIcon } from '@heroicons/vue/24/outline'
 import { computed, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 
+const { t } = useI18n()
 const { showTip } = useTooltip()
 
 const showBackendSelectorDialog = ref(false)
@@ -51,6 +51,6 @@ const wrapperClass = computed(() => {
 })
 
 const handlerMouseenterBackendSelector = (e: MouseEvent) => {
-  showTip(e, getLabelFromBackend(activeBackend.value!), { placement: 'right' })
+  showTip(e, t('backend'), { placement: 'right' })
 }
 </script>

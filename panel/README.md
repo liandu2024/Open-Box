@@ -185,47 +185,10 @@ http://127.0.0.1:2048/api/health
 ZASHBOARD_DB_PATH
 ```
 
-## 规则查询
-
-规则页支持按域名查询命中的规则来源，并展示实际策略链路。
-
-当前支持：
-
-- 文本规则源缓存
-- `.mrs` 域名规则集解析
-- 规则顺序排序
-- 兜底规则检测
-- 根据 YAML 中的 `interval` 自动更新缓存
-- 刷新规则时显示累计规则数量与手动停止
-
-规则源需要配置代理端 OpenWrt 的 SSH 连接。服务会通过 SSH 实时读取代理端当前配置，不读取本机 OpenClash 文件，也不内置规则源模板。
-
-可在页面的“修改后端配置”弹窗里，为对应后端填写规则源类型、SSH 端口、账号和密码；规则源 SSH 主机直接使用该后端的“主机”。也可以通过环境变量预设：
-
-```bash
-ZASHBOARD_OPENWRT_SSH_HOST
-ZASHBOARD_OPENWRT_SSH_PORT
-ZASHBOARD_OPENWRT_SSH_USER
-ZASHBOARD_OPENWRT_SSH_PASSWORD
-ZASHBOARD_RULE_SOURCE_PLUGIN
-```
-
-服务会自动识别代理端的 OpenClash 或 Nikki：
-
-- OpenClash：读取远程 `/etc/config/openclash`，解析其中真实的 `option config_path`，再读取对应 YAML 的 `rule-providers`。
-- Nikki：优先从远程进程命令行和 `/etc/config/nikki` 提取实际 YAML 路径，再校验其中的 `rule-providers`。
-
-OpenClash 远程 UCI 路径不在默认位置时可覆盖：
-
-```bash
-ZASHBOARD_OPENCLASH_UCI_PATH
-ZASHBOARD_OPENCLASH_CONFIG_DIR
-```
-
 ## 项目结构
 
 - `src/`：前端代码
-- `server/`：本地持久化与规则缓存后端
+- `server/`：本地持久化与 API 后端
 - `data/`：运行时数据目录
 - `public/`：静态资源
 - `scripts/`：安装、升级、卸载脚本

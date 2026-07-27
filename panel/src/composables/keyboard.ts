@@ -1,5 +1,4 @@
 import { renderRoutes } from '@/helper'
-import { activeBackend } from '@/store/setup'
 import { computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -18,7 +17,7 @@ export const useKeyboard = () => {
       return
     }
 
-    if (!activeBackend.value || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) {
+    if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) {
       return
     }
 

@@ -1,18 +1,3 @@
-export type Backend = {
-  host: string
-  port: string
-  secondaryPath: string
-  password: string
-  protocol: string
-  uuid: string
-  label?: string
-  disableUpgradeCore?: boolean
-  ruleSourcePlugin?: string
-  ruleSourceSshPort?: string
-  ruleSourceSshUsername?: string
-  ruleSourceSshPassword?: string
-}
-
 export type Config = {
   port: number
   'socks-port': number
@@ -178,7 +163,6 @@ export type SourceIPLabel = {
   key: string
   label: string
   id: string
-  scope?: string[]
 }
 
 // smart core

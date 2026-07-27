@@ -74,14 +74,8 @@ export enum PROXY_PREVIEW_TYPE {
   BAR = 'bar',
 }
 
-export enum RULE_TAB_TYPE {
-  RULES = 'rules',
-  PROVIDER = 'ruleProvider',
-}
-
 export enum PROXY_TAB_TYPE {
   POLICY = 'policyGroup',
-  DOMAIN = 'domainGroup',
   NODE = 'nodeGroup',
   PROVIDER = 'proxyProvider',
 }
@@ -128,7 +122,6 @@ export enum ROUTE_NAME {
   logs = 'logs',
   rules = 'rules',
   settings = 'settings',
-  setup = 'setup',
   login = 'login',
 }
 
@@ -139,7 +132,6 @@ export const ROUTE_ICON_MAP = {
   [ROUTE_NAME.rules]: SwatchIcon,
   [ROUTE_NAME.logs]: DocumentTextIcon,
   [ROUTE_NAME.settings]: Cog6ToothIcon,
-  [ROUTE_NAME.setup]: CubeTransparentIcon,
   [ROUTE_NAME.login]: CubeTransparentIcon,
 }
 

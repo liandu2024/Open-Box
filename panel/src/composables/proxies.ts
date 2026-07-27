@@ -1,11 +1,8 @@
 import { isSingBox } from '@/api'
 import { GLOBAL, PROXY_TAB_TYPE } from '@/constant'
 import { isHiddenGroup, isProxyGroup } from '@/helper'
-import { getDomainGroupNames, getDomainGroupRuleSetOptions } from '@/helper/proxyDomainGroups'
-import { fetchServerApi } from '@/store/auth'
 import { configs } from '@/store/config'
 import { proxiesTabShow, proxyGroupList, proxyMap, proxyProviederList } from '@/store/proxies'
-import { rules } from '@/store/rules'
 import { customGlobalNode, displayGlobalByMode, manageHiddenGroup } from '@/store/settings'
 import { isEmpty } from 'lodash'
 import { computed, ref } from 'vue'
@@ -35,10 +32,6 @@ const getRenderGroups = () => {
 
   if (proxiesTabShow.value === PROXY_TAB_TYPE.NODE) {
     return currentGroups.filter((name) => !isPolicyGroup(name))
-  }
-
-  if (proxiesTabShow.value === PROXY_TAB_TYPE.DOMAIN) {
-    return []
   }
 
   return currentGroups
@@ -121,20 +114,8 @@ const isPolicyGroup = (name: string) => {
 
 export const disableProxiesPageScroll = ref(false)
 export const isProxiesPageMounted = ref(false)
-export const domainGroupSelectedName = ref('')
-export const domainGroupSelectedProvider = ref('')
-export const domainGroupSearch = ref('')
-export const domainRuleConfigChanged = ref(false)
-export const domainRulesReloadRevision = ref(0)
-export const customDomainGroupsEnabled = ref(false)
 export const policyGroups = computed(() =>
   getCurrentProxyGroups().filter((name) => isPolicyGroup(name)),
-)
-export const domainGroups = computed(() =>
-  getDomainGroupNames(rules.value, policyGroups.value, customDomainGroupsEnabled.value),
-)
-export const domainGroupProviderNames = computed(() =>
-  getDomainGroupRuleSetOptions(domainGroupSelectedName.value, rules.value),
 )
 export const nodeGroups = computed(() =>
   getCurrentProxyGroups().filter((name) => !isPolicyGroup(name)),
@@ -203,20 +184,3 @@ export const renderGroups = computed(() => {
 
   return groups.slice(0, 16)
 })
-
-export const fetchCustomDomainGroupsStatus = async () => {
-  customDomainGroupsEnabled.value = false
-
-  try {
-    const response = await fetchServerApi('/api/proxy-domain-custom-sections')
-
-    if (!response.ok) {
-      return
-    }
-
-    const data = (await response.json().catch(() => null)) as { enabled?: boolean } | null
-    customDomainGroupsEnabled.value = Boolean(data?.enabled)
-  } catch {
-    // The feature is unavailable without the optional OpenWrt rule source.
-  }
-}

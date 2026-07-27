@@ -7,7 +7,6 @@ import {
   serverAuthInitialized,
 } from '@/store/auth'
 import { language } from '@/store/settings'
-import { activeBackend } from '@/store/setup'
 import ConnectionsPage from '@/views/ConnectionsPage.vue'
 import HomePage from '@/views/HomePage.vue'
 import LoginPage from '@/views/LoginPage.vue'
@@ -16,7 +15,6 @@ import OverviewPage from '@/views/OverviewPage.vue'
 import ProxiesPage from '@/views/ProxiesPage.vue'
 import RulesPage from '@/views/RulesPage.vue'
 import SettingsPage from '@/views/SettingsPage.vue'
-import SetupPage from '@/views/SetupPage.vue'
 import { useTitle } from '@vueuse/core'
 import { watch } from 'vue'
 import { createRouter, createWebHashHistory } from 'vue-router'
@@ -76,11 +74,6 @@ const router = createRouter({
       children: childrenRouter,
     },
     {
-      path: '/setup',
-      name: ROUTE_NAME.setup,
-      component: SetupPage,
-    },
-    {
       path: '/login',
       name: ROUTE_NAME.login,
       component: LoginPage,
@@ -94,7 +87,7 @@ const router = createRouter({
 
 const title = useTitle('AnGe-ClashBoard')
 const setTitleByName = (name: string | symbol | undefined) => {
-  if (typeof name === 'string' && activeBackend.value) {
+  if (typeof name === 'string') {
     title.value = `AnGe-ClashBoard | ${i18n.global.t(name)}`
   } else {
     title.value = 'AnGe-ClashBoard'
@@ -132,20 +125,13 @@ router.beforeEach((to, from) => {
     (!serverAccessPasswordEnabled.value || serverAuthenticated.value)
   ) {
     return {
-      name: activeBackend.value ? getLastRouteName() : ROUTE_NAME.setup,
+      name: getLastRouteName(),
     }
-  }
-
-  if (!activeBackend.value && ![ROUTE_NAME.setup, ROUTE_NAME.login].includes(to.name as ROUTE_NAME)) {
-    return { name: ROUTE_NAME.setup }
   }
 })
 
 router.afterEach((to) => {
-  if (
-    typeof to.name === 'string' &&
-    ![ROUTE_NAME.setup, ROUTE_NAME.login].includes(to.name as ROUTE_NAME)
-  ) {
+  if (typeof to.name === 'string' && to.name !== ROUTE_NAME.login) {
     window.localStorage.setItem(LAST_ROUTE_NAME_KEY, to.name)
   }
 

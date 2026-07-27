@@ -8,14 +8,13 @@ import {
 import type { Connection } from '@/types'
 import ipaddr from 'ipaddr.js'
 import { ref } from 'vue'
-import { activeBackend } from './setup'
 
 const isInitializedPromise = ref(
   new Promise((resolve) => {
     resolve(false)
   }),
 )
-const uuid = () => activeBackend.value?.uuid || ''
+const uuid = () => 'local'
 const allHistoryTypes = [
   ConnectionHistoryType.SourceIP,
   ConnectionHistoryType.Destination,

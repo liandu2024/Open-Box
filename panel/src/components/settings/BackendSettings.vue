@@ -27,8 +27,6 @@
         </a>
       </div>
     </div>
-    <BackendSwitch v-if="isVisibleBackendSwitch" />
-
     <template v-if="!isSingBox && configs && isVisiblePorts">
       <div
         class="grid max-w-3xl gap-2 gap-x-6"
@@ -84,35 +82,33 @@
             @change="handlerAllowLanChange"
           />
         </div>
-        <template v-if="!activeBackend?.disableUpgradeCore">
-          <div
-            v-if="isVisibleCheckUpgrade"
-            class="setting-item"
-          >
-            <div class="setting-item-label">
-              {{ $t('checkUpgrade') }}
-            </div>
-            <input
-              class="toggle"
-              type="checkbox"
-              v-model="checkUpgradeCore"
-              @change="handlerCheckUpgradeCoreChange"
-            />
+        <div
+          v-if="isVisibleCheckUpgrade"
+          class="setting-item"
+        >
+          <div class="setting-item-label">
+            {{ $t('checkUpgrade') }}
           </div>
-          <div
-            v-if="checkUpgradeCore && isVisibleAutoUpgrade"
-            class="setting-item"
-          >
-            <div class="setting-item-label">
-              {{ $t('autoUpgrade') }}
-            </div>
-            <input
-              class="toggle"
-              type="checkbox"
-              v-model="autoUpgradeCore"
-            />
+          <input
+            class="toggle"
+            type="checkbox"
+            v-model="checkUpgradeCore"
+            @change="handlerCheckUpgradeCoreChange"
+          />
+        </div>
+        <div
+          v-if="checkUpgradeCore && isVisibleAutoUpgrade"
+          class="setting-item"
+        >
+          <div class="setting-item-label">
+            {{ $t('autoUpgrade') }}
           </div>
-        </template>
+          <input
+            class="toggle"
+            type="checkbox"
+            v-model="autoUpgradeCore"
+          />
+        </div>
       </div>
     </template>
 
@@ -123,7 +119,6 @@
     >
       <template v-if="!isSingBox || displayAllFeatures">
         <button
-          v-if="!activeBackend?.disableUpgradeCore"
           class="btn btn-primary btn-sm"
           @click="showUpgradeCoreModal = true"
         >
@@ -197,7 +192,6 @@ import {
   updateGeoDataAPI,
 } from '@/api'
 import BackendVersion from '@/components/common/BackendVersion.vue'
-import BackendSwitch from '@/components/settings/BackendSwitch.vue'
 import DnsQuery from '@/components/settings/DnsQuery.vue'
 import { useIsSettingVisible } from '@/composables/settings'
 import { BACKEND_ITEM_KEYS } from '@/config/settingsItems'
@@ -206,13 +200,11 @@ import { configs, fetchConfigs, updateConfigs } from '@/store/config'
 import { fetchProxies, hasSmartGroup } from '@/store/proxies'
 import { fetchRules } from '@/store/rules'
 import { autoUpgradeCore, checkUpgradeCore, displayAllFeatures } from '@/store/settings'
-import { activeBackend } from '@/store/setup'
 import type { Config } from '@/types'
 import { computed, ref } from 'vue'
 import UpgradeCoreModal from './UpgradeCoreModal.vue'
 
 const k = BACKEND_ITEM_KEYS
-const isVisibleBackendSwitch = useIsSettingVisible(k.backend)
 const isVisiblePorts = useIsSettingVisible(k.ports)
 const isVisibleTunMode = useIsSettingVisible(k.tunMode)
 const isVisibleAllowLan = useIsSettingVisible(k.allowLan)
@@ -223,19 +215,11 @@ const isVisibleDnsQuery = useIsSettingVisible(k.DNSQuery)
 
 const hasVisibleItems = computed(() => {
   return (
-    isVisibleBackendSwitch.value ||
     (!isSingBox.value && configs.value && isVisiblePorts.value) ||
     (!isSingBox.value && configs.value?.tun && isVisibleTunMode.value) ||
     (!isSingBox.value && configs.value && isVisibleAllowLan.value) ||
-    (!isSingBox.value &&
-      configs.value &&
-      !activeBackend.value?.disableUpgradeCore &&
-      isVisibleCheckUpgrade.value) ||
-    (!isSingBox.value &&
-      configs.value &&
-      !activeBackend.value?.disableUpgradeCore &&
-      checkUpgradeCore.value &&
-      isVisibleAutoUpgrade.value) ||
+    (!isSingBox.value && configs.value && isVisibleCheckUpgrade.value) ||
+    (!isSingBox.value && configs.value && checkUpgradeCore.value && isVisibleAutoUpgrade.value) ||
     isVisibleActions.value ||
     isVisibleDnsQuery.value
   )

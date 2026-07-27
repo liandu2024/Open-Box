@@ -1,39 +1,14 @@
-import { ROUTE_NAME } from '@/constant'
 import { showNotification } from '@/helper/notification'
-import { getUrlFromBackend, shouldUseServerProxy } from '@/helper/utils'
-import router from '@/router'
-import {
-  ACCESS_PASSWORD_REQUIRED_CODE,
-  fetchServerApi,
-  markServerAuthenticationRequired,
-} from '@/store/auth'
+import { ACCESS_PASSWORD_REQUIRED_CODE, markServerAuthenticationRequired } from '@/store/auth'
 import { autoUpgradeCore, checkUpgradeCore } from '@/store/settings'
-import { activeBackend, activeUuid } from '@/store/setup'
-import type {
-  Backend,
-  Config,
-  DNSQuery,
-  NodeRank,
-  Proxy,
-  ProxyProvider,
-  Rule,
-  RuleProvider,
-} from '@/types'
+import type { Config, DNSQuery, NodeRank, Proxy, ProxyProvider, Rule, RuleProvider } from '@/types'
 import axios, { AxiosError } from 'axios'
 import { debounce } from 'lodash'
 import ReconnectingWebSocket from 'reconnectingwebsocket'
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 
 axios.interceptors.request.use((config) => {
-  if (shouldUseServerProxy(activeBackend.value)) {
-    config.baseURL = '/api/controller'
-    config.headers['x-zashboard-target-base'] = getUrlFromBackend(activeBackend.value!)
-    config.headers['x-zashboard-target-secret'] = activeBackend.value?.password || ''
-    delete config.headers['Authorization']
-  } else {
-    config.baseURL = getUrlFromBackend(activeBackend.value!)
-    config.headers['Authorization'] = 'Bearer ' + activeBackend.value?.password
-  }
+  config.baseURL = '/api/controller'
   return config
 })
 
@@ -55,17 +30,7 @@ axios.interceptors.response.use(
       return Promise.reject(error)
     }
 
-    if (responseStatus === 401 && activeUuid.value) {
-      const currentBackendUuid = activeUuid.value
-      activeUuid.value = null
-      router.push({
-        name: ROUTE_NAME.setup,
-        query: { editBackend: currentBackendUuid },
-      })
-      nextTick(() => {
-        showNotification({ content: 'unauthorizedTip' })
-      })
-    } else if (!ignoreNotificationUrls.some((url) => error.config?.url?.endsWith(url))) {
+    if (!ignoreNotificationUrls.some((url) => error.config?.url?.endsWith(url))) {
       const errorMessage = error.response?.data?.message || error.message
 
       showNotification({
@@ -89,24 +54,19 @@ export const isSingBox = computed(() => version.value?.includes('sing-box'))
 export const zashboardVersion = ref(__APP_VERSION__)
 const UI_RELEASES_API = 'https://api.github.com/repos/liandu2024/AnGe-ClashBoard/releases/latest'
 
-watch(
-  activeBackend,
-  async (val) => {
-    if (val) {
-      const { data } = await fetchVersionAPI()
+export const fetchBackendVersion = async () => {
+  const { data } = await fetchVersionAPI()
 
-      version.value = data?.version || ''
-      if (isSingBox.value || !checkUpgradeCore.value || activeBackend.value?.disableUpgradeCore)
-        return
-      isCoreUpdateAvailable.value = await fetchBackendUpdateAvailableAPI()
+  version.value = data?.version || ''
 
-      if (isCoreUpdateAvailable.value && autoUpgradeCore.value) {
-        upgradeCoreAPI('auto')
-      }
-    }
-  },
-  { immediate: true },
-)
+  if (isSingBox.value || !checkUpgradeCore.value) return
+
+  isCoreUpdateAvailable.value = await fetchBackendUpdateAvailableAPI()
+
+  if (isCoreUpdateAvailable.value && autoUpgradeCore.value) {
+    upgradeCoreAPI('auto')
+  }
+}
 
 export const fetchProxiesAPI = () => {
   return axios.get<{ proxies: Record<string, Proxy> }>('/proxies')
@@ -268,16 +228,10 @@ export const queryDNSAPI = (params: { name: string; type: string }) => {
 }
 
 const createWebSocket = <T>(url: string, searchParams?: Record<string, string>) => {
-  const backend = activeBackend.value!
   const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost'
   const resurl = new URL(`/api/controller-ws/${url}`, currentOrigin)
 
   resurl.protocol = resurl.protocol === 'https:' ? 'wss:' : 'ws:'
-  resurl.searchParams.append('targetBase', getUrlFromBackend(backend))
-
-  if (backend?.password) {
-    resurl.searchParams.append('secret', backend.password)
-  }
 
   if (searchParams) {
     Object.entries(searchParams).forEach(([key, value]) => {
@@ -318,36 +272,6 @@ export const fetchMemoryAPI = <T>() => {
 
 export const fetchTrafficAPI = <T>() => {
   return createWebSocket<T>('traffic')
-}
-
-export const isBackendAvailable = async (backend: Backend, timeout: number = 10000) => {
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), timeout)
-
-  try {
-    const headers: Record<string, string> = {}
-    let url = `${getUrlFromBackend(backend)}/version`
-
-    if (shouldUseServerProxy(backend)) {
-      url = '/api/controller/version'
-      headers['x-zashboard-target-base'] = getUrlFromBackend(backend)
-      headers['x-zashboard-target-secret'] = backend.password || ''
-    } else {
-      headers['Authorization'] = `Bearer ${backend.password}`
-    }
-
-    const res = await fetchServerApi(url, {
-      method: 'GET',
-      headers,
-      signal: controller.signal,
-    })
-
-    return res.ok
-  } catch {
-    return false
-  } finally {
-    clearTimeout(timeoutId)
-  }
 }
 
 const CACHE_DURATION = 1000 * 60 * 60

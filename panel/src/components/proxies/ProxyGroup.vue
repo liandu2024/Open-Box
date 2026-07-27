@@ -25,16 +25,6 @@
               <span class="shrink-0 text-base">
                 {{ name }}
               </span>
-              <button
-                type="button"
-                :class="[
-                  'btn btn-sm bg-base-200 border-base-200 text-base-content/80 hover:text-base-content h-6 min-h-6 shrink-0 cursor-pointer px-2 text-xs font-medium shadow-none',
-                  domainPenetrationHoverClass,
-                ]"
-                @click.stop="openRulePenetrationDialog"
-              >
-                {{ t('domainPenetration') }}
-              </button>
               <span class="text-base-content/60 min-w-0 truncate text-xs">
                 {{ proxyGroup.type }}
               </span>
@@ -89,16 +79,6 @@
               {{ name }}
             </span>
           </div>
-          <button
-            type="button"
-            :class="[
-              'btn btn-sm bg-base-200 border-base-200 text-base-content/80 hover:text-base-content h-6 min-h-6 shrink-0 cursor-pointer px-2 text-xs font-medium shadow-none',
-              domainPenetrationHoverClass,
-            ]"
-            @click.stop="openRulePenetrationDialog"
-          >
-            {{ t('domainPenetration') }}
-          </button>
           <span class="text-base-content/60 text-xs">
             {{ proxyGroup.type }}
           </span>
@@ -187,19 +167,16 @@ import {
   proxyGroupLatencyTest,
   proxyMap,
 } from '@/store/proxies'
-import { openProxyGroupRulePenetrationDialog } from '@/store/proxyGroupRulePenetration'
 import {
   groupProxiesByProvider,
   manageHiddenGroup,
   proxyGroupIconMargin,
   proxyGroupIconSize,
-  theme,
   useLargeProxyGroupIcon,
 } from '@/store/settings'
 import { EyeIcon, EyeSlashIcon } from '@heroicons/vue/24/outline'
 import { twMerge } from 'tailwind-merge'
 import { computed, ref } from 'vue'
-import { useI18n } from 'vue-i18n'
 import CollapseCard from '../common/CollapseCard.vue'
 import LatencyTag from './LatencyTag.vue'
 import ProxiesByProvider from './ProxiesByProvider.vue'
@@ -212,7 +189,6 @@ import ProxyPreview from './ProxyPreview.vue'
 const props = defineProps<{
   name: string
 }>()
-const { t } = useI18n()
 const proxyGroup = computed(() => proxyMap.value[props.name])
 const allProxies = computed(() => proxyGroup.value.all ?? [])
 const { renderProxies } = useRenderProxies(allProxies, props.name)
@@ -247,34 +223,7 @@ const handlerGroupToggle = () => {
   hiddenGroup.value = !hiddenGroup.value
 }
 
-const openRulePenetrationDialog = () => {
-  openProxyGroupRulePenetrationDialog(props.name)
-}
-
 const titleIconSize = computed(() => Math.max(proxyGroupIconSize.value, 46))
-const DARK_HOVER_THEMES = new Set([
-  'dark',
-  'dark-legacy',
-  'synthwave',
-  'halloween',
-  'forest',
-  'aqua',
-  'black',
-  'luxury',
-  'dracula',
-  'business',
-  'night',
-  'coffee',
-  'dim',
-  'sunset',
-  'abyss',
-  'silk',
-])
-const domainPenetrationHoverClass = computed(() => {
-  return DARK_HOVER_THEMES.has(theme.value)
-    ? 'hover:!bg-[#4b4428] hover:!border-base-content/[0.16]'
-    : 'hover:!bg-[#f1ead6] hover:!border-base-content/[0.16]'
-})
 
 useBounceOnVisible()
 </script>

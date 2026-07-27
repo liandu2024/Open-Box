@@ -125,7 +125,6 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
     key: SETTINGS_MENU_KEY.backend,
     label: 'backendSettings',
     items: [
-      { key: `${SETTINGS_MENU_KEY.backend}.backendSwitch`, label: 'backend' },
       { key: `${SETTINGS_MENU_KEY.backend}.ports`, label: 'ports' },
       { key: `${SETTINGS_MENU_KEY.backend}.tunMode`, label: 'tunMode' },
       { key: `${SETTINGS_MENU_KEY.backend}.allowLan`, label: 'allowLan' },
