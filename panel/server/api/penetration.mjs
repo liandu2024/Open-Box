@@ -10,11 +10,16 @@ const CLASH_API_BASE = 'http://127.0.0.1:9095'
 // 范围表与 IPv4-mapped IPv6 归一化逻辑(P4a 复审 Important 1:两处判定曾经各自维护,
 // 逐渐产生偏差、留下绕过缺口)。
 
-// 核心回归点:`sing-box rule-set match` 命中与不命中退出码都是 0,
-// 命中判定只能看 stdout 是否含 "match rules." 开头的行,严禁用退出码判定。
+// 核心回归点:`sing-box rule-set match` 命中与不命中退出码都是 0,严禁用退出码判定。
+// 经验事实(2026-07-27 对 sing-box 1.13.14 二进制实测):"match rules." 那一行
+// 实际写在 **stderr**,stdout 恒为空——
+//   $ sing-box rule-set match -f binary v.srs baidu.cn 2>/dev/null      → (stdout 为空)
+//   $ sing-box rule-set match -f binary v.srs baidu.cn 2>&1 1>/dev/null → match rules.[0]: ...
+// 因此判定必须同时看 stdout + stderr(而不是只看 stdout),这样即便未来版本把这行
+// 挪回 stdout 也不会再次回归。不要"简化"回只测 stdout。
 export const matchRuleSet = async (ctx, paths, srsPath, target) => {
-  const { stdout } = await ctx.exec(paths.singbox, ['rule-set', 'match', '-f', 'binary', srsPath, target])
-  return /^match rules\./m.test(stdout || '')
+  const { stdout, stderr } = await ctx.exec(paths.singbox, ['rule-set', 'match', '-f', 'binary', srsPath, target])
+  return /^match rules\./m.test(`${stdout || ''}${stderr || ''}`)
 }
 
 const errorMessage = (err) => (err instanceof Error ? err.message : String(err))

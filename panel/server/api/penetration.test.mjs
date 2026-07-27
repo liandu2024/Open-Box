@@ -52,8 +52,35 @@ const post = async (baseUrl, target) => {
 }
 
 // ---- matchRuleSet 单元测试:核心回归点 ----
+// 实测(sing-box 1.13.14 二进制):"match rules." 那一行实际写在 stderr,stdout 恒为空。
+// 判定必须同时看 stdout + stderr,且永远不能用退出码——下面覆盖两个流各自命中的情形,
+// 以及退出码在两种情形下都被忽略。
 
-test('matchRuleSet: stdout 含 "match rules." → true(即便退出码非 0,决策依据只看 stdout)', async () => {
+test('matchRuleSet: stdout 含 "match rules."(stderr 为空)→ true', async () => {
+  const ctx = createMockContext({
+    execResults: {
+      [`${paths.singbox} rule-set match -f binary /data/a.srs example.com`]: {
+        code: 0, stdout: 'match rules.[0]: domain_suffix=a\n', stderr: '',
+      },
+    },
+  })
+  const hit = await matchRuleSet(ctx, paths, '/data/a.srs', 'example.com')
+  assert.equal(hit, true)
+})
+
+test('matchRuleSet: stderr 含 "match rules."(stdout 为空)→ true(sing-box 1.13.14 实测:match 结果实际写在 stderr)', async () => {
+  const ctx = createMockContext({
+    execResults: {
+      [`${paths.singbox} rule-set match -f binary /data/a.srs example.com`]: {
+        code: 0, stdout: '', stderr: 'match rules.[0]: domain/domain_suffix=<binary>\n',
+      },
+    },
+  })
+  const hit = await matchRuleSet(ctx, paths, '/data/a.srs', 'example.com')
+  assert.equal(hit, true)
+})
+
+test('matchRuleSet: stdout 命中 + 退出码非 0 → true(防回归:退出码依然被忽略)', async () => {
   const ctx = createMockContext({
     execResults: {
       [`${paths.singbox} rule-set match -f binary /data/a.srs example.com`]: {
@@ -65,7 +92,19 @@ test('matchRuleSet: stdout 含 "match rules." → true(即便退出码非 0,决�
   assert.equal(hit, true)
 })
 
-test('matchRuleSet: stdout 为空 + 退出码 0 → false(防回归:严禁用退出码判定命中)', async () => {
+test('matchRuleSet: stderr 命中 + 退出码非 0 → true(防回归:退出码依然被忽略,即便命中信息在 stderr)', async () => {
+  const ctx = createMockContext({
+    execResults: {
+      [`${paths.singbox} rule-set match -f binary /data/a.srs example.com`]: {
+        code: 1, stdout: '', stderr: 'match rules.[0]: domain/domain_suffix=<binary>\n',
+      },
+    },
+  })
+  const hit = await matchRuleSet(ctx, paths, '/data/a.srs', 'example.com')
+  assert.equal(hit, true)
+})
+
+test('matchRuleSet: stdout 和 stderr 均为空 + 退出码 0 → false(防回归:严禁用退出码判定命中)', async () => {
   const ctx = createMockContext({
     execResults: {
       [`${paths.singbox} rule-set match -f binary /data/a.srs example.com`]: {
@@ -77,11 +116,11 @@ test('matchRuleSet: stdout 为空 + 退出码 0 → false(防回归:严禁用退
   assert.equal(hit, false)
 })
 
-test('matchRuleSet: stdout 不匹配 /^match rules\\./m 的其它内容 + 退出码 0 → false', async () => {
+test('matchRuleSet: stdout/stderr 均不匹配 /^match rules\\./m 的其它内容 + 退出码 0 → false', async () => {
   const ctx = createMockContext({
     execResults: {
       [`${paths.singbox} rule-set match -f binary /data/a.srs example.com`]: {
-        code: 0, stdout: 'no match rules found\n', stderr: '',
+        code: 0, stdout: 'no match rules found\n', stderr: 'some unrelated warning\n',
       },
     },
   })
