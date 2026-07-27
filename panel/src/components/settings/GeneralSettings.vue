@@ -1,5 +1,6 @@
 <template>
   <ZashboardSettings />
+  <ChangePasswordDialog v-model="isChangePasswordDialogOpen" />
   <!-- dashboard -->
   <div
     v-if="hasVisibleGeneralItems"
@@ -27,50 +28,19 @@
         />
       </div>
       <div
-        v-if="isVisiblePasswordAccess || (accessPasswordEnabled && isVisibleAccessPassword)"
+        v-if="isVisibleChangePassword"
         class="setting-item"
       >
         <div class="setting-item-label">
-          <span>{{ $t('passwordAccess') }}</span>
-          <QuestionMarkCircleIcon
-            v-if="isVisiblePasswordAccess"
-            class="h-4 w-4 cursor-pointer"
-            @mouseenter="showTip($event, $t('passwordAccessTip'))"
-          />
-          <input
-            v-if="isVisiblePasswordAccess"
-            type="checkbox"
-            v-model="accessPasswordEnabled"
-            class="toggle ml-2"
-          />
+          {{ $t('changePassword') }}
         </div>
-        <label
-          v-if="accessPasswordEnabled && isVisibleAccessPassword"
-          class="input input-sm flex w-40 items-center gap-2"
+        <button
+          type="button"
+          class="btn btn-sm"
+          @click="isChangePasswordDialogOpen = true"
         >
-          <input
-            :type="showAccessPassword ? 'text' : 'password'"
-            class="grow"
-            v-model="accessPasswordDraft"
-            :placeholder="$t('accessPassword')"
-            @blur="commitAccessPassword"
-            @keydown.enter="commitAccessPassword"
-          />
-          <button
-            type="button"
-            class="text-base-content/60 hover:text-base-content flex items-center"
-            @click="showAccessPassword = !showAccessPassword"
-          >
-            <EyeIcon
-              v-if="showAccessPassword"
-              class="h-4 w-4"
-            />
-            <EyeSlashIcon
-              v-else
-              class="h-4 w-4"
-            />
-          </button>
-        </label>
+          {{ $t('changePassword') }}
+        </button>
       </div>
       <div
         v-if="autoDisconnectIdleUDP && isVisibleAutoDisconnectIdleUDPTime"
@@ -195,28 +165,25 @@ import { GENERAL_ITEM_KEYS } from '@/config/settingsItems'
 import { IP_INFO_API } from '@/constant'
 import { useTooltip } from '@/helper/tooltip'
 import {
-  accessPassword,
-  accessPasswordEnabled,
   autoDisconnectIdleUDP,
   autoDisconnectIdleUDPTime,
   disablePullToRefresh,
   displayAllFeatures,
   IPInfoAPI,
   scrollAnimationEffect,
-  setAccessAuthenticated,
   swipeInPages,
   swipeInTabs,
 } from '@/store/settings'
-import { EyeIcon, EyeSlashIcon, QuestionMarkCircleIcon } from '@heroicons/vue/24/outline'
-import { computed, ref, watch } from 'vue'
+import { QuestionMarkCircleIcon } from '@heroicons/vue/24/outline'
+import { computed, ref } from 'vue'
+import ChangePasswordDialog from './ChangePasswordDialog.vue'
 import ZashboardSettings from './ZashboardSettings.vue'
 
 const { showTip } = useTooltip()
 
 const k = GENERAL_ITEM_KEYS
 const isVisibleAutoDisconnectIdleUDP = useIsSettingVisible(k.autoDisconnectIdleUDP)
-const isVisiblePasswordAccess = useIsSettingVisible(k.passwordAccess)
-const isVisibleAccessPassword = useIsSettingVisible(k.accessPassword)
+const isVisibleChangePassword = useIsSettingVisible(k.changePassword)
 const isVisibleAutoDisconnectIdleUDPTime = useIsSettingVisible(k.autoDisconnectIdleUDPTime)
 const isVisibleIPInfoAPI = useIsSettingVisible(k.IPInfoAPI)
 const isVisibleScrollAnimationEffect = useIsSettingVisible(k.scrollAnimationEffect)
@@ -224,41 +191,12 @@ const isVisibleSwipeInPages = useIsSettingVisible(k.swipeInPages)
 const isVisibleSwipeInTabs = useIsSettingVisible(k.swipeInTabs)
 const isVisibleDisablePullToRefresh = useIsSettingVisible(k.disablePullToRefresh)
 const isVisibleDisplayAllFeatures = useIsSettingVisible(k.displayAllFeatures)
-const showAccessPassword = ref(false)
-const accessPasswordDraft = ref(accessPassword.value)
-
-watch(accessPasswordEnabled, (enabled) => {
-  if (!enabled) {
-    setAccessAuthenticated(false)
-    return
-  }
-
-  setAccessAuthenticated(false)
-})
-
-watch(accessPassword, (value) => {
-  accessPasswordDraft.value = value
-
-  if (!accessPasswordEnabled.value) {
-    return
-  }
-
-  setAccessAuthenticated(false)
-})
-
-const commitAccessPassword = () => {
-  if (accessPasswordDraft.value === accessPassword.value) {
-    return
-  }
-
-  accessPassword.value = accessPasswordDraft.value
-}
+const isChangePasswordDialogOpen = ref(false)
 
 const hasVisibleGeneralItems = computed(() => {
   return (
     isVisibleAutoDisconnectIdleUDP.value ||
-    isVisiblePasswordAccess.value ||
-    (accessPasswordEnabled.value && isVisibleAccessPassword.value) ||
+    isVisibleChangePassword.value ||
     (autoDisconnectIdleUDP.value && isVisibleAutoDisconnectIdleUDPTime.value) ||
     isVisibleIPInfoAPI.value ||
     isVisibleScrollAnimationEffect.value ||

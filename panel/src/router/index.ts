@@ -5,6 +5,7 @@ import {
   serverAccessPasswordEnabled,
   serverAuthenticated,
   serverAuthInitialized,
+  serverPasswordSet,
 } from '@/store/auth'
 import { language } from '@/store/settings'
 import ConnectionsPage from '@/views/ConnectionsPage.vue'
@@ -15,6 +16,7 @@ import OverviewPage from '@/views/OverviewPage.vue'
 import ProxiesPage from '@/views/ProxiesPage.vue'
 import RulesPage from '@/views/RulesPage.vue'
 import SettingsPage from '@/views/SettingsPage.vue'
+import SetupPasswordPage from '@/views/SetupPasswordPage.vue'
 import { useTitle } from '@vueuse/core'
 import { watch } from 'vue'
 import { createRouter, createWebHashHistory } from 'vue-router'
@@ -79,6 +81,11 @@ const router = createRouter({
       component: LoginPage,
     },
     {
+      path: '/setup',
+      name: ROUTE_NAME.setup,
+      component: SetupPasswordPage,
+    },
+    {
       path: '/:catchAll(.*)',
       redirect: () => ({ name: getLastRouteName() }),
     },
@@ -106,6 +113,25 @@ router.beforeEach((to, from) => {
     to.meta.transition = toIndex < fromIndex ? 'slide-right' : 'slide-left'
   }
 
+  // No access password configured yet: every route (other than setup itself)
+  // is forced into the setup flow, regardless of what was requested. This
+  // takes priority over the login check below — until a password exists,
+  // there is nothing to log in with.
+  if (serverAuthInitialized.value && !serverPasswordSet.value && to.name !== ROUTE_NAME.setup) {
+    return {
+      name: ROUTE_NAME.setup,
+      query: {
+        redirect: to.fullPath,
+      },
+    }
+  }
+
+  if (to.name === ROUTE_NAME.setup && serverAuthInitialized.value && serverPasswordSet.value) {
+    return {
+      name: getLastRouteName(),
+    }
+  }
+
   if (
     serverAuthInitialized.value &&
     serverAccessPasswordEnabled.value &&
@@ -131,7 +157,7 @@ router.beforeEach((to, from) => {
 })
 
 router.afterEach((to) => {
-  if (typeof to.name === 'string' && to.name !== ROUTE_NAME.login) {
+  if (typeof to.name === 'string' && to.name !== ROUTE_NAME.login && to.name !== ROUTE_NAME.setup) {
     window.localStorage.setItem(LAST_ROUTE_NAME_KEY, to.name)
   }
 
