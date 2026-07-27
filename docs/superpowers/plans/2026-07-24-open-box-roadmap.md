@@ -33,7 +33,8 @@
 - [x] P1 完成并合并(仓库落地、panel/ fork 基线、构建测试闭环、品牌化 2026、dev-panel.sh)
 - [x] P2a 完成并合并(引擎:订阅解析三格式七协议、归一化节点模型、重命名引擎、区域节点组;73 测试)
 - [x] P2b 完成并合并(配置生成:emit 六协议+wireguard endpoint、策略组、路由、可选 DNS 分流、tun/clash_api 组装;104 测试 + sing-box check 金标准 3/3)
-- [ ] P3–P7 计划:待各自前置阶段完成后制定
+- [x] P3 完成并合并(系统集成:SystemContext、服务控制、冲突检测、校验归因、DNS 接管、防火墙、部署编排;146 测试 + 金标准 4/4)
+- [ ] P4–P7 计划:待各自前置阶段完成后制定
 
 ## 记录在案的延期项(来自 P1 评审)
 
@@ -64,3 +65,13 @@
 **缺失字段回补清单(P3/P4 backlog,不阻塞当前):** hysteria2 `up`/`down` 带宽、tuic `udp-relay-mode`、wireguard `reserved`、ws `max_early_data`、vmess 旧式加密(如 `aes-128-cfb`,会 FATAL)。
 
 **表层 minor(择机):** emit 出的配置浅引用节点内部对象(headers/alpn/local_address/obfs),可在边界 spread 拷贝;`parseTrojan` 改写 `u.query`(可改传显式 flag)。
+
+## 记录在案的延期项(来自 P3 终审)
+
+**P4/P6 必须处理(终审 Important 7):启动持久化不一致** —— dnsmasq 接管的 uci 改动是 commit 到闪存的(重启后仍在),但内核服务从未 `enable`(`enableService` 已实现但无人调用)。若在 dnsmasq 模式下重启路由器:sing-box 不自启,dnsmasq 指向已死的 7853 → 全 LAN DNS 中断。要么部署成功时 `enableService(core)`(回滚时 `disableService`),要么明确由 P6 安装脚本负责开机自启——但不可让"持久化的 uci 状态 + 非持久化的服务状态"这种不一致进入 P7。
+
+**P4 看门狗(终审 Minor 9):** `deploy` 的验证紧跟 restart,可能在 procd 崩溃重启循环期间读到瞬时 "running"。P4 应加短延迟复检或 clash_api 探活。
+
+**P5 卫生项(终审 Minor 12):** `config.candidate.json`/`config.probe.json` 无清理;回滚后 `config.json` 仍是启动失败的那份(运行状态已恢复但文件未回退,可考虑 `config.json.prev`);`restoreDnsTakeover` 在 commit/重启结果未知前就删了备份。
+
+**其余表层项:** `rollbackToDirect.actions` 记录的是"尝试过"而非"成功"(exec 返回码被忽略),命名可改为 attempted 或按步记录 ok;`parseBackup` 的无引号裸值分支无测试。
