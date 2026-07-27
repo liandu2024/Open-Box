@@ -114,6 +114,40 @@ export interface OpenboxDeployResult {
   badTags: string[]
 }
 
+// GET /deploy/state persists across reloads (store/openbox-store.mjs's DEFAULT_DEPLOY_STATE),
+// so 'idle' (never deployed) is a real value here even though a live deployNow() call itself
+// never returns it.
+export interface OpenboxDeployState {
+  stage: OpenboxDeployResult['stage'] | 'idle'
+  message: string
+  at: number
+  badTags: string[]
+}
+
+// Mirrors server/api/profile.mjs's RULESET_TAG_PATTERN — used client-side purely so the UI can
+// reject obviously-bad input before it round-trips to the server; the server's own check is
+// still the actual authority (see validateProfilePatch).
+export const RULESET_TAG_PATTERN = /^[A-Za-z0-9._-]+$/
+
+// config/preview is raw sing-box config JSON straight out of buildConfig — only the shape this
+// UI actually reads (outbounds) is typed; everything else passes through untouched.
+export interface OpenboxConfigOutbound {
+  type: string
+  tag: string
+  outbounds?: string[]
+}
+
+export interface OpenboxConfigPreview {
+  outbounds?: OpenboxConfigOutbound[]
+  [key: string]: unknown
+}
+
+export interface OpenboxPolicyGroup {
+  name: string
+  type: string
+  nodeCount: number
+}
+
 // Backend routes always answer with a JSON body (success or error) — this normalizes the
 // "throw with the server's own message" path so callers can show something meaningful instead
 // of a bare HTTP status.
@@ -225,4 +259,35 @@ export const deployNow = async (): Promise<OpenboxDeployResult> => {
     message: data?.message || '',
     badTags: data?.badTags || [],
   }
+}
+
+export const fetchDeployState = async (): Promise<OpenboxDeployState> => {
+  const data = await requestJson<{ state: OpenboxDeployState }>('/api/openbox/deploy/state')
+  return data.state
+}
+
+// Never persists — assembled fresh from the current (already-saved) profile + nodes on every
+// call, so it's safe to call as often as needed to keep the read-only policy-group list current.
+export const fetchConfigPreview = async (): Promise<OpenboxConfigPreview> => {
+  const data = await requestJson<{ config: OpenboxConfigPreview }>('/api/openbox/config/preview')
+  return data.config
+}
+
+// Region policy groups are every 'selector'/'urltest' outbound except the top-level proxy
+// selector itself — see server/engine/emit-groups.mjs: emitGroupOutbounds always emits
+// `[proxySelector, ...regionGroups]`, and each region group's `outbounds` is its member node
+// tags (so its length is the node count). Filtering by tag instead of position is robust to
+// that ordering ever changing.
+export const extractPolicyGroups = (
+  config: OpenboxConfigPreview | null | undefined,
+  proxyTag: string,
+): OpenboxPolicyGroup[] => {
+  if (!config || !Array.isArray(config.outbounds)) return []
+
+  return config.outbounds
+    .filter(
+      (o): o is OpenboxConfigOutbound & { outbounds: string[] } =>
+        (o.type === 'selector' || o.type === 'urltest') && o.tag !== proxyTag && Array.isArray(o.outbounds),
+    )
+    .map((o) => ({ name: o.tag, type: o.type, nodeCount: o.outbounds.length }))
 }

@@ -15,6 +15,7 @@ import LoginPage from '@/views/LoginPage.vue'
 import LogsPage from '@/views/LogsPage.vue'
 import OverviewPage from '@/views/OverviewPage.vue'
 import ProxiesPage from '@/views/ProxiesPage.vue'
+import RoutingPage from '@/views/RoutingPage.vue'
 import RulesPage from '@/views/RulesPage.vue'
 import SettingsPage from '@/views/SettingsPage.vue'
 import SetupPasswordPage from '@/views/SetupPasswordPage.vue'
@@ -66,6 +67,11 @@ const childrenRouter = [
     path: 'subscriptions',
     name: ROUTE_NAME.subscriptions,
     component: SubscriptionsPage,
+  },
+  {
+    path: 'routing',
+    name: ROUTE_NAME.routing,
+    component: RoutingPage,
   },
   {
     path: 'settings',
