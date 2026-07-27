@@ -12,6 +12,8 @@ export const disableService = (ctx, initdPath) => runAction(ctx, initdPath, 'dis
 export const serviceStatus = async (ctx, initdPath) => {
   const { code, stdout, stderr } = await ctx.exec(initdPath, ['status'])
   const raw = `${stdout}${stderr}`
-  const running = code === 0 && /running|active/i.test(raw)
+  // procd 对"已注册但零进程实例"(如内核崩溃后放弃重启)会报 "active with no instances",
+  // 这类文本含 "active" 但不代表真的在跑;必须要求出现 "running" 且不含 "no instances"。
+  const running = code === 0 && /running/i.test(raw) && !/no instances/i.test(raw)
   return { running, raw }
 }

@@ -49,3 +49,9 @@ test('serviceStatus 判定 running', async () => {
   const no = createMockContext({ execResults: { '/etc/init.d/openbox status': { code: 1, stdout: 'inactive' } } })
   assert.equal((await serviceStatus(no, '/etc/init.d/openbox')).running, false)
 })
+
+test('procd "active with no instances"(已注册但零进程)不算 running', async () => {
+  const ctx = createMockContext({ execResults: { '/etc/init.d/openbox status': { code: 0, stdout: 'active with no instances' } } })
+  const r = await serviceStatus(ctx, '/etc/init.d/openbox')
+  assert.equal(r.running, false)
+})

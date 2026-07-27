@@ -3,6 +3,7 @@ import test from 'node:test'
 import { createMockContext } from './context.mjs'
 import { createPaths } from './paths.mjs'
 import { deployConfig, rollbackToDirect } from './deploy.mjs'
+import { dnsTakeoverBackupPath } from './dns-takeover.mjs'
 
 const paths = createPaths('/opt/open-box')
 const config = { log: { level: 'warn' }, outbounds: [{ type: 'direct', tag: 'direct' }] }
@@ -78,6 +79,35 @@ test('启动后未 running → 回滚', async () => {
   assert.equal(r.ok, false)
   assert.equal(r.stage, 'verify')
   assert.ok(cmds(ctx).includes('/etc/init.d/openbox stop'))
+})
+
+test('模式切换:切回 hijack 但上次 dnsmasq 接管的备份仍在 → 部署时先还原 dnsmasq 上游', async () => {
+  const ctx = createMockContext({
+    files: { [dnsTakeoverBackupPath(paths)]: "dhcp.cfg01411c.server='223.5.5.5'\ndhcp.cfg01411c.noresolv='0'\n" },
+    execResults: { '/etc/init.d/openbox status': { code: 0, stdout: 'running' } },
+  })
+  const r = await deployConfig(ctx, paths, { config, profile: { ...profile, dns: { mode: 'hijack' } } })
+  assert.equal(r.ok, true)
+  const c = cmds(ctx)
+  // 不还原的话 dnsmasq 会继续指向 127.0.0.1#7853,而新配置已无 dns-in 入站 → LAN DNS 全断
+  assert.ok(c.includes('uci -q delete dhcp.@dnsmasq[0].server'))
+  assert.ok(c.includes('uci add_list dhcp.@dnsmasq[0].server=223.5.5.5'))
+  assert.ok(c.includes('uci set dhcp.@dnsmasq[0].noresolv=0'))
+  assert.equal(await ctx.exists(dnsTakeoverBackupPath(paths)), false)     // 备份已消费
+})
+
+test('落盘之后阶段抛出异常 → 回滚到直连并返回 stage:error', async () => {
+  const ctx = okCtx()
+  const realWriteFile = ctx.writeFile.bind(ctx)
+  ctx.writeFile = async (path, content) => {
+    if (path === paths.configPath) throw new Error('ENOSPC: no space left on device')
+    return realWriteFile(path, content)
+  }
+  const r = await deployConfig(ctx, paths, { config, profile })
+  assert.equal(r.ok, false)
+  assert.equal(r.stage, 'error')
+  assert.match(r.message, /ENOSPC/)
+  assert.ok(cmds(ctx).includes('/etc/init.d/openbox stop'))    // 回滚:停服务
 })
 
 test('rollbackToDirect 幂等且尽力而为', async () => {
