@@ -30,17 +30,14 @@ const bootstrap = async () => {
   await initializePersistentStorage()
   await import('@/helper/dayjs')
 
-  const [{ createApp }, { default: App }, { loadFonts }, { applyCustomThemes }, { i18n }, router] =
-    await Promise.all([
-      import('vue'),
-      import('./App.vue'),
-      import('./assets/load-fonts'),
-      import('./helper'),
-      import('./i18n'),
-      import('./router'),
-    ])
+  const [{ createApp }, { default: App }, { loadFonts }, { i18n }, router] = await Promise.all([
+    import('vue'),
+    import('./App.vue'),
+    import('./assets/load-fonts'),
+    import('./i18n'),
+    import('./router'),
+  ])
 
-  applyCustomThemes()
   loadFonts()
 
   const app = createApp(App)

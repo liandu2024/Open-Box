@@ -17,7 +17,6 @@ export enum LANG {
   EN_US = 'en-US',
   ZH_CN = 'zh-CN',
   ZH_TW = 'zh-TW',
-  RU_RU = 'ru-RU',
 }
 
 export enum FONTS {
@@ -192,83 +191,14 @@ export const DETAILED_CARD_STYLE = [
   ],
 ]
 
-export const ALL_THEME = [
-  'light',
-  'dark',
-  'light-legacy',
-  'dark-legacy',
-  'cupcake',
-  'bumblebee',
-  'emerald',
-  'corporate',
-  'synthwave',
-  'retro',
-  'cyberpunk',
-  'valentine',
-  'halloween',
-  'garden',
-  'forest',
-  'aqua',
-  'lofi',
-  'pastel',
-  'fantasy',
-  'wireframe',
-  'black',
-  'luxury',
-  'dracula',
-  'cmyk',
-  'autumn',
-  'business',
-  'acid',
-  'lemonade',
-  'night',
-  'coffee',
-  'winter',
-  'dim',
-  'nord',
-  'sunset',
-  'caramellatte',
-  'abyss',
-  'silk',
-]
-
-export const DEFAULT_THEME = {
-  name: 'custom',
-  id: '',
-  '--border': '1px',
-  '--color-base-100': '#ffffff',
-  '--color-base-200': '#fcfcfc',
-  '--color-base-300': '#f2f2f2',
-  '--color-base-content': '#2d2d33',
-  '--color-primary': '#5a3cd2',
-  '--color-primary-content': '#f3efff',
-  '--color-secondary': '#ea4c5a',
-  '--color-secondary-content': '#fff1f2',
-  '--color-accent': '#49c6c1',
-  '--color-accent-content': '#285e66',
-  '--color-neutral': '#1e1e1f',
-  '--color-neutral-content': '#ececec',
-  '--color-info': '#5b90ff',
-  '--color-info-content': '#273c66',
-  '--color-success': '#44c07a',
-  '--color-success-content': '#1d472f',
-  '--color-warning': '#e5a300',
-  '--color-warning-content': '#705322',
-  '--color-error': '#d13a30',
-  '--color-error-content': '#551d1d',
-  '--depth': '0',
-  '--noise': '0',
-  '--radius-box': '1rem',
-  '--radius-field': '0.5rem',
-  '--radius-selector': '1rem',
-  '--size-field': '0.25rem',
-  '--size-selector': '0.25rem',
-  'color-scheme': 'dark',
-  default: false,
-  prefersdark: false,
+// UI-facing appearance choice (P4b: converged to exactly three options).
+// Internally still maps onto the existing daisyUI 'light'/'dark' theme
+// names via config/default-theme + config/dark-theme + config/auto-theme.
+export enum THEME_MODE {
+  AUTO = 'auto',
+  LIGHT = 'light',
+  DARK = 'dark',
 }
-
-export type THEME = Record<string, string>
 
 export enum IP_INFO_API {
   IPSB = 'ip.sb',

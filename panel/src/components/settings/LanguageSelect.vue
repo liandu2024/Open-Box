@@ -29,6 +29,5 @@ const langLabelMap = {
   [LANG.EN_US]: 'English',
   [LANG.ZH_CN]: '简体中文',
   [LANG.ZH_TW]: '繁體中文',
-  [LANG.RU_RU]: 'Русский',
 }
 </script>

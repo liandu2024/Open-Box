@@ -2,13 +2,7 @@ import { NOT_CONNECTED, PROXY_CHAIN_DIRECTION, PROXY_TYPE, ROUTE_NAME } from '@/
 import { showNotification } from '@/helper/notification'
 import { timeSaved } from '@/store/overview'
 import { hiddenGroupMap, proxyMap } from '@/store/proxies'
-import {
-  customThemes,
-  lowLatency,
-  mediumLatency,
-  proxyChainDirection,
-  splitOverviewPage,
-} from '@/store/settings'
+import { lowLatency, mediumLatency, proxyChainDirection, splitOverviewPage } from '@/store/settings'
 import type { Connection, Proxy } from '@/types'
 import dayjs from 'dayjs'
 import * as ipaddr from 'ipaddr.js'
@@ -163,26 +157,6 @@ export const renderRoutes = computed(() => {
     return ![ROUTE_NAME.login, !splitOverviewPage.value && ROUTE_NAME.overview].includes(r)
   })
 })
-
-export const applyCustomThemes = () => {
-  document.querySelectorAll('.custom-theme').forEach((style) => {
-    style.remove()
-  })
-  customThemes.value.forEach((theme) => {
-    const style = document.createElement('style')
-    const styleString = Object.entries(theme)
-      .filter(([key]) => !['prefersdark', 'default', 'name', 'type', 'id'].includes(key))
-      .map(([key, value]) => `${key}:${value}`)
-      .join(';')
-
-    style.innerHTML = `[data-theme="${theme.name}"] {
-      ${styleString} 
-    }`
-
-    style.className = `custom-theme ${theme.name}`
-    document.head.appendChild(style)
-  })
-}
 
 export const isHiddenGroup = (group: string) => {
   if (Reflect.has(hiddenGroupMap.value, group)) {

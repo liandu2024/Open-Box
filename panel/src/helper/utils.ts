@@ -1,10 +1,32 @@
-import { MIN_PROXY_CARD_WIDTH, PROXY_CARD_SIZE } from '@/constant'
+import { LANG, MIN_PROXY_CARD_WIDTH, PROXY_CARD_SIZE } from '@/constant'
 import { getManagedStorageSnapshot } from '@/helper/persistentStorage'
 import { useMediaQuery } from '@vueuse/core'
 import dayjs from 'dayjs'
 import prettyBytes, { type Options } from 'pretty-bytes'
 
 export const isPreferredDark = useMediaQuery('(prefers-color-scheme: dark)')
+
+/**
+ * Maps a raw `navigator.language` value to one of the three supported UI
+ * languages, by prefix:
+ *   - zh-TW / zh-HK / zh-Hant* -> zh-tw
+ *   - any other zh*           -> zh
+ *   - everything else         -> en
+ */
+export const detectDefaultLanguage = (navigatorLanguage: string): LANG => {
+  const lang = (navigatorLanguage || '').toLowerCase()
+
+  if (!lang.startsWith('zh')) {
+    return LANG.EN_US
+  }
+
+  if (lang.includes('tw') || lang.includes('hk') || lang.includes('hant')) {
+    return LANG.ZH_TW
+  }
+
+  return LANG.ZH_CN
+}
+
 export const isMiddleScreen = useMediaQuery('(max-width: 768px)')
 export const isPWA = (() => {
   return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone
