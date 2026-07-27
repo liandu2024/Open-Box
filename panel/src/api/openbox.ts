@@ -41,12 +41,35 @@ export interface OpenboxProfileDefaults {
   routing: OpenboxProfileRouting
 }
 
+// Mirrors server/engine/rename.mjs / dictionaries.mjs — see
+// src/components/subscription/rename-defaults.ts for why this shape has no persistence endpoint
+// of its own and how the editor round-trips it.
+export interface OpenboxRenameRegionEntry {
+  code: string
+  name: string
+  keywords: string[]
+}
+
+export interface OpenboxRenameFeatureEntry {
+  label: string
+  keywords: string[]
+}
+
+export interface OpenboxRenameOptions {
+  regionDict?: OpenboxRenameRegionEntry[]
+  featureDict?: OpenboxRenameFeatureEntry[]
+  template?: string
+  unknownLabel?: string
+  seqPad?: number
+}
+
 export interface OpenboxSubscription {
   id: string
   name: string
   url: string
   format: string
   nodeCount: number
+  renameOptions?: OpenboxRenameOptions
   createdAt: number
   updatedAt: number
 }
@@ -58,9 +81,29 @@ export interface OpenboxNodeSummary {
   server: string
 }
 
+export interface OpenboxRenamePreviewEntry {
+  originalTag: string
+  newTag: string
+}
+
+export interface OpenboxNodeGroup {
+  name: string
+  type: string
+  nodeTags: string[]
+}
+
 export interface OpenboxSubscriptionPreview {
   format: string
   nodes: OpenboxNodeSummary[]
+  skipped: Array<{ name: string; type: string }>
+  preview: OpenboxRenamePreviewEntry[]
+  groups: OpenboxNodeGroup[]
+}
+
+export interface OpenboxSubscriptionSaveResult {
+  id: string
+  name: string
+  nodeCount: number
   skipped: Array<{ name: string; type: string }>
 }
 
@@ -119,8 +162,13 @@ export const fetchSubscriptions = async (): Promise<OpenboxSubscription[]> => {
   return data.subscriptions
 }
 
+// Preview never persists — safe to call on every debounced keystroke. Accepts either a `url`
+// (server fetches it, SSRF-guarded) or raw pasted `content` (content wins if both are set, per
+// server/api/subscriptions.mjs's resolveNodes).
 export const previewSubscription = async (payload: {
-  url: string
+  url?: string
+  content?: string
+  renameOptions?: OpenboxRenameOptions
 }): Promise<OpenboxSubscriptionPreview> => {
   return requestJson<OpenboxSubscriptionPreview>('/api/openbox/subscriptions/preview', {
     method: 'POST',
@@ -128,13 +176,35 @@ export const previewSubscription = async (payload: {
   })
 }
 
+// NOTE: the create route only accepts a fetchable `url` (no `content`-only body) — pasted
+// content can be previewed but not saved directly. See server/api/subscriptions.mjs's `/` POST
+// handler: `if (typeof url !== 'string' || !url.trim()) throw new Error('url is required')`.
 export const createSubscription = async (payload: {
   url: string
   name: string
-}): Promise<{ id: string; name: string; nodeCount: number; skipped: Array<{ name: string; type: string }> }> => {
+  renameOptions?: OpenboxRenameOptions
+}): Promise<OpenboxSubscriptionSaveResult> => {
   return requestJson('/api/openbox/subscriptions', {
     method: 'POST',
     body: JSON.stringify(payload),
+  })
+}
+
+export const deleteSubscription = async (id: string): Promise<{ ok: boolean }> => {
+  return requestJson(`/api/openbox/subscriptions/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
+}
+
+// Re-fetches from the subscription's saved url and replaces only that subscription's nodes.
+// Omitting renameOptions reuses whatever was saved at create time (server-side default).
+export const refreshSubscription = async (
+  id: string,
+  renameOptions?: OpenboxRenameOptions,
+): Promise<OpenboxSubscriptionSaveResult> => {
+  return requestJson(`/api/openbox/subscriptions/${encodeURIComponent(id)}/refresh`, {
+    method: 'POST',
+    body: JSON.stringify(renameOptions ? { renameOptions } : {}),
   })
 }
 

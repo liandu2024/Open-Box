@@ -18,6 +18,7 @@ import ProxiesPage from '@/views/ProxiesPage.vue'
 import RulesPage from '@/views/RulesPage.vue'
 import SettingsPage from '@/views/SettingsPage.vue'
 import SetupPasswordPage from '@/views/SetupPasswordPage.vue'
+import SubscriptionsPage from '@/views/SubscriptionsPage.vue'
 import WizardPage from '@/views/WizardPage.vue'
 import { useTitle } from '@vueuse/core'
 import { watch } from 'vue'
@@ -60,6 +61,11 @@ const childrenRouter = [
     path: 'rules',
     name: ROUTE_NAME.rules,
     component: RulesPage,
+  },
+  {
+    path: 'subscriptions',
+    name: ROUTE_NAME.subscriptions,
+    component: SubscriptionsPage,
   },
   {
     path: 'settings',
