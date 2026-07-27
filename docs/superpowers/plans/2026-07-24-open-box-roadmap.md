@@ -12,7 +12,8 @@
 | P2a | 后端引擎:订阅与节点 | 订阅解析(Clash YAML/分享链接/sing-box JSON × 七协议)→ 归一化节点模型 → 节点重命名引擎(区域归一+特征提取+模板+预览)→ 区域节点组自动生成;纯函数模块 `panel/server/engine/`,完整测试向量 TDD | P1 |
 | P2b | 后端引擎:配置生成 | 节点→sing-box outbound;两层分流(策略分流+可选 DNS 分流)、IPv6、tun 入站、clash_api 9095 配置组装;钦定 sing-box 二进制 + `sing-box check` 金标准集成测试;边查官方 schema 边 TDD | P2a |
 | P3 | 本地系统集成层 | system adapter:配置写入、init.d 服务控制、DNS 接管两模式的应用/还原、防火墙规则、冲突检测、启动失败恢复直连;OpenWrt 命令封装 + macOS mock 双实现 | P2 |
-| P4 | 面板前端 | 单后端裁剪;首次引导向导;订阅管理与重命名规则 UI(含实时预览);策略分流可视化;DNS/IPv6 设置;内核管理页;登录认证;i18n 收敛(en/zh-Hans/zh-Hant)与三主题 | P2(接口),P3(联调) |
+| P4a | 后端 API 层 | 把引擎/系统层接进 Express:订阅、profile、生成与部署、服务控制、本机 clash_api 代理固化、首次设密、sing-box 版穿透;移除 SSH/OpenClash 遗产 | P2b, P3 |
+| P4b | 面板前端 | 单后端裁剪;首次引导向导;订阅管理与重命名规则 UI(含实时预览);策略分流可视化;DNS/IPv6 设置;内核管理页;登录认证;i18n 收敛(en/zh-Hans/zh-Hant)与三主题 | P2(接口),P3(联调) |
 | P5 | OpenWrt 侧 | procd init 脚本(openbox / openbox-panel)、tun 与 DNS 接管落地脚本、LuCI 兜底页(luci-app-openbox,JS + rpcd ACL)、紧急停止 | P3 |
 | P6 | 安装/升级/卸载与发布流水线 | install.sh(直连/镜像双通道、预检、随机密码、防火墙)、update.sh、uninstall.sh;GitHub Actions 按架构打包(Node 运行时 + 面板 + 脚本 + 元数据 + SHA256)发 Release | P5 |
 | P7 | 端到端验收 | x86_64/arm64 OpenWrt 实测:装→引导→订阅→分流→断网恢复→升级→卸载全流程;故障注入(坏配置/kill 内核/订阅 4xx) | P6 |
@@ -34,7 +35,9 @@
 - [x] P2a 完成并合并(引擎:订阅解析三格式七协议、归一化节点模型、重命名引擎、区域节点组;73 测试)
 - [x] P2b 完成并合并(配置生成:emit 六协议+wireguard endpoint、策略组、路由、可选 DNS 分流、tun/clash_api 组装;104 测试 + sing-box check 金标准 3/3)
 - [x] P3 完成并合并(系统集成:SystemContext、服务控制、冲突检测、校验归因、DNS 接管、防火墙、部署编排;146 测试 + 金标准 4/4)
-- [ ] P4–P7 计划:待各自前置阶段完成后制定
+- [x] P4 拆分为 P4a(后端 API,计划已制定:`docs/superpowers/plans/2026-07-27-p4a-backend-api.md`)与 P4b(前端 UI)
+- [ ] P4a 执行中;P4b 及 P5–P7 计划待制定
+- 产品决策(2026-07-27):穿透功能**保留并重写为 sing-box 版**(基于 `sing-box rule-set match` 本地 .srs 匹配);面板密码改为**首次访问强制设密**(不再由安装脚本预生成)
 
 ## 记录在案的延期项(来自 P1 评审)
 
