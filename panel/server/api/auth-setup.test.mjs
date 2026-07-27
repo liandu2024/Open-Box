@@ -6,14 +6,17 @@ import test, { after, beforeEach } from 'node:test'
 import { WebSocket } from 'ws'
 
 // 独立临时 DB + 独立 express app 实例(真实监听端口,走真实 HTTP/WS),
-// 每个 test 前用 replaceSnapshot({}) 清空 KV,保证"未设密"场景不被前序用例污染。
+// 每个 test 前清空整张 KV 表,保证"未设密"场景不被前序用例污染。
+// 注意:不能再用 replaceSnapshot({}) 来清空 —— Critical 2 修复后它会跳过受保护键
+// (config/access-*、openbox/*),密码一旦被某个用例设过就会残留到后续用例,直接操作
+// 底层 db 才能做到"整表清空"的测试隔离语义。
 const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'openbox-auth-setup-test-'))
 const dbPath = path.join(tempDir, 'zashboard.sqlite')
 
 process.env.ZASHBOARD_DB_PATH = dbPath
 
 const serverModuleUrl = new URL('./../index.mjs?test=auth-setup', import.meta.url)
-const { server, replaceSnapshot, shutdownServer } = await import(serverModuleUrl.href)
+const { db, server, shutdownServer } = await import(serverModuleUrl.href)
 
 const listenEphemeral = (srv) =>
   new Promise((resolve, reject) => {
@@ -32,7 +35,7 @@ after(async () => {
 })
 
 beforeEach(() => {
-  replaceSnapshot({})
+  db.exec('DELETE FROM app_storage')
 })
 
 const postSetup = (password) =>

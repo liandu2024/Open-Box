@@ -104,6 +104,51 @@ test('POST /api/openbox/penetration 缺 target → 400,不 exec', async () => {
   }
 })
 
+// ---- Important 6:target 校验(防 CLI 参数注入) ----
+// target 最终会作为参数传给 `sing-box rule-set match`(execFile,无 shell),以 "-" 开头的
+// 值会被当作 flag。必须在做任何 exec 之前拒绝。
+
+test('POST /api/openbox/penetration target 以 "-" 开头("--help") → 400,不 exec', async () => {
+  const ctx = createMockContext({})
+  const { baseUrl, close } = await startApp({ ctx })
+  try {
+    const { res, body } = await post(baseUrl, '--help')
+    assert.equal(res.status, 400)
+    assert.ok(body.message)
+    assert.equal(ctx.calls.length, 0)
+  } finally {
+    await close()
+  }
+})
+
+test('POST /api/openbox/penetration target 以 "-" 开头("-x") → 400,不 exec', async () => {
+  const ctx = createMockContext({})
+  const { baseUrl, close } = await startApp({ ctx })
+  try {
+    const { res, body } = await post(baseUrl, '-x')
+    assert.equal(res.status, 400)
+    assert.ok(body.message)
+    assert.equal(ctx.calls.length, 0)
+  } finally {
+    await close()
+  }
+})
+
+test('POST /api/openbox/penetration 合法域名/IPv4/IPv6 target 仍然通过(不被参数校验误拦)', async () => {
+  const ctx = createMockContext({ defaultExec: { code: 0, stdout: '' } })
+  const fetchImpl = async () => ({ ok: true, status: 200, json: async () => ({ name: 'PROXY' }) })
+  const { baseUrl, close } = await startApp({ ctx, fetchImpl })
+  try {
+    for (const target of ['good.example.com', '8.8.8.8', '2001:4860:4860::8888']) {
+      const { res, body } = await post(baseUrl, target)
+      assert.equal(res.status, 200, `target=${target} 应通过校验`)
+      assert.equal(body.finalOutbound, 'PROXY')
+    }
+  } finally {
+    await close()
+  }
+})
+
 test('按序首个命中生效:前一条 rule_set 命中时,后一条同样会命中的规则不会被求值(shadow)', async () => {
   const store = memStore()
   store.setProfile({

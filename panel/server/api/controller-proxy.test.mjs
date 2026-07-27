@@ -87,7 +87,14 @@ const modB = await importServerModule({ dbPath: dbPathB, clashApiBase: fakeDefau
 // P4a Task 8:未设密时守卫会拦截除 /api/health、/api/auth/status、/api/auth/setup 外的一切 /api/*。
 // 本文件测的是代理转发本身,不是认证流程,这里只需要"已设密"这一前提条件就能绕开新守卫;
 // 不设置 access-password-enabled,保持鉴权本身关闭,不影响本文件原有的免鉴权断言。
-modB.replaceSnapshot({ 'config/access-password': 'controller-proxy-test-placeholder' })
+// 密码键是受保护键(Critical 2 修复后 replaceSnapshot 会拒绝客户端写入),这里直接走底层
+// db 写入模拟"已持久化的密码",而不是通过现在已加固的 replaceSnapshot。
+modB.db
+  .prepare(
+    `INSERT INTO app_storage (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`,
+  )
+  .run('config/access-password', 'controller-proxy-test-placeholder')
 const baseUrlB = await listenEphemeral(modB.server)
 
 after(async () => {

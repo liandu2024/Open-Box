@@ -189,6 +189,34 @@ test('POST /api/openbox/deploy 启动后未 running(verify 阶段)→ 500,同样
   }
 })
 
+test('POST /api/openbox/deploy 落盘前步骤(mkdirp)抛出异常 → 500 JSON(不是默认 HTML 错误页),部署态标记 error', async () => {
+  const ctx = okCtx()
+  // mkdirp 在 deployConfig 里排在"冲突检测"之后、"落盘"之前——这一段目前没有被
+  // deployConfig 内部的 try/catch 覆盖(那段只包住落盘之后的步骤),异常会直接冒泡。
+  ctx.mkdirp = async () => {
+    throw new Error('mkdirp failed: disk full')
+  }
+  const { baseUrl, store, close } = await startApp(ctx)
+  try {
+    const res = await fetch(`${baseUrl}/api/openbox/deploy`, { method: 'POST' })
+    assert.equal(res.status, 500)
+    assert.match(res.headers.get('content-type') || '', /application\/json/)
+
+    const body = await res.json()
+    assert.equal(body.ok, false)
+    assert.equal(body.stage, 'error')
+    assert.match(body.message, /mkdirp failed: disk full/)
+
+    assert.equal(store.getDeployState().stage, 'error') // setDeployState 确实执行了,不是停留在旧状态
+
+    const stateRes = await fetch(`${baseUrl}/api/openbox/deploy/state`)
+    const stateBody = await stateRes.json()
+    assert.equal(stateBody.state.stage, 'error')
+  } finally {
+    await close()
+  }
+})
+
 test('GET /api/openbox/deploy/state 返回最近一次部署结果', async () => {
   const ctx = okCtx()
   const { baseUrl, close } = await startApp(ctx)

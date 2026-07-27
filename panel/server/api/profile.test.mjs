@@ -111,6 +111,47 @@ test('validateProfilePatch 非对象 patch → 报错', () => {
   assert.ok(validateProfilePatch('nope'))
 })
 
+// -------- Important 5:规则集 tag 与 rulesetDir 内容校验 --------
+// directRulesets[]/adRuleset/categories[].ruleset 最终原样进入生成配置的 rule_set.path,
+// 并作为参数传给 `sing-box rule-set match`(execFile 无 shell,非命令注入,但属任意路径
+// 读取尝试 + 配置损坏)。rulesetDir 同理会被拼进每个 .srs 文件路径。
+
+test('validateProfilePatch routing.directRulesets 含路径穿越("../../../etc/passwd") → 报错', () => {
+  assert.ok(validateProfilePatch({ routing: { directRulesets: ['../../../etc/passwd'] } }))
+})
+
+test('validateProfilePatch rulesetDir 含 ".." ("/tmp/../etc") → 报错', () => {
+  assert.ok(validateProfilePatch({ rulesetDir: '/tmp/../etc' }))
+})
+
+test('validateProfilePatch rulesetDir 非绝对路径 → 报错', () => {
+  assert.ok(validateProfilePatch({ rulesetDir: 'relative/path' }))
+})
+
+test('validateProfilePatch rulesetDir 合法绝对路径通过', () => {
+  assert.equal(validateProfilePatch({ rulesetDir: '/opt/open-box/data/rulesets' }), null)
+})
+
+test('validateProfilePatch routing.adRuleset 含非法字符 → 报错;合法 tag 通过', () => {
+  assert.ok(validateProfilePatch({ routing: { adRuleset: '../../etc/passwd' } }))
+  assert.equal(validateProfilePatch({ routing: { adRuleset: 'geosite-category-ads-all' } }), null)
+})
+
+test('validateProfilePatch routing.categories[].ruleset 含非法字符 → 报错', () => {
+  assert.ok(
+    validateProfilePatch({
+      routing: { categories: [{ ruleset: '../../../etc/passwd', target: 'PROXY' }] },
+    }),
+  )
+})
+
+test('validateProfilePatch routing.directRulesets 合法 tag(字母数字点下划线连字符)通过', () => {
+  assert.equal(
+    validateProfilePatch({ routing: { directRulesets: ['geosite-cn', 'geoip-cn', 'my.custom_rule-1'] } }),
+    null,
+  )
+})
+
 // -------- HTTP 路由集成测试 --------
 
 test('GET /api/openbox/profile 返回默认 profile', async () => {
@@ -203,6 +244,57 @@ test('PUT 非法 routing.directRulesets(含非字符串) → 400 且不写入', 
     })
     assert.equal(res.status, 400)
     assert.deepEqual(store.getProfile(), before)
+  } finally {
+    await close()
+  }
+})
+
+// -------- Important 5(HTTP 层):恶意 directRulesets / rulesetDir 不得写入 --------
+
+test('PUT routing.directRulesets 含路径穿越("../../../etc/passwd") → 400 且不写入', async () => {
+  const { baseUrl, store, close } = await startApp()
+  try {
+    const before = store.getProfile()
+    const res = await putJson(baseUrl, '/api/openbox/profile', {
+      routing: { directRulesets: ['../../../etc/passwd'] },
+    })
+    assert.equal(res.status, 400)
+    const body = await res.json()
+    assert.ok(body.error)
+    assert.deepEqual(store.getProfile(), before)
+  } finally {
+    await close()
+  }
+})
+
+test('PUT rulesetDir("/tmp/../etc") → 400 且不写入', async () => {
+  const { baseUrl, store, close } = await startApp()
+  try {
+    const before = store.getProfile()
+    const res = await putJson(baseUrl, '/api/openbox/profile', {
+      rulesetDir: '/tmp/../etc',
+    })
+    assert.equal(res.status, 400)
+    const body = await res.json()
+    assert.ok(body.error)
+    assert.deepEqual(store.getProfile(), before)
+  } finally {
+    await close()
+  }
+})
+
+test('PUT 合法的 directRulesets 与 rulesetDir 仍能通过并落库', async () => {
+  const { baseUrl, store, close } = await startApp()
+  try {
+    const res = await putJson(baseUrl, '/api/openbox/profile', {
+      routing: { directRulesets: ['geosite-cn', 'geoip-cn'] },
+      rulesetDir: '/opt/open-box/data/rulesets2',
+    })
+    assert.equal(res.status, 200)
+    const body = await res.json()
+    assert.deepEqual(body.profile.routing.directRulesets, ['geosite-cn', 'geoip-cn'])
+    assert.equal(body.profile.rulesetDir, '/opt/open-box/data/rulesets2')
+    assert.deepEqual(store.getProfile(), body.profile)
   } finally {
     await close()
   }

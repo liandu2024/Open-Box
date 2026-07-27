@@ -236,6 +236,109 @@ test('创建时缺 url 或 name → 400', async () => {
   }
 })
 
+// -------- Important 4:订阅拉取 SSRF 防护 --------
+// 面板本身跑在网关上,拉取订阅是"服务端发起、URL 客户端可控"——不加限制就能拿来当跳板
+// 探测回环/内网端口。校验必须发生在真的调用 fetchImpl 之前,且不能改变已存状态。
+
+test('SSRF 防护:订阅 URL 指向回环地址(127.0.0.1)→ 400,且从未真正调用 fetchImpl', async () => {
+  let called = false
+  const fetchImpl = async () => {
+    called = true
+    return { ok: true, status: 200, text: async () => HK_LINE }
+  }
+  const { baseUrl, store, close } = await startApp(fetchImpl)
+  try {
+    const res = await postJson(baseUrl, '/api/openbox/subscriptions', {
+      url: 'http://127.0.0.1:9095/sub',
+      name: 'Loopback',
+    })
+    assert.equal(res.status, 400)
+    const body = await res.json()
+    assert.ok(body.error)
+    assert.equal(called, false) // 校验在拉取之前就已经拒绝
+    assert.deepEqual(store.getSubscriptions(), [])
+    assert.deepEqual(store.getNodes(), [])
+  } finally {
+    await close()
+  }
+})
+
+test('SSRF 防护:订阅 URL 指向内网地址(192.168.x.x)→ 400,且从未真正调用 fetchImpl', async () => {
+  // 必须显式注入 fetchImpl(而不是让它退化到 globalThis.fetch)——192.168.1.1 是极常见的
+  // 路由器默认地址,真打一次网络请求既慢又环境相关(不同网络下可能真的连得通)。
+  let called = false
+  const fetchImpl = async () => {
+    called = true
+    return { ok: true, status: 200, text: async () => HK_LINE }
+  }
+  const { baseUrl, store, close } = await startApp(fetchImpl)
+  try {
+    const res = await postJson(baseUrl, '/api/openbox/subscriptions', {
+      url: 'http://192.168.1.1/sub',
+      name: 'Private',
+    })
+    assert.equal(res.status, 400)
+    assert.equal(called, false)
+    assert.deepEqual(store.getSubscriptions(), [])
+  } finally {
+    await close()
+  }
+})
+
+test('SSRF 防护:非 http/https 协议(file://)→ 400,且从未真正调用 fetchImpl', async () => {
+  let called = false
+  const fetchImpl = async () => {
+    called = true
+    return { ok: true, status: 200, text: async () => HK_LINE }
+  }
+  const { baseUrl, close } = await startApp(fetchImpl)
+  try {
+    const res = await postJson(baseUrl, '/api/openbox/subscriptions', {
+      url: 'file:///etc/passwd',
+      name: 'File',
+    })
+    assert.equal(res.status, 400)
+    const body = await res.json()
+    assert.ok(body.error)
+    assert.equal(called, false)
+  } finally {
+    await close()
+  }
+})
+
+test('SSRF 防护:preview 接口同样校验(用 url 而非 content 时),且从未真正调用 fetchImpl', async () => {
+  let called = false
+  const fetchImpl = async () => {
+    called = true
+    return { ok: true, status: 200, text: async () => HK_LINE }
+  }
+  const { baseUrl, close } = await startApp(fetchImpl)
+  try {
+    const res = await postJson(baseUrl, '/api/openbox/subscriptions/preview', { url: 'http://[::1]/sub' })
+    assert.equal(res.status, 400)
+    assert.equal(called, false)
+  } finally {
+    await close()
+  }
+})
+
+test('SSRF 防护:正常公网 https 域名仍能通过(注入 fetchImpl,不发真实网络请求)', async () => {
+  const fetchImpl = async () => ({ ok: true, status: 200, text: async () => HK_LINE })
+  const { baseUrl, store, close } = await startApp(fetchImpl)
+  try {
+    const res = await postJson(baseUrl, '/api/openbox/subscriptions', {
+      url: 'https://sub.example.com/feed',
+      name: 'Public',
+    })
+    assert.equal(res.status, 200)
+    const body = await res.json()
+    assert.equal(body.nodeCount, 1)
+    assert.equal(store.getSubscriptions().length, 1)
+  } finally {
+    await close()
+  }
+})
+
 test('refresh 时拉取失败 → 400,已存订阅与节点保持不变', async () => {
   let shouldFail = false
   const fetchImpl = async () => {

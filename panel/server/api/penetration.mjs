@@ -59,6 +59,15 @@ export const matchRuleSet = async (ctx, paths, srsPath, target) => {
 
 const errorMessage = (err) => (err instanceof Error ? err.message : String(err))
 
+// target 最终会作为参数传给 `sing-box rule-set match`(execFile,无 shell,不是命令注入),
+// 但以 "-" 开头的值会被 CLI 解析成一个 flag(参数注入)。域名/IP 本身的合法字符集里不含
+// 空格等 shell 元字符,这里只需要一个宽松但明确的形态校验:允许的字符集 + 不能以 "-" 开头,
+// 不需要做完整的域名/IP 语法解析。
+const PENETRATION_TARGET_PATTERN = /^[A-Za-z0-9._:-]+$/
+const isValidPenetrationTarget = (value) => {
+  return typeof value === 'string' && !value.startsWith('-') && PENETRATION_TARGET_PATTERN.test(value)
+}
+
 // 沿 clash_api 的 `now` 字段逐层下钻直到叶子节点(响应里不再有 now)。
 // 任何一步失败(网络不可达/非 2xx/JSON 解析失败)都不让整个请求失败——
 // 降级为只保留已知的 chain(至少含起始的组名本身)+ chainError 说明。
@@ -103,6 +112,9 @@ export const registerPenetrationRoutes = (app, { store, ctx, paths, fetchImpl = 
     const target = req.body && req.body.target
     if (typeof target !== 'string' || !target.trim()) {
       return res.status(400).json({ message: 'target is required' })
+    }
+    if (!isValidPenetrationTarget(target)) {
+      return res.status(400).json({ message: 'target must be a valid domain or IP address' })
     }
 
     const profile = store.getProfile()

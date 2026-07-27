@@ -3,6 +3,72 @@ import express from 'express'
 import { parseSubscription } from '../engine/subscription.mjs'
 import { renameNodes, previewRename } from '../engine/rename.mjs'
 import { groupNodesByRegion } from '../engine/groups.mjs'
+import { isPrivateOrLoopbackIp } from './penetration.mjs'
+
+// 面板本身跑在网关上,订阅拉取又是"服务端发起、URL 客户端可控"的经典 SSRF 面——
+// 不加限制的话可以拿它当跳板探测回环/内网端口。只做"字面 IP"层面的拒绝(域名不解析,
+// 与 penetration.mjs 的 isPrivateOrLoopbackIp 同一套风险模型),协议只允许 http/https。
+const SUBSCRIPTION_FETCH_TIMEOUT_MS = 15000
+const MAX_SUBSCRIPTION_RESPONSE_BYTES = 5 * 1024 * 1024
+
+const validateSubscriptionUrl = (urlString) => {
+  let parsed
+  try {
+    parsed = new URL(urlString)
+  } catch {
+    return 'invalid subscription url'
+  }
+
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return 'only http and https subscription urls are supported'
+  }
+
+  // URL 的 hostname 对 IPv6 字面量会带方括号(如 "[::1]"),isPrivateOrLoopbackIp 内部用
+  // net.isIP 判定、不认方括号,这里先剥掉才能正确识别 IPv6 回环/内网地址。
+  const hostname = parsed.hostname.replace(/^\[|\]$/g, '')
+
+  if (isPrivateOrLoopbackIp(hostname)) {
+    return 'subscription url must not target a private, loopback, or link-local address'
+  }
+
+  return null
+}
+
+// 响应体大小上限:优先走真实 fetch 的可读流累计计数(边读边截断,避免恶意/超大响应把
+// 进程内存吃满);测试注入的 fetchImpl 通常只给一个 text() 方法、没有可读流,退化为读完
+// 整体后按字节长度校验——同一条上限,只是校验时机不同。
+const readSubscriptionBody = async (res, maxBytes) => {
+  const body = res.body
+
+  if (body && typeof body.getReader === 'function') {
+    const reader = body.getReader()
+    const decoder = new TextDecoder()
+    let received = 0
+    let text = ''
+
+    try {
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        received += value.byteLength
+        if (received > maxBytes) {
+          throw new Error(`subscription response exceeds ${maxBytes} byte limit`)
+        }
+        text += decoder.decode(value, { stream: true })
+      }
+      text += decoder.decode()
+      return text
+    } finally {
+      if (typeof reader.releaseLock === 'function') reader.releaseLock()
+    }
+  }
+
+  const text = await res.text()
+  if (Buffer.byteLength(text, 'utf8') > maxBytes) {
+    throw new Error(`subscription response exceeds ${maxBytes} byte limit`)
+  }
+  return text
+}
 
 // 合并多订阅节点时,同名 tag 会让 sing-box 启动 FATAL(重复 outbound tag)。
 // 按输入顺序保证全局唯一:首次出现原样保留(同引用返回,不拷贝);重复的追加 -2/-3/...,
@@ -29,16 +95,21 @@ export const dedupeNodeTags = (nodes) => {
 const errorMessage = (err) => (err instanceof Error ? err.message : String(err))
 
 const fetchSubscriptionText = async (url, fetchImpl) => {
+  const validationError = validateSubscriptionUrl(url)
+  if (validationError) {
+    throw new Error(validationError)
+  }
+
   let res
   try {
-    res = await fetchImpl(url)
+    res = await fetchImpl(url, { signal: AbortSignal.timeout(SUBSCRIPTION_FETCH_TIMEOUT_MS) })
   } catch (err) {
     throw new Error(`failed to fetch subscription: ${errorMessage(err)}`)
   }
   if (!res || !res.ok) {
     throw new Error(`failed to fetch subscription: HTTP ${res ? res.status : 'unknown'}`)
   }
-  return res.text()
+  return readSubscriptionBody(res, MAX_SUBSCRIPTION_RESPONSE_BYTES)
 }
 
 // preview/create/refresh 共用的解析管道:优先用直传的 content,否则用 fetchImpl 拉取 url;

@@ -322,11 +322,25 @@ ${JSON.stringify({
   socket.destroy()
 }
 
+// Open-Box 业务状态(openbox/*:订阅/节点/profile/部署态/clash secret)与访问密码
+// (config/access-*)都存在同一张 app_storage KV 表里,但它们不是"前端设置同步"的一部分——
+// 前端每次改主题/语言都会全量 PUT /api/storage 覆盖快照,若不把这些键排除在外,一次routine
+// 的设置同步就会清空 Open-Box 全部状态、轮换 clash secret(与已部署 config.json 失配),
+// 甚至清掉密码本身(→ passwordSet:false → 可被抢先 POST /api/auth/setup 接管面板)。
+// 背景图 sentinel 同理不属于"快照"概念,原本就单独用 /api/background-image 管理。
+// 三处必须共用同一份判定:读(不回显给浏览器)、写-删(不清空)、写-插(不接受客户端覆盖)。
+export const isProtectedStorageKey = (key) => {
+  return (
+    typeof key === 'string' &&
+    (key.startsWith('openbox/') || key.startsWith('config/access-') || key === backgroundImageStorageKey)
+  )
+}
+
 const readSnapshot = () => {
   const snapshot = {}
 
   for (const row of getSnapshotStatement.all()) {
-    if (row.key === backgroundImageStorageKey) continue
+    if (isProtectedStorageKey(row.key)) continue
     snapshot[row.key] = row.value
   }
 
@@ -337,9 +351,13 @@ const replaceSnapshot = (entries) => {
   db.exec('BEGIN')
 
   try {
-    db.prepare('DELETE FROM app_storage WHERE key != ?').run(backgroundImageStorageKey)
+    for (const row of getSnapshotStatement.all()) {
+      if (isProtectedStorageKey(row.key)) continue
+      deleteStorageValueStatement.run(row.key)
+    }
 
     for (const [key, value] of Object.entries(entries)) {
+      if (isProtectedStorageKey(key)) continue
       insertSnapshotStatement.run(key, value)
     }
 
@@ -609,6 +627,11 @@ const app = express()
 const server = http.createServer(app)
 const websocketServer = new WebSocketServer({ noServer: true })
 
+// Express 默认路由大小写不敏感:GET /API/openbox/profile 会命中 /api/openbox/profile 的路由,
+// 但下面守卫中间件若只用精确前缀判断 req.path.startsWith('/api/') 就会放过它——必须在
+// 任何路由注册之前关掉大小写不敏感,否则 /API/... 绕过认证守卫却仍能打到真实 handler。
+app.set('case sensitive routing', true)
+
 app.use('/api/auth', express.json({ limit: '2kb' }))
 app.use('/api/storage', express.json({ limit: '25mb' }))
 app.use('/api/background-image', express.json({ limit: '25mb' }))
@@ -723,14 +746,18 @@ app.post('/api/auth/logout', (_req, res) => {
 })
 
 app.use((req, res, next) => {
-  if (!req.path.startsWith('/api/')) {
+  // 守卫判定本身也要规范化,不能只靠上面的 case-sensitive routing:
+  // 折叠重复斜杠(//api/... 同样应被视为 /api/...)+ 转小写,防止任何大小写/斜杠变体绕过。
+  const normalizedPath = req.path.toLowerCase().replace(/\/{2,}/g, '/')
+
+  if (!normalizedPath.startsWith('/api/')) {
     next()
     return
   }
 
   // /api/health、/api/auth/status、/api/auth/setup 永远可达:
   // 不论是否已设密,前端都得能查状态、走设密流程;setup 路由自己会在已设密时拒绝(409)。
-  if (PASSWORD_SETUP_EXEMPT_PATHS.has(req.path)) {
+  if (PASSWORD_SETUP_EXEMPT_PATHS.has(normalizedPath)) {
     next()
     return
   }
@@ -742,7 +769,7 @@ app.use((req, res, next) => {
     return
   }
 
-  if (req.path === '/api/auth/login' || req.path === '/api/auth/logout') {
+  if (normalizedPath === '/api/auth/login' || normalizedPath === '/api/auth/logout') {
     next()
     return
   }
@@ -831,6 +858,20 @@ registerProfileRoutes(app, { store })
 registerDeployRoutes(app, { store, ctx: obCtx, paths: obPaths })
 registerServiceRoutes(app, { ctx: obCtx, paths: obPaths })
 registerPenetrationRoutes(app, { store, ctx: obCtx, paths: obPaths, fetchImpl: globalThis.fetch })
+
+// /api/* 专用 JSON 错误兜底:必须注册在所有路由之后、SPA fallback 之前。任何路由处理器里
+// 未被自己 try/catch 的异常(同步抛出,或调用 next(err))原本会落到 Express 默认错误处理器,
+// 回一个带调用栈的 HTML 错误页——面板对路由器有 root 权限,堆栈不能泄露给客户端。
+// 非 /api 请求维持 Express 默认行为(交还 next(err)),不影响 SPA 静态资源服务。
+app.use((err, req, res, next) => {
+  if (!req.path.startsWith('/api/')) {
+    next(err)
+    return
+  }
+
+  const message = err instanceof Error ? err.message : String(err)
+  res.status(500).json({ ok: false, message })
+})
 
 app.get('/sw.js', (_req, res) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')

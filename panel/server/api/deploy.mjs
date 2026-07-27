@@ -43,25 +43,35 @@ export const registerDeployRoutes = (app, { store, ctx, paths } = {}) => {
   // 部署:用当前 store 状态组装配置,交给 P3 的安全部署编排(冲突检测/校验归因/落盘/
   // DNS接管/防火墙/重启/失败回滚),把结果持久化后返回。
   router.post('/deploy', async (_req, res) => {
-    const { config, profile } = buildCurrentConfig(store)
-    const result = await deployConfig(ctx, paths, { config, profile })
-    const badTags = result.badTags || []
+    try {
+      const { config, profile } = buildCurrentConfig(store)
+      const result = await deployConfig(ctx, paths, { config, profile })
+      const badTags = result.badTags || []
 
-    store.setDeployState({
-      stage: result.stage,
-      message: result.message || '',
-      at: Date.now(),
-      badTags,
-    })
+      store.setDeployState({
+        stage: result.stage,
+        message: result.message || '',
+        at: Date.now(),
+        badTags,
+      })
 
-    if (result.ok) {
-      await enableService(ctx, paths.initd.core)
-    } else if (ROLLED_BACK_STAGES.has(result.stage)) {
-      await disableService(ctx, paths.initd.core)
+      if (result.ok) {
+        await enableService(ctx, paths.initd.core)
+      } else if (ROLLED_BACK_STAGES.has(result.stage)) {
+        await disableService(ctx, paths.initd.core)
+      }
+
+      const status = result.ok ? 200 : (STATUS_BY_STAGE[result.stage] || 500)
+      res.status(status).json({ ok: result.ok, stage: result.stage, message: result.message, badTags })
+    } catch (error) {
+      // deployConfig 只在"落盘"之后的步骤自行 try/catch;冲突检测(detectConflicts)、
+      // mkdirp、validateConfigObject 这些落盘之前的步骤抛出的异常会直接冒泡到这里。
+      // 不兜底的话 Express 会用默认 HTML 错误页(带调用栈)回应,且 setDeployState 不会
+      // 执行——部署态停留在上一次的结果,前端轮询会显示过期状态。
+      const message = error instanceof Error ? error.message : String(error)
+      store.setDeployState({ stage: 'error', message, at: Date.now(), badTags: [] })
+      res.status(500).json({ ok: false, stage: 'error', message })
     }
-
-    const status = result.ok ? 200 : (STATUS_BY_STAGE[result.stage] || 500)
-    res.status(status).json({ ok: result.ok, stage: result.stage, message: result.message, badTags })
   })
 
   // 最近一次部署结果(供面板轮询/展示)。
