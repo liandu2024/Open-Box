@@ -8,7 +8,7 @@ import {
   serverPasswordSet,
 } from '@/store/auth'
 import { language } from '@/store/settings'
-import { hasAnySubscription, wizardDismissed } from '@/store/wizard'
+import { hasAnySubscription, wizardDone } from '@/store/wizard'
 import ConnectionsPage from '@/views/ConnectionsPage.vue'
 import HomePage from '@/views/HomePage.vue'
 import KernelPage from '@/views/KernelPage.vue'
@@ -182,13 +182,14 @@ router.beforeEach((to, from) => {
 
   // First-run onboarding: a password alone doesn't mean the box is actually usable — with no
   // subscription there's nothing to proxy through yet. Force the wizard until the user either
-  // finishes it or explicitly skips (wizardDismissed) — never once either is true, so a fully
+  // finishes it or explicitly skips (wizardDone, backend-sourced — see store/wizard.ts for why
+  // this must never be decided from localStorage alone) — never once either is true, so a fully
   // set-up user (or one who chose to configure things manually later) is never trapped here.
   if (
     serverAuthInitialized.value &&
     serverPasswordSet.value &&
     (!serverAccessPasswordEnabled.value || serverAuthenticated.value) &&
-    !wizardDismissed.value &&
+    !wizardDone.value &&
     !hasAnySubscription.value &&
     to.name !== ROUTE_NAME.wizard &&
     to.name !== ROUTE_NAME.setup &&

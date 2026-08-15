@@ -201,6 +201,24 @@ export const saveProfile = async (patch: Record<string, unknown>): Promise<Openb
   return data.profile
 }
 
+// Onboarding-wizard gate flag (P4b final-review carryover, fixed in P5): lives under
+// openbox/wizard-done on the backend (protected namespace, see server/store/openbox-store.mjs
+// and index.mjs's isProtectedStorageKey), NOT the generic config/* storage-sync KV store — a
+// factory reset / reinstall always starts this back at false, which is exactly the point (see
+// store/wizard.ts for how this is consumed as the router guard's source of truth).
+export const fetchWizardDone = async (): Promise<boolean> => {
+  const data = await requestJson<{ done: boolean }>('/api/openbox/profile/wizard-done')
+  return Boolean(data.done)
+}
+
+export const saveWizardDone = async (done: boolean): Promise<boolean> => {
+  const data = await requestJson<{ done: boolean }>('/api/openbox/profile/wizard-done', {
+    method: 'PUT',
+    body: JSON.stringify({ done }),
+  })
+  return Boolean(data.done)
+}
+
 export const fetchSubscriptions = async (): Promise<OpenboxSubscription[]> => {
   const data = await requestJson<{ subscriptions: OpenboxSubscription[] }>('/api/openbox/subscriptions')
   return data.subscriptions
