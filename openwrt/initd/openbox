@@ -1,0 +1,49 @@
+#!/bin/sh /etc/rc.common
+# Open-Box sing-box core service
+
+USE_PROCD=1
+START=99
+STOP=10
+
+OPENBOX_ROOT=/opt/open-box
+BIN="$OPENBOX_ROOT/bin/sing-box"
+CONF="$OPENBOX_ROOT/etc/config.json"
+DATA="$OPENBOX_ROOT/data"
+OPENBOX_DNS_UPSTREAM='127.0.0.1#7853'
+
+start_service() {
+	if [ ! -x "$BIN" ]; then
+		echo "openbox: sing-box binary not found at $BIN" >&2
+		return 1
+	fi
+	if [ ! -f "$CONF" ]; then
+		echo "openbox: config not found at $CONF" >&2
+		return 1
+	fi
+
+	procd_open_instance openbox
+	procd_set_param command "$BIN" run -c "$CONF" -D "$DATA"
+	procd_set_param stdout 1
+	procd_set_param stderr 1
+	procd_set_param respawn 3600 5 5
+	procd_set_param limits core="unlimited" nofile="65535 65535"
+	procd_close_instance
+}
+
+# 停止后让系统回到"能正常上网"的状态:
+# - 摘掉指向已死内核的 dnsmasq 上游(否则全 LAN DNS 中断)
+# - 移除 IPv6 拦截(内核已停,再拦只会断掉用户的 v6)
+# - 刻意保留面板放行规则:那是用户访问恢复界面的通道
+openbox_cleanup() {
+	uci -q del_list dhcp.@dnsmasq[0].server="$OPENBOX_DNS_UPSTREAM"
+	uci -q commit dhcp
+	/etc/init.d/dnsmasq restart >/dev/null 2>&1
+
+	uci -q delete firewall.openbox_v6block
+	uci -q commit firewall
+	/etc/init.d/firewall reload >/dev/null 2>&1
+}
+
+stop_service() {
+	openbox_cleanup
+}
