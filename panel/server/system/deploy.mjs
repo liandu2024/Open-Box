@@ -2,13 +2,14 @@ import { detectConflicts } from './conflicts.mjs'
 import { validateConfigObject, attributeBadNodes } from './validate.mjs'
 import { restartService, stopService, serviceStatus } from './service.mjs'
 import { applyDnsTakeover, restoreDnsTakeover, dnsTakeoverBackupPath } from './dns-takeover.mjs'
-import { applyPanelLanRule, applyIpv6Block, removeOpenBoxRules } from './firewall.mjs'
+import { applyPanelLanRule, applyIpv6Block, removeProxyRules } from './firewall.mjs'
 
 export const rollbackToDirect = async (ctx, paths) => {
   const actions = []
   try { await stopService(ctx, paths.initd.core); actions.push('stop-core') } catch { /* 尽力而为 */ }
   try { await restoreDnsTakeover(ctx, paths); actions.push('restore-dns') } catch { /* 尽力而为 */ }
-  try { await removeOpenBoxRules(ctx); actions.push('remove-firewall') } catch { /* 尽力而为 */ }
+  // 只撤代理相关规则,不删面板 LAN 放行——否则回滚会把用户返回恢复界面的路都堵死。
+  try { await removeProxyRules(ctx); actions.push('remove-firewall') } catch { /* 尽力而为 */ }
   return { ok: true, actions }
 }
 

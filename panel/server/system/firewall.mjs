@@ -32,6 +32,16 @@ export const applyIpv6Block = async (ctx, { enabled }) => {
   return { applied: enabled === true }
 }
 
+// 仅移除代理相关规则(v6 拦截),不动面板 LAN 放行——供 rollbackToDirect 使用。
+// 回滚路径必须保留用户访问恢复界面的通道,否则一旦 LAN→路由器 input 策略非 ACCEPT,
+// 用户在最需要面板时反而被彻底锁在门外。
+export const removeProxyRules = async (ctx) => {
+  await ctx.exec('uci', ['-q', 'delete', V6BLOCK_RULE])
+  await commitReload(ctx)
+  return { removed: true }
+}
+
+// 移除全部两条规则(含面板放行)——仅供卸载(P6)使用,不得用于回滚。
 export const removeOpenBoxRules = async (ctx) => {
   await ctx.exec('uci', ['-q', 'delete', PANEL_RULE])
   await ctx.exec('uci', ['-q', 'delete', V6BLOCK_RULE])

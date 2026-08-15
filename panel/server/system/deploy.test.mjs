@@ -68,7 +68,7 @@ test('重启失败 → 回滚恢复直连', async () => {
   assert.equal(r.stage, 'start')
   const c = cmds(ctx)
   assert.ok(c.includes('/etc/init.d/openbox stop'))          // 回滚停服务
-  assert.ok(c.includes('uci -q delete firewall.openbox_panel'))  // 撤规则
+  assert.ok(c.includes('uci -q delete firewall.openbox_v6block'))  // 撤代理规则(而非面板放行)
 })
 
 test('启动后未 running → 回滚', async () => {
@@ -117,4 +117,16 @@ test('rollbackToDirect 幂等且尽力而为', async () => {
   assert.ok(r.actions.includes('stop-core'))
   assert.ok(r.actions.includes('restore-dns'))
   assert.ok(r.actions.includes('remove-firewall'))
+})
+
+test('rollbackToDirect 不移除面板 LAN 放行规则(否则自断恢复通道)', async () => {
+  const ctx = createMockContext({})
+  const paths = createPaths('/opt/open-box')
+  await rollbackToDirect(ctx, paths)
+  const joined = ctx.calls.map((c) => `${c.cmd} ${(c.args || []).join(' ')}`).join('\n')
+  assert.ok(joined.includes('delete firewall.openbox_v6block'), '应移除 v6 拦截')
+  assert.ok(
+    !joined.includes('delete firewall.openbox_panel'),
+    '不得移除面板放行规则',
+  )
 })

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createMockContext } from './context.mjs'
-import { applyPanelLanRule, applyIpv6Block, removeOpenBoxRules } from './firewall.mjs'
+import { applyPanelLanRule, applyIpv6Block, removeProxyRules, removeOpenBoxRules } from './firewall.mjs'
 
 const cmds = (ctx) => ctx.calls.map((c) => [c.cmd, ...c.args].join(' '))
 
@@ -36,7 +36,17 @@ test('IPv6 拦截关闭则删除规则', async () => {
   assert.ok(!c.some((x) => x.includes('openbox_v6block=rule')))
 })
 
-test('removeOpenBoxRules 清两条 + reload', async () => {
+test('removeProxyRules 只删 v6 拦截 + reload,不动面板放行规则(供回滚使用)', async () => {
+  const ctx = createMockContext()
+  const r = await removeProxyRules(ctx)
+  assert.equal(r.removed, true)
+  const c = cmds(ctx)
+  assert.ok(c.includes('uci -q delete firewall.openbox_v6block'))
+  assert.ok(!c.includes('uci -q delete firewall.openbox_panel'))
+  assert.ok(c.includes('/etc/init.d/firewall reload'))
+})
+
+test('removeOpenBoxRules 清两条(含面板放行)+ reload,仅供卸载使用', async () => {
   const ctx = createMockContext()
   const r = await removeOpenBoxRules(ctx)
   assert.equal(r.removed, true)
