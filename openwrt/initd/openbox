@@ -12,6 +12,10 @@ DATA="$OPENBOX_ROOT/data"
 OPENBOX_DNS_UPSTREAM='127.0.0.1#7853'
 
 start_service() {
+	# 注意:procd 的 rc_procd 包装(procd_open_service; "$@"; procd_close_service)
+	# 会吞掉这里的返回码——即使 return 1,上游 rc.common 的 start 在 USE_PROCD=1 下
+	# 仍可能退出 0。下面的检查与 echo 只用于日志排障,不能作为成败判据;精确归因
+	# 交给面板侧 deployConfig 在重启内核前的预检(检查二进制与配置文件是否存在)。
 	if [ ! -x "$BIN" ]; then
 		echo "openbox: sing-box binary not found at $BIN" >&2
 		return 1
@@ -32,18 +36,40 @@ start_service() {
 
 # 停止后让系统回到"能正常上网"的状态:
 # - 摘掉指向已死内核的 dnsmasq 上游(否则全 LAN DNS 中断)
+# - 删掉 noresolv=1(不删的话是"既不许用 resolv.conf 也没有上游",比接管前更坏,
+#   全 LAN DNS 彻底无解析;删掉后 dnsmasq 回退到 WAN 下发的 resolv.conf)
 # - 移除 IPv6 拦截(内核已停,再拦只会断掉用户的 v6)
 # - 刻意保留面板放行规则:那是用户访问恢复界面的通道
+# 仅在确有变更时才 commit/重启 dnsmasq 与 firewall:默认 hijack 模式从不碰 dnsmasq,
+# 无脑 commit 既会造成一次无意义的全 LAN 解析瞬断,还会顺带提交用户在别处暂存的改动。
 openbox_cleanup() {
 	uci -q del_list dhcp.@dnsmasq[0].server="$OPENBOX_DNS_UPSTREAM"
-	uci -q commit dhcp
-	/etc/init.d/dnsmasq restart >/dev/null 2>&1
+	uci -q delete dhcp.@dnsmasq[0].noresolv
+	if [ -n "$(uci -q changes dhcp)" ]; then
+		uci -q commit dhcp
+		/etc/init.d/dnsmasq restart >/dev/null 2>&1
+	fi
 
 	uci -q delete firewall.openbox_v6block
-	uci -q commit firewall
-	/etc/init.d/firewall reload >/dev/null 2>&1
+	if [ -n "$(uci -q changes firewall)" ]; then
+		uci -q commit firewall
+		/etc/init.d/firewall reload >/dev/null 2>&1
+	fi
 }
 
+# 停止时默认做安全清理;但 restart 不应该清理——上游 rc.common 在 USE_PROCD=1 下
+# restart() 仍是 stop; start,而 stop 会调用 stop_service。不跳过的话,面板每次
+# deployConfig 重启内核,都会被这里自己撤掉刚刚下发的 DNS 接管与 IPv6 拦截。
+OPENBOX_SKIP_CLEANUP=0
+
 stop_service() {
+	[ "$OPENBOX_SKIP_CLEANUP" = "1" ] && return 0
 	openbox_cleanup
+}
+
+restart() {
+	OPENBOX_SKIP_CLEANUP=1
+	stop
+	OPENBOX_SKIP_CLEANUP=0
+	start
 }

@@ -48,6 +48,25 @@ test('内核停止清理:移除 v6 拦截但保留面板放行规则', () => {
   )
 })
 
+test('内核停止清理:同时删除 noresolv,否则 noresolv=1 + 空 server 列表会让全 LAN DNS 彻底无解析', () => {
+  // applyDnsTakeover 同时做了 noresolv=1 与清空 server 列表两件事;停止清理如果只摘
+  // server 不删 noresolv,end state 是"不许用 resolv.conf 也没有上游",比接管前更坏。
+  assert.match(core, /uci -q delete dhcp\.@dnsmasq\[0\]\.noresolv/)
+})
+
+test('内核脚本自定义 restart():跳过清理,否则 USE_PROCD=1 下 restart=stop;start 会自己撤掉刚下发的接管', () => {
+  // 上游 rc.common 的 restart() 在 USE_PROCD=1 时仍是 stop; start,而 stop 会调用
+  // stop_service → openbox_cleanup。不覆盖 restart() 的话,每次 deployConfig 重启内核
+  // 都会立刻把刚写入的 DNS 接管和 v6 拦截撤销,却仍然报告部署成功。
+  assert.match(core, /^restart\(\)\s*\{/m, '缺少自定义 restart(),重启路径会退回 stop;start 触发清理')
+  assert.match(core, /OPENBOX_SKIP_CLEANUP=1/, 'restart() 必须设置跳过清理的标记')
+  assert.match(
+    core,
+    /stop_service\(\)\s*\{[^}]*OPENBOX_SKIP_CLEANUP[^}]*openbox_cleanup/s,
+    'stop_service 必须依据该标记决定是否调用 openbox_cleanup',
+  )
+})
+
 test('面板脚本以 2026 端口与 OPENBOX_ROOT 启动', () => {
   assert.match(panel, /PORT=2026/)
   assert.match(panel, /OPENBOX_ROOT=/)
