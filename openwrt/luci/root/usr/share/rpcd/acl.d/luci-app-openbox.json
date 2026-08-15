@@ -1,0 +1,11 @@
+{
+	"luci-app-openbox": {
+		"description": "Grant access to Open-Box service controls",
+		"read": {
+			"ubus": { "luci": [ "getInitList" ], "service": [ "list" ] }
+		},
+		"write": {
+			"ubus": { "luci": [ "setInitAction" ] }
+		}
+	}
+}

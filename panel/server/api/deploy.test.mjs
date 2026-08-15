@@ -19,7 +19,9 @@ const paths = createPaths('/opt/open-box')
 const cmds = (ctx) => ctx.calls.map((c) => [c.cmd, ...c.args].join(' '))
 
 // 内核 status 默认视为 running,方便"成功路径"测试;各测试按需通过 over 覆盖具体命令的结果。
+// paths.singbox 默认存在,否则 deployConfig 重启前的预检(Important 4)会先拦截。
 const okCtx = (over = {}) => createMockContext({
+  files: { [paths.singbox]: '#!/bin/sh\n' },
   execResults: {
     '/etc/init.d/openbox status': { code: 0, stdout: 'running' },
     ...over,
@@ -204,6 +206,7 @@ test('POST /api/openbox/deploy 校验失败 → 409,给 badTags,不写正式配�
 
 test('POST /api/openbox/deploy 重启失败 → 500,回滚命令出现,disable 内核开机自启', async () => {
   const ctx = createMockContext({
+    files: { [paths.singbox]: '#!/bin/sh\n' },
     execResults: {
       '/etc/init.d/openbox restart': { code: 1, stderr: 'start failed' },
     },
@@ -229,6 +232,7 @@ test('POST /api/openbox/deploy 重启失败 → 500,回滚命令出现,disable �
 
 test('POST /api/openbox/deploy 启动后未 running(verify 阶段)→ 500,同样 disable', async () => {
   const ctx = createMockContext({
+    files: { [paths.singbox]: '#!/bin/sh\n' },
     execResults: { '/etc/init.d/openbox status': { code: 1, stdout: 'inactive' } },
   })
   const { baseUrl, close } = await startApp(ctx)

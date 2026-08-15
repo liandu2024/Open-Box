@@ -11,6 +11,7 @@ const profile = { ipv6: true, dns: { mode: 'hijack' } }
 const cmds = (ctx) => ctx.calls.map((c) => [c.cmd, ...c.args].join(' '))
 
 const okCtx = (over = {}) => createMockContext({
+  files: { [paths.singbox]: '#!/bin/sh\n' },
   execResults: {
     '/etc/init.d/openbox status': { code: 0, stdout: 'running' },
     ...over,
@@ -57,8 +58,26 @@ test('IPv6 关闭时下发 v6 拦截规则', async () => {
   assert.ok(cmds(ctx).includes('uci set firewall.openbox_v6block=rule'))
 })
 
+test('内核二进制缺失 → 重启前预检拦截,精确归因而不依赖 procd 吞掉的退出码', async () => {
+  // procd 的 rc_procd 包装会吞掉 start_service 的 return 1,二进制/配置缺失时
+  // start 仍可能退出 0、以零实例注册。deployConfig 必须自己在重启内核前检查文件
+  // 是否存在,把这种情况从笼统的"内核启动后未在运行"精确归因为"文件缺失"。
+  const ctx = createMockContext({
+    execResults: { '/etc/init.d/openbox status': { code: 0, stdout: 'running' } },
+    // 不放 paths.singbox 文件,模拟二进制未安装/未解压完成
+  })
+  const r = await deployConfig(ctx, paths, { config, profile })
+  assert.equal(r.ok, false)
+  assert.equal(r.stage, 'start')
+  assert.match(r.message, /sing-box/)
+  const c = cmds(ctx)
+  assert.ok(!c.includes('/etc/init.d/openbox restart'), '二进制缺失时不应尝试重启内核')
+  assert.ok(c.includes('/etc/init.d/openbox stop'), '预检失败也要回滚到直连')
+})
+
 test('重启失败 → 回滚恢复直连', async () => {
   const ctx = createMockContext({
+    files: { [paths.singbox]: '#!/bin/sh\n' },
     execResults: {
       '/etc/init.d/openbox restart': { code: 1, stderr: 'start failed' },
     },
@@ -68,11 +87,12 @@ test('重启失败 → 回滚恢复直连', async () => {
   assert.equal(r.stage, 'start')
   const c = cmds(ctx)
   assert.ok(c.includes('/etc/init.d/openbox stop'))          // 回滚停服务
-  assert.ok(c.includes('uci -q delete firewall.openbox_panel'))  // 撤规则
+  assert.ok(c.includes('uci -q delete firewall.openbox_v6block'))  // 撤代理规则(而非面板放行)
 })
 
 test('启动后未 running → 回滚', async () => {
   const ctx = createMockContext({
+    files: { [paths.singbox]: '#!/bin/sh\n' },
     execResults: { '/etc/init.d/openbox status': { code: 1, stdout: 'inactive' } },
   })
   const r = await deployConfig(ctx, paths, { config, profile })
@@ -83,7 +103,10 @@ test('启动后未 running → 回滚', async () => {
 
 test('模式切换:切回 hijack 但上次 dnsmasq 接管的备份仍在 → 部署时先还原 dnsmasq 上游', async () => {
   const ctx = createMockContext({
-    files: { [dnsTakeoverBackupPath(paths)]: "dhcp.cfg01411c.server='223.5.5.5'\ndhcp.cfg01411c.noresolv='0'\n" },
+    files: {
+      [dnsTakeoverBackupPath(paths)]: "dhcp.cfg01411c.server='223.5.5.5'\ndhcp.cfg01411c.noresolv='0'\n",
+      [paths.singbox]: '#!/bin/sh\n',
+    },
     execResults: { '/etc/init.d/openbox status': { code: 0, stdout: 'running' } },
   })
   const r = await deployConfig(ctx, paths, { config, profile: { ...profile, dns: { mode: 'hijack' } } })
@@ -117,4 +140,16 @@ test('rollbackToDirect 幂等且尽力而为', async () => {
   assert.ok(r.actions.includes('stop-core'))
   assert.ok(r.actions.includes('restore-dns'))
   assert.ok(r.actions.includes('remove-firewall'))
+})
+
+test('rollbackToDirect 不移除面板 LAN 放行规则(否则自断恢复通道)', async () => {
+  const ctx = createMockContext({})
+  const paths = createPaths('/opt/open-box')
+  await rollbackToDirect(ctx, paths)
+  const joined = ctx.calls.map((c) => `${c.cmd} ${(c.args || []).join(' ')}`).join('\n')
+  assert.ok(joined.includes('delete firewall.openbox_v6block'), '应移除 v6 拦截')
+  assert.ok(
+    !joined.includes('delete firewall.openbox_panel'),
+    '不得移除面板放行规则',
+  )
 })

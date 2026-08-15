@@ -38,7 +38,8 @@
 - [x] P4 拆分为 P4a(后端 API,计划已制定:`docs/superpowers/plans/2026-07-27-p4a-backend-api.md`)与 P4b(前端 UI)
 - [x] P4a 完成并合并(后端 API:瘦身 5154→860 行、存储契约、订阅/profile/部署/服务/穿透 API、代理固化、首次设密;273 测试 + 金标准 4/4;两轮安全终审修复)
 - [x] P4b 完成并合并(前端:去多后端、三语言三主题、强制设密+改密、首次引导向导、订阅/分流/内核/穿透 UI、品牌收尾;283 测试 + 金标准 4/4)
-- [ ] P5–P7 计划待制定
+- [x] P5 完成并合并(OpenWrt 侧:openbox/openbox-panel 两个 procd init 脚本、LuCI 兜底页、回滚不再拆面板通道、向导门控迁后端;305 测试 + 金标准 4/4;终审修复 3 Critical)
+- [ ] P6–P7 计划待制定
 - 产品决策(2026-07-27):穿透功能**保留并重写为 sing-box 版**(基于 `sing-box rule-set match` 本地 .srs 匹配);面板密码改为**首次访问强制设密**(不再由安装脚本预生成)
 
 ## 记录在案的延期项(来自 P1 评审)
@@ -110,3 +111,17 @@
 - `panel/README.md` 残留:提到已删除的"规则缓存落盘 SQLite";穿透查询写了"按关键字"(实际不支持,target 校验会拒)
 
 **其他:** 服务端错误详情未本地化(中文句子 + 英文 server detail 混排);内核页在无 init.d 环境显示面板"已停止"(真机上正确,可考虑显示"未知")
+
+## 记录在案的延期项(来自 P5 终审)
+
+**P6 安装脚本必须处理:**
+- 两个 init 脚本铺到 `/etc/init.d/` 并 `chmod +x`;LuCI 三个文件铺到 `htdocs/luci-static/resources/view/openbox/`、`/usr/share/luci/menu.d/`、`/usr/share/rpcd/acl.d/`,装完需 `rm -f /tmp/luci-*cache*` 并重启 rpcd 使 ACL 生效
+- 卸载时才调用 `removeOpenBoxRules`(含面板放行规则);`removeProxyRules` 仅供回滚使用
+- P4b 记录的命名残留:install/uninstall/update 脚本与 Dockerfile 仍是 `ange-clashboard`;`ZASHBOARD_DB_PATH`/`zashboard.sqlite` 后端命名;`UI_RELEASES_API` 仍指向上游仓库做自更新检查
+
+**P7 真机验收清单(终审建议,这两条本可提前抓到本轮的两个 Critical):**
+- dnsmasq 模式下:部署完成后确认 `uci get dhcp.@dnsmasq[0].server` 仍为 `127.0.0.1#7853`(验证 restart 没有撤销接管)
+- dnsmasq 模式下:部署 → 拔掉 WAN DNS → LuCI 紧急停止 → 确认 LAN 仍能解析(验证停止清理真的恢复了上网)
+- LuCI 页面在 21.02/23.05/24.10 上的运行态显示与按钮生效情况(`service list` + `setInitAction`)
+
+**已知残留(不阻塞):** LuCI master 已移除 `luci.setInitAction`(改用 `rc` 对象),若 P7 用 snapshot 固件需迁移;`restart()` 未套 `trap '' TERM`(仅在从 openbox 进程树内部调用时才有影响);deploy 预检只查存在性不查可执行位。
