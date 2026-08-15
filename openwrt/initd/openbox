@@ -10,6 +10,10 @@ BIN="$OPENBOX_ROOT/bin/sing-box"
 CONF="$OPENBOX_ROOT/etc/config.json"
 DATA="$OPENBOX_ROOT/data"
 OPENBOX_DNS_UPSTREAM='127.0.0.1#7853'
+# 与 panel/server/system/dns-takeover.mjs 的 dnsTakeoverBackupPath 一致:该文件存在
+# <=> applyDnsTakeover 曾经接管过 dnsmasq(仅 dnsmasq 分流模式会写)。默认 hijack 模式
+# 从不创建它,借此判断"是否需要清理"而不是无脑动 dnsmasq。
+DNSMASQ_BACKUP="$DATA/dnsmasq-backup.txt"
 
 start_service() {
 	# 注意:procd 的 rc_procd 包装(procd_open_service; "$@"; procd_close_service)
@@ -43,11 +47,17 @@ start_service() {
 # 仅在确有变更时才 commit/重启 dnsmasq 与 firewall:默认 hijack 模式从不碰 dnsmasq,
 # 无脑 commit 既会造成一次无意义的全 LAN 解析瞬断,还会顺带提交用户在别处暂存的改动。
 openbox_cleanup() {
-	uci -q del_list dhcp.@dnsmasq[0].server="$OPENBOX_DNS_UPSTREAM"
-	uci -q delete dhcp.@dnsmasq[0].noresolv
-	if [ -n "$(uci -q changes dhcp)" ]; then
-		uci -q commit dhcp
-		/etc/init.d/dnsmasq restart >/dev/null 2>&1
+	# 仅当我们确实接管过 dnsmasq 时才动它:备份文件存在 <=> 接管发生过。
+	# hijack 模式从不碰 dnsmasq,此处必须完全不作为,否则会清掉用户自己设的
+	# noresolv(AdGuard Home / Pi-hole 之类会自行设置)、或者仅因用户自己配置了
+	# server 列表就触发一次无谓的 uci commit + dnsmasq 重启。
+	if [ -f "$DNSMASQ_BACKUP" ]; then
+		uci -q del_list dhcp.@dnsmasq[0].server="$OPENBOX_DNS_UPSTREAM"
+		uci -q delete dhcp.@dnsmasq[0].noresolv
+		if [ -n "$(uci -q changes dhcp)" ]; then
+			uci -q commit dhcp
+			/etc/init.d/dnsmasq restart >/dev/null 2>&1
+		fi
 	fi
 
 	uci -q delete firewall.openbox_v6block

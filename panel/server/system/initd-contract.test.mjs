@@ -40,6 +40,23 @@ test('内核停止清理:摘除的上游值与 P3 写入的值一致', () => {
   assert.match(core, /del_list dhcp\.@dnsmasq\[0\]\.server/)
 })
 
+test('内核停止清理:dnsmasq 清理仅在接管标记(备份文件)存在时执行', async () => {
+  // hijack(默认)模式从不接管 dnsmasq;若清理无条件执行,会清掉用户自设的 noresolv
+  // (AdGuard Home / Pi-hole 之类),或仅因用户自己配置了 server 列表就触发一次无谓的
+  // commit + dnsmasq 重启。备份文件存在 <=> applyDnsTakeover 确实接管过,是判断依据。
+  const { dnsTakeoverBackupPath } = await import('./dns-takeover.mjs')
+  const backupPath = dnsTakeoverBackupPath(paths)
+  // 脚本用 "$DATA/dnsmasq-backup.txt"(DATA="$OPENBOX_ROOT/data")拼出同一路径;
+  // 逐段核对文件名与目录变量,防止两侧漂移。
+  assert.ok(backupPath.endsWith('/dnsmasq-backup.txt'), 'dns-takeover.mjs 备份文件名假设已变化,需同步更新此测试')
+  assert.match(core, /^DNSMASQ_BACKUP="\$DATA\/dnsmasq-backup\.txt"$/m, 'init 脚本备份路径与 dns-takeover.mjs 不一致')
+  assert.match(
+    core,
+    /openbox_cleanup\(\)\s*\{[^}]*if \[ -f "\$DNSMASQ_BACKUP" \];\s*then[^]*?del_list dhcp\.@dnsmasq\[0\]\.server[^]*?delete dhcp\.@dnsmasq\[0\]\.noresolv[^]*?\bfi\b/,
+    'openbox_cleanup 必须把 dnsmasq 清理整体置于备份文件存在性判断之内',
+  )
+})
+
 test('内核停止清理:移除 v6 拦截但保留面板放行规则', () => {
   assert.match(core, /uci -q delete firewall\.openbox_v6block/)
   assert.ok(
@@ -59,7 +76,15 @@ test('内核脚本自定义 restart():跳过清理,否则 USE_PROCD=1 下 restar
   // stop_service → openbox_cleanup。不覆盖 restart() 的话,每次 deployConfig 重启内核
   // 都会立刻把刚写入的 DNS 接管和 v6 拦截撤销,却仍然报告部署成功。
   assert.match(core, /^restart\(\)\s*\{/m, '缺少自定义 restart(),重启路径会退回 stop;start 触发清理')
-  assert.match(core, /OPENBOX_SKIP_CLEANUP=1/, 'restart() 必须设置跳过清理的标记')
+  // 行锚定断言默认值必须是 0:如果有人把顶层默认改成 OPENBOX_SKIP_CLEANUP=1,会静默
+  // 关掉 stop 时的清理(重开 DNS-outage 类问题),但之前的 /OPENBOX_SKIP_CLEANUP=1/
+  // 断言(不锚定位置)对这种改法完全不敏感——因为 restart() 里本来就有一处合法的 =1。
+  assert.match(core, /^OPENBOX_SKIP_CLEANUP=0$/m, '默认必须是 0,否则 stop 时的清理会被静默关闭')
+  // 严格要求 "=1" 这次赋值出现在 restart() 函数体内,而不是随便出现在文件的任何地方——
+  // 否则同样的正则会被"顶层默认值被人为改成 1"这种改法蒙混过关。
+  const restartBody = core.match(/^restart\(\)\s*\{([^}]*)\}/m)
+  assert.ok(restartBody, '无法提取 restart() 函数体')
+  assert.match(restartBody[1], /OPENBOX_SKIP_CLEANUP=1/, 'restart() 函数体内必须设置跳过清理的标记')
   assert.match(
     core,
     /stop_service\(\)\s*\{[^}]*OPENBOX_SKIP_CLEANUP[^}]*openbox_cleanup/s,
