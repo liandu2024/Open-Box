@@ -1,0 +1,8 @@
+{
+	"admin/services/openbox": {
+		"title": "Open-Box",
+		"order": 30,
+		"action": { "type": "view", "path": "openbox/status" },
+		"depends": { "acl": [ "luci-app-openbox" ] }
+	}
+}
