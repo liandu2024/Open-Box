@@ -8,3 +8,4 @@ panel/data/
 .dev-panel.pid
 .dev-panel.log
 panel/.tools/sing-box
+.build-cache/
