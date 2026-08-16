@@ -43,13 +43,25 @@ jobs:
         run: corepack pnpm install --frozen-lockfile
 
       # OPENBOX_VERSION 直接取 github.ref_name(推送 v1.2.3 标签时即为 "v1.2.3"),
-      # 必须带 v 前缀:install.sh/update.sh 用 GitHub Release 的 tag_name 拼装下载
-      # URL 与资产文件名,两边的版本字符串必须逐字节一致。
+      # 写入产物的 meta.json 供面板展示版本号,也用来拼带版本号的留档资产名
+      # open-box-<version>-linux-<arch>.tar.gz。install.sh/update.sh 不再依赖这个
+      # 字符串去拼下载 URL——它们用不带版本号的稳定资产名(见下面 Upload artifact
+      # 步骤的注释与 Important 5),真正装的是哪个版本,由它们在下载校验通过后自己
+      # 从 meta.json 里读出来。
       - name: Build release tarball
         env:
           OPENBOX_VERSION: ${{ github.ref_name }}
         run: bash scripts/build-release.sh ${{ matrix.arch }} dist-release
 
+      # build-release.sh 每个架构都产出两份内容完全一致的 tarball(+sha256):带版本号
+      # 的 open-box-<version>-linux-<arch>.tar.gz(留档)和不带版本号的
+      # open-box-linux-<arch>.tar.gz(install.sh / update.sh 靠这份稳定资产名通过
+      # releases/latest/download/<asset> 直链拿最新版,不查询 api.github.com——见
+      # Important 5)。这里用通配符收集 dist-release/ 下的全部 *.tar.gz / *.sha256,
+      # 两种命名都会被原样带到下面的 Release 里,不需要在这一步分别枚举文件名——
+      # 三处名字(build-release.sh 产出名 / 这里上传名 / install-update.sh 计算名)
+      # 保持一致的关键在 build-release.sh 与 install.sh/update.sh 两侧的命名规则,
+      # 而不是这里的通配符。
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:

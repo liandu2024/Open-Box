@@ -105,7 +105,9 @@ rm -f /etc/init.d/openbox /etc/init.d/openbox-panel
 rm -f /www/luci-static/resources/view/openbox/status.js
 rm -f /usr/share/luci/menu.d/luci-app-openbox.json
 rm -f /usr/share/rpcd/acl.d/luci-app-openbox.json
-rm -f /tmp/luci-*cache*
+# 用 -rf 而不是 -f:OpenWrt <=22.03 的 Lua 版 LuCI 里 /tmp/luci-modulecache 是
+# 目录,rm -f 对目录返回非零,在 set -eu 下会直接中止脚本(P6 终审 Important 4)。
+rm -rf /tmp/luci-*cache* 2>/dev/null || true
 if [ -x /etc/init.d/rpcd ]; then
   /etc/init.d/rpcd restart >/dev/null 2>&1 || warn "重启 rpcd 失败,可忽略(LuCI 文件已删除)。"
 fi

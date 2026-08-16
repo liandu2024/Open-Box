@@ -21,7 +21,11 @@ set -eu
 REPO="liandu2024/Open-Box"
 INSTALL_ROOT="/opt/open-box"
 MIN_FREE_KB=$((512 * 1024))
-MIN_MEM_KB=$((512 * 1024))
+# 450000KB(≈440MB)而不是标称的 512*1024:512MB 设备的 /proc/meminfo MemTotal 实测
+# 只有约 480-500MB(内核保留了一部分),用 524288 卡阈值会把 README 宣称支持的
+# 最低配机器自己拒之门外。README 的"≥512MB 内存"说的是标称容量,不是这里的检测
+# 阈值,两者故意不一致(P6 终审 Important 2)。
+MIN_MEM_KB=450000
 
 CHANNEL="direct"
 MIRROR_PREFIX=""
@@ -206,20 +210,16 @@ build_url() {
 
 detect_downloader
 
-# ---------- 解析最新版本 ----------
-resolve_latest_version() {
-  api_url="https://api.github.com/repos/$REPO/releases/latest"
-  json=$(fetch_to_stdout "$(build_url "$api_url")") || die "无法查询最新版本($api_url 不可达,请检查网络,或改用 --mirror)。"
-  VERSION=$(printf '%s\n' "$json" | sed -n 's/.*"tag_name" *: *"\([^"]*\)".*/\1/p' | head -n 1)
-  [ -n "$VERSION" ] || die "无法解析最新版本号,请稍后重试。"
-}
-
-info "查询最新版本($CHANNEL 通道)..."
-resolve_latest_version
-info "最新版本:$VERSION"
-
-ASSET="open-box-${VERSION}-linux-${ARCH}.tar.gz"
-ASSET_URL="https://github.com/$REPO/releases/download/$VERSION/$ASSET"
+# ---------- 资产地址 ----------
+# 不查询 api.github.com 解析最新版本号:常见的 gh-proxy 类加速站只代理 github.com
+# 与 raw.githubusercontent.com,不代理 api.github.com——镜像通道会恰好在"查询最新
+# 版本"这一步失败;直连通道则受未认证 API 限流(60 次/小时/IP,CGNAT 下更容易撞)。
+# 改用 releases/latest/download/<资产名> 这一稳定直链:GitHub 自己把它 302 到最新
+# release 里同名资产,常见加速站也普遍代理这条路径。资产名不带版本号(由
+# build-release.sh 与 release.yml 同步产出,见 Important 5),真正装的是哪个版本
+# 校验通过、解包完成后从 meta.json 里读(见下方)。
+ASSET="open-box-linux-${ARCH}.tar.gz"
+ASSET_URL="https://github.com/$REPO/releases/latest/download/$ASSET"
 SHA_URL="$ASSET_URL.sha256"
 
 # ---------- 下载到临时目录(此时仍未触碰 /opt) ----------
@@ -262,6 +262,15 @@ if ! tar -xzf "$TMP_DL/$ASSET" -C "$INSTALL_ROOT"; then
   die "解包失败,已清理残留文件。请重新运行安装脚本。"
 fi
 
+# 发布产物在 CI runner 上打包,tar 里的属主 uid/gid 是 runner 的,不是这台路由器的
+# root(0);统一改回 0:0,避免残留一个陌生 uid(P6 终审 Minor)。
+chown -R 0:0 "$INSTALL_ROOT" || warn "重置 $INSTALL_ROOT 属主为 root 失败,可能不影响使用。"
+
+# 校验、解包都已完成,此时读取的版本号就是实际装上的版本号(见上面 Important 5 的
+# 说明:不再从 GitHub API 的 tag_name 提前拿版本号)。
+VERSION=$(sed -n 's/.*"version" *: *"\([^"]*\)".*/\1/p' "$INSTALL_ROOT/meta.json" 2>/dev/null | head -n 1)
+[ -n "$VERSION" ] || VERSION="未知版本"
+
 mkdir -p "$INSTALL_ROOT/data" || die "无法创建 $INSTALL_ROOT/data。"
 if [ "$CHANNEL" = "mirror" ]; then
   printf 'mirror\n%s\n' "$MIRROR_PREFIX" > "$INSTALL_ROOT/data/channel"
@@ -288,7 +297,10 @@ cp "$INSTALL_ROOT/openwrt/luci/root/usr/share/rpcd/acl.d/luci-app-openbox.json" 
   /usr/share/rpcd/acl.d/luci-app-openbox.json || die "无法安装 rpcd ACL 文件。"
 
 # 不清缓存/不重启 rpcd 的话,新 ACL 不会立即生效(P5 review 记录过的坑)。
-rm -f /tmp/luci-*cache*
+# 用 -rf 而不是 -f:OpenWrt <=22.03 的 Lua 版 LuCI 里 /tmp/luci-modulecache 是
+# 目录,rm -f 对目录返回非零,在 set -eu 下会直接中止脚本,留下"/opt 已铺好但面板
+# 从未 enable/启动"的半吊子状态(P6 终审 Important 4)。
+rm -rf /tmp/luci-*cache* 2>/dev/null || true
 if [ -x /etc/init.d/rpcd ]; then
   /etc/init.d/rpcd restart >/dev/null 2>&1 || warn "重启 rpcd 失败,LuCI 页面权限可能要等下次重启路由器后才生效。"
 fi

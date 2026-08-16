@@ -24,10 +24,14 @@ start_service() {
 
 	procd_open_instance openbox-panel
 	procd_set_param command "$NODE" "$ENTRY"
+	# LD_LIBRARY_PATH:x64 的 musl Node 动态依赖 libstdc++.so.6(OpenWrt 默认镜像不带,
+	# 见 scripts/build-release.sh 头部 Critical 1 说明),该库随发布包捆绑在
+	# node/lib/ 下,靠这个环境变量让动态链接器找到它。
 	procd_set_param env \
 		PORT=2026 \
 		HOST=0.0.0.0 \
 		OPENBOX_ROOT="$OPENBOX_ROOT" \
+		LD_LIBRARY_PATH="$OPENBOX_ROOT/node/lib" \
 		ZASHBOARD_DB_PATH="$DATA/openbox.sqlite"
 	procd_set_param stdout 1
 	procd_set_param stderr 1
