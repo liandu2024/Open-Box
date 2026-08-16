@@ -1,0 +1,125 @@
+name: Release
+
+# 触发:推送 v* 标签(例如 v1.0.0)。打包本身是纯下载 + 拷贝,不涉及交叉编译,
+# 所以 x64 与 arm64 两种目标架构都能在 ubuntu-latest 上构建(见
+# scripts/build-release.sh 头部注释)。
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+env:
+  OPENBOX_REPO: liandu2024/Open-Box
+
+jobs:
+  build:
+    name: Build (${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, arm64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      # build-release.sh 自己不装依赖(见其头部注释与 Task 5 brief 的 job 结构),
+      # 依赖安装是这一步的职责;装在 panel/ 下即可覆盖 panel 本体与 panel/server
+      # 这两个 pnpm workspace 成员(panel/pnpm-workspace.yaml)。
+      - name: Install panel dependencies
+        working-directory: panel
+        run: corepack pnpm install --frozen-lockfile
+
+      # OPENBOX_VERSION 直接取 github.ref_name(推送 v1.2.3 标签时即为 "v1.2.3"),
+      # 必须带 v 前缀:install.sh/update.sh 用 GitHub Release 的 tag_name 拼装下载
+      # URL 与资产文件名,两边的版本字符串必须逐字节一致。
+      - name: Build release tarball
+        env:
+          OPENBOX_VERSION: ${{ github.ref_name }}
+        run: bash scripts/build-release.sh ${{ matrix.arch }} dist-release
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: open-box-linux-${{ matrix.arch }}
+          path: |
+            dist-release/*.tar.gz
+            dist-release/*.sha256
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist-release
+          merge-multiple: true
+
+      - name: List release assets
+        run: ls -la dist-release
+
+      # sing-box/Node 版本号只在 scripts/build-release.sh 里维护一份,这里现读现取,
+      # 避免版本号在脚本与发布说明里各写一份、迟早漂移。
+      - name: Compose release notes
+        run: |
+          set -eu
+          NODE_VERSION=$(grep -m1 '^NODE_VERSION=' scripts/build-release.sh | sed -E 's/^NODE_VERSION="([^"]+)"/\1/')
+          SINGBOX_VERSION=$(grep -m1 '^SINGBOX_VERSION=' scripts/build-release.sh | sed -E 's/^SINGBOX_VERSION="([^"]+)"/\1/')
+          {
+            echo "## Open-Box ${{ github.ref_name }}"
+            echo ""
+            echo "- sing-box 内核版本:\`$SINGBOX_VERSION\`(musl 静态链接)"
+            echo "- Node 运行时版本:\`$NODE_VERSION\`(musl 构建,glibc 版本在 OpenWrt 上无法运行)"
+            echo ""
+            echo "### 硬件要求"
+            echo ""
+            echo "- CPU 架构:x86_64 或 arm64(aarch64)"
+            echo "- 可用存储:≥ 512MB"
+            echo "- 可用内存:≥ 512MB"
+            echo "- 系统:OpenWrt"
+            echo ""
+            echo "### 一键安装"
+            echo ""
+            echo '```bash'
+            echo "# 直连版"
+            echo "curl -fsSL https://raw.githubusercontent.com/${OPENBOX_REPO}/main/scripts/install.sh | sh"
+            echo ""
+            echo "# 镜像加速版(把 <镜像前缀> 换成你信任的加速站点域名)"
+            echo "curl -fsSL https://<镜像前缀>/https://raw.githubusercontent.com/${OPENBOX_REPO}/main/scripts/install.sh | sh -s -- --mirror <镜像前缀>"
+            echo '```'
+            echo ""
+            echo "完整安装 / 升级 / 卸载说明见仓库根目录 README。"
+          } > release-notes.md
+          cat release-notes.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Open-Box ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          body_path: release-notes.md
+          fail_on_unmatched_files: true
+          files: |
+            dist-release/*.tar.gz
+            dist-release/*.sha256
