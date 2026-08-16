@@ -97,6 +97,18 @@ test('面板脚本以 2026 端口与 OPENBOX_ROOT 启动', () => {
   assert.match(panel, /OPENBOX_ROOT=/)
 })
 
+test('面板脚本设置 LD_LIBRARY_PATH 指向捆绑的 node/lib(P6 终审 Critical 1)', () => {
+  // x64 的 musl Node 动态依赖 libstdc++.so.6,OpenWrt 默认镜像不带,发布包把它
+  // 连同 libgcc_s.so.1 捆绑进 node/lib/;init 脚本必须把这个目录塞进
+  // LD_LIBRARY_PATH,否则动态链接器找不到,面板会被 procd 无限重启。防止这一行
+  // 日后被顺手删掉。
+  assert.match(
+    panel,
+    /LD_LIBRARY_PATH="\$OPENBOX_ROOT\/node\/lib"/,
+    '面板 init 脚本必须设置 LD_LIBRARY_PATH=$OPENBOX_ROOT/node/lib(即 /opt/open-box/node/lib)',
+  )
+})
+
 test('两个脚本均为 POSIX sh,无 bashism', () => {
   const bashisms = [/\[\[/, /\bfunction\s+\w+\s*\(/, /\blocal\s+-[aA]/, /\bsource\s+/, /\bdeclare\b/]
   for (const [name, body] of [['openbox', core], ['openbox-panel', panel]]) {
