@@ -312,12 +312,28 @@ cp "$SINGBOX_BIN" "$STAGE/bin/sing-box"
 chmod +x "$STAGE/bin/sing-box"
 rm -rf "$SINGBOX_EXTRACT_DIR"
 
-# ---- 7. 拷 openwrt/(initd 与 luci)----
+# ---- 7. 构建期依赖守卫(P6 复审 Minor):确认 sing-box 二进制真正静态链接。
+# 上面第 6 步只是"下载了带 -musl 后缀的资产名",并不能保证 SagerNet 未来某天不会
+# 把这份资产悄悄换成动态链接构建(第 5 步的 node DT_NEEDED 白名单守卫覆盖不到
+# sing-box,只测了 node 自己的二进制)。dt-needed.py 已经在解析 ELF 程序头了,这里
+# 复用同一份解析逻辑断言:既没有 PT_INTERP(没有指定动态链接器路径),也没有
+# PT_DYNAMIC(没有动态段/DT_NEEDED 列表)——两者皆无才是真正的静态二进制。任何一个
+# 存在都直接构建失败,而不是打进产物里到用户路由器上才发现起不来。
+log "校验 sing-box 静态链接(构建期依赖守卫)..."
+python3 "$SCRIPT_DIR/dt-needed.py" --assert-static "$STAGE/bin/sing-box" || {
+  echo "ERROR: sing-box($ARCH) 不是纯静态链接(存在 PT_INTERP 或 PT_DYNAMIC 段)。" >&2
+  echo "  SagerNet 的 -musl 资产可能已改成动态链接构建。请确认该资产的链接方式," >&2
+  echo "  必要时改为像 node 一样把所需的 musl 动态库一并捆绑进 node/lib/ 或 bin/。" >&2
+  exit 1
+}
+log "sing-box 静态链接校验通过($ARCH)。"
+
+# ---- 8. 拷 openwrt/(initd 与 luci)----
 log "拷贝 openwrt/ init 与 LuCI 文件..."
 cp -R "$ROOT/openwrt/initd" "$STAGE/openwrt/initd"
 cp -R "$ROOT/openwrt/luci" "$STAGE/openwrt/luci"
 
-# ---- 8. meta.json ----
+# ---- 9. meta.json ----
 BUILT_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 cat > "$STAGE/meta.json" <<EOF
 {
@@ -329,7 +345,7 @@ cat > "$STAGE/meta.json" <<EOF
 }
 EOF
 
-# ---- 9. 打包:带版本号的资产(留档)+ 不带版本号的稳定资产名(install.sh /
+# ---- 10. 打包:带版本号的资产(留档)+ 不带版本号的稳定资产名(install.sh /
 # update.sh 依赖它,见 Important 5——两者内容完全一致,只是文件名不同,避免
 # install/update 依赖 GitHub API 查询最新版本号)----
 VERSIONED_NAME="open-box-${VERSION}-linux-${ARCH}.tar.gz"
@@ -340,7 +356,7 @@ log "打包 $VERSIONED_NAME..."
 (cd "$STAGE" && tar -czf "$VERSIONED_PATH" node panel bin openwrt meta.json)
 cp "$VERSIONED_PATH" "$STABLE_PATH"
 
-# ---- 10. sha256(分别对两个文件名各算一份,sha256sum -c 依赖文件名匹配)----
+# ---- 11. sha256(分别对两个文件名各算一份,sha256sum -c 依赖文件名匹配)----
 log "计算 sha256..."
 (
   cd "$OUTDIR"

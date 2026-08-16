@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""打印 ELF 文件的 DT_NEEDED 条目(一行一个)。
+"""解析 ELF 文件的程序头,用于构建期的依赖白名单守卫。
 
 不依赖 pyelftools/readelf/objdump——手工解析 ELF 程序头找到 PT_DYNAMIC 段,
 再遍历其中的 Elf32/64_Dyn 条目取出 DT_NEEDED,并通过 DT_STRTAB 解出实际的库名
@@ -8,11 +8,25 @@ objdump 对交叉架构 ELF 的 NEEDED 列表解析也不总是可信——曾�
 上被验证过与本脚本结果一致但不能保证任何主机都装了对应工具链)上也能跑,
 build-release.sh 用它做构建期的依赖白名单守卫(见该脚本 Critical 1 相关注释)。
 
-用法: python3 dt-needed.py <elf 文件>
-输出: 每行一个 DT_NEEDED 库名,失败时非零退出并把原因打到 stderr。
+两种用法:
+  python3 dt-needed.py <elf 文件>
+      打印该文件的 DT_NEEDED 条目(一行一个);文件必须是动态链接的(有
+      PT_DYNAMIC 段),否则失败退出。用于 node 二进制的 DT_NEEDED 白名单校验。
+
+  python3 dt-needed.py --assert-static <elf 文件>
+      断言该文件既没有 PT_INTERP 段也没有 PT_DYNAMIC 段,即真正静态链接、不
+      依赖任何动态链接器/共享库。有则打印命中的段类型并非零退出。用于
+      sing-box 二进制的静态链接校验(build-release.sh Minor 2:防止上游哪天
+      把 -musl 资产悄悄换成动态链接构建,而构建期毫无察觉)。
+
+失败时(两种用法皆然)非零退出并把原因打到 stderr。
 """
 import struct
 import sys
+
+PT_LOAD = 1
+PT_DYNAMIC = 2
+PT_INTERP = 3
 
 
 def die(msg):
@@ -20,7 +34,12 @@ def die(msg):
     sys.exit(1)
 
 
-def read_needed(path):
+def parse_elf(path):
+    """解析 ELF 文件头 + 程序头表。
+
+    返回 (data, endian, is64, phdrs),phdrs 是
+    [(p_type, p_offset, p_vaddr, p_filesz), ...] 的列表,顺序与文件中一致。
+    """
     with open(path, "rb") as f:
         data = f.read()
 
@@ -46,13 +65,7 @@ def read_needed(path):
         e_phentsize = struct.unpack_from(endian + "H", data, 42)[0]
         e_phnum = struct.unpack_from(endian + "H", data, 44)[0]
 
-    PT_LOAD = 1
-    PT_DYNAMIC = 2
-
-    loads = []  # [(p_vaddr, p_filesz, p_offset), ...]
-    dyn_off = None
-    dyn_filesz = None
-
+    phdrs = []
     for i in range(e_phnum):
         off = e_phoff + i * e_phentsize
         if is64:
@@ -63,14 +76,27 @@ def read_needed(path):
             p_type, p_offset, p_vaddr, _p_paddr, p_filesz, _p_memsz, _p_flags, _p_align = (
                 struct.unpack_from(endian + "IIIIIIII", data, off)
             )
-        if p_type == PT_LOAD:
-            loads.append((p_vaddr, p_filesz, p_offset))
-        elif p_type == PT_DYNAMIC:
-            dyn_off = p_offset
-            dyn_filesz = p_filesz
+        phdrs.append((p_type, p_offset, p_vaddr, p_filesz))
 
-    if dyn_off is None:
+    return data, endian, is64, phdrs
+
+
+def read_needed(path):
+    data, endian, is64, phdrs = parse_elf(path)
+
+    loads = [
+        (p_vaddr, p_filesz, p_offset)
+        for p_type, p_offset, p_vaddr, p_filesz in phdrs
+        if p_type == PT_LOAD
+    ]
+    dyn = next(
+        ((p_offset, p_filesz) for p_type, p_offset, p_vaddr, p_filesz in phdrs if p_type == PT_DYNAMIC),
+        None,
+    )
+
+    if dyn is None:
         die(f"{path}: 没有 PT_DYNAMIC 段(不是动态链接的 ELF?)")
+    dyn_off, dyn_filesz = dyn
 
     def vaddr_to_offset(vaddr):
         for p_vaddr, p_filesz, p_offset in loads:
@@ -113,9 +139,23 @@ def read_needed(path):
     return [read_cstr(strtab_off + o) for o in needed_str_offsets]
 
 
+def assert_static(path):
+    """断言 path 既没有 PT_INTERP 也没有 PT_DYNAMIC 段——即真正静态链接,不依赖
+    任何动态链接器或共享库。命中任一段则打印具体命中的段类型并非零退出。"""
+    _data, _endian, _is64, phdrs = parse_elf(path)
+    seg_names = {PT_INTERP: "PT_INTERP", PT_DYNAMIC: "PT_DYNAMIC"}
+    found = sorted({p_type for p_type, _off, _vaddr, _filesz in phdrs if p_type in seg_names})
+    if found:
+        hit = ", ".join(seg_names[t] for t in found)
+        die(f"{path}: 不是静态链接的 ELF(存在 {hit} 段)")
+
+
 def main(argv):
+    if len(argv) == 3 and argv[1] == "--assert-static":
+        assert_static(argv[2])
+        return
     if len(argv) != 2:
-        die(f"用法: {argv[0]} <elf 文件>")
+        die(f"用法: {argv[0]} <elf 文件>  或  {argv[0]} --assert-static <elf 文件>")
     for name in read_needed(argv[1]):
         print(name)
 

@@ -61,6 +61,20 @@ map_arch() {
   esac
 }
 
+# 崩溃中断的升级(断电、OOM-kill——512MB 机器上是真实场景)会跳过下方的 EXIT/INT/
+# TERM trap,留下 "$INSTALL_ROOT/.update-stage.$$" 这个约 200MB 的暂存目录。目录名
+# 以点开头,uninstall.sh 保留 data 时用的 "$INSTALL_ROOT"/* 通配符不会匹配到它
+# (POSIX 通配符默认不匹配点开头的文件名),下一次 update.sh 又会用一个新的 $$,
+# 于是永远没人清理,直到存储预检开始莫名其妙地失败。本脚本同一时刻只应有一个实例
+# 在跑(单实例假设已在别处成立),所以把所有匹配到的暂存目录都清掉是安全的——
+# 放在存储预检之前,这样回收出来的空间会计入这次的可用空间判断。
+cleanup_stale_stage_dirs() {
+  for d in "$INSTALL_ROOT"/.update-stage.*; do
+    [ -e "$d" ] || continue
+    safe_rm_rf "$d"
+  done
+}
+
 # 找到给定路径所在(或将会所在)的文件系统,供 df 检测可用空间——沿路径向上找到
 # 第一个已存在的祖先目录(很多路径在检测时可能还不存在,比如 /tmp 下的子目录)。
 free_space_kb_for() {
@@ -128,6 +142,7 @@ check_root
 check_openwrt
 check_installed
 map_arch
+cleanup_stale_stage_dirs
 check_storage
 check_tmp_space
 read_channel

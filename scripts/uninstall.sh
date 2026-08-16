@@ -144,6 +144,14 @@ else
     [ "$base" = "data" ] && continue
     safe_rm_rf "$entry"
   done
+  # 上面的通配符 "$INSTALL_ROOT"/* 不匹配点开头的文件名,而崩溃中断的升级(断电、
+  # OOM-kill)可能残留 "$INSTALL_ROOT/.update-stage.<pid>"(约 200MB,见
+  # update.sh 里 cleanup_stale_stage_dirs 的说明)。这里显式清掉,避免用户以为
+  # "已卸载、只留了 data/" 但其实还藏着一个隐藏大目录。
+  for entry in "$INSTALL_ROOT"/.update-stage.*; do
+    [ -e "$entry" ] || continue
+    safe_rm_rf "$entry"
+  done
   echo ""
   echo "Open-Box 已卸载,数据保留在 $INSTALL_ROOT/data。"
   echo "如需完全删除,请重新执行: sh uninstall.sh --purge"
