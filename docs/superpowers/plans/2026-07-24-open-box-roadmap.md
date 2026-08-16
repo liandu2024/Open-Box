@@ -39,7 +39,8 @@
 - [x] P4a 完成并合并(后端 API:瘦身 5154→860 行、存储契约、订阅/profile/部署/服务/穿透 API、代理固化、首次设密;273 测试 + 金标准 4/4;两轮安全终审修复)
 - [x] P4b 完成并合并(前端:去多后端、三语言三主题、强制设密+改密、首次引导向导、订阅/分流/内核/穿透 UI、品牌收尾;283 测试 + 金标准 4/4)
 - [x] P5 完成并合并(OpenWrt 侧:openbox/openbox-panel 两个 procd init 脚本、LuCI 兜底页、回滚不再拆面板通道、向导门控迁后端;305 测试 + 金标准 4/4;终审修复 3 Critical)
-- [ ] P6–P7 计划待制定
+- [x] P6 完成并合并(打包/安装/升级/卸载/发布流水线;306 测试;终审修复 1 Critical + 5 Important)
+- [ ] P7 真机验收待进行
 - 产品决策(2026-07-27):穿透功能**保留并重写为 sing-box 版**(基于 `sing-box rule-set match` 本地 .srs 匹配);面板密码改为**首次访问强制设密**(不再由安装脚本预生成)
 
 ## 记录在案的延期项(来自 P1 评审)
@@ -125,3 +126,21 @@
 - LuCI 页面在 21.02/23.05/24.10 上的运行态显示与按钮生效情况(`service list` + `setInitAction`)
 
 **已知残留(不阻塞):** LuCI master 已移除 `luci.setInitAction`(改用 `rc` 对象),若 P7 用 snapshot 固件需迁移;`restart()` 未套 `trap '' TERM`(仅在从 openbox 进程树内部调用时才有影响);deploy 预检只查存在性不查可执行位。
+
+## 记录在案(来自 P6 终审)
+
+**首次发版前必须确认:** 仓库标识 `liandu2024/Open-Box` 目前是占位(本地无 git remote),它被硬编码在 `scripts/install.sh`、`scripts/update.sh`、`.github/workflows/release.yml`、`README.md` 四处。与真实 GitHub 仓库不一致会让文档里每条命令 404。
+
+**musl 相关的三处坑(已全部修复,记录以防回退):**
+1. nodejs.org 官方 Linux 二进制是 glibc 链接,OpenWrt 无法启动 → 必须用 unofficial-builds 的 `-musl` 变体
+2. sing-box 默认的 `linux-amd64` 资产同样是 glibc 动态链接(内含 libcronet.so)→ 必须用 `-musl` 资产
+3. x64 版 musl Node 仍动态依赖 `libstdc++.so.6`,而 OpenWrt 的 DEFAULT_PACKAGES 不含 `libstdcpp` → 已捆绑该库到 `node/lib/` 并在 panel init 脚本设 `LD_LIBRARY_PATH`
+构建期已有 DT_NEEDED 守卫 + sing-box 静态性断言,上游任何一处变动都会让构建当场失败,而不是装到用户路由器上才发现。
+
+**P7 真机验收补充项(终审建议):**
+- 第一个冒烟点:`/opt/open-box/node/bin/node -v` 能否在 stock x86_64 OpenWrt 上跑起来(验证 musl + libstdc++ 捆绑)
+- busybox 的 `df -P` 支持(预检依赖它;不支持会导致所有安装被拒)
+- 512MB 机器上跑一次完整升级(验证内存阈值与暂存目录改到 /opt 文件系统)
+- 一台 ≤22.03 的 LuCI-Lua 固件(验证 `/tmp/luci-modulecache` 是目录时的清理不再中止脚本)
+
+**已知残留(不阻塞):** 同版本 update 仍会下载 78MB 并解包(放弃 GitHub API 的代价);`LD_LIBRARY_PATH` 会传递给面板派生的子进程;发布流水线尚未跑面板测试(建议在打包前加一步)。
