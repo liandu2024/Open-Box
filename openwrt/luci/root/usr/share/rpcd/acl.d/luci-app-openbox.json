@@ -6,7 +6,8 @@
 			"file": { "/opt/open-box/meta.json": [ "read" ] }
 		},
 		"write": {
-			"ubus": { "luci": [ "setInitAction" ] }
+			"ubus": { "luci": [ "setInitAction" ] },
+			"file": { "/opt/open-box/uninstall.sh": [ "exec" ] }
 		}
 	}
 }

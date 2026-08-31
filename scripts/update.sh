@@ -283,6 +283,12 @@ for comp in node panel bin openwrt; do
   [ -e "$INSTALL_ROOT/$comp.old" ] && safe_rm_rf "$INSTALL_ROOT/$comp.old"
 done
 mv "$STAGE_DIR/meta.json" "$INSTALL_ROOT/meta.json" || warn "meta.json 替换失败,面板显示的版本号可能不准确,但不影响功能。"
+# uninstall.sh 随产物分发(LuCI 兜底页要调它),升级时一并刷新,免得留着旧版本的
+# 卸载逻辑去清理新版本铺下的东西。
+if [ -e "$STAGE_DIR/uninstall.sh" ]; then
+  mv "$STAGE_DIR/uninstall.sh" "$INSTALL_ROOT/uninstall.sh" && chmod +x "$INSTALL_ROOT/uninstall.sh" || \
+    warn "uninstall.sh 替换失败,可继续使用旧版卸载脚本。"
+fi
 
 # 发布产物在 CI runner 上打包,tar 里的属主 uid/gid 是 runner 的,不是这台路由器的
 # root(0);统一改回 0:0,避免残留一个陌生 uid(P6 终审 Minor)。

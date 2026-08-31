@@ -40,6 +40,26 @@ safe_rm_rf() {
   rm -rf -- "$target"
 }
 
+# 本脚本现在会随发布包铺到 /opt/open-box/uninstall.sh(LuCI 兜底页要能在没有外网
+# 时调起卸载)。但它接下来要删除的正是自己所在的目录——busybox ash 是边读边执行
+# 脚本文件的,删掉正在执行的文件属于自找麻烦。所以:若发现自己就在安装目录里,
+# 先把自己复制到 /tmp,再从那里重新执行,原地那份随目录一起被删掉即可。
+if [ "${OPENBOX_UNINSTALL_RELOCATED:-0}" != "1" ]; then
+  case "$0" in
+    "$INSTALL_ROOT"/*)
+      _self_copy="/tmp/openbox-uninstall.$$.sh"
+      cp -f -- "$0" "$_self_copy" || die "无法把卸载脚本复制到 /tmp,请改用:wget -O- <脚本地址> | sh"
+      chmod +x "$_self_copy" 2>/dev/null || true
+      OPENBOX_UNINSTALL_RELOCATED=1
+      export OPENBOX_UNINSTALL_RELOCATED
+      exec sh "$_self_copy" "$@"
+      ;;
+  esac
+else
+  # 迁移后的这一份跑完就把自己删掉,不在 /tmp 里留垃圾。
+  trap 'rm -f -- "$0"' EXIT
+fi
+
 while [ $# -gt 0 ]; do
   case "$1" in
     --purge)
@@ -103,6 +123,9 @@ fi
 info "删除 init 脚本与 LuCI 文件..."
 rm -f /etc/init.d/openbox /etc/init.d/openbox-panel
 rm -f /www/luci-static/resources/view/openbox/status.js
+# 目录本身也要删:留着一个空的 openbox/ 目录既不干净,也会让人误以为还装着。
+# 用 rmdir 而不是 rm -rf——只在确实空了的时候删,避免误伤别人的东西。
+rmdir /www/luci-static/resources/view/openbox 2>/dev/null || true
 rm -f /usr/share/luci/menu.d/luci-app-openbox.json
 rm -f /usr/share/rpcd/acl.d/luci-app-openbox.json
 # 用 -rf 而不是 -f:OpenWrt <=22.03 的 Lua 版 LuCI 里 /tmp/luci-modulecache 是

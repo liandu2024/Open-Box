@@ -45,7 +45,21 @@ var I18N = {
 		'Not installed': '未安装',
 		'Action sent: %s %s': '已发送操作:%s %s',
 		'Action failed: %s': '操作失败:%s',
-		'init action failed': '服务操作未成功'
+		'init action failed': '服务操作未成功',
+		'Uninstall': '卸载',
+		'Remove Open-Box from this router. Services are stopped, DNS and firewall changes are reverted, and the LuCI page disappears after the next refresh.':
+			'从这台路由器上移除 Open-Box。服务会被停止,DNS 与防火墙改动会被还原,刷新后本页面也会消失。',
+		'Uninstall Open-Box': '卸载 Open-Box',
+		'Also delete data (subscriptions, password, rule sets)': '同时删除数据(订阅、密码、规则集)',
+		'Keeping data lets a later re-install reuse it. Delete it for a completely fresh start.':
+			'保留数据可供以后重新安装时复用;要彻底重来就勾选删除。',
+		'This cannot be undone. Continue?': '此操作不可撤销,确定继续吗?',
+		'Cancel': '取消',
+		'Confirm uninstall': '确认卸载',
+		'Uninstalling...': '正在卸载…',
+		'Uninstalled. Refresh the page; this menu entry will be gone.': '已卸载。请刷新页面,本菜单项将会消失。',
+		'Uninstall failed: %s': '卸载失败:%s',
+		'Uninstall script not found. Run it manually over SSH.': '未找到卸载脚本,请通过 SSH 手动执行。'
 	},
 	'zh-Hant': {
 		'Fallback controls. Full management lives in the Open-Box panel.':
@@ -79,7 +93,21 @@ var I18N = {
 		'Not installed': '未安裝',
 		'Action sent: %s %s': '已傳送操作:%s %s',
 		'Action failed: %s': '操作失敗:%s',
-		'init action failed': '服務操作未成功'
+		'init action failed': '服務操作未成功',
+		'Uninstall': '解除安裝',
+		'Remove Open-Box from this router. Services are stopped, DNS and firewall changes are reverted, and the LuCI page disappears after the next refresh.':
+			'從這台路由器上移除 Open-Box。服務會被停止,DNS 與防火牆變更會被還原,重新整理後本頁面也會消失。',
+		'Uninstall Open-Box': '解除安裝 Open-Box',
+		'Also delete data (subscriptions, password, rule sets)': '同時刪除資料(訂閱、密碼、規則集)',
+		'Keeping data lets a later re-install reuse it. Delete it for a completely fresh start.':
+			'保留資料可供日後重新安裝時沿用;要徹底重來就勾選刪除。',
+		'This cannot be undone. Continue?': '此操作無法復原,確定要繼續嗎?',
+		'Cancel': '取消',
+		'Confirm uninstall': '確認解除安裝',
+		'Uninstalling...': '正在解除安裝…',
+		'Uninstalled. Refresh the page; this menu entry will be gone.': '已解除安裝。請重新整理頁面,本選單項目將會消失。',
+		'Uninstall failed: %s': '解除安裝失敗:%s',
+		'Uninstall script not found. Run it manually over SSH.': '找不到解除安裝腳本,請透過 SSH 手動執行。'
 	}
 };
 
@@ -218,6 +246,21 @@ function checkLatest() {
 	});
 }
 
+var UNINSTALL_PATH = '/opt/open-box/uninstall.sh';
+
+// 卸载走本地脚本(随发布包铺下来的那份),不依赖外网——这个页面存在的意义就是
+// 面板/网络出问题时还能操作。fs.exec 需要 ACL 里对该路径的 exec 授权。
+function runUninstall(purge) {
+	var args = purge ? [ '--purge' ] : [];
+	return fs.exec(UNINSTALL_PATH, args).then(function (res) {
+		if (!res || res.code !== 0) {
+			var detail = (res && (res.stderr || res.stdout)) || ('exit ' + (res ? res.code : '?'));
+			throw new Error(String(detail).split('\n').slice(-3).join(' ').trim() || 'failed');
+		}
+		return res;
+	});
+}
+
 // ---------------------------------------------------------------------------
 // 布局
 //
@@ -272,6 +315,41 @@ return view.extend({
 			]);
 		}
 
+		function showUninstallDialog() {
+			var purgeBox = E('input', { 'type': 'checkbox', 'id': 'ob-purge' });
+			ui.showModal(tr('Uninstall Open-Box'), [
+				E('p', {}, tr('This cannot be undone. Continue?')),
+				E('div', { 'style': ROW }, [
+					purgeBox,
+					E('label', { 'for': 'ob-purge' }, tr('Also delete data (subscriptions, password, rule sets)'))
+				]),
+				E('p', { 'style': 'opacity:.75;font-size:90%' },
+					tr('Keeping data lets a later re-install reuse it. Delete it for a completely fresh start.')),
+				E('div', { 'class': 'right', 'style': BTNROW }, [
+					E('button', { 'class': 'cbi-button',
+						'click': function () { ui.hideModal(); } }, tr('Cancel')),
+					E('button', { 'class': 'cbi-button cbi-button-negative',
+						'click': ui.createHandlerFn(self, function () {
+							var purge = purgeBox.checked === true;
+							ui.showModal(tr('Uninstall Open-Box'), [ E('p', { 'class': 'spinning' }, tr('Uninstalling...')) ]);
+							return runUninstall(purge).then(function () {
+								ui.hideModal();
+								ui.addNotification(null, E('p', tr('Uninstalled. Refresh the page; this menu entry will be gone.')), 'info');
+							}).catch(function (err) {
+								ui.hideModal();
+								var msg = String(err && err.message || err);
+								if (/not found|No such file/i.test(msg)) {
+									msg = tr('Uninstall script not found. Run it manually over SSH.');
+									ui.addNotification(null, E('p', msg), 'error');
+								} else {
+									ui.addNotification(null, E('p', fmt('Uninstall failed: %s', msg)), 'error');
+								}
+							});
+						}) }, tr('Confirm uninstall'))
+				])
+			]);
+		}
+
 		var versionResult = E('span', { 'style': 'margin-left:.6em' }, '');
 
 		var checkBtn = E('button', { 'class': 'cbi-button cbi-button-neutral',
@@ -314,6 +392,16 @@ return view.extend({
 				E('h3', {}, tr('Panel')),
 				E('div', { 'style': ROW }, [
 					E('a', { 'href': panelUrl, 'target': '_blank', 'rel': 'noreferrer' }, panelUrl)
+				])
+			]),
+
+			E('div', { 'class': 'cbi-section' }, [
+				E('h3', {}, tr('Uninstall')),
+				E('p', {}, tr('Remove Open-Box from this router. Services are stopped, DNS and firewall changes are reverted, and the LuCI page disappears after the next refresh.')),
+				E('div', { 'style': BTNROW }, [
+					E('button', { 'class': 'cbi-button cbi-button-negative',
+						'click': ui.createHandlerFn(self, function () { return showUninstallDialog(); }) },
+						tr('Uninstall Open-Box'))
 				])
 			]),
 

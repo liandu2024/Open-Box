@@ -17,6 +17,7 @@
 #   panel/server/    corepack pnpm deploy --prod 产出的自包含后端
 #   bin/sing-box     钦定版本 sing-box 二进制
 #   openwrt/         initd/ 与 luci/(供安装脚本铺到系统路径)
+#   uninstall.sh     卸载脚本(供 LuCI 兜底页与离线卸载调用)
 #   meta.json        {version, singboxVersion, nodeVersion, arch, builtAt}
 #
 # 关键事实,不要"简化"掉:OpenWrt 用 musl libc,官方 nodejs.org 的 linux-x64/arm64
@@ -333,6 +334,13 @@ log "拷贝 openwrt/ init 与 LuCI 文件..."
 cp -R "$ROOT/openwrt/initd" "$STAGE/openwrt/initd"
 cp -R "$ROOT/openwrt/luci" "$STAGE/openwrt/luci"
 
+# ---- 8b. 卸载脚本 ----
+# 随产物一起铺到 /opt/open-box/uninstall.sh:LuCI 兜底页要能在「面板已经坏了、
+# 也可能没有外网」的情况下调起卸载,所以不能只依赖从 GitHub 现下。
+log "拷贝 uninstall.sh..."
+cp "$ROOT/scripts/uninstall.sh" "$STAGE/uninstall.sh"
+chmod +x "$STAGE/uninstall.sh"
+
 # ---- 9. meta.json ----
 BUILT_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 cat > "$STAGE/meta.json" <<EOF
@@ -353,7 +361,7 @@ STABLE_NAME="open-box-linux-${ARCH}.tar.gz"
 VERSIONED_PATH="$OUTDIR/$VERSIONED_NAME"
 STABLE_PATH="$OUTDIR/$STABLE_NAME"
 log "打包 $VERSIONED_NAME..."
-(cd "$STAGE" && tar -czf "$VERSIONED_PATH" node panel bin openwrt meta.json)
+(cd "$STAGE" && tar -czf "$VERSIONED_PATH" node panel bin openwrt meta.json uninstall.sh)
 cp "$VERSIONED_PATH" "$STABLE_PATH"
 
 # ---- 11. sha256(分别对两个文件名各算一份,sha256sum -c 依赖文件名匹配)----
