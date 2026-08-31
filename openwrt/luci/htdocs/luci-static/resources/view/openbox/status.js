@@ -46,14 +46,15 @@ var I18N = {
 		'Confirm update': '确认更新',
 		'This will stop services and replace program files. The panel will be briefly unavailable. Continue?':
 			'此操作会停止服务并替换程序文件,期间面板会短暂不可用。确定继续吗?',
-		'Choose how to download it:': '选择下载方式:',
 		'GitHub direct': 'GitHub 直连',
-		'Accelerated (proxy)': '代理加速',
-		'Tries a few built-in proxies in order; if one is down it automatically moves to the next.':
-			'会按顺序依次尝试内置的几个代理,某个不可用会自动换下一个。',
-		'Updating to %s (GitHub direct)...': '正在更新到 %s(GitHub 直连)…',
-		'Updating to %s (accelerated)...': '正在更新到 %s(代理加速)…',
-		'Updating to %s...': '正在更新到 %s…',
+		'Channel': '渠道',
+		'Test all channels': '一键检测',
+		'Test this channel': '检测此渠道',
+		'Testing...': '检测中…',
+		'Not tested yet': '未检测',
+		'Available %sms': '可用 %sms',
+		'Unavailable': '不可用',
+		'Updating to %s (%s)...': '正在更新到 %s(%s)…',
 		'Starting update...': '正在启动更新…',
 		'Update started. This may take a few minutes (about 80MB to download).':
 			'更新已开始,可能需要几分钟(约需下载 80MB)。',
@@ -115,14 +116,15 @@ var I18N = {
 		'Confirm update': '確認更新',
 		'This will stop services and replace program files. The panel will be briefly unavailable. Continue?':
 			'此操作會停止服務並替換程式檔案,期間面板會短暫無法使用。確定要繼續嗎?',
-		'Choose how to download it:': '選擇下載方式:',
 		'GitHub direct': 'GitHub 直連',
-		'Accelerated (proxy)': '代理加速',
-		'Tries a few built-in proxies in order; if one is down it automatically moves to the next.':
-			'會按順序依次嘗試內建的幾個代理,某個無法使用會自動換下一個。',
-		'Updating to %s (GitHub direct)...': '正在更新到 %s(GitHub 直連)…',
-		'Updating to %s (accelerated)...': '正在更新到 %s(代理加速)…',
-		'Updating to %s...': '正在更新到 %s…',
+		'Channel': '渠道',
+		'Test all channels': '一鍵檢測',
+		'Test this channel': '檢測此渠道',
+		'Testing...': '檢測中…',
+		'Not tested yet': '未檢測',
+		'Available %sms': '可用 %sms',
+		'Unavailable': '不可用',
+		'Updating to %s (%s)...': '正在更新到 %s(%s)…',
 		'Starting update...': '正在啟動更新…',
 		'Update started. This may take a few minutes (about 80MB to download).':
 			'更新已開始,可能需要幾分鐘(約需下載 80MB)。',
@@ -328,15 +330,17 @@ var UPDATE_LOG_PATH = '/tmp/openbox-update.log';
 var UPDATE_POLL_INTERVAL_MS = 4000;
 var UPDATE_POLL_TIMEOUT_MS = 480000; // 8 分钟:78MB 下载 + 解包 + 换文件的宽松上限
 
-// route: 'direct' 强制直连 GitHub;'mirror' 强制走代理加速(update.sh 自己按内置
-// 列表依次探测、跳过挂掉的站点,见 scripts/update.sh 的 BUILTIN_MIRRORS)。两者都
-// 是显式选择,--detach 之外再各自带一个路线参数透传给 update.sh。
-function runUpdate(route) {
+// channel 是用户在"版本"卡片的渠道下拉框里选中的值:'direct' 强制直连 GitHub;
+// 其它值是一个镜像前缀(渠道选择器固定的三个内置镜像之一,见下方 CHANNELS,与
+// scripts/update.sh 的 BUILTIN_MIRRORS 保持一致),原样透传给 update.sh 的
+// --mirror <前缀>——用户已经在下拉框里显式选了具体渠道(通常还刚探测过连通性),
+// 不需要再让 update.sh 自己去挑一个。--detach 之外再带上路线参数透传给 update.sh。
+function runUpdate(channel) {
 	var args = [ '--detach' ];
-	if (route === 'direct') {
+	if (channel === 'direct') {
 		args.push('--direct');
-	} else if (route === 'mirror') {
-		args.push('--mirror');
+	} else {
+		args.push('--mirror', channel);
 	}
 	return fs.exec(UPDATE_PATH, args).then(function (res) {
 		if (!res || res.code !== 0) {
@@ -352,6 +356,42 @@ function readUpdateLogTail() {
 		return String(txt || '').split('\n').slice(-12).join('\n').replace(/^\s+|\s+$/g, '');
 	}).catch(function () {
 		return '';
+	});
+}
+
+// ---------------------------------------------------------------------------
+// 渠道探测
+//
+// 探测必须在路由器上做,不能在浏览器里做:浏览器这一端的网络状况和路由器的完全
+// 是两回事——真正要下载 76MB 安装包的是路由器,浏览器这边"通"不代表路由器那边也
+// "通"。而且浏览器直接 fetch 一个 gh-proxy 类地址会被 CORS 挡下:这类镜像站不会
+// 给 LuCI 页面的源开跨域头。所以探测走 fs.exec 调 update.sh 的 --probe <渠道>,
+// 复用它内部同一份"抓 .sha256 并校验内容格式"的判定逻辑(64 位十六进制哈希 + 匹配
+// 的资产名),而不是自己另写一套只看 HTTP 状态码的检测——那样会把"200 但是个
+// HTML 错误页"的假死镜像误判为可用,见 scripts/update.sh 里 probe_mirror_prefix()
+// 的注释。
+//
+// 一次只探测一个渠道:rpcd 的 fs.exec 本身有超时,4 个渠道放进一次 exec 里一起测
+// 有拖到超时的风险。所以"一键检测"改在页面这一层循环 4 个渠道、依次各发起一次
+// exec,每测完一个就更新那一行的状态(见 render() 里的 probeOneChannel())——这样
+// "一键检测"和"检测此渠道"两个按钮天然共用同一条代码路径,不用分别写两套逻辑。
+//
+// update.sh 的 --probe 无论探测成功还是失败都固定以 exit 0 退出,靠 stdout 第一个
+// 词(ok / fail)区分,这里照着解析;exec 本身失败(脚本不存在、ACL 拒绝等)才走
+// catch,同样折算成"不可用",不单独区分给用户看。
+function probeChannel(value) {
+	return fs.exec(UPDATE_PATH, [ '--probe', value ]).then(function (res) {
+		var line = String((res && res.stdout) || '').split('\n')[0] || '';
+		var sp = line.indexOf(' ');
+		var kind = sp === -1 ? line : line.slice(0, sp);
+		var rest = sp === -1 ? '' : line.slice(sp + 1).replace(/^\s+/, '');
+		if (kind === 'ok') {
+			var ms = parseInt(rest, 10);
+			return { ok: true, ms: isNaN(ms) ? null : ms };
+		}
+		return { ok: false, reason: rest || kind || 'failed' };
+	}).catch(function (err) {
+		return { ok: false, reason: String(err && err.message || err) };
 	});
 }
 
@@ -428,6 +468,48 @@ return view.extend({
 		var core = data[0], panel = data[1], installed = data[2];
 		var panelUrl = 'http://' + window.location.hostname + ':2026';
 		var self = this;
+
+		// -------------------------------------------------------------------
+		// 渠道选择器
+		//
+		// 4 个渠道:GitHub 直连 + 3 个内置镜像,与 scripts/update.sh 的
+		// BUILTIN_MIRRORS 保持一致——两边都是各自独立铺开的文件(一个 curl|sh
+		// 单文件脚本,一个 LuCI 视图),没有可共享的公共库,只能分别维护同一份
+		// 内容。"立即更新"用的就是这里选中的渠道(见 showUpdateDialog()),不再
+		// 像旧版那样让 update.sh 自己从内置列表里自动挑一个。
+		// -------------------------------------------------------------------
+		var CHANNELS = [
+			{ value: 'direct', label: tr('GitHub direct') },
+			{ value: 'https://ghfast.top', label: 'ghfast.top' },
+			{ value: 'https://gh-proxy.com', label: 'gh-proxy.com' },
+			{ value: 'https://gh.llkk.cc', label: 'gh.llkk.cc' }
+		];
+
+		function channelLabel(value) {
+			for (var i = 0; i < CHANNELS.length; i++) {
+				if (CHANNELS[i].value === value) return CHANNELS[i].label;
+			}
+			return value;
+		}
+
+		// value -> null(未测试过)| 'pending'(正在测)| { ok: true, ms } | { ok: false, reason }
+		var channelResults = {};
+		CHANNELS.forEach(function (c) { channelResults[c.value] = null; });
+
+		function channelStatusSuffix(value) {
+			var r = channelResults[value];
+			if (r === 'pending') return tr('Testing...');
+			if (r == null) return tr('Not tested yet');
+			if (r.ok) return fmt('Available %sms', (r.ms != null ? r.ms : '?'));
+			return tr('Unavailable');
+		}
+
+		// 组合出类似 "GitHub 直连: 可用 320ms" / "ghfast.top: 不可用" 这样单行的
+		// 渠道状态,一键检测/单渠道检测的结果、以及"立即更新"按钮旁的选中渠道摘要
+		// 共用同一个格式,读起来始终一致。
+		function channelStatusText(value) {
+			return channelLabel(value) + ': ' + channelStatusSuffix(value);
+		}
 
 		function serviceCard(title, name, st, extraRow, hint, stopActions) {
 			return E('div', { 'class': 'cbi-section' }, [
@@ -510,22 +592,19 @@ return view.extend({
 		// 更新走本地脚本(随发布包铺下来的那份,与卸载同理),不依赖外网页面本身
 		// 的可用性;总是带 --detach,原因见 runUpdate() 定义处的说明。这里只负责
 		// 触发 + 轮询 + 展示进度/结果,真正的下载/校验/换文件全在 update.sh 里。
-		// route 是用户在 showUpdateDialog() 里显式选择的路线
-		// ('direct' 或 'mirror'),原样透传给 runUpdate()。
-		function startUpdate(latestVersion, route) {
-			var titleKey = route === 'direct' ? 'Updating to %s (GitHub direct)...'
-				: route === 'mirror' ? 'Updating to %s (accelerated)...'
-				: 'Updating to %s...';
+		// channel 是用户在渠道选择器里选中的渠道('direct' 或某个镜像前缀,见下方
+		// CHANNELS),原样透传给 runUpdate()。
+		function startUpdate(latestVersion, channel) {
 			var progressBody = E('p', { 'class': 'spinning' }, tr('Starting update...'));
 			var logBox = E('pre', {
 				'style': 'max-height:12em;overflow:auto;background:rgba(127,127,127,.08);' +
 					'padding:.5em;font-size:85%;white-space:pre-wrap;margin-top:.6em;display:none'
 			}, '');
-			ui.showModal(fmt(titleKey, latestVersion), [ progressBody, logBox ]);
+			ui.showModal(fmt('Updating to %s (%s)...', latestVersion, channelLabel(channel)), [ progressBody, logBox ]);
 
 			var oldVersion = installed;
 
-			return runUpdate(route).then(function () {
+			return runUpdate(channel).then(function () {
 				progressBody.textContent = tr('Update started. This may take a few minutes (about 80MB to download).');
 				return pollForUpdateCompletion(oldVersion, function (logTail) {
 					if (logTail) {
@@ -559,23 +638,22 @@ return view.extend({
 			});
 		}
 
-		// 让用户在启动升级前显式选一条路线,而不是隐式沿用安装时记录的通道
-		// (update.sh 同样支持 --direct/--mirror,见该脚本文件头注释)。两个按钮
-		// 平级摆出来,不做默认推荐,比"先选路线再确认"两步走更干净。
+		// 渠道已经在版本卡片的下拉框里显式选好了(见下方 CHANNELS/selectedChannel),
+		// 这里不再像旧版那样在确认弹窗里二次选择路线,只是把选中渠道当前的探测状态
+		// 复述一遍——不然用户在确认这一步完全看不到"这个渠道到底测没测过、测出来
+		// 怎么样",容易在一个刚探测失败的渠道上误点确认,白白等一次必然失败的
+		// 76MB 下载。
 		function showUpdateDialog(latestVersion) {
+			var channel = selectedChannel;
 			ui.showModal(tr('Confirm update'), [
 				E('p', {}, tr('This will stop services and replace program files. The panel will be briefly unavailable. Continue?')),
-				E('p', { 'style': 'opacity:.75;font-size:90%;margin:.6em 0 0 0' }, tr('Choose how to download it:')),
-				E('p', { 'style': 'opacity:.6;font-size:85%;margin:.2em 0 0 0' }, tr('Tries a few built-in proxies in order; if one is down it automatically moves to the next.')),
+				E('p', { 'style': 'opacity:.8;font-size:90%;margin:.6em 0 0 0' }, channelStatusText(channel)),
 				E('div', { 'class': 'right', 'style': BTNROW }, [
 					E('button', { 'class': 'cbi-button',
 						'click': function () { ui.hideModal(); } }, tr('Cancel')),
-					E('button', { 'class': 'cbi-button cbi-button-neutral',
-						'click': ui.createHandlerFn(self, function () { return startUpdate(latestVersion, 'mirror'); }) },
-						tr('Accelerated (proxy)')),
 					E('button', { 'class': 'cbi-button cbi-button-apply',
-						'click': ui.createHandlerFn(self, function () { return startUpdate(latestVersion, 'direct'); }) },
-						tr('GitHub direct'))
+						'click': ui.createHandlerFn(self, function () { return startUpdate(latestVersion, channel); }) },
+						tr('Update now'))
 				])
 			]);
 		}
@@ -609,6 +687,80 @@ return view.extend({
 					versionResult.textContent = tr('Could not check (network unreachable or blocked).');
 				});
 			}) }, tr('Check for updates'));
+
+		// 一键检测/单渠道检测的 DOM 挂接:每个渠道一行,exec 逐个发起、逐个更新
+		// (见 probeChannel() 定义处的注释——不是一次 exec 探测全部)。
+		var channelRowEls = {};
+
+		function updateChannelRow(value) {
+			var el = channelRowEls[value];
+			if (!el) return;
+			var r = channelResults[value];
+			el.textContent = channelStatusText(value);
+			el.title = (r && r.ok === false && r.reason) ? r.reason : '';
+			el.style.color = (r && r.ok === true) ? '#2a9d2a' : (r && r.ok === false) ? '#c33' : '';
+			if (value === selectedChannel) updateSelectedChannelLine();
+		}
+
+		function updateSelectedChannelLine() {
+			selectedChannelLine.textContent = channelStatusText(selectedChannel);
+			var r = channelResults[selectedChannel];
+			selectedChannelLine.style.color = (r && r.ok === true) ? '#2a9d2a' : (r && r.ok === false) ? '#c33' : '';
+		}
+
+		function probeOneChannel(value) {
+			channelResults[value] = 'pending';
+			updateChannelRow(value);
+			return probeChannel(value).then(function (result) {
+				channelResults[value] = result;
+				updateChannelRow(value);
+			});
+		}
+
+		var probeAllBtn = E('button', { 'class': 'cbi-button cbi-button-neutral',
+			'click': ui.createHandlerFn(self, function () {
+				probeAllBtn.disabled = true;
+				probeOneBtn.disabled = true;
+				var chain = Promise.resolve();
+				CHANNELS.forEach(function (c) {
+					chain = chain.then(function () { return probeOneChannel(c.value); });
+				});
+				return chain.then(function () {
+					probeAllBtn.disabled = false;
+					probeOneBtn.disabled = false;
+				});
+			}) }, tr('Test all channels'));
+
+		var selectedChannel = CHANNELS[0].value;
+
+		var channelSelect = E('select', { 'class': 'cbi-input-select' },
+			CHANNELS.map(function (c) { return E('option', { 'value': c.value }, c.label); }));
+		channelSelect.addEventListener('change', function () {
+			selectedChannel = channelSelect.value;
+			updateSelectedChannelLine();
+		});
+
+		var probeOneBtn = E('button', { 'class': 'cbi-button cbi-button-neutral',
+			'click': ui.createHandlerFn(self, function () {
+				probeAllBtn.disabled = true;
+				probeOneBtn.disabled = true;
+				return probeOneChannel(channelSelect.value).then(function () {
+					probeAllBtn.disabled = false;
+					probeOneBtn.disabled = false;
+				});
+			}) }, tr('Test this channel'));
+
+		var channelStatusList = E('div', { 'style': 'margin:.3em 0;font-size:92%' },
+			CHANNELS.map(function (c) {
+				var el = E('div', {}, channelStatusText(c.value));
+				channelRowEls[c.value] = el;
+				return el;
+			}));
+
+		// 紧挨着「立即更新」摆一份选中渠道的实时状态,免得有人在某个渠道刚探测出
+		// 不可用之后,还照样点「立即更新」去开始一次注定失败的 76MB 下载。
+		var selectedChannelLine = E('span', { 'style': 'margin-left:.6em;font-size:92%' },
+			channelStatusText(selectedChannel));
 
 		return E('div', {}, [
 			E('h2', {}, 'Open-Box'),
@@ -644,7 +796,14 @@ return view.extend({
 					E('span', {}, tr('Installed version') + ':'),
 					E('strong', {}, installed || tr('Not installed'))
 				]),
-				E('div', { 'style': BTNROW }, [ checkBtn, versionResult, updateBtn ])
+				E('div', { 'style': BTNROW }, [ probeAllBtn ]),
+				E('div', { 'style': ROW }, [
+					E('span', {}, tr('Channel') + ':'),
+					channelSelect,
+					probeOneBtn
+				]),
+				channelStatusList,
+				E('div', { 'style': BTNROW }, [ checkBtn, versionResult, updateBtn, selectedChannelLine ])
 			])
 		]);
 	},

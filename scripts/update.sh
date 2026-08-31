@@ -13,6 +13,19 @@
 #                                    # 而升级要下载约 78MB,同步调用必然中途超时;详见下方
 #                                    # 自迁移小节的说明。可以和 --direct/--mirror 组合,
 #                                    # 例如 sh update.sh --detach --mirror。
+#   sh update.sh --probe direct     # 只读探测:测一下"某一个渠道"是否可用,不下载
+#   sh update.sh --probe <前缀>      # 正文、不改动本地安装,也不需要 root/OpenWrt/
+#                                    # 已有安装(见下方"--probe 分发"小节)。固定往
+#                                    # stdout 打印一行结果——`ok <毫秒>` 或
+#                                    # `fail <原因>`——并永远以 exit 0 退出,例如:
+#                                    #   sh update.sh --probe direct
+#                                    #   sh update.sh --probe https://ghfast.top
+#                                    # 供 LuCI 兜底页"版本"卡片的渠道选择器调用
+#                                    # (见 openwrt/luci/.../status.js):"一键检测"与
+#                                    # 单渠道"检测此渠道"两个按钮共用同一条路径,由
+#                                    # 页面侧对每个渠道各发起一次 fs.exec——rpcd 的
+#                                    # fs.exec 有超时,一次 exec 里探测全部渠道有拖到
+#                                    # 超时的风险,所以改成"一次 exec 只探测一个"。
 #
 # 不带 --direct/--mirror 时沿用安装时选择的下载通道(记录在 data/channel),这是
 # 保持向后兼容的默认行为。下载(到 /tmp)与 SHA256 校验都在临时目录完成;只有
@@ -47,6 +60,108 @@ safe_rm_rf() {
   rm -rf -- "$target"
 }
 
+# 供 --probe 计时用:尽量取毫秒精度(date +%s%N,取纳秒后截到毫秒),取不到就退化
+# 成秒级精度(部分精简 date 实现不支持 %N,会把 "%N" 原样输出而不是数字——这里靠
+# 结果里混有非数字字符来识别退化情况,末尾补三个 0 凑成毫秒量级,不让计时失败拖垮
+# 整个探测)。
+now_ms() {
+  t=$(date +%s%N 2>/dev/null || echo '')
+  case "$t" in
+    ''|*[!0-9]*) date +%s000 ;;
+    *) echo $((t / 1000000)) ;;
+  esac
+}
+
+# ---------- 下载相关辅助函数 ----------
+# 挪到这里(自迁移判断与参数解析之前),是因为 --probe 复用 build_url()/
+# probe_mirror_prefix() 的判定逻辑,而 --probe 的分发点(见下方)刻意排在自迁移与
+# "预检"之前——探测不需要 root、不需要跑在 OpenWrt 上、也不需要已有安装,这样才能
+# 在开发机 / CI 上直接跑通。POSIX sh 的函数必须先定义才能调用,所以这几个函数不能
+# 留在原来"预检通过之后"的位置。
+DOWNLOADER=""
+detect_downloader() {
+  if command -v curl >/dev/null 2>&1; then
+    DOWNLOADER="curl"
+  elif command -v wget >/dev/null 2>&1; then
+    DOWNLOADER="wget"
+  else
+    die "系统缺少 curl 与 wget,无法下载升级包。请先执行: opkg update && opkg install curl"
+  fi
+}
+
+fetch_to_stdout() {
+  case "$DOWNLOADER" in
+    curl) curl -fsSL "$1" ;;
+    wget) wget -qO- "$1" ;;
+  esac
+}
+
+fetch_to_file() {
+  case "$DOWNLOADER" in
+    curl) curl -fsSL -o "$2" "$1" ;;
+    wget) wget -q -O "$2" "$1" ;;
+  esac
+}
+
+build_url() {
+  url="$1"
+  if [ "$CHANNEL" = "mirror" ]; then
+    case "$MIRROR_PREFIX" in
+      http://*|https://*) printf '%s/%s\n' "${MIRROR_PREFIX%/}" "$url" ;;
+      *) printf 'https://%s/%s\n' "${MIRROR_PREFIX%/}" "$url" ;;
+    esac
+  else
+    printf '%s\n' "$url"
+  fi
+}
+
+# 探测专用的下载函数:比 fetch_to_file 多加连接/总时长上限,避免探测阶段卡在一个
+# 已经死掉、只是不返回错误而是一直不响应的加速站上——真正下载 78MB 正文时仍用不
+# 限时的 fetch_to_file,不希望网络慢的用户被这里的短超时误伤。
+fetch_to_file_probe() {
+  case "$DOWNLOADER" in
+    curl) curl -fsSL --connect-timeout 8 --max-time 20 -o "$2" "$1" ;;
+    wget) wget -q --timeout=20 -O "$2" "$1" ;;
+  esac
+}
+
+# 探测单个"渠道"是否真的可用:candidate 为 "direct" 时探测 GitHub 直连,其它值当
+# 镜像前缀探测。请求发布资产的 .sha256 文件(几十字节,不是 78MB 正文),并连内容
+# 一起校验格式(64 位十六进制哈希 + 空白 + 资产名)——失效的加速站经常返回 200
+# 状态的 HTML 错误页而不是网络层错误,只看 curl/wget 的退出码不够,必须验证内容,
+# 否则会把"死了但仍应答"的镜像误判为可用。
+# 两处调用方共用这一份判定逻辑:select_builtin_mirror()(--mirror 不带前缀时的
+# 自动选择)与下方的 --probe 分发(LuCI 渠道选择器)——"复用探测逻辑、不重新发明"
+# 落地在这个函数上,不要为 --probe 另写一份。
+probe_mirror_prefix() {
+  candidate="$1"
+  probe_file="$TMP_DL/.mirror-probe"
+  rm -f "$probe_file"
+  if [ "$candidate" = "direct" ]; then
+    CHANNEL="direct"
+    MIRROR_PREFIX=""
+  else
+    CHANNEL="mirror"
+    MIRROR_PREFIX="$candidate"
+  fi
+  probe_url=$(build_url "$SHA_URL")
+  if ! fetch_to_file_probe "$probe_url" "$probe_file" 2>/dev/null; then
+    rm -f "$probe_file"
+    return 1
+  fi
+  hash=$(awk 'NR==1{print $1}' "$probe_file" 2>/dev/null)
+  name=$(awk 'NR==1{print $2}' "$probe_file" 2>/dev/null)
+  rm -f "$probe_file"
+  name=${name#\*}
+  if [ "$name" != "$ASSET" ] || [ "${#hash}" != 64 ]; then
+    return 1
+  fi
+  case "$hash" in
+    *[!0-9a-fA-F]*) return 1 ;;
+  esac
+  return 0
+}
+
 # 本脚本随发布包铺到 /opt/open-box/update.sh(供 LuCI 兜底页一键升级调用)。升级
 # 要把 node/ panel/ bin/ openwrt/ 整棵目录树连同 meta.json 一起换掉,而本脚本自己
 # 现在也活在这棵目录树里——busybox ash 是边读边执行脚本文件的,自己在跑的时候被
@@ -59,7 +174,21 @@ safe_rm_rf() {
 # STAGE_DIR/TMP_DL 共用的 cleanup() trap 里,只在真正执行升级逻辑的那个进程(前台
 # 同步调用,或者 --detach 派生出的后台子进程)退出时才删除,派发进程本身提前退出、
 # 不动这个文件,避免删掉后台子进程还在读的脚本。
-if [ "${OPENBOX_UPDATE_RELOCATED:-0}" != "1" ]; then
+#
+# --probe 是只读探测,不会替换脚本自身或安装目录下的任何文件,不需要走这套自迁移
+# 逻辑——走了反而会在 /tmp 留下一份从不清理的脚本拷贝:自迁移拷贝的清理挂在
+# "真正执行升级逻辑"的 cleanup() trap 里,--probe 用的是自己更早的 exit 路径,够不
+# 到那个 trap。这里先对 "$@" 做一次极简预扫描(不消费参数,不影响下面正式的参数
+# 解析),扫到 --probe 就跳过自迁移。
+_probe_scan=0
+for _a in "$@"; do
+  if [ "$_a" = "--probe" ]; then
+    _probe_scan=1
+    break
+  fi
+done
+
+if [ "$_probe_scan" != "1" ] && [ "${OPENBOX_UPDATE_RELOCATED:-0}" != "1" ]; then
   case "$0" in
     "$INSTALL_ROOT"/*)
       _self_copy="/tmp/openbox-update.$$.sh"
@@ -72,25 +201,31 @@ if [ "${OPENBOX_UPDATE_RELOCATED:-0}" != "1" ]; then
   esac
 fi
 
-# ---------- 参数解析:--detach 与至多一个 --direct/--mirror [前缀] ----------
+# ---------- 参数解析:--detach、至多一个 --direct/--mirror [前缀],或者 --probe <渠道> ----------
 # CHANNEL_OVERRIDE 为空表示未显式指定路线,沿用 read_channel() 读到的安装时记录
-# (向后兼容:今天不传参数的调用方行为不变)。--direct 与 --mirror 互斥。
+# (向后兼容:今天不传参数的调用方行为不变)。--direct、--mirror、--probe 三者两两
+# 互斥;--detach 与 --probe 也互斥(探测本来就是同步的一次性只读调用,不存在"派生
+# 到后台"的意义)。
 DETACH=0
 CHANNEL_OVERRIDE=""
 CLI_MIRROR_PREFIX=""
+PROBE_CHANNEL=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --detach)
+      [ -z "$PROBE_CHANNEL" ] || die "--detach 不能与 --probe 同时使用。"
       DETACH=1
       shift
       ;;
     --direct)
       [ -z "$CHANNEL_OVERRIDE" ] || die "--direct 不能与 --mirror 同时使用。"
+      [ -z "$PROBE_CHANNEL" ] || die "--direct 不能与 --probe 同时使用。"
       CHANNEL_OVERRIDE="direct"
       shift
       ;;
     --mirror)
       [ -z "$CHANNEL_OVERRIDE" ] || die "--mirror 不能与 --direct 同时使用。"
+      [ -z "$PROBE_CHANNEL" ] || die "--mirror 不能与 --probe 同时使用。"
       CHANNEL_OVERRIDE="mirror"
       shift
       # 值可选:紧跟的下一个参数若不是以 -- 开头,当作镜像前缀消费掉;否则
@@ -110,8 +245,21 @@ while [ $# -gt 0 ]; do
         esac
       fi
       ;;
+    --probe)
+      [ "$DETACH" = "0" ] || die "--probe 不能与 --detach 同时使用。"
+      [ -z "$CHANNEL_OVERRIDE" ] || die "--probe 不能与 --direct/--mirror 同时使用。"
+      shift
+      [ $# -ge 1 ] || die "--probe 需要一个参数:direct 或镜像前缀(例如:--probe direct、--probe https://ghfast.top)。"
+      PROBE_CHANNEL="$1"
+      case "$PROBE_CHANNEL" in
+        '') die "--probe 的值不能为空。" ;;
+        direct) ;;
+        *[!A-Za-z0-9._:/-]*) die "--probe 的值包含非法字符(只允许字母、数字、. _ : / -):$PROBE_CHANNEL" ;;
+      esac
+      shift
+      ;;
     *)
-      die "未知参数:$1(可用参数:--detach、--direct、--mirror [前缀])"
+      die "未知参数:$1(可用参数:--detach、--direct、--mirror [前缀]、--probe <渠道>)"
       ;;
   esac
 done
@@ -119,6 +267,8 @@ done
 # 重建 --detach 转发下去时要带的参数(见下方 detach 分支):只包含路线选择,
 # 不包含 --detach 本身(避免子进程再次进入 detach 分支、无限派生)。POSIX sh
 # 没有数组,借 "$@"/set -- 传递,能正确处理镜像前缀里可能出现的特殊字符。
+# --probe 与 --detach 互斥(见上),走到这里时 PROBE_CHANNEL 必为空,这段重建
+# 与 --probe 无关。
 if [ "$CHANNEL_OVERRIDE" = "direct" ]; then
   set -- --direct
 elif [ "$CHANNEL_OVERRIDE" = "mirror" ]; then
@@ -129,6 +279,72 @@ elif [ "$CHANNEL_OVERRIDE" = "mirror" ]; then
   fi
 else
   set --
+fi
+
+# ---------- --probe:只读探测单个渠道,不下载正文、不改动本地安装 ----------
+# 供 LuCI 兜底页"版本"卡片的渠道选择器调用(见 status.js 顶部注释):"一键检测"与
+# 单渠道"检测此渠道"两个按钮共用这一条路径——页面侧对 4 个渠道各发起一次 fs.exec,
+# 这里每次只探测调用方指定的那一个;原因是 rpcd 的 fs.exec 有超时,一次 exec 里
+# 探测全部 4 个渠道有拖到超时的风险,拆成"一次一个"之后,一键检测按钮和单渠道按钮
+# 天然共用同一条代码路径。
+#
+# 复用上面 probe_mirror_prefix() 抓 .sha256 并校验内容格式(64 位十六进制哈希 +
+# 匹配的资产名)的判定逻辑,而不是只看 HTTP 状态码——这是唯一能把"200 但是个
+# HTML 错误页"的假死镜像识别出来的办法,见该函数定义处的注释。
+#
+# 特意不做 check_root/check_openwrt/check_installed:探测是纯只读操作,不修改任何
+# 系统状态,也不要求已有安装存在——这样才能在非 OpenWrt 的开发机 / CI 上直接跑通
+# (构建验证阶段要用到);生产环境下这条路径仍然只会被 LuCI 通过 fs.exec 在真正
+# 装好的 OpenWrt 上调用,ACL 已经把 exec 权限限制在 /opt/open-box/update.sh 这一份
+# 装好的文件上。
+#
+# 无论探测成功还是失败,固定往 stdout 打印一行后以 exit 0 结束:
+#   ok <毫秒>     —— 该渠道可用,附带耗时
+#   fail <原因>   —— 该渠道不可用,或本机连探测前提都不满足(CPU 架构未知、缺
+#                    curl 与 wget、建不了临时目录等)
+# 不用退出码区分成功/失败:调用方(status.js)只需要读 stdout 的第一个词,不必再
+# 分支处理"exec 本身报错"与"渠道探测失败"两种情况。
+if [ -n "$PROBE_CHANNEL" ]; then
+  PROBE_RAW_ARCH=$(uname -m 2>/dev/null || true)
+  case "$PROBE_RAW_ARCH" in
+    x86_64) ARCH="x64" ;;
+    # Linux/OpenWrt 的 uname -m 对 arm64 CPU 报的是 "aarch64";这里额外接受
+    # Darwin(macOS)用的字面量 "arm64",只是为了让 --probe 能在开发机/CI 上直接
+    # 跑通验证(见本次改动的验收要求)——真实 OpenWrt 设备的 uname -m 从不会
+    # 报 "arm64"。不影响 map_arch()(下方主流程仍然只认 aarch64)。
+    aarch64|arm64) ARCH="arm64" ;;
+    *)
+      echo "fail 不支持的 CPU 架构:${PROBE_RAW_ARCH:-未知}"
+      exit 0
+      ;;
+  esac
+
+  if command -v curl >/dev/null 2>&1; then
+    DOWNLOADER="curl"
+  elif command -v wget >/dev/null 2>&1; then
+    DOWNLOADER="wget"
+  else
+    echo "fail 系统缺少 curl 与 wget"
+    exit 0
+  fi
+
+  ASSET="open-box-linux-${ARCH}.tar.gz"
+  ASSET_URL="https://github.com/$REPO/releases/latest/download/$ASSET"
+  SHA_URL="$ASSET_URL.sha256"
+
+  TMP_DL=$(mktemp -d "${TMPDIR:-/tmp}/open-box-probe.XXXXXX" 2>/dev/null) || {
+    echo "fail 无法创建临时目录"
+    exit 0
+  }
+  trap 'safe_rm_rf "$TMP_DL"' EXIT INT TERM
+
+  PROBE_START_MS=$(now_ms)
+  if probe_mirror_prefix "$PROBE_CHANNEL"; then
+    echo "ok $(($(now_ms) - PROBE_START_MS))"
+  else
+    echo "fail 探测失败(连接失败、超时,或返回内容不是预期的校验文件)"
+  fi
+  exit 0
 fi
 
 # ---------- --detach:派生后台子进程,自己立即返回 ----------
@@ -290,44 +506,6 @@ check_tmp_space
 resolve_channel
 info "预检通过(架构 $ARCH,通道 $CHANNEL)。"
 
-# ---------- 下载工具探测 ----------
-DOWNLOADER=""
-detect_downloader() {
-  if command -v curl >/dev/null 2>&1; then
-    DOWNLOADER="curl"
-  elif command -v wget >/dev/null 2>&1; then
-    DOWNLOADER="wget"
-  else
-    die "系统缺少 curl 与 wget,无法下载升级包。请先执行: opkg update && opkg install curl"
-  fi
-}
-
-fetch_to_stdout() {
-  case "$DOWNLOADER" in
-    curl) curl -fsSL "$1" ;;
-    wget) wget -qO- "$1" ;;
-  esac
-}
-
-fetch_to_file() {
-  case "$DOWNLOADER" in
-    curl) curl -fsSL -o "$2" "$1" ;;
-    wget) wget -q -O "$2" "$1" ;;
-  esac
-}
-
-build_url() {
-  url="$1"
-  if [ "$CHANNEL" = "mirror" ]; then
-    case "$MIRROR_PREFIX" in
-      http://*|https://*) printf '%s/%s\n' "${MIRROR_PREFIX%/}" "$url" ;;
-      *) printf 'https://%s/%s\n' "${MIRROR_PREFIX%/}" "$url" ;;
-    esac
-  else
-    printf '%s\n' "$url"
-  fi
-}
-
 detect_downloader
 
 # ---------- 资产地址 ----------
@@ -349,49 +527,14 @@ OLD_VERSION=$(sed -n 's/.*"version" *: *"\([^"]*\)".*/\1/p' "$INSTALL_ROOT/meta.
 # 依次探测,选中第一个探测通过的——加速站是出了名的会挂,所以不能假设列表里第一个
 # 永远可用,必须能在探测失败时继续试下一个,而不是直接报错退出。install.sh 里维护
 # 着同一份列表(两边都是 curl | sh 单文件直跑,没有可共享的公共库文件,只能保持
-# 内容一致、各自维护一份)。
+# 内容一致、各自维护一份)。LuCI 渠道选择器(status.js)同样维护着这四个渠道
+# (GitHub 直连 + 这三个),UI 侧的探测最终也是调用下面 select_builtin_mirror() 复用
+# 的同一个 probe_mirror_prefix()(定义已挪到文件靠前的位置,见该函数注释)。
 BUILTIN_MIRRORS="
 https://ghfast.top
 https://gh-proxy.com
 https://gh.llkk.cc
 "
-
-# 探测专用的下载函数:比 fetch_to_file 多加连接/总时长上限,避免探测阶段卡在一个
-# 已经死掉、只是不返回错误而是一直不响应的加速站上——真正下载 78MB 正文时仍用不
-# 限时的 fetch_to_file,不希望网络慢的用户被这里的短超时误伤。
-fetch_to_file_probe() {
-  case "$DOWNLOADER" in
-    curl) curl -fsSL --connect-timeout 8 --max-time 20 -o "$2" "$1" ;;
-    wget) wget -q --timeout=20 -O "$2" "$1" ;;
-  esac
-}
-
-# 探测单个镜像前缀是否真的可用:请求发布资产的 .sha256 文件(几十字节,不是
-# 78MB 正文),并连内容一起校验格式(64 位十六进制哈希 + 空白 + 资产名)——失效
-# 的加速站经常返回 200 状态的 HTML 错误页而不是网络层错误,只看 curl/wget 的
-# 退出码不够,必须验证内容,否则会把"死了但仍应答"的镜像误判为可用。
-probe_mirror_prefix() {
-  candidate="$1"
-  probe_file="$TMP_DL/.mirror-probe"
-  rm -f "$probe_file"
-  MIRROR_PREFIX="$candidate"
-  probe_url=$(build_url "$SHA_URL")
-  if ! fetch_to_file_probe "$probe_url" "$probe_file" 2>/dev/null; then
-    rm -f "$probe_file"
-    return 1
-  fi
-  hash=$(awk 'NR==1{print $1}' "$probe_file" 2>/dev/null)
-  name=$(awk 'NR==1{print $2}' "$probe_file" 2>/dev/null)
-  rm -f "$probe_file"
-  name=${name#\*}
-  if [ "$name" != "$ASSET" ] || [ "${#hash}" != 64 ]; then
-    return 1
-  fi
-  case "$hash" in
-    *[!0-9a-fA-F]*) return 1 ;;
-  esac
-  return 0
-}
 
 # 依次尝试内置镜像列表,选中第一个探测通过的前缀写回 MIRROR_PREFIX;全部失败则
 # 报错退出(不触碰现有安装——此时还没开始下载正文)。用户仍可以用
