@@ -5,7 +5,8 @@
 			"ubus": { "luci": [ "getInitList" ], "service": [ "list" ] },
 			"file": {
 				"/opt/open-box/meta.json": [ "read" ],
-				"/tmp/openbox-update.log": [ "read" ]
+				"/tmp/openbox-update.log": [ "read" ],
+				"/tmp/openbox-update.status": [ "read" ]
 			}
 		},
 		"write": {

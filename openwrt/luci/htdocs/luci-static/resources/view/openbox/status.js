@@ -69,6 +69,21 @@ var I18N = {
 		'Update failed: %s': '更新失败:%s',
 		'Recent update log:': '最近的更新日志:',
 		'Update script not found. Run it manually over SSH.': '未找到升级脚本,请通过 SSH 手动执行。',
+		'Preparing...': '正在准备…',
+		'Probing channels...': '正在探测渠道…',
+		'Downloading...': '正在下载…',
+		'Verifying checksum...': '正在校验…',
+		'Extracting...': '正在解包…',
+		'Replacing program files (cannot cancel)...': '正在替换程序文件(无法取消)…',
+		'Finishing...': '正在收尾…',
+		'Update cancelled.': '更新已取消。',
+		'Cancel update': '取消更新',
+		'Cancelling...': '正在取消…',
+		'Cancellation requested. The update will stop shortly.': '已请求取消,更新将很快停止。',
+		'Already in the replacement stage; cannot cancel now.': '已进入替换阶段,无法取消。',
+		'No update is currently running.': '当前没有正在运行的更新。',
+		'Cancel request failed: %s': '取消请求失败:%s',
+		'Past this point, cancelling is no longer possible.': '进入此阶段后将无法取消。',
 		'Close': '关闭',
 		'Uninstall': '卸载',
 		'Remove Open-Box from this router. Services are stopped, DNS and firewall changes are reverted, and the LuCI page disappears after the next refresh.':
@@ -141,6 +156,21 @@ var I18N = {
 		'Update failed: %s': '更新失敗:%s',
 		'Recent update log:': '最近的更新日誌:',
 		'Update script not found. Run it manually over SSH.': '找不到升級腳本,請透過 SSH 手動執行。',
+		'Preparing...': '正在準備…',
+		'Probing channels...': '正在探測渠道…',
+		'Downloading...': '正在下載…',
+		'Verifying checksum...': '正在校驗…',
+		'Extracting...': '正在解壓…',
+		'Replacing program files (cannot cancel)...': '正在替換程式檔案(無法取消)…',
+		'Finishing...': '正在收尾…',
+		'Update cancelled.': '更新已取消。',
+		'Cancel update': '取消更新',
+		'Cancelling...': '正在取消…',
+		'Cancellation requested. The update will stop shortly.': '已請求取消,更新將很快停止。',
+		'Already in the replacement stage; cannot cancel now.': '已進入替換階段,無法取消。',
+		'No update is currently running.': '目前沒有正在執行的更新。',
+		'Cancel request failed: %s': '取消請求失敗:%s',
+		'Past this point, cancelling is no longer possible.': '進入此階段後將無法取消。',
 		'Close': '關閉',
 		'Uninstall': '解除安裝',
 		'Remove Open-Box from this router. Services are stopped, DNS and firewall changes are reverted, and the LuCI page disappears after the next refresh.':
@@ -351,6 +381,108 @@ var UPDATE_LOG_PATH = '/tmp/openbox-update.log';
 var UPDATE_POLL_INTERVAL_MS = 4000;
 var UPDATE_POLL_TIMEOUT_MS = 480000; // 8 分钟:78MB 下载 + 解包 + 换文件的宽松上限
 
+// update.sh 每秒左右重写一次的进度/取消状态文件,纯 key=value 文本(不是
+// JSON——两边都是这么约定的,见 scripts/update.sh 里 write_status() 的注释)。
+// 路径与该脚本里 STATUS_PATH 的默认值(TMPDIR 未设置时)保持一致,和
+// UPDATE_LOG_PATH 同理硬编码 /tmp——rpcd 环境下 TMPDIR 通常不会被设置。
+// 用比"决定成功/失败"的 UPDATE_POLL_INTERVAL_MS 更短的间隔单独轮询它,只用来
+// 驱动进度条/取消按钮这些次要 UI,不参与"更新到底成功没有"的判定——那个判定
+// 仍然是版本号 + 日志正则那一套(见 pollForUpdateCompletion()),按需求原样保留。
+var UPDATE_STATUS_PATH = '/tmp/openbox-update.status';
+var UPDATE_STATUS_POLL_INTERVAL_MS = 1000;
+
+// 与 scripts/update.sh 里"可安全取消的阶段"完全对应(见该脚本 check_cancel_
+// _and_abort() 调用点的分布)——committing 及之后不再出现在这张表里,取消按钮
+// 据此隐藏。
+var CANCELLABLE_STAGES = {
+	starting: true,
+	probing: true,
+	downloading: true,
+	verifying: true,
+	extracting: true
+};
+
+// 解析 update.sh 写的 key=value 状态文件:每行"键=剩余全部内容",不按 = 再切
+// (message 字段本身不会包含 = ,但即使包含,取"第一个 = 之后的全部"也不会错)。
+// bytes/total 只有整数才采信,格式不对就当缺失,交给调用方退化处理,不强行拼出
+// 一个可能算错的百分比。
+function parseUpdateStatus(txt) {
+	var out = { pid: '', stage: '', bytes: null, total: null, message: '' };
+	String(txt || '').split('\n').forEach(function (line) {
+		var i = line.indexOf('=');
+		if (i === -1) return;
+		var k = line.slice(0, i), v = line.slice(i + 1);
+		if (k === 'pid') out.pid = v;
+		else if (k === 'stage') out.stage = v;
+		else if (k === 'bytes') out.bytes = /^[0-9]+$/.test(v) ? parseInt(v, 10) : null;
+		else if (k === 'total') out.total = /^[0-9]+$/.test(v) ? parseInt(v, 10) : null;
+		else if (k === 'message') out.message = v;
+	});
+	return out;
+}
+
+function readUpdateStatus() {
+	return fs.read(UPDATE_STATUS_PATH).then(function (txt) {
+		return parseUpdateStatus(txt);
+	}).catch(function () {
+		return null;
+	});
+}
+
+// 阶段 → 展示用的动词短语,不带任何动态数值(百分比/字节数另由 progressDetail()
+// 拼在旁边,避免这里的翻译串里塞 3 个 %s——fmt() 只支持替换 2 个)。
+function stageText(status) {
+	switch (status && status.stage) {
+		case 'starting': return tr('Preparing...');
+		case 'probing': return tr('Probing channels...');
+		case 'downloading': return tr('Downloading...');
+		case 'verifying': return tr('Verifying checksum...');
+		case 'extracting': return tr('Extracting...');
+		case 'committing': return tr('Replacing program files (cannot cancel)...');
+		case 'cancelled': return tr('Update cancelled.');
+		case 'failed': return tr('Update failed.');
+		case 'done': return tr('Finishing...');
+		default: return tr('Starting update...');
+	}
+}
+
+// downloading 阶段拼出 "12.3 / 78.1 MB (16%)" 这样的详情行;total 未知(HEAD
+// 探测不到 Content-Length)时退化成只显示已下载的字节数,不编造百分比——与
+// update.sh 那边"拿不到 total 就传空字符串"的约定对应。failed/cancelled 阶段
+// 复述 update.sh 写的 message(它本来就是中文,不查 i18n 表——这和日志尾巴、
+// die() 输出一律直接展示中文是同一个既有约定)。
+function progressDetail(status) {
+	if (!status) return '';
+	if (status.stage === 'downloading' && status.bytes != null) {
+		var mb = (status.bytes / (1024 * 1024)).toFixed(1);
+		if (status.total != null && status.total > 0) {
+			var totalMb = (status.total / (1024 * 1024)).toFixed(1);
+			var pct = Math.min(100, Math.floor(status.bytes / status.total * 100));
+			return mb + ' / ' + totalMb + ' MB (' + pct + '%)';
+		}
+		return mb + ' MB';
+	}
+	if ((status.stage === 'failed' || status.stage === 'cancelled') && status.message) {
+		return status.message;
+	}
+	return '';
+}
+
+// 取消一次正在运行的更新:调用 update.sh --cancel(协作式,不发任何信号——见该
+// 脚本对应小节的说明),解析 stdout 第一个词得到三种结局之一。exec 本身失败
+// (脚本不存在、ACL 拒绝等)走 reject,和 runUpdate()/probeChannel() 同样的
+// 错误处理方式(截取 stderr/stdout 最后几行拼进 Error)。
+function requestCancel() {
+	return fs.exec(UPDATE_PATH, [ '--cancel' ]).then(function (res) {
+		if (!res || res.code !== 0) {
+			var detail = (res && (res.stderr || res.stdout)) || ('exit ' + (res ? res.code : '?'));
+			throw new Error(String(detail).split('\n').slice(-3).join(' ').trim() || 'failed');
+		}
+		var line = String(res.stdout || '').split('\n')[0];
+		return line.replace(/^\s+|\s+$/g, '');
+	});
+}
+
 // channel 是用户在"版本"卡片的渠道下拉框里选中的值:'direct' 强制直连 GitHub;
 // 其它值是一个镜像前缀(渠道选择器固定的三个内置镜像之一,见下方 CHANNELS,与
 // scripts/update.sh 的 BUILTIN_MIRRORS 保持一致),原样透传给 update.sh 的
@@ -433,8 +565,8 @@ function pollForUpdateCompletion(oldVersion, onTick) {
 		}
 
 		function tick() {
-			Promise.all([ readInstalledVersion(), readUpdateLogTail() ]).then(function (res) {
-				var version = res[0], logTail = res[1];
+			Promise.all([ readInstalledVersion(), readUpdateLogTail(), readUpdateStatus() ]).then(function (res) {
+				var version = res[0], logTail = res[1], status = res[2];
 				if (onTick) onTick(logTail);
 				if (version && version !== oldVersion) {
 					resolve({ ok: true, noop: false, version: version, logTail: logTail });
@@ -450,6 +582,12 @@ function pollForUpdateCompletion(oldVersion, onTick) {
 				// 不必再等到超时才告诉用户。
 				if (/\[open-box\] 错误:/.test(logTail)) {
 					resolve({ ok: false, timeout: false, logTail: logTail });
+					return;
+				}
+				// 状态文件先于日志正则给出"已取消"这个明确结论——用户点了取消按钮,
+				// 不该被当成超时或失败处理,单独给一个结局分支。
+				if (status && status.stage === 'cancelled') {
+					resolve({ ok: false, cancelled: true, logTail: logTail });
 					return;
 				}
 				scheduleNext(logTail);
@@ -623,16 +761,100 @@ return view.extend({
 		// CHANNELS),原样透传给 runUpdate()。
 		function startUpdate(latestVersion, channel) {
 			var progressBody = E('p', { 'class': 'spinning' }, tr('Starting update...'));
+			var progressDetailEl = E('p', { 'style': 'margin:.2em 0 0 0;font-size:90%;opacity:.8' }, '');
+			var progressBarInner = E('div', {
+				'style': 'height:100%;width:0%;background:#2a9d2a;transition:width .3s linear'
+			});
+			var progressBarOuter = E('div', {
+				'style': 'height:6px;background:rgba(127,127,127,.2);border-radius:3px;' +
+					'margin:.5em 0;overflow:hidden;display:none'
+			}, [ progressBarInner ]);
+			// 取消按钮初始隐藏:runUpdate() 的 fs.exec 返回之前,状态文件里可能还是上一次
+			// 更新遗留的终态(见 update.sh --detach 分支的说明),这时按不按都没有意义。
+			// fs.exec 一返回就开始轮询状态文件,由 applyStatus() 接管这个按钮此后的
+			// 显示/隐藏——只要阶段可取消就露出来,不需要在这里预判。
+			var cancelBtn = E('button', {
+				'class': 'cbi-button cbi-button-negative', 'style': 'display:none',
+				'click': ui.createHandlerFn(self, function () { return doCancel(); })
+			}, tr('Cancel update'));
+			var cancelNote = E('p', {
+				'style': 'opacity:.7;font-size:85%;margin:.4em 0 0 0;display:none'
+			}, tr('Past this point, cancelling is no longer possible.'));
 			var logBox = E('pre', {
 				'style': 'max-height:12em;overflow:auto;background:rgba(127,127,127,.08);' +
 					'padding:.5em;font-size:85%;white-space:pre-wrap;margin-top:.6em;display:none'
 			}, '');
-			ui.showModal(fmt('Updating to %s (%s)...', latestVersion, channelLabel(channel)), [ progressBody, logBox ]);
+			ui.showModal(fmt('Updating to %s (%s)...', latestVersion, channelLabel(channel)), [
+				progressBody, progressDetailEl, progressBarOuter,
+				E('div', { 'style': BTNROW }, [ cancelBtn ]), cancelNote,
+				logBox
+			]);
 
 			var oldVersion = installed;
+			var finished = false;
+			var progressTimer = null;
+
+			function stopProgressPolling() {
+				if (progressTimer != null) {
+					window.clearInterval(progressTimer);
+					progressTimer = null;
+				}
+			}
+
+			// 每秒把状态文件里的当前阶段/字节数映射到进度文案 + 进度条 + 取消按钮的
+			// 显示状态。committing 及之后的阶段(以及 done/failed/cancelled 这些终态)
+			// 都不在 CANCELLABLE_STAGES 里,一旦看到就隐藏取消按钮、露出说明文字——
+			// 这就是"取消按钮只在可安全取消的阶段可点"这条要求在页面这一侧的落地点。
+			function applyStatus(status) {
+				if (finished || !status || !status.stage) return;
+				progressBody.textContent = stageText(status);
+				var detail = progressDetail(status);
+				progressDetailEl.textContent = detail;
+				if (status.stage === 'downloading' && status.bytes != null && status.total) {
+					var pct = Math.min(100, Math.floor(status.bytes / status.total * 100));
+					progressBarOuter.style.display = '';
+					progressBarInner.style.width = pct + '%';
+				} else {
+					progressBarOuter.style.display = 'none';
+				}
+				var cancellable = CANCELLABLE_STAGES.hasOwnProperty(status.stage);
+				if (cancellable) {
+					cancelBtn.style.display = '';
+					cancelNote.style.display = 'none';
+				} else {
+					cancelBtn.style.display = 'none';
+					cancelNote.style.display = '';
+				}
+			}
+
+			function doCancel() {
+				cancelBtn.disabled = true;
+				cancelBtn.textContent = tr('Cancelling...');
+				return requestCancel().then(function (word) {
+					if (word === 'requested') {
+						ui.addNotification(null, E('p', tr('Cancellation requested. The update will stop shortly.')), 'info');
+						return;
+					}
+					if (word === 'committing') {
+						ui.addNotification(null, E('p', tr('Already in the replacement stage; cannot cancel now.')), 'info');
+					} else {
+						ui.addNotification(null, E('p', tr('No update is currently running.')), 'info');
+					}
+					cancelBtn.style.display = 'none';
+					cancelNote.style.display = '';
+				}).catch(function (err) {
+					ui.addNotification(null, E('p', fmt('Cancel request failed: %s', String(err && err.message || err))), 'error');
+					cancelBtn.disabled = false;
+					cancelBtn.textContent = tr('Cancel update');
+				});
+			}
 
 			return runUpdate(channel).then(function () {
 				progressBody.textContent = tr('Update started. This may take a few minutes (about 80MB to download).');
+				readUpdateStatus().then(applyStatus);
+				progressTimer = window.setInterval(function () {
+					readUpdateStatus().then(applyStatus);
+				}, UPDATE_STATUS_POLL_INTERVAL_MS);
 				return pollForUpdateCompletion(oldVersion, function (logTail) {
 					if (logTail) {
 						logBox.style.display = '';
@@ -640,7 +862,13 @@ return view.extend({
 					}
 				});
 			}).then(function (result) {
+				finished = true;
+				stopProgressPolling();
 				ui.hideModal();
+				if (result.cancelled) {
+					ui.addNotification(null, E('p', tr('Update cancelled.')), 'info');
+					return;
+				}
 				if (!result.ok) {
 					var failMsg = result.timeout
 						? tr('Update timed out. It may still be running in the background; check again shortly.')
@@ -655,6 +883,8 @@ return view.extend({
 				ui.addNotification(null, E('p', fmt('Update complete: now on %s.', result.version)), 'info');
 				window.setTimeout(function () { location.reload(); }, 1200);
 			}).catch(function (err) {
+				finished = true;
+				stopProgressPolling();
 				ui.hideModal();
 				var msg = String(err && err.message || err);
 				if (/not found|No such file/i.test(msg)) {

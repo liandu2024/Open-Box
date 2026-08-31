@@ -13,6 +13,16 @@
 #                                    # 而升级要下载约 78MB,同步调用必然中途超时;详见下方
 #                                    # 自迁移小节的说明。可以和 --direct/--mirror 组合,
 #                                    # 例如 sh update.sh --detach --mirror。
+#   sh update.sh --cancel           # 请求取消一次正在运行的 --detach 升级。协作式:
+#                                    # 不对升级进程发任何信号,只创建一个标志文件,由
+#                                    # 正在跑的那个 update.sh 自己在下一个安全检查点
+#                                    # 发现后自行清理、退出(见下方"进度/取消状态文件"
+#                                    # 与 check_cancel_and_abort() 的说明)。一旦升级已
+#                                    # 进入停服务/换文件阶段(committing)就不再生效。
+#                                    # 固定往 stdout 打印一行——requested(已请求取消)/
+#                                    # committing(已进入替换阶段,拒绝)/none(没有正在
+#                                    # 运行的更新)——并永远以 exit 0 退出。供 LuCI
+#                                    # 兜底页升级进度弹窗的"取消"按钮调用。
 #   sh update.sh --probe direct     # 只读探测:测一下"某一个渠道"是否可用,不下载
 #   sh update.sh --probe <前缀>      # 正文、不改动本地安装,也不需要 root/OpenWrt/
 #                                    # 已有安装(见下方"--probe 分发"小节)。固定往
@@ -45,11 +55,68 @@ MIN_FREE_KB=$((512 * 1024))
 # 解包目标不在这里(见下方 Important 3),所以这个阈值不需要覆盖解包后的体积。
 MIN_TMP_DOWNLOAD_KB=$((100 * 1024))
 
+# ---------- 进度/取消状态文件 ----------
+# 供 LuCI 兜底页轮询展示进度,以及 --cancel 判断当前处于哪个阶段。纯文本
+# key=value 一行一个字段(不用 JSON——POSIX sh 里拼、转义 JSON 字符串是个坑),
+# 每次整份重写、写到临时文件后 mv 原子替换到位,轮询方不会读到写到一半的文件。
+# STATUS_PID 只在真正执行升级逻辑的那个进程里被赋值(见下方"预检"之前那一行);
+# 参数解析阶段、--probe、--cancel 分支都不会走到那里,STATUS_PID 全程为空——
+# write_status() 在这种情况下直接跳过,不产生任何文件 I/O。这保证了 --probe
+# (渠道选择器"一键检测"一次要连发 4 次)与参数解析出错这类高频/无关调用,不会
+# 覆盖掉真正一次升级正在写着的进度状态。
+STATUS_PATH="${TMPDIR:-/tmp}/openbox-update.status"
+CANCEL_FLAG="${TMPDIR:-/tmp}/openbox-update.cancel"
+STATUS_PID=""
+
 info() { echo "[open-box] $*"; }
 warn() { echo "[open-box] 警告:$*" >&2; }
 die() {
   echo "[open-box] 错误:$*" >&2
+  write_status failed "" "" "$*"
   exit 1
+}
+
+# 供 write_status() 内部使用,写临时文件后原子 mv 到位;args: stage [bytes] [total]
+# [message]。stage 取值见文件头用法说明:starting/probing/downloading/verifying/
+# extracting/committing/done/failed/cancelled。
+write_status() {
+  [ -n "$STATUS_PID" ] || return 0
+  _ws_stage="$1"
+  _ws_bytes="${2:-}"
+  _ws_total="${3:-}"
+  _ws_message="${4:-}"
+  _ws_tmp="$STATUS_PATH.$$.tmp"
+  {
+    echo "pid=$STATUS_PID"
+    echo "stage=$_ws_stage"
+    echo "bytes=$_ws_bytes"
+    echo "total=$_ws_total"
+    echo "message=$_ws_message"
+  } > "$_ws_tmp" 2>/dev/null && mv -f "$_ws_tmp" "$STATUS_PATH" 2>/dev/null
+}
+
+# 读状态文件里某一个字段的值(取第一处匹配),供 --cancel 判断当前阶段/PID 用。
+status_field() {
+  [ -r "$STATUS_PATH" ] || return 1
+  sed -n "s/^$1=//p" "$STATUS_PATH" | head -n 1
+}
+
+cancel_requested() {
+  [ -e "$CANCEL_FLAG" ]
+}
+
+# 可安全取消的阶段(starting/probing/downloading/verifying/extracting)里,每个
+# 关键检查点都调这个函数:一旦发现取消标志,写 cancelled 状态并直接退出——退出
+# 会触发下方注册的 cleanup() trap,自动清掉 TMP_DL/STAGE_DIR 与自迁移副本,这里
+# 不用重复清理。一旦进入 committing(停服务、换文件)就不再调用这个函数,取消
+# 标志从此被无视——"取消只能是协作式的、且止步于替换阶段之前"这条安全约束,
+# 就落地在"这个函数在哪些地方被调用"上。
+check_cancel_and_abort() {
+  if cancel_requested; then
+    info "收到取消请求,正在停止并清理…"
+    write_status cancelled "" "" "已取消(用户请求)"
+    exit 0
+  fi
 }
 
 safe_rm_rf() {
@@ -125,6 +192,96 @@ fetch_to_file_probe() {
   esac
 }
 
+# 探测目标 URL 的 Content-Length(HEAD 请求,带超时,不下载正文),供下载进度的
+# "总字节数"使用。拿不到就打印空字符串——调用方据此退化成"只显示已下载字节数,
+# 不算百分比",不编造一个假的总量。用 tr 把响应头统一转小写后再用 awk 精确匹配
+# "content-length:"这一行,而不是靠 gawk 的 IGNORECASE(OpenWrt 上是 busybox
+# awk,不支持这个扩展)。GitHub 发布资产的直链会经过一到多跳 302 重定向到最终的
+# S3 直链,-L 会让 curl/wget 把每一跳的响应头都打印出来;这里故意不取第一个匹配
+# 而是取最后一个(循环覆盖 v,不在匹配处提前退出),这样拿到的是最终资源那一跳的
+# Content-Length,不是中间跳转页的。
+probe_content_length() {
+  _pcl_url="$1"
+  case "$DOWNLOADER" in
+    curl)
+      curl -sIL --connect-timeout 8 --max-time 20 "$_pcl_url" 2>/dev/null \
+        | tr -d '\r' | tr 'A-Z' 'a-z' \
+        | awk '/^content-length:/{v=$2} END{if (v != "") print v}'
+      ;;
+    wget)
+      wget --spider -S --timeout=20 "$_pcl_url" 2>&1 \
+        | tr -d '\r' | tr 'A-Z' 'a-z' \
+        | awk '/content-length:/{v=$2} END{if (v != "") print v}'
+      ;;
+  esac
+}
+
+# 带进度上报、可取消的下载:把真正的下载子进程(curl/wget 本体,不是套一层
+# subshell——这样 $! 拿到的就是它自己的 PID,kill 才打得准)放到后台,前台每秒
+# 醒一次,拿正在写的目标文件当前大小去更新状态文件(bytes/total),同时检查取消
+# 标志。这个循环是"下载阶段响应取消"的唯一实现——78MB 在慢网络上要跑很久,不能
+# 等它整个 fetch_to_file() 跑完才有机会检查取消。
+#
+# 参数:$1 = URL,$2 = 目标文件路径,$3 = 总字节数(可能是空字符串,即未知)。
+# 返回:下载成功且未被取消 → 0;下载命令本身失败(网络错误等)→ 透传其退出码,
+# 调用方按老逻辑 die();被取消 → 直接 write_status cancelled 并 exit 0,不返回
+# (与 check_cancel_and_abort() 一致的收尾方式,复用同一个 cleanup() trap)。
+download_with_progress() {
+  _dwp_url="$1"
+  _dwp_out="$2"
+  _dwp_total="$3"
+  rm -f "$_dwp_out"
+  case "$DOWNLOADER" in
+    curl) curl -fsSL -o "$_dwp_out" "$_dwp_url" & ;;
+    wget) wget -q -O "$_dwp_out" "$_dwp_url" & ;;
+  esac
+  _dwp_pid=$!
+  write_status downloading 0 "$_dwp_total" ""
+  while kill -0 "$_dwp_pid" 2>/dev/null; do
+    if cancel_requested; then
+      # 协作式取消只作用于"我们自己派生的下载子进程",不是升级进程本身——先礼后
+      # 兵:发 TERM 给它几秒钟自己退出,还没退再 KILL,避免留下一个不吃 TERM 的
+      # 悬空 curl/wget。之后一定 wait 到它真正退出,再删掉可能残留的部分下载
+      # 文件——不留下一个体积不对、校验肯定失败的半成品占着 /tmp 空间。
+      kill "$_dwp_pid" 2>/dev/null || true
+      _dwp_waited=0
+      while kill -0 "$_dwp_pid" 2>/dev/null && [ "$_dwp_waited" -lt 5 ]; do
+        sleep 1
+        _dwp_waited=$((_dwp_waited + 1))
+      done
+      kill -9 "$_dwp_pid" 2>/dev/null || true
+      wait "$_dwp_pid" 2>/dev/null || true
+      rm -f "$_dwp_out"
+      info "收到取消请求,已终止下载并清理。"
+      write_status cancelled "" "" "已取消(用户请求)"
+      exit 0
+    fi
+    _dwp_bytes=0
+    [ -f "$_dwp_out" ] && _dwp_bytes=$(wc -c < "$_dwp_out" 2>/dev/null | awk '{print $1}')
+    case "$_dwp_bytes" in ''|*[!0-9]*) _dwp_bytes=0 ;; esac
+    write_status downloading "$_dwp_bytes" "$_dwp_total" ""
+    sleep 1
+  done
+  wait "$_dwp_pid"
+  _dwp_rc=$?
+  if [ "$_dwp_rc" -ne 0 ]; then
+    return "$_dwp_rc"
+  fi
+  # 下载子进程已经正常退出,但轮询窗口是 1 秒一次:存在"下载恰好在这 1 秒内自然
+  # 完成,同时取消请求也在这 1 秒内到达"的极小概率窗口,收尾前再确认一次。
+  if cancel_requested; then
+    rm -f "$_dwp_out"
+    info "收到取消请求,已终止下载并清理。"
+    write_status cancelled "" "" "已取消(用户请求)"
+    exit 0
+  fi
+  _dwp_final=0
+  [ -f "$_dwp_out" ] && _dwp_final=$(wc -c < "$_dwp_out" 2>/dev/null | awk '{print $1}')
+  case "$_dwp_final" in ''|*[!0-9]*) _dwp_final=0 ;; esac
+  write_status downloading "$_dwp_final" "$_dwp_total" ""
+  return 0
+}
+
 # 探测单个"渠道"是否真的可用:candidate 为 "direct" 时探测 GitHub 直连,其它值当
 # 镜像前缀探测。请求发布资产的 .sha256 文件(几十字节,不是 78MB 正文),并连内容
 # 一起校验格式(64 位十六进制哈希 + 空白 + 资产名)——失效的加速站经常返回 200
@@ -175,20 +332,20 @@ probe_mirror_prefix() {
 # 同步调用,或者 --detach 派生出的后台子进程)退出时才删除,派发进程本身提前退出、
 # 不动这个文件,避免删掉后台子进程还在读的脚本。
 #
-# --probe 是只读探测,不会替换脚本自身或安装目录下的任何文件,不需要走这套自迁移
-# 逻辑——走了反而会在 /tmp 留下一份从不清理的脚本拷贝:自迁移拷贝的清理挂在
-# "真正执行升级逻辑"的 cleanup() trap 里,--probe 用的是自己更早的 exit 路径,够不
-# 到那个 trap。这里先对 "$@" 做一次极简预扫描(不消费参数,不影响下面正式的参数
-# 解析),扫到 --probe 就跳过自迁移。
-_probe_scan=0
+# --probe 与 --cancel 都是"只读/一次性副作用"的快速分支(--probe 不改动任何文件;
+# --cancel 至多创建一个标志文件),不会替换脚本自身或安装目录下的任何文件,不需要
+# 走这套自迁移逻辑——走了反而会在 /tmp 留下一份从不清理的脚本拷贝:自迁移拷贝的
+# 清理挂在"真正执行升级逻辑"的 cleanup() trap 里,这两个分支用的都是自己更早的
+# exit 路径,够不到那个 trap。这里先对 "$@" 做一次极简预扫描(不消费参数,不影响
+# 下面正式的参数解析),扫到 --probe 或 --cancel 就跳过自迁移。
+_no_relocate_scan=0
 for _a in "$@"; do
-  if [ "$_a" = "--probe" ]; then
-    _probe_scan=1
-    break
-  fi
+  case "$_a" in
+    --probe|--cancel) _no_relocate_scan=1; break ;;
+  esac
 done
 
-if [ "$_probe_scan" != "1" ] && [ "${OPENBOX_UPDATE_RELOCATED:-0}" != "1" ]; then
+if [ "$_no_relocate_scan" != "1" ] && [ "${OPENBOX_UPDATE_RELOCATED:-0}" != "1" ]; then
   case "$0" in
     "$INSTALL_ROOT"/*)
       _self_copy="/tmp/openbox-update.$$.sh"
@@ -201,31 +358,43 @@ if [ "$_probe_scan" != "1" ] && [ "${OPENBOX_UPDATE_RELOCATED:-0}" != "1" ]; the
   esac
 fi
 
-# ---------- 参数解析:--detach、至多一个 --direct/--mirror [前缀],或者 --probe <渠道> ----------
+# ---------- 参数解析:--detach、至多一个 --direct/--mirror [前缀],或者 --probe <渠道>,
+#            或者 --cancel ----------
 # CHANNEL_OVERRIDE 为空表示未显式指定路线,沿用 read_channel() 读到的安装时记录
-# (向后兼容:今天不传参数的调用方行为不变)。--direct、--mirror、--probe 三者两两
-# 互斥;--detach 与 --probe 也互斥(探测本来就是同步的一次性只读调用,不存在"派生
-# 到后台"的意义)。
+# (向后兼容:今天不传参数的调用方行为不变)。--direct、--mirror、--probe、--cancel
+# 两两互斥;--detach 与 --probe/--cancel 也互斥(探测、取消都是同步的一次性调用,
+# 不存在"派生到后台"的意义)。
 DETACH=0
 CHANNEL_OVERRIDE=""
 CLI_MIRROR_PREFIX=""
 PROBE_CHANNEL=""
+CANCEL_MODE=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --detach)
       [ -z "$PROBE_CHANNEL" ] || die "--detach 不能与 --probe 同时使用。"
+      [ "$CANCEL_MODE" = "0" ] || die "--detach 不能与 --cancel 同时使用。"
       DETACH=1
+      shift
+      ;;
+    --cancel)
+      [ "$DETACH" = "0" ] || die "--cancel 不能与 --detach 同时使用。"
+      [ -z "$CHANNEL_OVERRIDE" ] || die "--cancel 不能与 --direct/--mirror 同时使用。"
+      [ -z "$PROBE_CHANNEL" ] || die "--cancel 不能与 --probe 同时使用。"
+      CANCEL_MODE=1
       shift
       ;;
     --direct)
       [ -z "$CHANNEL_OVERRIDE" ] || die "--direct 不能与 --mirror 同时使用。"
       [ -z "$PROBE_CHANNEL" ] || die "--direct 不能与 --probe 同时使用。"
+      [ "$CANCEL_MODE" = "0" ] || die "--direct 不能与 --cancel 同时使用。"
       CHANNEL_OVERRIDE="direct"
       shift
       ;;
     --mirror)
       [ -z "$CHANNEL_OVERRIDE" ] || die "--mirror 不能与 --direct 同时使用。"
       [ -z "$PROBE_CHANNEL" ] || die "--mirror 不能与 --probe 同时使用。"
+      [ "$CANCEL_MODE" = "0" ] || die "--mirror 不能与 --cancel 同时使用。"
       CHANNEL_OVERRIDE="mirror"
       shift
       # 值可选:紧跟的下一个参数若不是以 -- 开头,当作镜像前缀消费掉;否则
@@ -248,6 +417,7 @@ while [ $# -gt 0 ]; do
     --probe)
       [ "$DETACH" = "0" ] || die "--probe 不能与 --detach 同时使用。"
       [ -z "$CHANNEL_OVERRIDE" ] || die "--probe 不能与 --direct/--mirror 同时使用。"
+      [ "$CANCEL_MODE" = "0" ] || die "--probe 不能与 --cancel 同时使用。"
       shift
       [ $# -ge 1 ] || die "--probe 需要一个参数:direct 或镜像前缀(例如:--probe direct、--probe https://ghfast.top)。"
       PROBE_CHANNEL="$1"
@@ -259,7 +429,7 @@ while [ $# -gt 0 ]; do
       shift
       ;;
     *)
-      die "未知参数:$1(可用参数:--detach、--direct、--mirror [前缀]、--probe <渠道>)"
+      die "未知参数:$1(可用参数:--detach、--direct、--mirror [前缀]、--probe <渠道>、--cancel)"
       ;;
   esac
 done
@@ -347,6 +517,54 @@ if [ -n "$PROBE_CHANNEL" ]; then
   exit 0
 fi
 
+# ---------- --cancel:请求取消一次正在运行的更新(协作式,不发任何信号) ----------
+# 这个分支本身不 kill 任何进程,只读状态文件判断该说哪句话、要不要创建取消标志:
+# 真正杀掉下载子进程、清理临时/暂存目录的动作,全部由正在运行的那个 update.sh
+# worker 自己在下一次检查点发现标志后完成(见 check_cancel_and_abort() 与
+# download_with_progress() 的说明)。
+#
+# 固定往 stdout 打印这三个词之一并以 exit 0 结束(与 --probe 的 ok/fail 一样不用
+# 退出码区分,只看 stdout 第一个词):
+#   requested  —— 当前处于可安全取消的阶段(starting/probing/downloading/
+#                 verifying/extracting),已写入取消标志
+#   committing —— 已进入停服务/换文件阶段,取消标志不再被检查,原样拒绝
+#   none       —— 没有检测到正在运行的更新:状态文件缺失、记录的 PID 已不在,
+#                 或者上一次更新已经跑完/失败/被取消过(阶段是 done/failed/
+#                 cancelled/无法识别)
+#
+# 同样不需要 root/OpenWrt/已有安装,不走自迁移逻辑(见文件头自迁移小节的预扫描)。
+if [ "$CANCEL_MODE" = "1" ]; then
+  if [ ! -r "$STATUS_PATH" ]; then
+    echo "none"
+    exit 0
+  fi
+  _c_stage=$(status_field stage)
+  case "$_c_stage" in
+    committing)
+      echo "committing"
+      exit 0
+      ;;
+    starting|probing|downloading|verifying|extracting)
+      _c_pid=$(status_field pid)
+      # 状态文件里记录了 PID 却已经不在了:说明那次更新是崩溃退出的(断电、
+      # OOM-kill),不是真的还在跑,不应该假装"已请求取消"糊弄用户——如实报告
+      # 没有更新在运行。PID 字段本身为空(--detach 派发进程同步预写、子进程还
+      # 没来得及补上完整状态)时无法判断存活与否,按"可能还在跑"处理,不误报。
+      if [ -n "$_c_pid" ] && ! kill -0 "$_c_pid" 2>/dev/null; then
+        echo "none"
+        exit 0
+      fi
+      : > "$CANCEL_FLAG" 2>/dev/null || die "无法写入取消标记:$CANCEL_FLAG"
+      echo "requested"
+      exit 0
+      ;;
+    *)
+      echo "none"
+      exit 0
+      ;;
+  esac
+fi
+
 # ---------- --detach:派生后台子进程,自己立即返回 ----------
 # LuCI 一键升级通过 rpcd 的 fs.exec 调用本脚本;fs.exec 是同步等待且有超时的,
 # 升级却要下载约 78MB,同步跑必然中途被杀。所以 --detach 分支只做一件事:再拉起
@@ -364,8 +582,13 @@ if [ "$DETACH" = "1" ]; then
   # 先在派发进程里同步截断日志,而不是指望子进程的重定向去截断:fs.exec 一返回,
   # LuCI 就可能立刻开始轮询日志,子进程真正被调度、打开重定向目标之间存在极小的
   # 时间窗口,截断动作若晚了,轮询有概率读到上一次运行残留的旧日志内容
-  # (可能误命中"错误:"或"无需升级"的匹配)。
+  # (可能误命中"错误:"或"无需升级"的匹配)。状态文件同理:同步预写一行
+  # "stage=starting"(还没有 pid,子进程调度起来后会自己补上完整记录),避免
+  # LuCI 轮询到的是上一次更新遗留的 done/failed/cancelled 状态;顺带清掉可能
+  # 残留的取消标志,防止新这次更新一启动就被上一次的取消请求误伤。
   : > "$UPDATE_LOG" 2>/dev/null || true
+  { echo "stage=starting"; } > "$STATUS_PATH" 2>/dev/null || true
+  rm -f "$CANCEL_FLAG" 2>/dev/null || true
   if command -v setsid >/dev/null 2>&1; then
     setsid sh "$0" "$@" >"$UPDATE_LOG" 2>&1 </dev/null &
   else
@@ -495,6 +718,15 @@ resolve_channel() {
   esac
 }
 
+# 走到这里,说明既不是 --probe 也不是 --cancel:这是真正要执行升级逻辑的进程
+# (前台同步调用,或 --detach 派生出的后台子进程)。从这里开始,STATUS_PID 才被
+# 赋值为非空——write_status() 从此真正写文件(见该函数定义处的说明)。清掉可能
+# 残留的取消标志:防止上一次更新遗留、没能及时清理的标志,把这一次刚启动的全新
+# 更新立刻取消掉。
+STATUS_PID=$$
+rm -f "$CANCEL_FLAG" 2>/dev/null || true
+write_status starting "" "" ""
+
 info "预检..."
 check_root
 check_openwrt
@@ -548,6 +780,10 @@ select_builtin_mirror() {
   for candidate in $BUILTIN_MIRRORS; do
     IFS="$OLD_IFS"
     [ -n "$candidate" ] || continue
+    # 探测每个内置镜像有独立的连接/总时长上限(见 fetch_to_file_probe()),最坏
+    # 情况下几个镜像连续探测下来也要几十秒——这里加一道检查点,不用等到探测全部
+    # 镜像、真正开始下载正文才响应取消。
+    check_cancel_and_abort
     tried="$tried $candidate"
     info "探测:$candidate"
     if probe_mirror_prefix "$candidate"; then
@@ -581,13 +817,27 @@ cleanup() {
 TMP_DL=$(mktemp -d "${TMPDIR:-/tmp}/open-box-update.XXXXXX") || die "无法创建临时目录。"
 trap cleanup EXIT INT TERM
 
+# 从这里开始,cleanup() trap 已经注册好(TMP_DL 已创建)——检查点可以放心
+# exit 0,不用担心留下未追踪的临时目录。
+check_cancel_and_abort
+
 if [ "$CHANNEL" = "mirror" ] && [ -z "$MIRROR_PREFIX" ]; then
+  write_status probing "" "" ""
   select_builtin_mirror
 fi
 
 info "下载发布包:$ASSET"
-fetch_to_file "$(build_url "$ASSET_URL")" "$TMP_DL/$ASSET" || die "下载升级包失败:$ASSET_URL。现有安装未改动。"
+ASSET_DL_URL=$(build_url "$ASSET_URL")
+ASSET_TOTAL=$(probe_content_length "$ASSET_DL_URL")
+case "$ASSET_TOTAL" in ''|*[!0-9]*) ASSET_TOTAL='' ;; esac
+download_with_progress "$ASSET_DL_URL" "$TMP_DL/$ASSET" "$ASSET_TOTAL" || die "下载升级包失败:$ASSET_URL。现有安装未改动。"
+
+check_cancel_and_abort
+
 fetch_to_file "$(build_url "$SHA_URL")" "$TMP_DL/$ASSET.sha256" || die "下载校验文件失败:$SHA_URL。现有安装未改动。"
+
+check_cancel_and_abort
+write_status verifying "" "" ""
 
 if command -v sha256sum >/dev/null 2>&1; then
   SHA_TOOL="sha256sum"
@@ -612,6 +862,9 @@ info "校验通过。"
 # 复用的是 flash/eMMC 而不是内存,且与"校验通过前不碰安装目录"的不变式并不冲突:
 # 暂存目录与正式安装目录是分开的路径,真正替换现有安装是最后一步(P6 终审
 # Important 3)。
+check_cancel_and_abort
+write_status extracting "" "" ""
+
 info "解包..."
 STAGE_DIR="$INSTALL_ROOT/.update-stage.$$"
 safe_rm_rf "$STAGE_DIR"
@@ -621,10 +874,16 @@ for must in node panel bin openwrt meta.json; do
   [ -e "$STAGE_DIR/$must" ] || die "升级包内容不完整,缺少 $must。现有安装未改动。"
 done
 
+# 这是最后一个可以安全取消的检查点:再往下就要读版本号、决定是否进入停服务/
+# 换文件的 committing 阶段——一旦过了这里,取消标志不再被检查(见下方 committing
+# 小节开头的说明)。
+check_cancel_and_abort
+
 NEW_VERSION=$(sed -n 's/.*"version" *: *"\([^"]*\)".*/\1/p' "$STAGE_DIR/meta.json" 2>/dev/null | head -n 1)
 [ -n "$NEW_VERSION" ] || die "升级包的 meta.json 无法解析版本号。现有安装未改动。"
 if [ -n "$OLD_VERSION" ] && [ "$OLD_VERSION" = "$NEW_VERSION" ]; then
   info "当前已是最新版本($OLD_VERSION),无需升级。"
+  write_status done "" "" "已是最新版本,无需升级"
   exit 0
 fi
 if [ -n "$OLD_VERSION" ]; then
@@ -634,6 +893,17 @@ else
 fi
 
 # ---------- 校验并解包成功之后,才允许停服务、动现有安装 ----------
+# 从这里开始进入"替换阶段"(committing):不再调用 check_cancel_and_abort(),
+# 收到的 --cancel 一律回复"已进入替换阶段,无法取消"(见 --cancel 分支里对
+# stage=committing 的处理)。这是"取消只能是协作式的"这条安全约束的边界——外部
+# kill 若砸在 node/panel/bin/openwrt 的 mv 替换过程中,装置会被拆成半旧半新;
+# 而只要 update.sh 自己不再检查取消标志、一路跑到底,这里的每一步失败都仍然是
+# "自己发现问题后 die() 退出",不是"被外力打断",能保持 die() 里描述的那些
+# "现有安装应仍完整"之类的保证。顺手清掉可能残留的取消标志(理论上不会有,防御
+# 一下不留尾巴)。
+write_status committing "" "" ""
+rm -f "$CANCEL_FLAG" 2>/dev/null || true
+
 info "停止服务..."
 if [ -x /etc/init.d/openbox-panel ]; then
   /etc/init.d/openbox-panel stop >/dev/null 2>&1 || true
@@ -701,6 +971,8 @@ fi
 info "启动面板..."
 /etc/init.d/openbox-panel enable || warn "设置面板开机自启失败,可稍后在 LuCI → 服务 → Open-Box 中手动开启。"
 /etc/init.d/openbox-panel start || warn "面板启动命令返回了非零状态,请稍后访问面板地址确认;如不可用可到 LuCI → 服务 → Open-Box 中重试。"
+
+write_status done "" "" "升级完成:$NEW_VERSION"
 
 echo ""
 echo "Open-Box 已升级到 $NEW_VERSION。"
