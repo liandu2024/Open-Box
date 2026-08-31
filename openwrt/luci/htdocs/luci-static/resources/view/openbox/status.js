@@ -31,10 +31,6 @@ var I18N = {
 		'Restart': '重启',
 		'Enable autostart': '开启自启',
 		'Disable autostart': '关闭自启',
-		'Kernel version': '内核版本',
-		'The kernel version is pinned to this Open-Box release and upgrades together with it. To upgrade, use "Update now" in the Open-Box upgrade section below.':
-			'内核版本随本次 Open-Box 发行版本一并固定,升级时随其一起更新。如需升级,请使用下方"Open-Box 升级"区块里的"立即更新"。',
-		'Installed version': '当前版本',
 		'Check for updates': '检查更新',
 		'Checking...': '检查中…',
 		'Up to date.': '已是最新版本。',
@@ -124,10 +120,6 @@ var I18N = {
 		'Restart': '重新啟動',
 		'Enable autostart': '開啟自啟',
 		'Disable autostart': '關閉自啟',
-		'Kernel version': '核心版本',
-		'The kernel version is pinned to this Open-Box release and upgrades together with it. To upgrade, use "Update now" in the Open-Box upgrade section below.':
-			'核心版本隨本次 Open-Box 發行版本一併固定,升級時隨其一起更新。如需升級,請使用下方「Open-Box 升級」區塊裡的「立即更新」。',
-		'Installed version': '目前版本',
 		'Check for updates': '檢查更新',
 		'Checking...': '檢查中…',
 		'Up to date.': '已是最新版本。',
@@ -709,7 +701,8 @@ var STYLE_CSS =
 	'@media (max-width:900px){.ob-grid{grid-template-columns:1fr}}' +
 	'.ob-card{border:1px solid rgba(127,127,127,.22);border-radius:10px;padding:16px 18px;background:rgba(127,127,127,.04)}' +
 	'.ob-card-danger{border-color:rgba(208,74,74,.35)}' +
-	'.ob-card h3{margin:0 0 12px;font-size:1.05em;font-weight:600}' +
+	'.ob-card h3{margin:0 0 12px;font-size:1.05em;font-weight:600;display:flex;align-items:baseline;justify-content:space-between;gap:.75em}' +
+	'.ob-ver{font-size:.85em;font-weight:600;opacity:.75;white-space:nowrap}' +
 	'.ob-pills{display:flex;flex-wrap:wrap;gap:8px;align-items:center}' +
 	'.ob-pill{display:inline-flex;align-items:center;gap:.35em;padding:.15em .65em;border-radius:999px;font-size:.85em;border:1px solid currentColor;white-space:nowrap}' +
 	'.ob-pill-on{color:#2e9e4f}' +
@@ -718,8 +711,6 @@ var STYLE_CSS =
 	'.ob-link{margin-left:auto;font-size:.9em;white-space:nowrap}' +
 	'.ob-btns{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 0}' +
 	'.ob-meta{display:flex;flex-wrap:wrap;gap:.5em;align-items:baseline;margin:.4em 0;font-size:.95em}' +
-	'.ob-meta-label{opacity:.65}' +
-	'.ob-meta-value{font-weight:600}' +
 	'.ob-hint{margin:10px 0 0;font-size:.85em;opacity:.65;line-height:1.55}' +
 	'.ob-div{height:1px;background:rgba(127,127,127,.18);margin:14px -18px 12px}' +
 	'.ob-chan{border:1px solid rgba(127,127,127,.2);border-radius:8px;overflow:hidden;margin:10px 0 12px}' +
@@ -1279,18 +1270,18 @@ return view.extend({
 					// 新内核拒绝启动的风险。升级入口统一指向下面「Open-Box 升级」卡片里的
 					// 「立即更新」——内核随整个发行版本一起换。
 					E('div', { 'class': 'ob-card' }, [
-						E('h3', {}, tr('sing-box core')),
+						// 版本号右对齐放在标题行里:它本来是卡片底部一行带标签的
+						// 「内核版本: x.y.z」,加一条分隔线和一段说明。标签、分隔线、
+						// 说明都是冗余的——内核卡片里没有升级入口,升级统一在
+						// 「Open-Box 升级」卡片,这层关系不必再用文字重复一遍。
+						E('h3', {}, [
+							E('span', {}, tr('sing-box core')),
+							E('span', { 'class': 'ob-ver' }, singboxVersion || tr('Not installed'))
+						]),
 						statusPills(core, null),
 						serviceButtons('openbox', core, [ 'stop', 'disable' ]),
 						E('p', { 'class': 'ob-hint' },
-							tr('Stopping also turns off autostart (so it stays stopped after a reboot) and restores plain internet access: the IPv6 leak block and the Open-Box DNS upstream are removed. The panel stays reachable.')),
-						E('div', { 'class': 'ob-div' }),
-						E('div', { 'class': 'ob-meta' }, [
-							E('span', { 'class': 'ob-meta-label' }, tr('Kernel version') + ':'),
-							E('span', { 'class': 'ob-meta-value' }, singboxVersion || tr('Not installed'))
-						]),
-						E('p', { 'class': 'ob-hint' },
-							tr('The kernel version is pinned to this Open-Box release and upgrades together with it. To upgrade, use "Update now" in the Open-Box upgrade section below.'))
+							tr('Stopping also turns off autostart (so it stays stopped after a reboot) and restores plain internet access: the IPv6 leak block and the Open-Box DNS upstream are removed. The panel stays reachable.'))
 					]),
 
 					// 「Open-Box 面板」卡片同理是一个自成一体的功能块:状态/控制 + 面板地址在
@@ -1299,15 +1290,13 @@ return view.extend({
 					// 「Open-Box 升级」卡片(见下方),不再像旧版那样挤进面板卡片里。面板地址
 					// 用 .ob-link(margin-left:auto)推到徽标行最右侧,不再需要额外的分隔符。
 					E('div', { 'class': 'ob-card' }, [
-						E('h3', {}, tr('Open-Box panel')),
+						E('h3', {}, [
+							E('span', {}, tr('Open-Box panel')),
+							E('span', { 'class': 'ob-ver' }, installed || tr('Not installed'))
+						]),
 						statusPills(panel,
 							E('a', { 'class': 'ob-link', 'href': panelUrl, 'target': '_blank', 'rel': 'noreferrer' }, panelUrl)),
-						serviceButtons('openbox-panel', panel, null),
-						E('div', { 'class': 'ob-div' }),
-						E('div', { 'class': 'ob-meta' }, [
-							E('span', { 'class': 'ob-meta-label' }, tr('Installed version') + ':'),
-							E('span', { 'class': 'ob-meta-value' }, installed || tr('Not installed'))
-						])
+						serviceButtons('openbox-panel', panel, null)
 					]),
 
 					// 「Open-Box 升级」独立成一张卡片(负责人手绘草图的要求):最上面一行是
