@@ -31,7 +31,9 @@ var I18N = {
 		'Restart': '重启',
 		'Enable autostart': '开启自启',
 		'Disable autostart': '关闭自启',
-		'Version': '版本',
+		'Kernel version': '内核版本',
+		'The kernel version is pinned to this Open-Box release and upgrades together with it. To upgrade, use "Update now" in the Open-Box panel section below.':
+			'内核版本随本次 Open-Box 发行版本一并固定,升级时随其一起更新。如需升级,请使用下方"Open-Box 面板"区块里的"立即更新"。',
 		'Installed version': '当前版本',
 		'Check for updates': '检查更新',
 		'Checking...': '检查中…',
@@ -101,7 +103,9 @@ var I18N = {
 		'Restart': '重新啟動',
 		'Enable autostart': '開啟自啟',
 		'Disable autostart': '關閉自啟',
-		'Version': '版本',
+		'Kernel version': '核心版本',
+		'The kernel version is pinned to this Open-Box release and upgrades together with it. To upgrade, use "Update now" in the Open-Box panel section below.':
+			'核心版本隨本次 Open-Box 發行版本一併固定,升級時隨其一起更新。如需升級,請使用下方「Open-Box 面板」區塊裡的「立即更新」。',
 		'Installed version': '目前版本',
 		'Check for updates': '檢查更新',
 		'Checking...': '檢查中…',
@@ -269,6 +273,23 @@ function readInstalledVersion() {
 	return fs.read(META_PATH).then(function (txt) {
 		var meta = JSON.parse(txt);
 		return meta && meta.version ? String(meta.version) : null;
+	}).catch(function () {
+		return null;
+	});
+}
+
+// sing-box 内核的版本号是随 Open-Box 发行版本一起钦定、写死进 meta.json 的构建期
+// 常量(见 scripts/build-release.sh 的 SINGBOX_VERSION),不是探测运行中的二进制
+// 现查出来的——这里只是读出这个钦定值展示给用户。之所以不提供独立于 Open-Box 发行
+// 版本的内核升级入口:发布时生成的 sing-box 配置是照着这个确切版本量身写的,而
+// sing-box 的配置 schema 在小版本之间会变(例如 1.11 → 1.12 整个重写了 DNS 段)。
+// 独立升级内核会打破"配置版本"与"内核版本"的对应关系,新内核可能直接拒绝启动
+// 旧配置。所以内核版本随 Open-Box 整个发行版本一起走:要升级内核,走 Open-Box
+// 面板区块的"立即更新"(见 render() 里 sing-box 内核卡片的说明文字)。
+function readInstalledSingboxVersion() {
+	return fs.read(META_PATH).then(function (txt) {
+		var meta = JSON.parse(txt);
+		return meta && meta.singboxVersion ? String(meta.singboxVersion) : null;
 	}).catch(function () {
 		return null;
 	});
@@ -460,12 +481,13 @@ return view.extend({
 		return Promise.all([
 			serviceState('openbox'),
 			serviceState('openbox-panel'),
-			readInstalledVersion()
+			readInstalledVersion(),
+			readInstalledSingboxVersion()
 		]);
 	},
 
 	render: function (data) {
-		var core = data[0], panel = data[1], installed = data[2];
+		var core = data[0], panel = data[1], installed = data[2], singboxVersion = data[3];
 		var panelUrl = 'http://' + window.location.hostname + ':2026';
 		var self = this;
 
@@ -511,7 +533,11 @@ return view.extend({
 			return channelLabel(value) + ': ' + channelStatusSuffix(value);
 		}
 
-		function serviceCard(title, name, st, extraRow, hint, stopActions) {
+		// 每张卡片是一个自成一体的功能块:状态/控制在上,该组件的版本与升级区在下,
+		// 都装进同一个 cbi-section 容器里(extraSections,可选)——而不是像旧版那样把
+		// 「版本」拆成页面末尾单独一张卡片,那样读者要在两张卡片之间来回对应"这个
+		// 版本号说的是哪个组件"。
+		function serviceCard(title, name, st, extraRow, hint, stopActions, extraSections) {
 			return E('div', { 'class': 'cbi-section' }, [
 				E('h3', {}, tr(title)),
 				E('div', { 'style': ROW }, [
@@ -534,7 +560,8 @@ return view.extend({
 							return act(name, st.enabled ? 'disable' : 'enable');
 						}) }, st.enabled ? tr('Disable autostart') : tr('Enable autostart'))
 				])
-			].concat(hint ? [ E('p', { 'style': 'opacity:.7;font-size:90%;margin:.2em 0 0 0' }, hint) ] : []));
+			].concat(hint ? [ E('p', { 'style': 'opacity:.7;font-size:90%;margin:.2em 0 0 0' }, hint) ] : [])
+			 .concat(extraSections || []));
 		}
 
 		function showUninstallDialog() {
@@ -774,11 +801,47 @@ return view.extend({
 			// 把网搞断时停了内核、一重启又被拉起来,网再次断掉——那样的「停止」在真正
 			// 需要它的场景里是无效的。面板服务不做这件事:面板是唯一的管理入口,它应该
 			// 在重启后自己回来。
+			//
+			// 「sing-box 内核」这张卡片是一个自成一体的功能块:状态/控制在上,内核
+			// 版本 + 升级说明在下——内核版本号来自 meta.json 的 singboxVersion(构建期
+			// 钦定值,见 readInstalledSingboxVersion() 的注释),并且这里刻意不放一个
+			// 独立的"升级内核"按钮:内核版本与 Open-Box 发行版本是绑定发布的,配置是
+			// 照着这个确切内核版本生成的,独立升级内核有打破这层对应关系、生成的配置被
+			// 新内核拒绝启动的风险。升级入口统一指向下面「Open-Box 面板」卡片里的
+			// 「立即更新」——内核随整个发行版本一起换。
 			serviceCard('sing-box core', 'openbox', core, null,
 				tr('Stopping also turns off autostart (so it stays stopped after a reboot) and restores plain internet access: the IPv6 leak block and the Open-Box DNS upstream are removed. The panel stays reachable.'),
-				[ 'stop', 'disable' ]),
+				[ 'stop', 'disable' ],
+				[
+					E('div', { 'style': ROW + ';margin-top:.8em;padding-top:.6em;border-top:1px solid rgba(127,127,127,.2)' }, [
+						E('span', {}, tr('Kernel version') + ':'),
+						E('strong', {}, singboxVersion || tr('Not installed'))
+					]),
+					E('p', { 'style': 'opacity:.7;font-size:90%;margin:.2em 0 0 0' },
+						tr('The kernel version is pinned to this Open-Box release and upgrades together with it. To upgrade, use "Update now" in the Open-Box panel section below.'))
+				]),
+
+			// 「Open-Box 面板」卡片同理是一个自成一体的功能块:状态/控制 + 面板地址在
+			// 上,该发行版本自身的版本号、渠道选择、探测与升级操作在下——这些原先是页面
+			// 末尾一张独立的「版本」卡片,现在合并进来,因为它们说的正是这张卡片对应的
+			// 组件(Open-Box 整个发行版本,内核也随它一起走,见上面的说明)。
 			serviceCard('Open-Box panel', 'openbox-panel', panel,
-				E('a', { 'href': panelUrl, 'target': '_blank', 'rel': 'noreferrer' }, panelUrl)),
+				E('a', { 'href': panelUrl, 'target': '_blank', 'rel': 'noreferrer' }, panelUrl),
+				null, null,
+				[
+					E('div', { 'style': ROW + ';margin-top:.8em;padding-top:.6em;border-top:1px solid rgba(127,127,127,.2)' }, [
+						E('span', {}, tr('Installed version') + ':'),
+						E('strong', {}, installed || tr('Not installed'))
+					]),
+					E('div', { 'style': BTNROW }, [ probeAllBtn ]),
+					E('div', { 'style': ROW }, [
+						E('span', {}, tr('Channel') + ':'),
+						channelSelect,
+						probeOneBtn
+					]),
+					channelStatusList,
+					E('div', { 'style': BTNROW }, [ checkBtn, versionResult, updateBtn, selectedChannelLine ])
+				]),
 
 			E('div', { 'class': 'cbi-section' }, [
 				E('h3', {}, tr('Uninstall')),
@@ -788,22 +851,6 @@ return view.extend({
 						'click': ui.createHandlerFn(self, function () { return showUninstallDialog(); }) },
 						tr('Uninstall Open-Box'))
 				])
-			]),
-
-			E('div', { 'class': 'cbi-section' }, [
-				E('h3', {}, tr('Version')),
-				E('div', { 'style': ROW }, [
-					E('span', {}, tr('Installed version') + ':'),
-					E('strong', {}, installed || tr('Not installed'))
-				]),
-				E('div', { 'style': BTNROW }, [ probeAllBtn ]),
-				E('div', { 'style': ROW }, [
-					E('span', {}, tr('Channel') + ':'),
-					channelSelect,
-					probeOneBtn
-				]),
-				channelStatusList,
-				E('div', { 'style': BTNROW }, [ checkBtn, versionResult, updateBtn, selectedChannelLine ])
 			])
 		]);
 	},
