@@ -26,6 +26,9 @@ var I18N = {
 		'stopped': '已停止',
 		'on': '开',
 		'off': '关',
+		'No response from the update command. It may still be running in the background — check over SSH: cat /tmp/openbox-update.status. If this keeps happening, run the update over SSH instead.':
+			'更新命令没有响应。它可能仍在后台运行——可通过 SSH 查看:cat /tmp/openbox-update.status。如果反复如此,请改用 SSH 执行升级。',
+		'Update did not respond': '更新无响应',
 		'Start': '启动',
 		'Stop': '停止',
 		'Restart': '重启',
@@ -115,6 +118,9 @@ var I18N = {
 		'stopped': '已停止',
 		'on': '開',
 		'off': '關',
+		'No response from the update command. It may still be running in the background — check over SSH: cat /tmp/openbox-update.status. If this keeps happening, run the update over SSH instead.':
+			'更新指令沒有回應。它可能仍在背景執行——可透過 SSH 查看:cat /tmp/openbox-update.status。若反覆如此,請改用 SSH 執行升級。',
+		'Update did not respond': '更新無回應',
 		'Start': '啟動',
 		'Stop': '停止',
 		'Restart': '重新啟動',
@@ -414,6 +420,9 @@ var STARTING_STUCK_TIMEOUT_MS = 20000; // 20 秒
 // 仍然是版本号 + 日志正则那一套(见 pollForUpdateCompletion()),按需求原样保留。
 var UPDATE_STATUS_PATH = '/tmp/openbox-update.status';
 var UPDATE_STATUS_POLL_INTERVAL_MS = 1000;
+// fs.exec 迟迟没有回音的判定阈值。--detach 的派发进程只是写个状态文件、
+// fork 出后台worker 就退出,正常应当在毫秒级返回;给到 15 秒已经非常宽松。
+var EXEC_WATCHDOG_TIMEOUT_MS = 15000;
 
 // 与 scripts/update.sh 里"可安全取消的阶段"完全对应(见该脚本 check_cancel_
 // _and_abort() 调用点的分布)——committing 及之后不再出现在这张表里,取消按钮
@@ -839,6 +848,8 @@ return view.extend({
 								ui.hideModal();
 								ui.addNotification(null, E('p', tr('Uninstalled. Refresh the page; this menu entry will be gone.')), 'info');
 							}).catch(function (err) {
+				execSettled = true;
+				window.clearTimeout(execWatchdog);
 								ui.hideModal();
 								var msg = String(err && err.message || err);
 								if (/not found|No such file/i.test(msg)) {
@@ -1016,7 +1027,32 @@ return view.extend({
 				});
 			}
 
+			// fs.exec 的看门狗:必须在调用之前就装好。
+			//
+			// 现场遇到过弹窗永远停在初始文案「正在启动更新…」的情况:下面所有的进度
+			// 轮询、"卡在 starting"计时、"读不到状态"计时,统统写在 runUpdate() 的
+			// .then() 里——只要底层 ubus 调用既不 resolve 也不 reject(rpcd 那次
+			// exec 一直挂着),这些计时器一个都不会启动,弹窗就只能干转圈,连兜底
+			// 提示都出不来。catch 也救不了:它只在 reject 时触发。
+			// 所以这个计时器必须先于 fs.exec 起跑,专门管"exec 本身迟迟没有回音"。
+			var execSettled = false;
+			var execWatchdog = window.setTimeout(function () {
+				if (execSettled || finished) return;
+				stopProgressPolling();
+				readUpdateLogTail().then(function (logRes) {
+					if (finished) return;
+					showUpdateFailure(
+						tr('No response from the update command. It may still be running in the background — check over SSH: cat /tmp/openbox-update.status. If this keeps happening, run the update over SSH instead.'),
+						logRes.text,
+						tr('Update did not respond')
+					);
+				});
+			}, EXEC_WATCHDOG_TIMEOUT_MS);
+
 			return runUpdate(channel).then(function () {
+				execSettled = true;
+				window.clearTimeout(execWatchdog);
+				if (finished) return;
 				progressBody.textContent = tr('Update started. This may take a few minutes (about 80MB to download).');
 				var startingElapsedMs = 0;
 				var statusReadFailMs = 0;
