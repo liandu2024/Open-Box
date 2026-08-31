@@ -21,7 +21,6 @@ var I18N = {
 		'Open-Box upgrade': 'Open-Box 升级',
 		'Stopping also turns off autostart (so it stays stopped after a reboot) and restores plain internet access: the IPv6 leak block and the Open-Box DNS upstream are removed. The panel stays reachable.':
 			'停止会同时关闭开机自启(重启后不会自己跑起来),并恢复正常上网:IPv6 泄漏拦截与 Open-Box 写入的 DNS 上游都会被移除。面板仍然可以访问。',
-		'Status': '状态',
 		'Autostart': '开机自启',
 		'running': '运行中',
 		'stopped': '已停止',
@@ -109,7 +108,6 @@ var I18N = {
 		'Open-Box upgrade': 'Open-Box 升級',
 		'Stopping also turns off autostart (so it stays stopped after a reboot) and restores plain internet access: the IPv6 leak block and the Open-Box DNS upstream are removed. The panel stays reachable.':
 			'停止會同時關閉開機自啟(重新啟動後不會自己執行),並恢復正常上網:IPv6 洩漏攔截與 Open-Box 寫入的 DNS 上游都會被移除。面板仍然可以存取。',
-		'Status': '狀態',
 		'Autostart': '開機自啟',
 		'running': '執行中',
 		'stopped': '已停止',
@@ -272,7 +270,7 @@ function serviceState(name) {
 }
 
 // 按顺序执行一串 init 动作,全部成功才提示成功。内核的「停止」需要 stop + disable
-// 两步(见下方 serviceCard 的说明),所以这里接受数组而不是单个动作。
+// 两步(见下方 render() 里 sing-box 内核卡片的说明),所以这里接受数组而不是单个动作。
 function act(name, actions) {
 	var list = (typeof actions === 'string') ? [ actions ] : actions;
 	var chain = Promise.resolve();
@@ -608,25 +606,58 @@ function pollForUpdateCompletion(oldVersion, onTick) {
 //
 // 不用 cbi-page-actions:那是「页面底部」的操作栏(右对齐 + 特定外边距),
 // 一页只该出现一次。放进每张卡片会让按钮脱离卡片右飘、压到下一张卡片上。
-// 这里用普通 flex 行/CSS 网格,并写内联样式以免依赖具体主题的 CSS——LuCI 主题
-// 众多、还会在手机上被访问,内联样式是唯一能保证在任意主题、任意屏宽下都长一个
-// 样子的办法。
+//
+// 四张功能块本该是固定 2×2 网格,但内联样式表达不了媒体查询——早先只能用
+// `grid-template-columns: repeat(auto-fit, minmax(340px,1fr))` 打补丁,后果是
+// 宽屏上一行能塞下 3 个甚至更多 340px 格子,渲染成 3 列 + 一个孤立的第 4 块,
+// 完全不是设计要的 2×2。解法是不再用内联样式硬顶,把一份用 `ob-` 命名空间前缀
+// 的 <style> 元素注入渲染树最前面(见 STYLE_CSS,以及 render() 里把它作为
+// 返回的 div 的第一个子节点),靠真正的 CSS 类 + 媒体查询把网格锁定成两列,
+// 窄屏(<900px,含手机上的 LuCI)collapse 成一列。前缀 `ob-` 是为了在任意 LuCI
+// 主题(该页面会在各种主题、包括用户自定义的主题下被访问)里都不会跟主题自带的
+// CSS 类同名撞车。颜色同样不写死明暗主题:一律用灰色透明度叠加或 currentColor,
+// 只有状态色(在/离线、渠道可用/不可用)用足够高对比度、明暗主题下都能看清的
+// 固定色值。
+//
+// 弹窗(卸载确认、更新失败详情、更新进度)不在这次改版范围内,继续用下面这两个
+// 通用内联样式行:它们只是简单的 flex 行,没有网格、不需要媒体查询,原有写法
+// 没有问题。
 // ---------------------------------------------------------------------------
 var ROW = 'display:flex;flex-wrap:wrap;align-items:center;gap:.5em;margin:.4em 0';
 var BTNROW = 'display:flex;flex-wrap:wrap;gap:.5em;margin:.8em 0 .2em 0';
-// 四张功能块拼成 2×2 网格,等宽两列;auto-fit + minmax(340px,1fr) 让窄屏(手机上的
-// LuCI)在放不下两个 340px 格子时自动收缩成单列纵向排列,不需要另写媒体查询。
-var GRID = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:1em';
-// 「Open-Box 升级」块里带边框的渠道列表:每行是"渠道名 + 状态"配一个独立的
-// 「检测」按钮,边框把这 4 行在视觉上圈成一组,和上面的渠道选择行、下面的
-// 检查更新/立即更新控制区分开。
-var CHANNEL_LIST = 'border:1px solid rgba(127,127,127,.2);border-radius:4px;padding:0 .6em;margin:.3em 0;font-size:92%';
-var CHANNEL_ROW = 'display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.5em;' +
-	'padding:.4em 0;border-top:1px solid rgba(127,127,127,.14)';
 
-function badge(text, color) {
-	return E('strong', { 'style': 'color:' + color }, text);
-}
+// 注入到渲染树最前面的命名空间样式表:所有类名都以 `ob-` 开头,避免和 LuCI
+// 主题的 CSS 撞车。2×2 网格 + 900px 断点收缩成单列是这里唯一的媒体查询,
+// align-items:start 让矮的卡片保持自身高度、不被网格拉伸成一格空盒子。
+var STYLE_CSS =
+	'.ob-wrap{max-width:1400px}' +
+	'.ob-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;margin-top:12px}' +
+	'@media (max-width:900px){.ob-grid{grid-template-columns:1fr}}' +
+	'.ob-card{border:1px solid rgba(127,127,127,.22);border-radius:10px;padding:16px 18px;background:rgba(127,127,127,.04)}' +
+	'.ob-card-danger{border-color:rgba(208,74,74,.35)}' +
+	'.ob-card h3{margin:0 0 12px;font-size:1.05em;font-weight:600}' +
+	'.ob-pills{display:flex;flex-wrap:wrap;gap:8px;align-items:center}' +
+	'.ob-pill{display:inline-flex;align-items:center;gap:.35em;padding:.15em .65em;border-radius:999px;font-size:.85em;border:1px solid currentColor;white-space:nowrap}' +
+	'.ob-pill-on{color:#2e9e4f}' +
+	'.ob-pill-off{color:#d04a4a}' +
+	'.ob-pill-muted{opacity:.7;border-color:rgba(127,127,127,.4)}' +
+	'.ob-link{margin-left:auto;font-size:.9em;white-space:nowrap}' +
+	'.ob-btns{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 0}' +
+	'.ob-meta{display:flex;flex-wrap:wrap;gap:.5em;align-items:baseline;margin:.4em 0;font-size:.95em}' +
+	'.ob-meta-label{opacity:.65}' +
+	'.ob-meta-value{font-weight:600}' +
+	'.ob-hint{margin:10px 0 0;font-size:.85em;opacity:.65;line-height:1.55}' +
+	'.ob-div{height:1px;background:rgba(127,127,127,.18);margin:14px -18px 12px}' +
+	'.ob-chan{border:1px solid rgba(127,127,127,.2);border-radius:8px;overflow:hidden;margin:10px 0 12px}' +
+	'.ob-chan-row{display:flex;align-items:center;gap:10px;padding:9px 12px}' +
+	'.ob-chan-row+.ob-chan-row{border-top:1px solid rgba(127,127,127,.14)}' +
+	'.ob-chan-row:hover{background:rgba(127,127,127,.06)}' +
+	'.ob-chan-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+	'.ob-chan-stat{font-size:.85em;opacity:.85;white-space:nowrap}' +
+	'.ob-chan-ok{color:#2e9e4f}' +
+	'.ob-chan-bad{color:#d04a4a}' +
+	'.ob-sel-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}' +
+	'.ob-sel-row select{flex:1;min-width:150px}';
 
 return view.extend({
 	load: function () {
@@ -686,35 +717,40 @@ return view.extend({
 		}
 
 		// 每张卡片是一个自成一体的功能块:状态/控制在上,该组件自己的版本信息(如有)
-		// 在下,都装进同一个 cbi-section 容器里(extraSections,可选)——而不是像旧版
-		// 那样把「版本」拆成页面末尾单独一张卡片,那样读者要在两张卡片之间来回对应
-		// "这个版本号说的是哪个组件"。渠道选择/探测/升级操作篇幅较大、也不是"某个
-		// 组件自己的版本信息",所以单独成一张「Open-Box 升级」卡片,不塞进这里。
-		function serviceCard(title, name, st, extraRow, hint, stopActions, extraSections) {
-			return E('div', { 'class': 'cbi-section' }, [
-				E('h3', {}, tr(title)),
-				E('div', { 'style': ROW }, [
-					E('span', {}, tr('Status') + ':'),
-					badge(st.running ? tr('running') : tr('stopped'),
-					      st.running ? '#2a9d2a' : '#c33'),
-					E('span', { 'style': 'opacity:.5' }, '|'),
-					E('span', {}, tr('Autostart') + ':'),
-					E('strong', {}, st.enabled ? tr('on') : tr('off'))
-				].concat(extraRow ? [ E('span', { 'style': 'opacity:.5' }, '|'), extraRow ] : [])),
-				E('div', { 'style': BTNROW }, [
-					E('button', { 'class': 'cbi-button cbi-button-apply',
-						'click': ui.createHandlerFn(self, function () { return act(name, 'start'); }) }, tr('Start')),
-					E('button', { 'class': 'cbi-button cbi-button-reset',
-						'click': ui.createHandlerFn(self, function () { return act(name, stopActions || 'stop'); }) }, tr('Stop')),
-					E('button', { 'class': 'cbi-button cbi-button-neutral',
-						'click': ui.createHandlerFn(self, function () { return act(name, 'restart'); }) }, tr('Restart')),
-					E('button', { 'class': 'cbi-button cbi-button-neutral',
-						'click': ui.createHandlerFn(self, function () {
-							return act(name, st.enabled ? 'disable' : 'enable');
-						}) }, st.enabled ? tr('Disable autostart') : tr('Enable autostart'))
-				])
-			].concat(hint ? [ E('p', { 'style': 'opacity:.7;font-size:90%;margin:.2em 0 0 0' }, hint) ] : [])
-			 .concat(extraSections || []));
+		// 在下,都装进同一个 .ob-card 容器里——而不是像旧版那样把「版本」拆成页面
+		// 末尾单独一张卡片,那样读者要在两张卡片之间来回对应"这个版本号说的是哪个
+		// 组件"。渠道选择/探测/升级操作篇幅较大、也不是"某个组件自己的版本信息",
+		// 所以单独成一张「Open-Box 升级」卡片,不塞进这里。
+		//
+		// 内核卡片、面板卡片结构上只有两处不同(面板卡片的状态行多一个跳转链接、
+		// 内核卡片的按钮行下面多一句「停止」的说明文字),其余(状态/自启徽标、
+		// 启停控制四个按钮)完全一致,所以拆成 statusPills()/serviceButtons() 两个
+		// 小工具,分别在下面 render() 返回值里拼装两张卡片,而不是像旧版 serviceCard()
+		// 那样塞一堆可选参数把两种结构揉进一个函数。
+		function statusPills(st, linkEl) {
+			var pills = [
+				E('span', { 'class': 'ob-pill ' + (st.running ? 'ob-pill-on' : 'ob-pill-off') },
+					'● ' + (st.running ? tr('running') : tr('stopped'))),
+				E('span', { 'class': 'ob-pill ob-pill-muted' },
+					tr('Autostart') + ' ' + (st.enabled ? tr('on') : tr('off')))
+			];
+			if (linkEl) pills.push(linkEl);
+			return E('div', { 'class': 'ob-pills' }, pills);
+		}
+
+		function serviceButtons(name, st, stopActions) {
+			return E('div', { 'class': 'ob-btns' }, [
+				E('button', { 'class': 'cbi-button cbi-button-apply',
+					'click': ui.createHandlerFn(self, function () { return act(name, 'start'); }) }, tr('Start')),
+				E('button', { 'class': 'cbi-button cbi-button-reset',
+					'click': ui.createHandlerFn(self, function () { return act(name, stopActions || 'stop'); }) }, tr('Stop')),
+				E('button', { 'class': 'cbi-button cbi-button-neutral',
+					'click': ui.createHandlerFn(self, function () { return act(name, 'restart'); }) }, tr('Restart')),
+				E('button', { 'class': 'cbi-button cbi-button-neutral',
+					'click': ui.createHandlerFn(self, function () {
+						return act(name, st.enabled ? 'disable' : 'enable');
+					}) }, st.enabled ? tr('Disable autostart') : tr('Enable autostart'))
+			]);
 		}
 
 		function showUninstallDialog() {
@@ -968,20 +1004,27 @@ return view.extend({
 		// 还能再点出一次重叠的探测请求。
 		var channelBtnEls = {};
 
+		// 渠道行自己一列(.ob-chan-name)已经放了渠道名,这里只再写状态本身——不复述
+		// "名称: 结果",那是旧版行挤在窄列里出现的"渠道名+结果"重复,拆宽之后不再需要。
+		function applyChanResultClass(el, r) {
+			el.classList.remove('ob-chan-ok', 'ob-chan-bad');
+			if (r && r.ok === true) el.classList.add('ob-chan-ok');
+			else if (r && r.ok === false) el.classList.add('ob-chan-bad');
+		}
+
 		function updateChannelRow(value) {
 			var el = channelRowEls[value];
 			if (!el) return;
 			var r = channelResults[value];
-			el.textContent = channelStatusText(value);
+			el.textContent = channelStatusSuffix(value);
 			el.title = (r && r.ok === false && r.reason) ? r.reason : '';
-			el.style.color = (r && r.ok === true) ? '#2a9d2a' : (r && r.ok === false) ? '#c33' : '';
+			applyChanResultClass(el, r);
 			if (value === selectedChannel) updateSelectedChannelLine();
 		}
 
 		function updateSelectedChannelLine() {
 			selectedChannelLine.textContent = channelStatusText(selectedChannel);
-			var r = channelResults[selectedChannel];
-			selectedChannelLine.style.color = (r && r.ok === true) ? '#2a9d2a' : (r && r.ok === false) ? '#c33' : '';
+			applyChanResultClass(selectedChannelLine, channelResults[selectedChannel]);
 		}
 
 		function probeOneChannel(value) {
@@ -1020,105 +1063,122 @@ return view.extend({
 			updateSelectedChannelLine();
 		});
 
-		// 带边框的渠道列表(CHANNEL_LIST/CHANNEL_ROW,见其定义处的注释):每行是
-		// "渠道名: 状态"文本配一个独立的「检测」按钮——这个按钮测的是这一行自己的
-		// 渠道,不是上面下拉框里当前选中的那个(下拉框选的是"立即更新"要用哪个渠道,
-		// 两者不必相同,用户可能想先把 4 个渠道都探一遍再决定选哪个)。一键检测和
-		// 这里的按钮只是触发方式不同,底层都是同一个 probeOneChannel(),结果都写回
-		// 同一行,行为完全一致。
-		var channelStatusList = E('div', { 'style': CHANNEL_LIST },
-			CHANNELS.map(function (c, idx) {
-				var textEl = E('span', {}, channelStatusText(c.value));
-				channelRowEls[c.value] = textEl;
+		// 带边框的渠道列表(.ob-chan/.ob-chan-row,见 STYLE_CSS 定义处):每行是渠道名
+		// (.ob-chan-name)配它自己的探测结果(.ob-chan-stat,可用/不可用时着色)和一个
+		// 独立的「检测」按钮——这个按钮测的是这一行自己的渠道,不是上面下拉框里当前
+		// 选中的那个(下拉框选的是"立即更新"要用哪个渠道,两者不必相同,用户可能想
+		// 先把 4 个渠道都探一遍再决定选哪个)。一键检测和这里的按钮只是触发方式不同,
+		// 底层都是同一个 probeOneChannel(),结果都写回同一行,行为完全一致。
+		var channelStatusList = E('div', { 'class': 'ob-chan' },
+			CHANNELS.map(function (c) {
+				var nameEl = E('span', { 'class': 'ob-chan-name' }, c.label);
+				var statEl = E('span', { 'class': 'ob-chan-stat' }, channelStatusSuffix(c.value));
+				channelRowEls[c.value] = statEl;
 				var btn = E('button', { 'class': 'cbi-button cbi-button-neutral',
 					'click': ui.createHandlerFn(self, function () {
 						setProbingDisabled(true);
 						return probeOneChannel(c.value).then(function () { setProbingDisabled(false); });
 					}) }, tr('Test'));
 				channelBtnEls[c.value] = btn;
-				return E('div', {
-					'style': CHANNEL_ROW + (idx === 0 ? ';border-top:none' : '')
-				}, [ textEl, btn ]);
+				return E('div', { 'class': 'ob-chan-row' }, [ nameEl, statEl, btn ]);
 			}));
 
-		// 紧挨着「立即更新」摆一份选中渠道的实时状态,免得有人在某个渠道刚探测出
-		// 不可用之后,还照样点「立即更新」去开始一次注定失败的 76MB 下载。
-		var selectedChannelLine = E('span', { 'style': 'margin-left:.6em;font-size:92%' },
-			channelStatusText(selectedChannel));
+		// 紧挨着「立即更新」摆一份选中渠道的实时状态(.ob-hint),免得有人在某个渠道
+		// 刚探测出不可用之后,还照样点「立即更新」去开始一次注定失败的 76MB 下载。
+		var selectedChannelLine = E('p', { 'class': 'ob-hint' }, channelStatusText(selectedChannel));
 
 		return E('div', {}, [
+			// 注入的命名空间样式表必须是渲染树的第一个子节点:render() 每次都返回一棵
+			// 全新的树(LuCI 用它整体替换视图容器,不是往旧树上打补丁),所以每次渲染
+			// 这里都会重新生成、也只生成这一份 <style>,不会在页面里累积出多份。
+			E('style', {}, STYLE_CSS),
+
 			E('h2', {}, 'Open-Box'),
 			E('p', { 'class': 'cbi-section-descr' },
 				tr('Fallback controls. Full management lives in the Open-Box panel.')),
 
-			// 2×2 网格,四张自成一体的功能块(见 GRID 定义处的注释):sing-box 内核、
-			// Open-Box 面板、Open-Box 升级、卸载——按负责人手绘草图从左到右、从上到下
-			// 排列,DOM 顺序即视觉顺序(auto-fit 网格按源码顺序逐行填格,不需要额外的
-			// grid-area/order 声明)。
-			E('div', { 'style': GRID }, [
-				// 「停止」本身就会恢复正常上网(init 脚本的 stop_service 会摘掉 Open-Box 写入的
-				// dnsmasq 上游、删掉 IPv6 泄漏拦截),所以不再单列一个「紧急停止」按钮——那和
-				// 这里的「停止」是同一个动作。把这层保证写成说明挂在按钮下面即可。
-				// 内核的「停止」同时关闭开机自启:部署成功会打开自启,若停止不关掉它,坏配置
-				// 把网搞断时停了内核、一重启又被拉起来,网再次断掉——那样的「停止」在真正
-				// 需要它的场景里是无效的。面板服务不做这件事:面板是唯一的管理入口,它应该
-				// 在重启后自己回来。
-				//
-				// 「sing-box 内核」这张卡片是一个自成一体的功能块:状态/控制在上,内核
-				// 版本 + 升级说明在下——内核版本号来自 meta.json 的 singboxVersion(构建期
-				// 钦定值,见 readInstalledSingboxVersion() 的注释),并且这里刻意不放一个
-				// 独立的"升级内核"按钮:内核版本与 Open-Box 发行版本是绑定发布的,配置是
-				// 照着这个确切内核版本生成的,独立升级内核有打破这层对应关系、生成的配置被
-				// 新内核拒绝启动的风险。升级入口统一指向下面「Open-Box 升级」卡片里的
-				// 「立即更新」——内核随整个发行版本一起换。
-				serviceCard('sing-box core', 'openbox', core, null,
-					tr('Stopping also turns off autostart (so it stays stopped after a reboot) and restores plain internet access: the IPv6 leak block and the Open-Box DNS upstream are removed. The panel stays reachable.'),
-					[ 'stop', 'disable' ],
-					[
-						E('div', { 'style': ROW + ';margin-top:.8em;padding-top:.6em;border-top:1px solid rgba(127,127,127,.2)' }, [
-							E('span', {}, tr('Kernel version') + ':'),
-							E('strong', {}, singboxVersion || tr('Not installed'))
+			// .ob-wrap > .ob-grid 是固定两列、900px 断点收缩成单列的 2×2 网格(定义见
+			// STYLE_CSS),四张自成一体的功能块:sing-box 内核、Open-Box 面板、
+			// Open-Box 升级、卸载——按负责人手绘草图从左到右、从上到下排列,DOM 顺序
+			// 即视觉顺序(CSS 网格按源码顺序逐行填格,不需要额外的 grid-area/order
+			// 声明)。
+			E('div', { 'class': 'ob-wrap' }, [
+				E('div', { 'class': 'ob-grid' }, [
+					// 「停止」本身就会恢复正常上网(init 脚本的 stop_service 会摘掉 Open-Box 写入的
+					// dnsmasq 上游、删掉 IPv6 泄漏拦截),所以不再单列一个「紧急停止」按钮——那和
+					// 这里的「停止」是同一个动作。把这层保证写成说明挂在按钮下面即可。
+					// 内核的「停止」同时关闭开机自启:部署成功会打开自启,若停止不关掉它,坏配置
+					// 把网搞断时停了内核、一重启又被拉起来,网再次断掉——那样的「停止」在真正
+					// 需要它的场景里是无效的。面板服务不做这件事:面板是唯一的管理入口,它应该
+					// 在重启后自己回来。
+					//
+					// 「sing-box 内核」这张卡片是一个自成一体的功能块:状态/控制在上,内核
+					// 版本 + 升级说明在下——内核版本号来自 meta.json 的 singboxVersion(构建期
+					// 钦定值,见 readInstalledSingboxVersion() 的注释),并且这里刻意不放一个
+					// 独立的"升级内核"按钮:内核版本与 Open-Box 发行版本是绑定发布的,配置是
+					// 照着这个确切内核版本生成的,独立升级内核有打破这层对应关系、生成的配置被
+					// 新内核拒绝启动的风险。升级入口统一指向下面「Open-Box 升级」卡片里的
+					// 「立即更新」——内核随整个发行版本一起换。
+					E('div', { 'class': 'ob-card' }, [
+						E('h3', {}, tr('sing-box core')),
+						statusPills(core, null),
+						serviceButtons('openbox', core, [ 'stop', 'disable' ]),
+						E('p', { 'class': 'ob-hint' },
+							tr('Stopping also turns off autostart (so it stays stopped after a reboot) and restores plain internet access: the IPv6 leak block and the Open-Box DNS upstream are removed. The panel stays reachable.')),
+						E('div', { 'class': 'ob-div' }),
+						E('div', { 'class': 'ob-meta' }, [
+							E('span', { 'class': 'ob-meta-label' }, tr('Kernel version') + ':'),
+							E('span', { 'class': 'ob-meta-value' }, singboxVersion || tr('Not installed'))
 						]),
-						E('p', { 'style': 'opacity:.7;font-size:90%;margin:.2em 0 0 0' },
+						E('p', { 'class': 'ob-hint' },
 							tr('The kernel version is pinned to this Open-Box release and upgrades together with it. To upgrade, use "Update now" in the Open-Box upgrade section below.'))
 					]),
 
-				// 「Open-Box 面板」卡片同理是一个自成一体的功能块:状态/控制 + 面板地址在
-				// 上,该发行版本自身的版本号在下——这里只放版本号本身;渠道选择、探测与
-				// 升级操作篇幅大、也不是"这张卡片自己的版本信息",单独成一张紧跟在后面的
-				// 「Open-Box 升级」卡片(见下方),不再像旧版那样挤进面板卡片里。
-				serviceCard('Open-Box panel', 'openbox-panel', panel,
-					E('a', { 'href': panelUrl, 'target': '_blank', 'rel': 'noreferrer' }, panelUrl),
-					null, null,
-					[
-						E('div', { 'style': ROW + ';margin-top:.8em;padding-top:.6em;border-top:1px solid rgba(127,127,127,.2)' }, [
-							E('span', {}, tr('Installed version') + ':'),
-							E('strong', {}, installed || tr('Not installed'))
+					// 「Open-Box 面板」卡片同理是一个自成一体的功能块:状态/控制 + 面板地址在
+					// 上,该发行版本自身的版本号在下——这里只放版本号本身;渠道选择、探测与
+					// 升级操作篇幅大、也不是"这张卡片自己的版本信息",单独成一张紧跟在后面的
+					// 「Open-Box 升级」卡片(见下方),不再像旧版那样挤进面板卡片里。面板地址
+					// 用 .ob-link(margin-left:auto)推到徽标行最右侧,不再需要额外的分隔符。
+					E('div', { 'class': 'ob-card' }, [
+						E('h3', {}, tr('Open-Box panel')),
+						statusPills(panel,
+							E('a', { 'class': 'ob-link', 'href': panelUrl, 'target': '_blank', 'rel': 'noreferrer' }, panelUrl)),
+						serviceButtons('openbox-panel', panel, null),
+						E('div', { 'class': 'ob-div' }),
+						E('div', { 'class': 'ob-meta' }, [
+							E('span', { 'class': 'ob-meta-label' }, tr('Installed version') + ':'),
+							E('span', { 'class': 'ob-meta-value' }, installed || tr('Not installed'))
 						])
 					]),
 
-				// 「Open-Box 升级」独立成一张卡片(负责人手绘草图的要求):最上面一行是
-				// 渠道下拉框 + 一键检测,中间一个带边框的列表把 4 个渠道各自的探测状态 +
-				// 单独的「检测」按钮圈在一起,最下面是检查更新/立即更新那组控制——三段
-				// 自上而下正好对应草图里同一张卡片的三个区域。
-				E('div', { 'class': 'cbi-section' }, [
-					E('h3', {}, tr('Open-Box upgrade')),
-					E('div', { 'style': ROW }, [
-						E('span', {}, tr('Channel') + ':'),
-						channelSelect,
-						probeAllBtn
+					// 「Open-Box 升级」独立成一张卡片(负责人手绘草图的要求):最上面一行是
+					// 渠道下拉框 + 一键检测(.ob-sel-row),中间一个带边框的列表把 4 个渠道
+					// 各自的探测状态 + 单独的「检测」按钮圈在一起(.ob-chan),最下面是检查
+					// 更新/立即更新那组控制 + 选中渠道的实时摘要——四段自上而下正好对应
+					// 草图里同一张卡片的区域划分。这张卡片内容明显比其它三张多,固定两列的
+					// 网格给了它和面板卡片一样的整栏宽度,渠道行不再像旧版 auto-fit 三列时
+					// 那样被挤成窄条。
+					E('div', { 'class': 'ob-card' }, [
+						E('h3', {}, tr('Open-Box upgrade')),
+						E('div', { 'class': 'ob-sel-row' }, [
+							E('span', {}, tr('Channel') + ':'),
+							channelSelect,
+							probeAllBtn
+						]),
+						channelStatusList,
+						E('div', { 'class': 'ob-div' }),
+						E('div', { 'class': 'ob-btns' }, [ checkBtn, versionResult, updateBtn ]),
+						selectedChannelLine
 					]),
-					channelStatusList,
-					E('div', { 'style': BTNROW }, [ checkBtn, versionResult, updateBtn, selectedChannelLine ])
-				]),
 
-				E('div', { 'class': 'cbi-section' }, [
-					E('h3', {}, tr('Uninstall')),
-					E('p', {}, tr('Remove Open-Box from this router. Services are stopped, DNS and firewall changes are reverted, and the LuCI page disappears after the next refresh.')),
-					E('div', { 'style': BTNROW }, [
-						E('button', { 'class': 'cbi-button cbi-button-negative',
-							'click': ui.createHandlerFn(self, function () { return showUninstallDialog(); }) },
-							tr('Uninstall Open-Box'))
+					E('div', { 'class': 'ob-card ob-card-danger' }, [
+						E('h3', {}, tr('Uninstall')),
+						E('p', {}, tr('Remove Open-Box from this router. Services are stopped, DNS and firewall changes are reverted, and the LuCI page disappears after the next refresh.')),
+						E('div', { 'class': 'ob-btns' }, [
+							E('button', { 'class': 'cbi-button cbi-button-negative',
+								'click': ui.createHandlerFn(self, function () { return showUninstallDialog(); }) },
+								tr('Uninstall Open-Box'))
+						])
 					])
 				])
 			])
