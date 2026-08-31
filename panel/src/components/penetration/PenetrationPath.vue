@@ -103,11 +103,10 @@ import {
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-// Presentational only, same idiom as wizard/RoutePath.vue (device -> Open-Box -> decision, pill
-// badges with icon + label, arrows between). Extended here for a linear chain of arbitrary
-// length (rule match -> policy target -> however many clash_api `now` hops -> leaf) instead of
-// RoutePath's fixed two-branch direct/proxy grid, since a penetration result resolves to exactly
-// one path, not a menu of choices.
+// Presentational only: device -> Open-Box -> decision, pill badges with icon + label, arrows
+// between. Extended here for a linear chain of arbitrary length (rule match -> policy target ->
+// however many clash_api `now` hops -> leaf) rather than a fixed two-branch direct/proxy grid,
+// since a penetration result resolves to exactly one path, not a menu of choices.
 const props = defineProps<{
   target: string
   matched: OpenboxPenetrationMatched | null

@@ -103,36 +103,3 @@ test('损坏的部署态 JSON 回退到默认', () => {
   m.set(KEYS.deployState, 'not json')
   assert.deepEqual(store.getDeployState(), { stage: 'idle', message: '', at: 0, badTags: [] })
 })
-
-// -------- wizardDone(P4b 终审延期项修复:向导门控迁到后端状态)--------
-// 问题:向导"已完成/已跳过"标志此前只活在浏览器 localStorage,经通用 storage 同步推给
-// 后端一张不受保护的通用 KV 表。工厂重置/重装后端是全新的,但用过的浏览器本地仍缓存着
-// 旧值 —— 用户拿到一个空配置却看不到引导。修复:引导完成态归属 openbox/* 命名空间下的
-// 专用 store 字段(与 profile/deployState 同样受 isProtectedStorageKey 保护,不会被通用
-// 快照同步覆盖),全新安装时必须默认为 false。
-
-test('getWizardDone 无值返回默认 false(全新安装必须显示引导)', () => {
-  const { store } = memStore()
-  assert.equal(store.getWizardDone(), false)
-})
-
-test('setWizardDone 往返:写 true 后读回 true,写 false 后读回 false', () => {
-  const { store } = memStore()
-  store.setWizardDone(true)
-  assert.equal(store.getWizardDone(), true)
-  store.setWizardDone(false)
-  assert.equal(store.getWizardDone(), false)
-})
-
-test('setWizardDone 持久化在专用 key 下,不与 profile 混用', () => {
-  const { store, m } = memStore()
-  store.setWizardDone(true)
-  assert.equal(KEYS.wizardDone, 'openbox/wizard-done')
-  assert.ok(m.has(KEYS.wizardDone))
-})
-
-test('损坏的 wizardDone JSON 回退到默认 false', () => {
-  const { store, m } = memStore()
-  m.set(KEYS.wizardDone, 'not json')
-  assert.equal(store.getWizardDone(), false)
-})

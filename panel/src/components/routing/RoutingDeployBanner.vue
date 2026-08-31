@@ -19,7 +19,7 @@
           v-if="detail"
           class="text-xs break-words opacity-80"
         >
-          {{ $t('wizardDeployDetailLabel') }}: {{ detail }}
+          {{ $t('deployDetailLabel') }}: {{ detail }}
         </span>
       </div>
       <div class="flex shrink-0 items-center gap-1">
@@ -34,7 +34,7 @@
             v-if="deploying"
             class="loading loading-spinner loading-xs"
           />
-          {{ deploying ? $t('wizardDeploying') : $t('routingDeployNow') }}
+          {{ deploying ? $t('deployInProgress') : $t('routingDeployNow') }}
         </button>
         <button
           v-if="lastResult"
@@ -81,10 +81,10 @@ const alertClass = computed(() => {
   return 'alert-warning'
 })
 
-// Same per-stage framing as WizardStepFinish.vue's deploy result — name the conflicting
+// Same per-stage framing as KernelDeployStateCard.vue's deploy result — name the conflicting
 // service, list which nodes failed validation, or say plainly that it fell back to a direct
-// connection. Deliberately reuses those wizard-* keys instead of duplicating the copy: the
-// concept (and the honest wording it requires) is identical outside the wizard too.
+// connection. Deliberately shares those deploy-* keys instead of duplicating the copy: the
+// concept (and the honest wording it requires) is identical on both pages.
 //
 // validate can fail with an *empty* badTags array — e.g. the whole config is rejected for a
 // reason that isn't any single node's fault (or, as observed while manually verifying this on a
@@ -94,17 +94,17 @@ const alertClass = computed(() => {
 const headline = computed(() => {
   const result = props.lastResult
   if (!result) return t('routingUndeployedBanner')
-  if (result.ok) return t('wizardDeploySuccess')
+  if (result.ok) return t('deploySuccess')
 
   switch (result.stage) {
     case 'conflict':
-      return t('wizardDeployConflict')
+      return t('deployConflict')
     case 'validate':
       return result.badTags.length
-        ? t('wizardDeployValidateFailed', { tags: result.badTags.join(', ') })
+        ? t('deployValidateFailed', { tags: result.badTags.join(', ') })
         : t('routingDeployValidateFailedGeneric')
     default:
-      return t('wizardDeployFallback')
+      return t('deployFallback')
   }
 })
 

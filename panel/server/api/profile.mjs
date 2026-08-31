@@ -106,26 +106,6 @@ export const registerProfileRoutes = (app, { store } = {}) => {
     res.json({ defaults: buildRegionDefaults(req.query.region) })
   })
 
-  // 引导向导门控状态(P4b 终审延期项修复):挂在 profile 路由下作为独立子路径,而不是
-  // 塞进 profile 自身的 patch 里——wizardDone 不是网络配置的一部分,且 validateProfilePatch
-  // 只校验 patch 里"出现"的已知字段,若把它混进 profile 对象会被 setProfile 原样深合并
-  // 写进 DEFAULT_PROFILE 形状的 JSON 里,污染一个跟路由/DNS 完全无关的字段。独立子路径
-  // 复用同一个已挂载的 router(与 /defaults 同样的先注册习惯),对应专用 store 字段
-  // openbox/wizard-done。GET 全新安装必须返回 done:false——引导是否显示以此为准,前端
-  // localStorage 只做本地缓存,绝不能替代这个后端判定(见 store/wizard.ts)。
-  router.get('/wizard-done', (_req, res) => {
-    res.json({ done: store.getWizardDone() })
-  })
-
-  router.put('/wizard-done', (req, res) => {
-    const body = req.body || {}
-    if (!isBoolean(body.done)) {
-      res.status(400).json({ error: 'done must be a boolean' })
-      return
-    }
-    res.json({ done: store.setWizardDone(body.done) })
-  })
-
   router.get('/', (_req, res) => {
     res.json({ profile: store.getProfile() })
   })

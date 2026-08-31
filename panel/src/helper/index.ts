@@ -157,7 +157,6 @@ export const renderRoutes = computed(() => {
     return ![
       ROUTE_NAME.login,
       ROUTE_NAME.setup,
-      ROUTE_NAME.wizard,
       !splitOverviewPage.value && ROUTE_NAME.overview,
     ].includes(r)
   })

@@ -1,4 +1,4 @@
-// Curated region list for the onboarding wizard's region step.
+// Curated region list for RoutingRegionCard's region-defaults picker.
 //
 // This is intentionally a short, known-good list rather than a free-text field or every
 // ISO region code: each `code` is sent verbatim to `GET /api/openbox/profile/defaults?region=`,
@@ -6,9 +6,9 @@
 // `geosite-{code.toLowerCase()}` / `geoip-{code.toLowerCase()}` (see profile.mjs). Those tags
 // only resolve to something real at deploy time if a matching ruleset file actually exists, so
 // offering an arbitrary region here could silently produce a routing rule that never matches
-// anything. `OTHER` is handled specially by the region step (see WizardStepRegion.vue): it
-// still fetches non-CN defaults for the DNS/fallback shape, but the direct-ruleset tags are
-// cleared before saving instead of sending a bogus `geosite-other`.
+// anything. `OTHER` is handled specially by the card (see RoutingRegionCard.vue): it still
+// fetches non-CN defaults for the DNS/fallback shape, but the direct-ruleset tags are cleared
+// before saving instead of sending a bogus `geosite-other`.
 export const OTHER_REGION_CODE = 'OTHER'
 
 export interface RegionOption {
@@ -17,16 +17,16 @@ export interface RegionOption {
 }
 
 export const REGION_OPTIONS: RegionOption[] = [
-  { code: 'CN', labelKey: 'wizardRegionOptionCn' },
-  { code: 'HK', labelKey: 'wizardRegionOptionHk' },
-  { code: 'TW', labelKey: 'wizardRegionOptionTw' },
-  { code: 'JP', labelKey: 'wizardRegionOptionJp' },
-  { code: 'KR', labelKey: 'wizardRegionOptionKr' },
-  { code: 'SG', labelKey: 'wizardRegionOptionSg' },
-  { code: 'US', labelKey: 'wizardRegionOptionUs' },
-  { code: 'GB', labelKey: 'wizardRegionOptionGb' },
-  { code: 'DE', labelKey: 'wizardRegionOptionDe' },
-  { code: OTHER_REGION_CODE, labelKey: 'wizardRegionOptionOther' },
+  { code: 'CN', labelKey: 'routingRegionOptionCn' },
+  { code: 'HK', labelKey: 'routingRegionOptionHk' },
+  { code: 'TW', labelKey: 'routingRegionOptionTw' },
+  { code: 'JP', labelKey: 'routingRegionOptionJp' },
+  { code: 'KR', labelKey: 'routingRegionOptionKr' },
+  { code: 'SG', labelKey: 'routingRegionOptionSg' },
+  { code: 'US', labelKey: 'routingRegionOptionUs' },
+  { code: 'GB', labelKey: 'routingRegionOptionGb' },
+  { code: 'DE', labelKey: 'routingRegionOptionDe' },
+  { code: OTHER_REGION_CODE, labelKey: 'routingRegionOptionOther' },
 ]
 
 export const findRegionOption = (code: string | undefined) =>

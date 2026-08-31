@@ -1,5 +1,5 @@
 // Thin fetch wrappers around the Open-Box backend (panel/server/api/{profile,subscriptions,deploy}.mjs).
-// Every call goes through fetchServerApi so a 401/403 auth hiccup mid-wizard is handled the
+// Every call goes through fetchServerApi so a 401/403 auth hiccup mid-request is handled the
 // same way the rest of the app already handles it (redirect to login/setup).
 import { fetchServerApi } from '@/store/auth'
 
@@ -201,24 +201,6 @@ export const saveProfile = async (patch: Record<string, unknown>): Promise<Openb
   return data.profile
 }
 
-// Onboarding-wizard gate flag (P4b final-review carryover, fixed in P5): lives under
-// openbox/wizard-done on the backend (protected namespace, see server/store/openbox-store.mjs
-// and index.mjs's isProtectedStorageKey), NOT the generic config/* storage-sync KV store — a
-// factory reset / reinstall always starts this back at false, which is exactly the point (see
-// store/wizard.ts for how this is consumed as the router guard's source of truth).
-export const fetchWizardDone = async (): Promise<boolean> => {
-  const data = await requestJson<{ done: boolean }>('/api/openbox/profile/wizard-done')
-  return Boolean(data.done)
-}
-
-export const saveWizardDone = async (done: boolean): Promise<boolean> => {
-  const data = await requestJson<{ done: boolean }>('/api/openbox/profile/wizard-done', {
-    method: 'PUT',
-    body: JSON.stringify({ done }),
-  })
-  return Boolean(data.done)
-}
-
 export const fetchSubscriptions = async (): Promise<OpenboxSubscription[]> => {
   const data = await requestJson<{ subscriptions: OpenboxSubscription[] }>('/api/openbox/subscriptions')
   return data.subscriptions
@@ -271,8 +253,9 @@ export const refreshSubscription = async (
 }
 
 // deploy.mjs answers with a non-2xx status for every non-'running' stage — requestJson would
-// throw and lose the structured {stage,message,badTags} payload the wizard needs to explain
-// *why* it failed, so this parses the body directly instead of reusing requestJson.
+// throw and lose the structured {stage,message,badTags} payload callers need to explain *why*
+// it failed (see RoutingDeployBanner.vue / KernelDeployStateCard.vue), so this parses the body
+// directly instead of reusing requestJson.
 export const deployNow = async (): Promise<OpenboxDeployResult> => {
   const response = await fetchServerApi('/api/openbox/deploy', {
     method: 'POST',

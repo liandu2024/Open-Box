@@ -6,12 +6,6 @@ export const KEYS = {
   nodes: 'openbox/nodes',
   deployState: 'openbox/deploy-state',
   clashSecret: 'openbox/clash-secret',
-  // 引导向导"已完成/已跳过"标志(P4b 终审延期项修复)。此前只活在浏览器 localStorage,
-  // 经通用 config/* storage 同步推给后端一张不受保护的通用 KV 表——工厂重置/重装后端是
-  // 全新的,但用过的浏览器本地仍缓存旧值,还会在下次同步时把陈旧值重新推回全新后端。
-  // 放进 openbox/* 命名空间后,与 profile/deployState 一样受 index.mjs 的
-  // isProtectedStorageKey 保护,不会被通用快照同步覆盖或清空,后端由此成为唯一真相源。
-  wizardDone: 'openbox/wizard-done',
 }
 
 export const DEFAULT_PROFILE = {
@@ -101,19 +95,6 @@ export const createStore = ({ get, set, del }, { randomHex = defaultRandomHex } 
     set(KEYS.deployState, JSON.stringify(s))
   }
 
-  // 无值(全新安装/工厂重置后的全新后端)一律回退到 false —— 这是本次修复的关键契约:
-  // 必须显示引导,而不是信任任何客户端传来的"已完成"信号。
-  const getWizardDone = () => {
-    const raw = get(KEYS.wizardDone)
-    const stored = parseJsonOr(raw, false)
-    return stored === true
-  }
-
-  const setWizardDone = (done) => {
-    set(KEYS.wizardDone, JSON.stringify(Boolean(done)))
-    return getWizardDone()
-  }
-
   const getClashSecret = () => {
     const existing = get(KEYS.clashSecret)
     if (typeof existing === 'string' && existing) return existing
@@ -131,8 +112,6 @@ export const createStore = ({ get, set, del }, { randomHex = defaultRandomHex } 
     setNodes,
     getDeployState,
     setDeployState,
-    getWizardDone,
-    setWizardDone,
     getClashSecret,
   }
 }

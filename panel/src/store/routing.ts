@@ -6,8 +6,8 @@
 // it). Instead this flag is set locally whenever a save through this page's own patchProfile
 // succeeds, and cleared when a deploy through this page succeeds.
 //
-// Same convention as store/wizard.ts's confirmed-flags: `useStorage('config/...')`, which
-// helper/persistentStorage.ts already syncs to the backend's generic KV store, so the flag
+// Same `useStorage('config/...')` convention used elsewhere in this app (see store/settings.ts):
+// helper/persistentStorage.ts already syncs it to the backend's generic KV store, so the flag
 // survives a reload and (best-effort) follows a different browser hitting the same panel.
 //
 // Honesty boundary: this only tracks edits made *through RoutingPage*. It cannot see profile/

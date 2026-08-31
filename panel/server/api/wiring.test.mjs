@@ -35,7 +35,6 @@ after(async () => {
 const OPENBOX_ROUTES = [
   { method: 'GET', path: '/api/openbox/subscriptions' },
   { method: 'GET', path: '/api/openbox/profile' },
-  { method: 'GET', path: '/api/openbox/profile/wizard-done' },
   { method: 'GET', path: '/api/openbox/config/preview' },
   { method: 'GET', path: '/api/openbox/service/status' },
   { method: 'GET', path: '/api/openbox/kernel/version' },
@@ -84,14 +83,6 @@ test('设密后携带 cookie:各 Open-Box 路由真正打到 handler(非 404,契
   const profileBody = await profileRes.json()
   assert.ok(profileBody.profile)
   assert.equal(profileBody.profile.region, 'CN')
-
-  // 全新安装(本测试的 sqlite 是刚建的临时库)必须默认 done:false —— 向导门控以此为准
-  // (P4b 终审延期项修复,server/store/openbox-store.test.mjs / api/profile.test.mjs 覆盖
-  // 了详细的往返/校验行为,这里只证明路由确实被装配进了 index.mjs)。
-  const wizardDoneRes = await fetch(`${baseUrl}/api/openbox/profile/wizard-done`, { headers })
-  assert.equal(wizardDoneRes.status, 200)
-  const wizardDoneBody = await wizardDoneRes.json()
-  assert.equal(wizardDoneBody.done, false)
 
   const previewRes = await fetch(`${baseUrl}/api/openbox/config/preview`, { headers })
   assert.equal(previewRes.status, 200)

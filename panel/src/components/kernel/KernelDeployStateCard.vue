@@ -16,7 +16,7 @@
         v-if="detail"
         class="text-base-content/60 text-xs break-words"
       >
-        {{ $t('wizardDeployDetailLabel') }}: {{ detail }}
+        {{ $t('deployDetailLabel') }}: {{ detail }}
       </p>
       <p
         v-if="state.at"
@@ -49,21 +49,21 @@ const props = defineProps<{
 
 const { t } = useI18n()
 
-// Same per-stage framing as RoutingDeployBanner/WizardStepFinish (name the conflicting service,
-// list bad nodes, or say plainly it fell back to direct) — reusing those wizard-* keys rather
-// than duplicating the copy, plus one addition ('idle') those two never need to render: this
-// page can be the very first place a fresh install's deploy state is ever shown.
+// Same per-stage framing as RoutingDeployBanner (name the conflicting service, list bad nodes,
+// or say plainly it fell back to direct) — reusing those deploy-* keys rather than duplicating
+// the copy, plus one addition ('idle') that page never needs to render: this page can be the
+// very first place a fresh install's deploy state is ever shown.
 const headline = computed(() => {
   const stage = props.state.stage
   if (stage === 'idle') return t('kernelDeployStateIdle')
-  if (stage === 'running') return t('wizardDeploySuccess')
-  if (stage === 'conflict') return t('wizardDeployConflict')
+  if (stage === 'running') return t('deploySuccess')
+  if (stage === 'conflict') return t('deployConflict')
   if (stage === 'validate') {
     return props.state.badTags.length
-      ? t('wizardDeployValidateFailed', { tags: props.state.badTags.join(', ') })
+      ? t('deployValidateFailed', { tags: props.state.badTags.join(', ') })
       : t('routingDeployValidateFailedGeneric')
   }
-  return t('wizardDeployFallback')
+  return t('deployFallback')
 })
 
 const detail = computed(() => {

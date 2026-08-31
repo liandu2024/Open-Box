@@ -30,6 +30,10 @@
         </p>
 
         <template v-else-if="profile">
+          <RoutingRegionCard
+            :profile="profile"
+            :patch-profile="patchProfile"
+          />
           <RoutingRulesCard
             :profile="profile"
             :policy-groups="policyGroups"
@@ -69,6 +73,7 @@ import DnsSettingsCard from '@/components/routing/DnsSettingsCard.vue'
 import Ipv6Card from '@/components/routing/Ipv6Card.vue'
 import PolicyGroupsCard from '@/components/routing/PolicyGroupsCard.vue'
 import RoutingDeployBanner from '@/components/routing/RoutingDeployBanner.vue'
+import RoutingRegionCard from '@/components/routing/RoutingRegionCard.vue'
 import RoutingRulesCard from '@/components/routing/RoutingRulesCard.vue'
 import { usePaddingForViews } from '@/composables/paddingViews'
 import { routingPendingDeploy } from '@/store/routing'

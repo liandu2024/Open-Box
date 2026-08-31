@@ -71,11 +71,9 @@ import { EyeIcon, EyeSlashIcon } from '@heroicons/vue/24/outline'
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-// Reusable across two entry points: the standalone /setup route
-// (SetupPasswordPage.vue, forced by the router guard while no password
-// exists) and, later, the first step of the onboarding wizard (Task 4).
-// This component only knows how to collect+submit a new password and emit
-// `success` — callers decide where to go next.
+// The standalone /setup route's form (SetupPasswordPage.vue, forced by the router guard
+// while no password exists). This component only knows how to collect+submit a new
+// password and emit `success` — the caller decides where to go next.
 const emit = defineEmits<{
   success: []
 }>()
