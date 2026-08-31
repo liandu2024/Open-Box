@@ -48,6 +48,17 @@ jobs:
       # 字符串去拼下载 URL——它们用不带版本号的稳定资产名(见下面 Upload artifact
       # 步骤的注释与 Important 5),真正装的是哪个版本,由它们在下载校验通过后自己
       # 从 meta.json 里读出来。
+      # 发版前先跑测试:发布流水线原本是唯一的 CI,却从不跑测试套件,于是"套件是红的"
+      # 拦不住发版(实际发生过:v0.1.2 就是在本地套件报 2 条失败的情况下打的 tag)。
+      # 两个架构的构建都会跑一遍——重复但便宜,而且任一失败都能拦住整个发布。
+      - name: Run server test suite
+        working-directory: panel
+        run: corepack pnpm run test:server
+
+      - name: Verify generated config against pinned sing-box
+        working-directory: panel
+        run: corepack pnpm run check:config
+
       - name: Build release tarball
         env:
           OPENBOX_VERSION: ${{ github.ref_name }}

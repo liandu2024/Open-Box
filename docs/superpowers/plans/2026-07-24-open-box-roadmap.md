@@ -144,3 +144,22 @@
 - 一台 ≤22.03 的 LuCI-Lua 固件(验证 `/tmp/luci-modulecache` 是目录时的清理不再中止脚本)
 
 **已知残留(不阻塞):** 同版本 update 仍会下载 78MB 并解包(放弃 GitHub API 的代价);`LD_LIBRARY_PATH` 会传递给面板派生的子进程;发布流水线尚未跑面板测试(建议在打包前加一步)。
+
+## 待查:测试套件的偶发失败(flaky)
+
+`corepack pnpm run test:server` 观察到**极低频**的偶发失败,两次记录:
+- P5 期间某 subagent 报告 `subscriptions.test.mjs` 出现 403 vs 400,重跑不复现
+- 打 v0.1.2 前的一次运行报 295 pass / 2 fail,紧接着连续 16 轮全过,无法复现
+
+已排除:各测试文件的 SQLite 路径都用 `mkdtemp` 唯一前缀,不存在共享库串扰;
+`subscriptions.test.mjs` 自建 express 实例、不引 index.mjs、无认证守卫,403 不
+应来自我们的守卫。可疑方向:`node --test` 并行跑文件时,`wiring.test.mjs` 会用
+真实 SystemContext 去 exec 宿主机的 `/etc/init.d/openbox status` 与 sing-box
+(P4a 终审 Minor 已记录),存在时序不确定性;以及 SSRF 守卫测试里注入 fake
+`lookup` 与真实本地 http server 之间的竞态。
+
+**已做的系统性缓解:** 发布流水线加了测试门禁(此前 release.yml 从不跑测试,
+所以"套件是红的"根本拦不住发版——v0.1.2 就是在本地 2 条失败的情况下打的 tag)。
+现在任一架构的构建跑失败都会拦住整个发布。
+
+复现到时请保留完整输出(失败用例名 + 断言差异),那是定位的关键。
