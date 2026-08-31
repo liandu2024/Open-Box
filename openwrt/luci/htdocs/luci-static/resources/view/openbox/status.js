@@ -67,6 +67,9 @@ var I18N = {
 		'Update failed.': '更新失败。',
 		'Update failed': '更新失败',
 		'Update failed: %s': '更新失败:%s',
+		'Update failed to start': '启动更新失败/无响应',
+		'Update did not start. No response after 20 seconds — check the log below, or run the update over SSH instead: sh /opt/open-box/update.sh':
+			'更新未能启动,20 秒内没有任何响应——请查看下方日志,或改用 SSH 手动执行:sh /opt/open-box/update.sh',
 		'Recent update log:': '最近的更新日志:',
 		'Update script not found. Run it manually over SSH.': '未找到升级脚本,请通过 SSH 手动执行。',
 		'Preparing...': '正在准备…',
@@ -154,6 +157,9 @@ var I18N = {
 		'Update failed.': '更新失敗。',
 		'Update failed': '更新失敗',
 		'Update failed: %s': '更新失敗:%s',
+		'Update failed to start': '啟動更新失敗/無回應',
+		'Update did not start. No response after 20 seconds — check the log below, or run the update over SSH instead: sh /opt/open-box/update.sh':
+			'更新未能啟動,20 秒內沒有任何回應——請查看下方日誌,或改用 SSH 手動執行:sh /opt/open-box/update.sh',
 		'Recent update log:': '最近的更新日誌:',
 		'Update script not found. Run it manually over SSH.': '找不到升級腳本,請透過 SSH 手動執行。',
 		'Preparing...': '正在準備…',
@@ -381,6 +387,20 @@ var UPDATE_LOG_PATH = '/tmp/openbox-update.log';
 var UPDATE_POLL_INTERVAL_MS = 4000;
 var UPDATE_POLL_TIMEOUT_MS = 480000; // 8 分钟:78MB 下载 + 解包 + 换文件的宽松上限
 
+// update.sh 的 --detach 分支在真正 fork 子进程之前,就同步把 stage=starting 写进
+// 状态文件(见该脚本 --detach 小节的注释)。如果子进程随后因为任何原因没有真正
+// 跑起来或者刚起来就死掉(fork 失败、rpcd 提前收走了进程组、脚本路径/权限出了
+// 问题……),状态文件会永远停在 starting——只靠上面 8 分钟的总超时,技术上"最终
+// 会结束",但用户会盯着一句"正在准备…"干等 8 分钟,期间没有任何信息,这正是本次
+// 要修的问题(见 startUpdate() 里 handleStartingStuck() 的说明)。这里单独给
+// "starting 阶段本身"设一个短得多的兜底超时:轮询到 stage 仍是 starting(或状态
+// 文件还没读到——同样视为尚未真正起步)累计超过这个时长,就不再当成正常进度,
+// 转而直接展示一个"启动失败/无响应"的明确结论。stage 一旦推进到 starting 之外的
+// 任何阶段(包括 failed/cancelled 这些终态——它们有自己明确的结论,不需要这个
+// 兜底),这个计时器就会被重置——正常路径(几秒内就该进入 probing/downloading)
+// 不受任何影响。
+var STARTING_STUCK_TIMEOUT_MS = 20000; // 20 秒
+
 // update.sh 每秒左右重写一次的进度/取消状态文件,纯 key=value 文本(不是
 // JSON——两边都是这么约定的,见 scripts/update.sh 里 write_status() 的注释)。
 // 路径与该脚本里 STATUS_PATH 的默认值(TMPDIR 未设置时)保持一致,和
@@ -466,6 +486,22 @@ function progressDetail(status) {
 		return status.message;
 	}
 	return '';
+}
+
+// 判断"当前轮询到的状态是否应该被当成 starting 阶段卡死"的纯函数,不依赖任何
+// DOM/LuCI 全局(不摸 ui/fs/window),方便脱离页面渲染单独做单元验证——这台开发机
+// 上没有真正的 LuCI 运行环境,页面本身无法渲染,这类纯函数是能被独立验证的最小
+// 单元(见本次改动的验收要求)。status 为 null(状态文件还没读到)、或者读到了但
+// 缺 stage 字段、或者 stage 就是 'starting',这三种情况一视同仁,都算"还没真正
+// 起步",按同一套累计时长计数;调用方(startUpdate() 里的 progressTimer 回调)
+// 负责维护 elapsedMs——每次轮询到仍处于上述三种情况就加一个轮询间隔,一旦推进到
+// 其它任何阶段(哪怕是 failed/cancelled 这些终态,它们有自己明确的结论)就归零。
+// 这里只管"给定当前 status 与累计时长,是否已经越过阈值"这一个判断,不产生任何
+// 副作用,也不读写调用方的计时状态——保持纯函数,才能不需要真的跑一遍 20 秒
+// 就在单元测试里直接喂 elapsedMs 验证边界。
+function isUpdateStartStuck(status, elapsedMs) {
+	var stillStarting = !status || !status.stage || status.stage === 'starting';
+	return stillStarting && elapsedMs >= STARTING_STUCK_TIMEOUT_MS;
 }
 
 // 取消一次正在运行的更新:调用 update.sh --cancel(协作式,不发任何信号——见该
@@ -790,7 +826,12 @@ return view.extend({
 
 		// 更新失败时把日志尾巴摆出来,而不是让用户面对一句"失败了"猜半天——
 		// update.sh 的每一步都用 info()/warn()/die() 打了清楚的中文说明,直接展示即可。
-		function showUpdateFailure(msg, logTail) {
+		// title 可选,缺省是通用的"更新失败";starting 阶段卡死那条独立分支
+		// (handleStartingStuck(),见下方)会传入一个更具体的标题,让用户一眼就能
+		// 区分"根本没启动起来"和"启动之后某一步失败了"这两种情况。不管哪种标题,
+		// 弹窗结构都一样(消息 + 日志尾巴 + 关闭按钮),必须始终可关闭——这里的
+		// 关闭按钮就是那个不变式的落地点。
+		function showUpdateFailure(msg, logTail, title) {
 			var body = [ E('p', {}, msg) ];
 			if (logTail) {
 				body.push(E('p', { 'style': 'font-weight:bold;margin:.6em 0 .2em 0' }, tr('Recent update log:')));
@@ -802,7 +843,7 @@ return view.extend({
 			body.push(E('div', { 'class': 'right', 'style': BTNROW }, [
 				E('button', { 'class': 'cbi-button', 'click': function () { ui.hideModal(); } }, tr('Close'))
 			]));
-			ui.showModal(tr('Update failed'), body);
+			ui.showModal(title || tr('Update failed'), body);
 		}
 
 		// 更新走本地脚本(随发布包铺下来的那份,与卸载同理),不依赖外网页面本身
@@ -900,11 +941,41 @@ return view.extend({
 				});
 			}
 
+			// starting 阶段卡死的独立安全网(见 STARTING_STUCK_TIMEOUT_MS/
+			// isUpdateStartStuck() 定义处的说明):一旦触发,直接把这次更新标记为
+			// finished、停止两路轮询、收起进度弹窗,换成一个明确的"启动失败/无响应"
+			// 结果弹窗——带日志尾巴,并提示可以改走 SSH。之后 pollForUpdateCompletion()
+			// 仍会在后台继续跑到它自己的 8 分钟总超时或某个终态,但那时 finished 已经
+			// 是 true,下面 .then(result)/.catch(err) 两个收尾分支都会直接短路跳过,
+			// 不会把已经展示给用户的这个结论替换掉。
+			function handleStartingStuck() {
+				if (finished) return;
+				finished = true;
+				stopProgressPolling();
+				ui.hideModal();
+				readUpdateLogTail().then(function (logTail) {
+					showUpdateFailure(
+						tr('Update did not start. No response after 20 seconds — check the log below, or run the update over SSH instead: sh /opt/open-box/update.sh'),
+						logTail,
+						tr('Update failed to start')
+					);
+				});
+			}
+
 			return runUpdate(channel).then(function () {
 				progressBody.textContent = tr('Update started. This may take a few minutes (about 80MB to download).');
+				var startingElapsedMs = 0;
 				readUpdateStatus().then(applyStatus);
 				progressTimer = window.setInterval(function () {
-					readUpdateStatus().then(applyStatus);
+					readUpdateStatus().then(function (status) {
+						applyStatus(status);
+						if (finished) return;
+						var stillStarting = !status || !status.stage || status.stage === 'starting';
+						startingElapsedMs = stillStarting ? startingElapsedMs + UPDATE_STATUS_POLL_INTERVAL_MS : 0;
+						if (isUpdateStartStuck(status, startingElapsedMs)) {
+							handleStartingStuck();
+						}
+					});
 				}, UPDATE_STATUS_POLL_INTERVAL_MS);
 				return pollForUpdateCompletion(oldVersion, function (logTail) {
 					if (logTail) {
@@ -913,6 +984,7 @@ return view.extend({
 					}
 				});
 			}).then(function (result) {
+				if (finished) return; // 已经被 handleStartingStuck() 收尾过,这个迟到的结果不再展示
 				finished = true;
 				stopProgressPolling();
 				ui.hideModal();
@@ -934,6 +1006,7 @@ return view.extend({
 				ui.addNotification(null, E('p', fmt('Update complete: now on %s.', result.version)), 'info');
 				window.setTimeout(function () { location.reload(); }, 1200);
 			}).catch(function (err) {
+				if (finished) return;
 				finished = true;
 				stopProgressPolling();
 				ui.hideModal();

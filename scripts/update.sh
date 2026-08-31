@@ -338,14 +338,19 @@ probe_mirror_prefix() {
 # 清理挂在"真正执行升级逻辑"的 cleanup() trap 里,这两个分支用的都是自己更早的
 # exit 路径,够不到那个 trap。这里先对 "$@" 做一次极简预扫描(不消费参数,不影响
 # 下面正式的参数解析),扫到 --probe 或 --cancel 就跳过自迁移。
-_no_relocate_scan=0
+# 这个预扫描结果下面还会被复用一次(见参数初始化处 CHANNEL_OVERRIDE/
+# CLI_MIRROR_PREFIX 从环境变量读回的那段):--probe/--cancel 是完全独立于
+# --detach 派生子进程这条路径的一次性调用,决不能被"父进程传给 --detach 子进程"
+# 用的环境变量意外影响到——哪怕那两个环境变量出于任何原因残留在调用者的环境里,
+# --probe/--cancel 也必须表现得像它们完全不存在一样。
+_probe_or_cancel_scan=0
 for _a in "$@"; do
   case "$_a" in
-    --probe|--cancel) _no_relocate_scan=1; break ;;
+    --probe|--cancel) _probe_or_cancel_scan=1; break ;;
   esac
 done
 
-if [ "$_no_relocate_scan" != "1" ] && [ "${OPENBOX_UPDATE_RELOCATED:-0}" != "1" ]; then
+if [ "$_probe_or_cancel_scan" != "1" ] && [ "${OPENBOX_UPDATE_RELOCATED:-0}" != "1" ]; then
   case "$0" in
     "$INSTALL_ROOT"/*)
       _self_copy="/tmp/openbox-update.$$.sh"
@@ -365,8 +370,44 @@ fi
 # 两两互斥;--detach 与 --probe/--cancel 也互斥(探测、取消都是同步的一次性调用,
 # 不存在"派生到后台"的意义)。
 DETACH=0
-CHANNEL_OVERRIDE=""
-CLI_MIRROR_PREFIX=""
+# CHANNEL_OVERRIDE/CLI_MIRROR_PREFIX 的初始值优先从环境变量读回——这是 --detach
+# 派生后台子进程时,父进程把自己已经解析好的路线选择传给子进程的方式(实际赋值
+# 见下方 --detach 小节真正派生子进程的那一行)。子进程重新执行的是同一份脚本、
+# 同一套参数解析逻辑,但命令行参数是空的,不会再重新拼一份 argv 转发下去——
+# POSIX sh 没有数组,--mirror <前缀> 的前缀本身是一个 URL(可能带 : / . 等字符),
+# 把它安全地拼回一份能被重新正确解析的参数字符串没有必要冒这个转义的险,环境变量
+# 传值不涉及任何拼接/转义,天然规避这类坑。
+# 下面这两行只是"起点"值:--direct/--mirror/--probe/--cancel 的解析分支完全不变,
+# 命令行参数依旧优先(手动在命令行跑 `sh update.sh --direct` 之类不受影响、行为
+# 不变)。顺手轻量校验一下环境变量的取值,格式不对就当作没设置、静默忽略而不是
+# die()——这条代码路径也会被"直接手动执行一次 update.sh"这种最普通的调用方式
+# 执行到,不应该被一个偶然带着同名环境变量、原本与本次调用无关的外部环境弄挂,
+# 也不会因为父进程只用临时赋值(`VAR=x cmd`,不是 export)把值传给子进程,而让
+# 这两个环境变量泄漏进 --probe、--cancel 或任何后续调用。
+#
+# 更进一步:--probe/--cancel 这两条路径直接跳过读取,而不是"读回来再靠合法性
+# 校验兜底"——复用上面自迁移小节已经算好的 _probe_or_cancel_scan(同一个判定:
+# "$@" 里有没有 --probe 或 --cancel)。原因是校验兜底堵不住一种真实的误伤:如果
+# 调用者的环境里恰好带着这两个变量且取值合法(例如上一次 --detach 子进程的环境
+# 由于某种异常被后续调用继承,或者用户自己手动 export 了同名变量再跑 --probe/
+# --cancel),下面 --probe/--cancel 分支里"不能与 --direct/--mirror 同时使用"的
+# 互斥检查会把 CHANNEL_OVERRIDE 非空误判成命令行传了 --direct/--mirror,平白 die()
+# 掉一次跟路线选择毫无关系的探测/取消调用。--probe/--cancel 是一次性只读调用,
+# 犯不着担这个风险,直接不读环境变量最干脆。
+if [ "$_probe_or_cancel_scan" != "1" ]; then
+  CHANNEL_OVERRIDE="${OPENBOX_UPDATE_CHANNEL_OVERRIDE:-}"
+  case "$CHANNEL_OVERRIDE" in
+    ''|direct|mirror) ;;
+    *) CHANNEL_OVERRIDE="" ;;
+  esac
+  CLI_MIRROR_PREFIX="${OPENBOX_UPDATE_MIRROR_PREFIX:-}"
+  case "$CLI_MIRROR_PREFIX" in
+    ''|*[!A-Za-z0-9._:/-]*) CLI_MIRROR_PREFIX="" ;;
+  esac
+else
+  CHANNEL_OVERRIDE=""
+  CLI_MIRROR_PREFIX=""
+fi
 PROBE_CHANNEL=""
 CANCEL_MODE=0
 while [ $# -gt 0 ]; do
@@ -434,22 +475,9 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-# 重建 --detach 转发下去时要带的参数(见下方 detach 分支):只包含路线选择,
-# 不包含 --detach 本身(避免子进程再次进入 detach 分支、无限派生)。POSIX sh
-# 没有数组,借 "$@"/set -- 传递,能正确处理镜像前缀里可能出现的特殊字符。
-# --probe 与 --detach 互斥(见上),走到这里时 PROBE_CHANNEL 必为空,这段重建
-# 与 --probe 无关。
-if [ "$CHANNEL_OVERRIDE" = "direct" ]; then
-  set -- --direct
-elif [ "$CHANNEL_OVERRIDE" = "mirror" ]; then
-  if [ -n "$CLI_MIRROR_PREFIX" ]; then
-    set -- --mirror "$CLI_MIRROR_PREFIX"
-  else
-    set -- --mirror
-  fi
-else
-  set --
-fi
+# --detach 转发子进程要用的路线选择(CHANNEL_OVERRIDE/CLI_MIRROR_PREFIX)通过
+# 环境变量传递,不再靠重建一份 argv(见上方参数初始化处的说明,以及下方 --detach
+# 小节真正派生子进程的那一行)。
 
 # ---------- --probe:只读探测单个渠道,不下载正文、不改动本地安装 ----------
 # 供 LuCI 兜底页"版本"卡片的渠道选择器调用(见 status.js 顶部注释):"一键检测"与
@@ -568,15 +596,21 @@ fi
 # ---------- --detach:派生后台子进程,自己立即返回 ----------
 # LuCI 一键升级通过 rpcd 的 fs.exec 调用本脚本;fs.exec 是同步等待且有超时的,
 # 升级却要下载约 78MB,同步跑必然中途被杀。所以 --detach 分支只做一件事:再拉起
-# 一份自己(不带 --detach,避免无限递归,但带上原有的 --direct/--mirror 选择,
-# 见上方 set -- 重建),输出重定向到日志文件,然后立刻退出——fs.exec 几乎瞬间
-# 就能返回,真正的下载/替换在后台独立进程里进行,LuCI 页面转而轮询 meta.json
-# 的版本号与这份日志。
+# 一份自己(不带 --detach,避免无限递归),输出重定向到日志文件,然后立刻退出——
+# fs.exec 几乎瞬间就能返回,真正的下载/替换在后台独立进程里进行,LuCI 页面转而
+# 轮询 meta.json 的版本号与这份日志。原有的 --direct/--mirror 选择通过环境变量
+# (OPENBOX_UPDATE_CHANNEL_OVERRIDE/OPENBOX_UPDATE_MIRROR_PREFIX,见下方真正派生
+# 子进程的那一行)带给子进程,不再通过命令行参数——子进程重新解析参数时会先从
+# 环境变量把它们读回来(见上方参数初始化处的说明)。
 #
-# 优先用 setsid 让后台进程彻底脱离当前会话/控制终端,防止 rpcd 那端后续的任何
-# 清理动作把它带着一起杀掉;并非所有固件都带 setsid,没有就退化成普通的后台子
-# shell(仍是独立进程,只是少一层"脱离会话"的保险——rpcd 的 fs.exec 通常不分配
-# 控制终端,这一档退化在实践中足够)。
+# 必须用 setsid 让后台进程彻底脱离当前会话/控制终端,防止 rpcd 那端后续的任何
+# 清理动作把它带着一起杀掉。并非所有固件都带 setsid;这里不再对着"没有 setsid"
+# 悄悄退化成普通的后台子 shell(`( cmd & )`)——那种后台子 shell 仍然留在 rpcd
+# fs.exec 这次调用的进程组/会话里,fs.exec 一返回,rpcd 后续任何清理动作(结束
+# 会话、按进程组收尾)都可能把它一起带走,升级下载到一半被杀掉,还留下一个
+# "看起来在跑、实际已经没了"的假状态,比明确报错更糟。所以本机确实缺 setsid 时,
+# 直接拒绝启动,如实告诉用户改走 SSH——用户自己的 SSH 会话有独立的生命周期,
+# 不会被 rpcd 提前收走。
 UPDATE_LOG="${TMPDIR:-/tmp}/openbox-update.log"
 if [ "$DETACH" = "1" ]; then
   # 先在派发进程里同步截断日志,而不是指望子进程的重定向去截断:fs.exec 一返回,
@@ -589,11 +623,26 @@ if [ "$DETACH" = "1" ]; then
   : > "$UPDATE_LOG" 2>/dev/null || true
   { echo "stage=starting"; } > "$STATUS_PATH" 2>/dev/null || true
   rm -f "$CANCEL_FLAG" 2>/dev/null || true
-  if command -v setsid >/dev/null 2>&1; then
-    setsid sh "$0" "$@" >"$UPDATE_LOG" 2>&1 </dev/null &
-  else
-    ( sh "$0" "$@" >"$UPDATE_LOG" 2>&1 </dev/null & )
+  if ! command -v setsid >/dev/null 2>&1; then
+    # STATUS_PID 这时还没被赋值(还没走到下面"预检"那一段),write_status() 会
+    # 直接跳过、不产生任何文件 I/O(见该函数定义处的说明),这里手动写一份等价的
+    # 状态文件。同时往日志里补一行 `[open-box] 错误:` 前缀的说明——LuCI 页面的
+    # pollForUpdateCompletion() 靠这个前缀在日志里快速识别失败(几秒内),不用等
+    # 到新增的"20 秒仍卡在 starting"兜底超时才有反应(见 status.js 对应说明)。
+    _detach_msg="本机缺少 setsid 命令,无法安全地把升级放到后台运行(可能在 fs.exec 返回后被 rpcd 提前终止,导致升级下载到一半被杀掉)。请改用 SSH 登录路由器后手动执行:sh $INSTALL_ROOT/update.sh"
+    echo "[open-box] 错误:$_detach_msg" >> "$UPDATE_LOG" 2>/dev/null || true
+    {
+      echo "pid="
+      echo "stage=failed"
+      echo "bytes="
+      echo "total="
+      echo "message=$_detach_msg"
+    } > "$STATUS_PATH" 2>/dev/null || true
+    warn "$_detach_msg"
+    exit 0
   fi
+  OPENBOX_UPDATE_CHANNEL_OVERRIDE="$CHANNEL_OVERRIDE" OPENBOX_UPDATE_MIRROR_PREFIX="$CLI_MIRROR_PREFIX" \
+    setsid sh "$0" >"$UPDATE_LOG" 2>&1 </dev/null &
   info "升级已在后台启动,日志:$UPDATE_LOG"
   exit 0
 fi
