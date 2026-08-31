@@ -26,9 +26,6 @@ var I18N = {
 		'stopped': '已停止',
 		'on': '开',
 		'off': '关',
-		'No response from the update command. It may still be running in the background — check over SSH: cat /tmp/openbox-update.status. If this keeps happening, run the update over SSH instead.':
-			'更新命令没有响应。它可能仍在后台运行——可通过 SSH 查看:cat /tmp/openbox-update.status。如果反复如此,请改用 SSH 执行升级。',
-		'Update did not respond': '更新无响应',
 		'Start': '启动',
 		'Stop': '停止',
 		'Restart': '重启',
@@ -48,7 +45,6 @@ var I18N = {
 		'This will stop services and replace program files. The panel will be briefly unavailable. Continue?':
 			'此操作会停止服务并替换程序文件,期间面板会短暂不可用。确定继续吗?',
 		'GitHub direct': 'GitHub 直连',
-		'Channel': '渠道',
 		'Test all channels': '一键检测',
 		'Test': '检测',
 		'Testing...': '检测中…',
@@ -118,9 +114,6 @@ var I18N = {
 		'stopped': '已停止',
 		'on': '開',
 		'off': '關',
-		'No response from the update command. It may still be running in the background — check over SSH: cat /tmp/openbox-update.status. If this keeps happening, run the update over SSH instead.':
-			'更新指令沒有回應。它可能仍在背景執行——可透過 SSH 查看:cat /tmp/openbox-update.status。若反覆如此,請改用 SSH 執行升級。',
-		'Update did not respond': '更新無回應',
 		'Start': '啟動',
 		'Stop': '停止',
 		'Restart': '重新啟動',
@@ -140,7 +133,6 @@ var I18N = {
 		'This will stop services and replace program files. The panel will be briefly unavailable. Continue?':
 			'此操作會停止服務並替換程式檔案,期間面板會短暫無法使用。確定要繼續嗎?',
 		'GitHub direct': 'GitHub 直連',
-		'Channel': '渠道',
 		'Test all channels': '一鍵檢測',
 		'Test': '檢測',
 		'Testing...': '檢測中…',
@@ -385,6 +377,28 @@ function runUninstall(purge) {
 // 超时,所以这里总是带 --detach 调用:update.sh 自己 fork 到后台立即返回,
 // 真正的下载/替换在后台独立进程里进行,页面转而轮询 meta.json 的版本号,
 // 以及 update.sh 写的日志(用于展示进度/失败详情)。
+//
+// 根因(已在真机上确认,不再是猜测):即便 --detach 分支本身几乎瞬间返回,
+// LuCI 这一侧发起 fs.exec 用的是一次有超时的 XHR——在这台硬件上,这次 XHR
+// 会先于 rpcd 真正把响应送回来到达自己的超时,于是 fs.exec 的 promise 以
+// "XHR request timed out" reject,即使 --detach 派发和后台 worker 完全正常。
+// 旧版把"弹窗该显示什么"、"何时开始轮询状态文件"、"卡死/读不到的兜底计时"
+// 统统挂在这个 promise 的 .then()/.catch() 上,于是这次 XHR 超时被直接当成
+// "更新失败"报给用户,而真实情况是 /tmp/openbox-update.status 一路推进到
+// stage=done——升级本身完全成功,只是弹窗的结论来源问题问错了对象。
+//
+// 修复不是去调大超时,而是换掉"谁说了算":状态文件才是事实来源。update.sh
+// 的 --detach 分支在真正 fork 子进程之前,就已经同步把 stage=starting 写进
+// 状态文件(见该脚本 --detach 小节的注释)——这次写入不依赖 fs.exec 的 XHR
+// 是否顺利收到响应。所以下面 startUpdate() 里,状态文件轮询(applyStatus/
+// progressTimer)与版本号轮询(pollForUpdateCompletion())在调用 runUpdate()
+// 的同时就独立起跑,不再等待、也不再依赖这个 promise 结算;runUpdate() 的
+// resolve/reject 结果降级为"仅供参考"——只有在 reject 发生、且状态文件完全
+// 没有显示出这次更新真的跑起来过的任何证据时(文件不存在,或停在这次调用
+// 之前就有的旧 stage 没有任何变化),才把这次 exec 错误当成失败结论的来源;
+// 只要状态文件显示出进展或已完成,这个 exec 错误就被当噪音丢弃,交给已经在
+// 独立运行的两路轮询给出真正的结论(见 startUpdate() 里 updateObserved 的
+// 说明)。
 // ---------------------------------------------------------------------------
 var UPDATE_PATH = '/opt/open-box/update.sh';
 var UPDATE_LOG_PATH = '/tmp/openbox-update.log';
@@ -392,16 +406,20 @@ var UPDATE_POLL_INTERVAL_MS = 4000;
 var UPDATE_POLL_TIMEOUT_MS = 480000; // 8 分钟:78MB 下载 + 解包 + 换文件的宽松上限
 
 // update.sh 的 --detach 分支在真正 fork 子进程之前,就同步把 stage=starting 写进
-// 状态文件(见该脚本 --detach 小节的注释)。如果子进程随后因为任何原因没有真正
-// 跑起来或者刚起来就死掉(fork 失败、rpcd 提前收走了进程组、脚本路径/权限出了
-// 问题……),状态文件会永远停在 starting——只靠上面 8 分钟的总超时,技术上"最终
-// 会结束",但用户会盯着一句"正在准备…"干等 8 分钟,期间没有任何信息。这里单独给
-// "starting 阶段本身"设一个短得多的兜底超时:轮询到状态文件确实读到了、但 stage
-// 仍是 starting(或空)累计超过这个时长,就不再当成正常进度,转而直接展示一个
-// "启动失败/无响应"的明确结论(见 startUpdate() 里 handleStartingStuck() 的说明)。
-// stage 一旦推进到 starting 之外的任何阶段(包括 failed/cancelled 这些终态——它们
-// 有自己明确的结论,不需要这个兜底),这个计时器就会被重置——正常路径(几秒内
-// 就该进入 probing/downloading)不受任何影响。
+// 状态文件(见该脚本 --detach 小节的注释,以及上面关于 fs.exec XHR 超时根因的
+// 说明)。如果子进程随后因为任何原因没有真正跑起来或者刚起来就死掉(fork 失败、
+// rpcd 提前收走了进程组、脚本路径/权限出了问题……),状态文件会永远停在
+// starting——只靠上面 8 分钟的总超时,技术上"最终会结束",但用户会盯着一句
+// "正在准备…"干等 8 分钟,期间没有任何信息。这里单独给"starting 阶段本身"设一个
+// 短得多的兜底超时:轮询到状态文件确实读到了、但 stage 仍是 starting(或空)累计
+// 超过这个时长,就不再当成正常进度,转而直接展示一个"启动失败/无响应"的明确结论
+// (见 startUpdate() 里 handleStartingStuck() 的说明)。stage 一旦推进到 starting
+// 之外的任何阶段(包括 failed/cancelled 这些终态——它们有自己明确的结论,不需要
+// 这个兜底),这个计时器就会被重置——正常路径(几秒内就该进入 probing/downloading)
+// 不受任何影响。既然状态轮询现在与 fs.exec 完全独立起跑,这个兜底本身就已经能
+// 独立兜住"exec 迟迟没有回音"的情形,不再需要一个单独盯着 exec 本身的看门狗
+// (旧版曾经加过一个,现已随这次改动一起移除——它的职责被这里和下面
+// handleStatusUnreadable() 完全覆盖,继续保留反而会出现三路兜底互相抢结论)。
 //
 // 这个阈值同时也被复用为另一路独立计时的判定线:状态文件本身读取失败(不是
 // "读到了但 stage 还没推进",而是 fs.read 直接被拒绝/出错,典型情况见
@@ -420,9 +438,6 @@ var STARTING_STUCK_TIMEOUT_MS = 20000; // 20 秒
 // 仍然是版本号 + 日志正则那一套(见 pollForUpdateCompletion()),按需求原样保留。
 var UPDATE_STATUS_PATH = '/tmp/openbox-update.status';
 var UPDATE_STATUS_POLL_INTERVAL_MS = 1000;
-// fs.exec 迟迟没有回音的判定阈值。--detach 的派发进程只是写个状态文件、
-// fork 出后台worker 就退出,正常应当在毫秒级返回;给到 15 秒已经非常宽松。
-var EXEC_WATCHDOG_TIMEOUT_MS = 15000;
 
 // 与 scripts/update.sh 里"可安全取消的阶段"完全对应(见该脚本 check_cancel_
 // _and_abort() 调用点的分布)——committing 及之后不再出现在这张表里,取消按钮
@@ -710,7 +725,7 @@ var STYLE_CSS =
 	'@media (max-width:900px){.ob-grid{grid-template-columns:1fr}}' +
 	'.ob-card{border:1px solid rgba(127,127,127,.22);border-radius:10px;padding:16px 18px;background:rgba(127,127,127,.04)}' +
 	'.ob-card-danger{border-color:rgba(208,74,74,.35)}' +
-	'.ob-card h3{margin:0 0 12px;font-size:1.05em;font-weight:600;display:flex;align-items:baseline;justify-content:space-between;gap:.75em}' +
+	'.ob-card h3{margin:0 0 12px;font-size:1.05em;font-weight:600;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.75em}' +
 	'.ob-ver{font-size:.85em;font-weight:600;opacity:.75;white-space:nowrap}' +
 	'.ob-pills{display:flex;flex-wrap:wrap;gap:8px;align-items:center}' +
 	'.ob-pill{display:inline-flex;align-items:center;gap:.35em;padding:.15em .65em;border-radius:999px;font-size:.85em;border:1px solid currentColor;white-space:nowrap}' +
@@ -726,12 +741,13 @@ var STYLE_CSS =
 	'.ob-chan-row{display:flex;align-items:center;gap:10px;padding:9px 12px}' +
 	'.ob-chan-row+.ob-chan-row{border-top:1px solid rgba(127,127,127,.14)}' +
 	'.ob-chan-row:hover{background:rgba(127,127,127,.06)}' +
+	'.ob-chan-radio{display:flex;align-items:center;gap:.5em;flex:1;min-width:0;cursor:pointer}' +
+	'.ob-chan-radio input{flex:none;margin:0;cursor:pointer}' +
 	'.ob-chan-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
 	'.ob-chan-stat{font-size:.85em;opacity:.85;white-space:nowrap}' +
 	'.ob-chan-ok{color:#2e9e4f}' +
 	'.ob-chan-bad{color:#d04a4a}' +
-	'.ob-sel-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}' +
-	'.ob-sel-row select{flex:1;min-width:150px}';
+	'.ob-sel-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}';
 
 return view.extend({
 	load: function () {
@@ -848,8 +864,6 @@ return view.extend({
 								ui.hideModal();
 								ui.addNotification(null, E('p', tr('Uninstalled. Refresh the page; this menu entry will be gone.')), 'info');
 							}).catch(function (err) {
-				execSettled = true;
-				window.clearTimeout(execWatchdog);
 								ui.hideModal();
 								var msg = String(err && err.message || err);
 								if (/not found|No such file/i.test(msg)) {
@@ -930,6 +944,39 @@ return view.extend({
 				if (progressTimer != null) {
 					window.clearInterval(progressTimer);
 					progressTimer = null;
+				}
+			}
+
+			// 见 UPDATE_PATH 定义处关于 fs.exec XHR 超时根因的说明:runUpdate() 的
+			// resolve/reject 不再是任何结论的直接来源,它 reject 时是否该被当成失败,
+			// 取决于状态文件有没有留下"这次调用确实碰过 update.sh"的证据。判定办法:
+			// 把这次开始轮询时看到的第一份状态当基线(baselineStatus——不管内容是
+			// 什么,哪怕是上一次更新遗留的旧终态,或者文件根本不存在/读不到),此后
+			// 只要某一次读到了有效内容、且和这份基线不一样(stage/pid/message/bytes
+			// 任一个字段不同,或者基线原本读不到而这次读到了),就说明状态文件被
+			// 重新写过——不可能是旧文件,因为 --detach 分支同步写 stage=starting 这
+			// 一步不依赖 fs.exec 的 XHR 是否收到响应,只要 update.sh 真的被触发过就
+			// 会有这次写入。读取失败本身(current 为 null)从不构成证据,无论是刚好
+			// 发生在基线之后的第一次失败,还是之前已经能读、这次恰好读不到——那只是
+			// 这次会话的 ACL/网络抖了一下,和"这次更新是否真的跑起来过"无关,不能
+			// 反过来当成"有证据"。
+			var baselineStatus; // undefined = 还没取到第一份基线;之后是 null 或状态对象
+			var updateObserved = false;
+
+			function statusChanged(current, baseline) {
+				if (current === null) return false;
+				if (baseline === null) return true;
+				return current.stage !== baseline.stage || current.pid !== baseline.pid ||
+					current.message !== baseline.message || current.bytes !== baseline.bytes;
+			}
+
+			function noteStatus(statusOrNull) {
+				if (baselineStatus === undefined) {
+					baselineStatus = statusOrNull;
+					return;
+				}
+				if (!updateObserved && statusChanged(statusOrNull, baselineStatus)) {
+					updateObserved = true;
 				}
 			}
 
@@ -1027,77 +1074,94 @@ return view.extend({
 				});
 			}
 
-			// fs.exec 的看门狗:必须在调用之前就装好。
-			//
-			// 现场遇到过弹窗永远停在初始文案「正在启动更新…」的情况:下面所有的进度
-			// 轮询、"卡在 starting"计时、"读不到状态"计时,统统写在 runUpdate() 的
-			// .then() 里——只要底层 ubus 调用既不 resolve 也不 reject(rpcd 那次
-			// exec 一直挂着),这些计时器一个都不会启动,弹窗就只能干转圈,连兜底
-			// 提示都出不来。catch 也救不了:它只在 reject 时触发。
-			// 所以这个计时器必须先于 fs.exec 起跑,专门管"exec 本身迟迟没有回音"。
-			var execSettled = false;
-			var execWatchdog = window.setTimeout(function () {
-				if (execSettled || finished) return;
-				stopProgressPolling();
-				readUpdateLogTail().then(function (logRes) {
-					if (finished) return;
-					showUpdateFailure(
-						tr('No response from the update command. It may still be running in the background — check over SSH: cat /tmp/openbox-update.status. If this keeps happening, run the update over SSH instead.'),
-						logRes.text,
-						tr('Update did not respond')
-					);
-				});
-			}, EXEC_WATCHDOG_TIMEOUT_MS);
+			var startingElapsedMs = 0;
+			var statusReadFailMs = 0;
+			var statusUnreadableShown = false;
 
-			return runUpdate(channel).then(function () {
-				execSettled = true;
-				window.clearTimeout(execWatchdog);
-				if (finished) return;
-				progressBody.textContent = tr('Update started. This may take a few minutes (about 80MB to download).');
-				var startingElapsedMs = 0;
-				var statusReadFailMs = 0;
-				var statusUnreadableShown = false;
+			// 状态轮询(进度文案/进度条/取消按钮,以及"卡在 starting"/"读不到状态"两路
+			// 兜底)在这里立即起跑,和下面触发 fs.exec 的 runUpdate() 完全并行——不再
+			// 像旧版那样嵌套在 runUpdate().then() 里等它先 resolve。这就是根因修复
+			// 本身的落地点:哪怕这次 fs.exec 的 XHR 迟迟不返回、甚至最终超时 reject,
+			// 只要 update.sh 真的被触发了,状态文件的变化照样能被看到、进度照样能
+			// 展示、两路兜底也照样能独立生效,不再需要一个单独盯 exec 本身的看门狗。
+			readUpdateStatus().then(function (res) {
+				noteStatus(res.ok ? res.status : null);
+				if (res.ok) applyStatus(res.status);
+			});
 
-				readUpdateStatus().then(function (res) { if (res.ok) applyStatus(res.status); });
-
-				progressTimer = window.setInterval(function () {
-					readUpdateStatus().then(function (res) {
-						if (finished || statusUnreadableShown) return;
-						if (res.ok) {
-							// 这次读到了(不管读到的 stage 是什么):说明状态文件对这次会话
-							// 是可读的,之前累积的"读取失败"计时不再成立,归零——只有连续
-							// 的读取失败才应该攒够阈值触发 handleStatusUnreadable()。
-							statusReadFailMs = 0;
-							applyStatus(res.status);
-							var stillStarting = !res.status.stage || res.status.stage === 'starting';
-							startingElapsedMs = stillStarting ? startingElapsedMs + UPDATE_STATUS_POLL_INTERVAL_MS : 0;
-							if (isUpdateStartStuck(res.status, startingElapsedMs)) {
-								handleStartingStuck();
-							}
-							return;
+			progressTimer = window.setInterval(function () {
+				readUpdateStatus().then(function (res) {
+					if (finished || statusUnreadableShown) return;
+					noteStatus(res.ok ? res.status : null);
+					if (res.ok) {
+						// 这次读到了(不管读到的 stage 是什么):说明状态文件对这次会话
+						// 是可读的,之前累积的"读取失败"计时不再成立,归零——只有连续
+						// 的读取失败才应该攒够阈值触发 handleStatusUnreadable()。
+						statusReadFailMs = 0;
+						applyStatus(res.status);
+						var stillStarting = !res.status.stage || res.status.stage === 'starting';
+						startingElapsedMs = stillStarting ? startingElapsedMs + UPDATE_STATUS_POLL_INTERVAL_MS : 0;
+						if (isUpdateStartStuck(res.status, startingElapsedMs)) {
+							handleStartingStuck();
 						}
-						// 读取本身失败,和"读到了但还没推进"是两回事——不能计入
-						// startingElapsedMs,那样会把"这次会话读不到文件"误判成"更新真的
-						// 没启动",走 handleStartingStuck() 给出一个错误的"启动失败"结论。
-						// 这里单独累计"读取失败"这另一路时长,过阈值后转去
-						// handleStatusUnreadable() 展示一个措辞不同、如实反映"读不到"而
-						// 不是"失败了"的提示。
-						statusReadFailMs += UPDATE_STATUS_POLL_INTERVAL_MS;
-						if (statusReadFailMs >= STARTING_STUCK_TIMEOUT_MS) {
-							statusUnreadableShown = true;
-							handleStatusUnreadable();
-						}
-					});
-				}, UPDATE_STATUS_POLL_INTERVAL_MS);
-
-				return pollForUpdateCompletion(oldVersion, function (logTail) {
-					if (logTail) {
-						logBox.style.display = '';
-						logBox.textContent = logTail;
+						return;
+					}
+					// 读取本身失败,和"读到了但还没推进"是两回事——不能计入
+					// startingElapsedMs,那样会把"这次会话读不到文件"误判成"更新真的
+					// 没启动",走 handleStartingStuck() 给出一个错误的"启动失败"结论。
+					// 这里单独累计"读取失败"这另一路时长,过阈值后转去
+					// handleStatusUnreadable() 展示一个措辞不同、如实反映"读不到"而
+					// 不是"失败了"的提示。
+					statusReadFailMs += UPDATE_STATUS_POLL_INTERVAL_MS;
+					if (statusReadFailMs >= STARTING_STUCK_TIMEOUT_MS) {
+						statusUnreadableShown = true;
+						handleStatusUnreadable();
 					}
 				});
-			}).then(function (result) {
-				if (finished) return; // 已经被 handleStartingStuck() 收尾过,这个迟到的结果不再展示
+			}, UPDATE_STATUS_POLL_INTERVAL_MS);
+
+			var completion = pollForUpdateCompletion(oldVersion, function (logTail) {
+				if (logTail) {
+					logBox.style.display = '';
+					logBox.textContent = logTail;
+				}
+			});
+
+			// fs.exec 本身的结果现在只是参考信息:resolve 时顺手把文案从"正在启动
+			// 更新…"换成"更新已开始…";reject 时——见上面 updateObserved 的说明——
+			// 只有在状态文件完全没显示出这次调用碰过 update.sh 时才据此报失败(展示
+			// 一个带日志尾巴的失败弹窗,和 handleStartingStuck()/handleStatusUnreadable()
+			// 用的是同一个 showUpdateFailure());一旦已经有证据(哪怕只是
+			// stage=starting 这一下),就把这次 exec 错误当噪音丢弃(典型即已经在真机
+			// 上确认过的"XHR request timed out"),交给上面已经独立跑着的两路轮询给出
+			// 真正的结论,永远不会把一次健康的更新报成"更新失败"。
+			runUpdate(channel).then(function () {
+				if (finished) return;
+				progressBody.textContent = tr('Update started. This may take a few minutes (about 80MB to download).');
+			}).catch(function (err) {
+				if (finished || updateObserved) {
+					if (window.console && window.console.debug) {
+						window.console.debug('[open-box] fs.exec for update settled with an error, but the ' +
+							'status file shows the update is progressing/finished — ignoring it:',
+							err && err.message || err);
+					}
+					return;
+				}
+				finished = true;
+				stopProgressPolling();
+				ui.hideModal();
+				var msg = String(err && err.message || err);
+				if (/not found|No such file/i.test(msg)) {
+					ui.addNotification(null, E('p', tr('Update script not found. Run it manually over SSH.')), 'error');
+					return;
+				}
+				readUpdateLogTail().then(function (logRes) {
+					showUpdateFailure(fmt('Update failed: %s', msg), logRes.text);
+				});
+			});
+
+			return completion.then(function (result) {
+				if (finished) return; // 已经被别的路径收尾过,这个迟到的结果不再展示
 				finished = true;
 				stopProgressPolling();
 				ui.hideModal();
@@ -1119,16 +1183,13 @@ return view.extend({
 				ui.addNotification(null, E('p', fmt('Update complete: now on %s.', result.version)), 'info');
 				window.setTimeout(function () { location.reload(); }, 1200);
 			}).catch(function (err) {
+				// pollForUpdateCompletion() 按自己的约定始终 resolve、不 reject(见其
+				// 定义处的说明),这里只是防御性兜底,正常不会走到。
 				if (finished) return;
 				finished = true;
 				stopProgressPolling();
 				ui.hideModal();
-				var msg = String(err && err.message || err);
-				if (/not found|No such file/i.test(msg)) {
-					ui.addNotification(null, E('p', tr('Update script not found. Run it manually over SSH.')), 'error');
-				} else {
-					ui.addNotification(null, E('p', fmt('Update failed: %s', msg)), 'error');
-				}
+				ui.addNotification(null, E('p', fmt('Update failed: %s', String(err && err.message || err))), 'error');
 			});
 		}
 
@@ -1242,22 +1303,22 @@ return view.extend({
 
 		var selectedChannel = CHANNELS[0].value;
 
-		var channelSelect = E('select', { 'class': 'cbi-input-select' },
-			CHANNELS.map(function (c) { return E('option', { 'value': c.value }, c.label); }));
-		channelSelect.addEventListener('change', function () {
-			selectedChannel = channelSelect.value;
-			updateSelectedChannelLine();
-		});
-
-		// 带边框的渠道列表(.ob-chan/.ob-chan-row,见 STYLE_CSS 定义处):每行是渠道名
-		// (.ob-chan-name)配它自己的探测结果(.ob-chan-stat,可用/不可用时着色)和一个
-		// 独立的「检测」按钮——这个按钮测的是这一行自己的渠道,不是上面下拉框里当前
-		// 选中的那个(下拉框选的是"立即更新"要用哪个渠道,两者不必相同,用户可能想
-		// 先把 4 个渠道都探一遍再决定选哪个)。一键检测和这里的按钮只是触发方式不同,
-		// 底层都是同一个 probeOneChannel(),结果都写回同一行,行为完全一致。
+		// 每行开头一个单选框(.ob-chan-radio,见 STYLE_CSS 定义处):四选一,选中
+		// 的渠道就是"立即更新"要用的那个(取代旧版页面顶部单独一个下拉框的做法)。
+		// 单选框和渠道名包进同一个 <label> 里,点文字本身也能选中——同时满足
+		// 键盘/屏幕阅读器的可达性,不需要另外接 for/id。radio 的 name 相同
+		// (ob-channel)让四个输入互斥;默认选中项与旧版下拉框的默认值一致,
+		// 都是 CHANNELS[0](GitHub 直连)。
 		var channelStatusList = E('div', { 'class': 'ob-chan' },
-			CHANNELS.map(function (c) {
+			CHANNELS.map(function (c, i) {
+				var radio = E('input', { 'type': 'radio', 'name': 'ob-channel', 'id': 'ob-chan-radio-' + i });
+				radio.checked = (c.value === selectedChannel);
+				radio.addEventListener('change', function () {
+					selectedChannel = c.value;
+					updateSelectedChannelLine();
+				});
 				var nameEl = E('span', { 'class': 'ob-chan-name' }, c.label);
+				var radioLabel = E('label', { 'class': 'ob-chan-radio', 'for': 'ob-chan-radio-' + i }, [ radio, nameEl ]);
 				var statEl = E('span', { 'class': 'ob-chan-stat' }, channelStatusSuffix(c.value));
 				channelRowEls[c.value] = statEl;
 				var btn = E('button', { 'class': 'cbi-button cbi-button-neutral',
@@ -1266,7 +1327,7 @@ return view.extend({
 						return probeOneChannel(c.value).then(function () { setProbingDisabled(false); });
 					}) }, tr('Test'));
 				channelBtnEls[c.value] = btn;
-				return E('div', { 'class': 'ob-chan-row' }, [ nameEl, statEl, btn ]);
+				return E('div', { 'class': 'ob-chan-row' }, [ radioLabel, statEl, btn ]);
 			}));
 
 		// 紧挨着「立即更新」摆一份选中渠道的实时状态(.ob-hint),免得有人在某个渠道
@@ -1336,19 +1397,16 @@ return view.extend({
 					]),
 
 					// 「Open-Box 升级」独立成一张卡片(负责人手绘草图的要求):最上面一行是
-					// 渠道下拉框 + 一键检测(.ob-sel-row),中间一个带边框的列表把 4 个渠道
-					// 各自的探测状态 + 单独的「检测」按钮圈在一起(.ob-chan),最下面是检查
-					// 更新/立即更新那组控制 + 选中渠道的实时摘要——四段自上而下正好对应
-					// 草图里同一张卡片的区域划分。这张卡片内容明显比其它三张多,固定两列的
-					// 网格给了它和面板卡片一样的整栏宽度,渠道行不再像旧版 auto-fit 三列时
-					// 那样被挤成窄条。
+					// 一键检测(.ob-sel-row),中间一个带边框的列表把 4 个渠道各自的探测
+					// 状态、单选按钮(选中即"立即更新"要用的渠道)、单独的「检测」按钮圈
+					// 在一起(.ob-chan),最下面是检查更新/立即更新那组控制 + 选中渠道的
+					// 实时摘要——不再像旧版那样单独一个下拉框选渠道,选择直接并进渠道
+					// 列表每一行的开头(见 channelStatusList 定义处)。这张卡片内容明显
+					// 比其它三张多,固定两列的网格给了它和面板卡片一样的整栏宽度,渠道行
+					// 不再像旧版 auto-fit 三列时那样被挤成窄条。
 					E('div', { 'class': 'ob-card' }, [
 						E('h3', {}, tr('Open-Box upgrade')),
-						E('div', { 'class': 'ob-sel-row' }, [
-							E('span', {}, tr('Channel') + ':'),
-							channelSelect,
-							probeAllBtn
-						]),
+						E('div', { 'class': 'ob-sel-row' }, [ probeAllBtn ]),
 						channelStatusList,
 						E('div', { 'class': 'ob-div' }),
 						E('div', { 'class': 'ob-btns' }, [ checkBtn, versionResult, updateBtn ]),
@@ -1356,13 +1414,17 @@ return view.extend({
 					]),
 
 					E('div', { 'class': 'ob-card ob-card-danger' }, [
-						E('h3', {}, tr('Uninstall')),
-						E('p', {}, tr('Remove Open-Box from this router. Services are stopped, DNS and firewall changes are reverted, and the LuCI page disappears after the next refresh.')),
-						E('div', { 'class': 'ob-btns' }, [
+						// 卸载按钮挪进标题行、右对齐:和上面三张卡片版本号(.ob-ver)在
+						// h3 里的落位是同一个模式(见 STYLE_CSS 里 .ob-card h3 的
+						// justify-content:space-between),这里放的不是版本号而是那个
+						// 破坏性操作本身。确认弹窗(showUninstallDialog())原样不动。
+						E('h3', {}, [
+							E('span', {}, tr('Uninstall')),
 							E('button', { 'class': 'cbi-button cbi-button-negative',
 								'click': ui.createHandlerFn(self, function () { return showUninstallDialog(); }) },
 								tr('Uninstall Open-Box'))
-						])
+						]),
+						E('p', {}, tr('Remove Open-Box from this router. Services are stopped, DNS and firewall changes are reverted, and the LuCI page disappears after the next refresh.'))
 					])
 				])
 			])
