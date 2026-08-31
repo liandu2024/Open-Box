@@ -3,11 +3,17 @@
 		"description": "Grant access to Open-Box service controls",
 		"read": {
 			"ubus": { "luci": [ "getInitList" ], "service": [ "list" ] },
-			"file": { "/opt/open-box/meta.json": [ "read" ] }
+			"file": {
+				"/opt/open-box/meta.json": [ "read" ],
+				"/tmp/openbox-update.log": [ "read" ]
+			}
 		},
 		"write": {
 			"ubus": { "luci": [ "setInitAction" ] },
-			"file": { "/opt/open-box/uninstall.sh": [ "exec" ] }
+			"file": {
+				"/opt/open-box/uninstall.sh": [ "exec" ],
+				"/opt/open-box/update.sh": [ "exec" ]
+			}
 		}
 	}
 }

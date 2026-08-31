@@ -42,6 +42,24 @@ var I18N = {
 		'Action sent: %s %s': '已发送操作:%s %s',
 		'Action failed: %s': '操作失败:%s',
 		'init action failed': '服务操作未成功',
+		'Update now': '立即更新',
+		'Confirm update': '确认更新',
+		'This will stop services and replace program files. The panel will be briefly unavailable. Continue?':
+			'此操作会停止服务并替换程序文件,期间面板会短暂不可用。确定继续吗?',
+		'Updating to %s...': '正在更新到 %s…',
+		'Starting update...': '正在启动更新…',
+		'Update started. This may take a few minutes (about 80MB to download).':
+			'更新已开始,可能需要几分钟(约需下载 80MB)。',
+		'Update complete: now on %s.': '更新完成,当前版本:%s。',
+		'Already up to date (no changes made).': '已是最新版本(未做任何改动)。',
+		'Update timed out. It may still be running in the background; check again shortly.':
+			'更新超时。它可能仍在后台运行,请稍后再检查一次。',
+		'Update failed.': '更新失败。',
+		'Update failed': '更新失败',
+		'Update failed: %s': '更新失败:%s',
+		'Recent update log:': '最近的更新日志:',
+		'Update script not found. Run it manually over SSH.': '未找到升级脚本,请通过 SSH 手动执行。',
+		'Close': '关闭',
 		'Uninstall': '卸载',
 		'Remove Open-Box from this router. Services are stopped, DNS and firewall changes are reverted, and the LuCI page disappears after the next refresh.':
 			'从这台路由器上移除 Open-Box。服务会被停止,DNS 与防火墙改动会被还原,刷新后本页面也会消失。',
@@ -86,6 +104,24 @@ var I18N = {
 		'Action sent: %s %s': '已傳送操作:%s %s',
 		'Action failed: %s': '操作失敗:%s',
 		'init action failed': '服務操作未成功',
+		'Update now': '立即更新',
+		'Confirm update': '確認更新',
+		'This will stop services and replace program files. The panel will be briefly unavailable. Continue?':
+			'此操作會停止服務並替換程式檔案,期間面板會短暫無法使用。確定要繼續嗎?',
+		'Updating to %s...': '正在更新到 %s…',
+		'Starting update...': '正在啟動更新…',
+		'Update started. This may take a few minutes (about 80MB to download).':
+			'更新已開始,可能需要幾分鐘(約需下載 80MB)。',
+		'Update complete: now on %s.': '更新完成,目前版本:%s。',
+		'Already up to date (no changes made).': '已是最新版本(未做任何變更)。',
+		'Update timed out. It may still be running in the background; check again shortly.':
+			'更新逾時。它可能仍在背景執行,請稍後再檢查一次。',
+		'Update failed.': '更新失敗。',
+		'Update failed': '更新失敗',
+		'Update failed: %s': '更新失敗:%s',
+		'Recent update log:': '最近的更新日誌:',
+		'Update script not found. Run it manually over SSH.': '找不到升級腳本,請透過 SSH 手動執行。',
+		'Close': '關閉',
 		'Uninstall': '解除安裝',
 		'Remove Open-Box from this router. Services are stopped, DNS and firewall changes are reverted, and the LuCI page disappears after the next refresh.':
 			'從這台路由器上移除 Open-Box。服務會被停止,DNS 與防火牆變更會被還原,重新整理後本頁面也會消失。',
@@ -266,6 +302,83 @@ function runUninstall(purge) {
 }
 
 // ---------------------------------------------------------------------------
+// 一键更新
+//
+// rpcd 的 fs.exec 同步等待且有超时,升级却要下载约 80MB,同步调用必然中途
+// 超时,所以这里总是带 --detach 调用:update.sh 自己 fork 到后台立即返回,
+// 真正的下载/替换在后台独立进程里进行,页面转而轮询 meta.json 的版本号,
+// 以及 update.sh 写的日志(用于展示进度/失败详情)。
+// ---------------------------------------------------------------------------
+var UPDATE_PATH = '/opt/open-box/update.sh';
+var UPDATE_LOG_PATH = '/tmp/openbox-update.log';
+var UPDATE_POLL_INTERVAL_MS = 4000;
+var UPDATE_POLL_TIMEOUT_MS = 480000; // 8 分钟:78MB 下载 + 解包 + 换文件的宽松上限
+
+function runUpdate() {
+	return fs.exec(UPDATE_PATH, [ '--detach' ]).then(function (res) {
+		if (!res || res.code !== 0) {
+			var detail = (res && (res.stderr || res.stdout)) || ('exit ' + (res ? res.code : '?'));
+			throw new Error(String(detail).split('\n').slice(-3).join(' ').trim() || 'failed');
+		}
+		return res;
+	});
+}
+
+function readUpdateLogTail() {
+	return fs.read(UPDATE_LOG_PATH).then(function (txt) {
+		return String(txt || '').split('\n').slice(-12).join('\n').replace(/^\s+|\s+$/g, '');
+	}).catch(function () {
+		return '';
+	});
+}
+
+// 轮询直到成功、确认无需升级、脚本报错,或者超时——四种结局都通过 resolve 的
+// result 对象表达(不用 reject),调用方只需要看 result.ok / result.noop /
+// result.timeout,不必分别处理 resolve 和 reject 两条路径。
+function pollForUpdateCompletion(oldVersion, onTick) {
+	return new Promise(function (resolve) {
+		var elapsed = 0;
+
+		function scheduleNext(logTail) {
+			elapsed += UPDATE_POLL_INTERVAL_MS;
+			if (elapsed >= UPDATE_POLL_TIMEOUT_MS) {
+				resolve({ ok: false, timeout: true, logTail: logTail || '' });
+				return;
+			}
+			window.setTimeout(tick, UPDATE_POLL_INTERVAL_MS);
+		}
+
+		function tick() {
+			Promise.all([ readInstalledVersion(), readUpdateLogTail() ]).then(function (res) {
+				var version = res[0], logTail = res[1];
+				if (onTick) onTick(logTail);
+				if (version && version !== oldVersion) {
+					resolve({ ok: true, noop: false, version: version, logTail: logTail });
+					return;
+				}
+				// update.sh 在"下载完才发现版本号和当前一致"时会打印这句并正常退出
+				// (见脚本里的判断),此时版本号不会变,不能当成超时/失败处理。
+				if (/无需升级/.test(logTail)) {
+					resolve({ ok: true, noop: true, version: oldVersion, logTail: logTail });
+					return;
+				}
+				// update.sh 的 die() 统一用这个前缀,匹配到就说明脚本已经退出且失败了,
+				// 不必再等到超时才告诉用户。
+				if (/\[open-box\] 错误:/.test(logTail)) {
+					resolve({ ok: false, timeout: false, logTail: logTail });
+					return;
+				}
+				scheduleNext(logTail);
+			}).catch(function () {
+				scheduleNext('');
+			});
+		}
+
+		tick();
+	});
+}
+
+// ---------------------------------------------------------------------------
 // 布局
 //
 // 不用 cbi-page-actions:那是「页面底部」的操作栏(右对齐 + 特定外边距),
@@ -354,11 +467,96 @@ return view.extend({
 			]);
 		}
 
+		// 更新失败时把日志尾巴摆出来,而不是让用户面对一句"失败了"猜半天——
+		// update.sh 的每一步都用 info()/warn()/die() 打了清楚的中文说明,直接展示即可。
+		function showUpdateFailure(msg, logTail) {
+			var body = [ E('p', {}, msg) ];
+			if (logTail) {
+				body.push(E('p', { 'style': 'font-weight:bold;margin:.6em 0 .2em 0' }, tr('Recent update log:')));
+				body.push(E('pre', {
+					'style': 'max-height:16em;overflow:auto;background:rgba(127,127,127,.08);' +
+						'padding:.5em;font-size:85%;white-space:pre-wrap;margin:0'
+				}, logTail));
+			}
+			body.push(E('div', { 'class': 'right', 'style': BTNROW }, [
+				E('button', { 'class': 'cbi-button', 'click': function () { ui.hideModal(); } }, tr('Close'))
+			]));
+			ui.showModal(tr('Update failed'), body);
+		}
+
+		// 更新走本地脚本(随发布包铺下来的那份,与卸载同理),不依赖外网页面本身
+		// 的可用性;总是带 --detach,原因见 runUpdate() 定义处的说明。这里只负责
+		// 触发 + 轮询 + 展示进度/结果,真正的下载/校验/换文件全在 update.sh 里。
+		function startUpdate(latestVersion) {
+			var progressBody = E('p', { 'class': 'spinning' }, tr('Starting update...'));
+			var logBox = E('pre', {
+				'style': 'max-height:12em;overflow:auto;background:rgba(127,127,127,.08);' +
+					'padding:.5em;font-size:85%;white-space:pre-wrap;margin-top:.6em;display:none'
+			}, '');
+			ui.showModal(fmt('Updating to %s...', latestVersion), [ progressBody, logBox ]);
+
+			var oldVersion = installed;
+
+			return runUpdate().then(function () {
+				progressBody.textContent = tr('Update started. This may take a few minutes (about 80MB to download).');
+				return pollForUpdateCompletion(oldVersion, function (logTail) {
+					if (logTail) {
+						logBox.style.display = '';
+						logBox.textContent = logTail;
+					}
+				});
+			}).then(function (result) {
+				ui.hideModal();
+				if (!result.ok) {
+					var failMsg = result.timeout
+						? tr('Update timed out. It may still be running in the background; check again shortly.')
+						: tr('Update failed.');
+					showUpdateFailure(failMsg, result.logTail);
+					return;
+				}
+				if (result.noop) {
+					ui.addNotification(null, E('p', tr('Already up to date (no changes made).')), 'info');
+					return;
+				}
+				ui.addNotification(null, E('p', fmt('Update complete: now on %s.', result.version)), 'info');
+				window.setTimeout(function () { location.reload(); }, 1200);
+			}).catch(function (err) {
+				ui.hideModal();
+				var msg = String(err && err.message || err);
+				if (/not found|No such file/i.test(msg)) {
+					ui.addNotification(null, E('p', tr('Update script not found. Run it manually over SSH.')), 'error');
+				} else {
+					ui.addNotification(null, E('p', fmt('Update failed: %s', msg)), 'error');
+				}
+			});
+		}
+
+		function showUpdateDialog(latestVersion) {
+			ui.showModal(tr('Confirm update'), [
+				E('p', {}, tr('This will stop services and replace program files. The panel will be briefly unavailable. Continue?')),
+				E('div', { 'class': 'right', 'style': BTNROW }, [
+					E('button', { 'class': 'cbi-button',
+						'click': function () { ui.hideModal(); } }, tr('Cancel')),
+					E('button', { 'class': 'cbi-button cbi-button-apply',
+						'click': ui.createHandlerFn(self, function () { return startUpdate(latestVersion); }) },
+						tr('Confirm update'))
+				])
+			]);
+		}
+
 		var versionResult = E('span', { 'style': 'margin-left:.6em' }, '');
+
+		var latestAvailable = null;
+
+		var updateBtn = E('button', { 'class': 'cbi-button cbi-button-apply', 'style': 'display:none',
+			'click': ui.createHandlerFn(self, function () { return showUpdateDialog(latestAvailable); }) },
+			tr('Update now'));
 
 		var checkBtn = E('button', { 'class': 'cbi-button cbi-button-neutral',
 			'click': ui.createHandlerFn(self, function () {
 				versionResult.textContent = tr('Checking...');
+				latestAvailable = null;
+				updateBtn.style.display = 'none';
 				return checkLatest().then(function (latest) {
 					if (!installed) {
 						versionResult.textContent = fmt('New version available: %s', latest);
@@ -366,6 +564,8 @@ return view.extend({
 					}
 					if (cmpVersion(latest, installed) > 0) {
 						versionResult.textContent = fmt('New version available: %s', latest);
+						latestAvailable = latest;
+						updateBtn.style.display = '';
 					} else {
 						versionResult.textContent = tr('Up to date.');
 					}
@@ -408,7 +608,7 @@ return view.extend({
 					E('span', {}, tr('Installed version') + ':'),
 					E('strong', {}, installed || tr('Not installed'))
 				]),
-				E('div', { 'style': BTNROW }, [ checkBtn, versionResult ])
+				E('div', { 'style': BTNROW }, [ checkBtn, versionResult, updateBtn ])
 			])
 		]);
 	},

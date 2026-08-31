@@ -1,7 +1,13 @@
 #!/bin/sh
 # Open-Box 升级脚本(POSIX sh,兼容 OpenWrt ash)。
 #
-# 用法: sh update.sh
+# 用法:
+#   sh update.sh            # 前台同步执行,直到升级完成或失败才返回
+#   sh update.sh --detach   # 派生一个后台子进程去真正执行升级,自己立即返回;
+#                            # 输出被子进程重定向到 ${TMPDIR:-/tmp}/openbox-update.log。
+#                            # 供 LuCI 兜底页一键升级调用——rpcd 的 fs.exec 有超时,
+#                            # 而升级要下载约 78MB,同步调用必然中途超时;详见下方
+#                            # 自迁移小节的说明。
 #
 # 沿用安装时选择的下载通道(记录在 data/channel)。下载(到 /tmp)与 SHA256 校验
 # 都在临时目录完成;只有校验通过后,才把包解到 $INSTALL_ROOT 所在文件系统的暂存
@@ -35,7 +41,65 @@ safe_rm_rf() {
   rm -rf -- "$target"
 }
 
-[ $# -eq 0 ] || die "update.sh 不接受参数(升级会沿用安装时选择的通道)。"
+# 本脚本随发布包铺到 /opt/open-box/update.sh(供 LuCI 兜底页一键升级调用)。升级
+# 要把 node/ panel/ bin/ openwrt/ 整棵目录树连同 meta.json 一起换掉,而本脚本自己
+# 现在也活在这棵目录树里——busybox ash 是边读边执行脚本文件的,自己在跑的时候被
+# 自己即将执行的替换逻辑动到,属于自找麻烦(与 uninstall.sh 同一个坑,解法照抄:
+# 发现自己在安装目录里,先复制到 /tmp 再从那里重新执行;原地那份和目录一起被替换
+# 掉即可)。
+#
+# 这里比 uninstall.sh 多一层:--detach 会再 fork 一次真正干活的子进程(见下方),
+# 所以"跑完删除 /tmp 副本"这件事不能在这里的 case 分支里一次性做完——挪到下面与
+# STAGE_DIR/TMP_DL 共用的 cleanup() trap 里,只在真正执行升级逻辑的那个进程(前台
+# 同步调用,或者 --detach 派生出的后台子进程)退出时才删除,派发进程本身提前退出、
+# 不动这个文件,避免删掉后台子进程还在读的脚本。
+if [ "${OPENBOX_UPDATE_RELOCATED:-0}" != "1" ]; then
+  case "$0" in
+    "$INSTALL_ROOT"/*)
+      _self_copy="/tmp/openbox-update.$$.sh"
+      cp -f -- "$0" "$_self_copy" || die "无法把升级脚本复制到 /tmp,请改用:wget -O- <脚本地址> | sh"
+      chmod +x "$_self_copy" 2>/dev/null || true
+      OPENBOX_UPDATE_RELOCATED=1
+      export OPENBOX_UPDATE_RELOCATED
+      exec sh "$_self_copy" "$@"
+      ;;
+  esac
+fi
+
+# ---------- 参数解析:仅接受可选的 --detach ----------
+DETACH=0
+if [ "${1:-}" = "--detach" ]; then
+  DETACH=1
+  shift
+fi
+[ $# -eq 0 ] || die "update.sh 只接受 --detach 参数(升级会沿用安装时选择的通道)。"
+
+# ---------- --detach:派生后台子进程,自己立即返回 ----------
+# LuCI 一键升级通过 rpcd 的 fs.exec 调用本脚本;fs.exec 是同步等待且有超时的,
+# 升级却要下载约 78MB,同步跑必然中途被杀。所以 --detach 分支只做一件事:再拉起
+# 一份自己(不带 --detach,避免无限递归),输出重定向到日志文件,然后立刻退出——
+# fs.exec 几乎瞬间就能返回,真正的下载/替换在后台独立进程里进行,LuCI 页面转而
+# 轮询 meta.json 的版本号与这份日志。
+#
+# 优先用 setsid 让后台进程彻底脱离当前会话/控制终端,防止 rpcd 那端后续的任何
+# 清理动作把它带着一起杀掉;并非所有固件都带 setsid,没有就退化成普通的后台子
+# shell(仍是独立进程,只是少一层"脱离会话"的保险——rpcd 的 fs.exec 通常不分配
+# 控制终端,这一档退化在实践中足够)。
+UPDATE_LOG="${TMPDIR:-/tmp}/openbox-update.log"
+if [ "$DETACH" = "1" ]; then
+  # 先在派发进程里同步截断日志,而不是指望子进程的重定向去截断:fs.exec 一返回,
+  # LuCI 就可能立刻开始轮询日志,子进程真正被调度、打开重定向目标之间存在极小的
+  # 时间窗口,截断动作若晚了,轮询有概率读到上一次运行残留的旧日志内容
+  # (可能误命中"错误:"或"无需升级"的匹配)。
+  : > "$UPDATE_LOG" 2>/dev/null || true
+  if command -v setsid >/dev/null 2>&1; then
+    setsid sh "$0" >"$UPDATE_LOG" 2>&1 </dev/null &
+  else
+    ( sh "$0" >"$UPDATE_LOG" 2>&1 </dev/null & )
+  fi
+  info "升级已在后台启动,日志:$UPDATE_LOG"
+  exit 0
+fi
 
 # ---------- 预检 ----------
 check_root() {
@@ -208,6 +272,12 @@ STAGE_DIR=""
 cleanup() {
   safe_rm_rf "$TMP_DL"
   [ -n "$STAGE_DIR" ] && safe_rm_rf "$STAGE_DIR"
+  # 只有真正执行升级逻辑的这个进程(前台同步调用,或者 --detach 派生出的后台子
+  # 进程)才清理 /tmp 里的自身副本——见文件头自迁移小节的说明,派发进程本身不
+  # 设这个 trap,不会跟这里冲突。
+  if [ "${OPENBOX_UPDATE_RELOCATED:-0}" = "1" ]; then
+    rm -f -- "$0"
+  fi
 }
 TMP_DL=$(mktemp -d "${TMPDIR:-/tmp}/open-box-update.XXXXXX") || die "无法创建临时目录。"
 trap cleanup EXIT INT TERM
@@ -288,6 +358,13 @@ mv "$STAGE_DIR/meta.json" "$INSTALL_ROOT/meta.json" || warn "meta.json 替换失
 if [ -e "$STAGE_DIR/uninstall.sh" ]; then
   mv "$STAGE_DIR/uninstall.sh" "$INSTALL_ROOT/uninstall.sh" && chmod +x "$INSTALL_ROOT/uninstall.sh" || \
     warn "uninstall.sh 替换失败,可继续使用旧版卸载脚本。"
+fi
+# update.sh 同理:自己也随产物分发,升级时一并刷新,免得下次升级还在跑旧逻辑。
+# 此刻实际在跑的是 /tmp 里的迁移副本(见文件头自迁移小节),这里动的是
+# $INSTALL_ROOT/update.sh——不是当前进程正在读的那个文件,替换安全。
+if [ -e "$STAGE_DIR/update.sh" ]; then
+  mv "$STAGE_DIR/update.sh" "$INSTALL_ROOT/update.sh" && chmod +x "$INSTALL_ROOT/update.sh" || \
+    warn "update.sh 替换失败,可继续使用旧版升级脚本。"
 fi
 
 # 发布产物在 CI runner 上打包,tar 里的属主 uid/gid 是 runner 的,不是这台路由器的
