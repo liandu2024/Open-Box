@@ -18,11 +18,12 @@ var I18N = {
 			'兜底控制。完整管理请到 Open-Box 面板。',
 		'sing-box core': 'sing-box 内核',
 		'Open-Box panel': 'Open-Box 面板',
+		'Stopping also restores plain internet access: the IPv6 leak block and the Open-Box DNS upstream are removed. The panel stays reachable.':
+			'停止即恢复正常上网:IPv6 泄漏拦截与 Open-Box 写入的 DNS 上游都会被移除。面板仍然可以访问。',
 		'Status': '状态',
 		'Autostart': '开机自启',
 		'running': '运行中',
 		'stopped': '已停止',
-		'unknown': '未知',
 		'on': '开',
 		'off': '关',
 		'Start': '启动',
@@ -30,11 +31,6 @@ var I18N = {
 		'Restart': '重启',
 		'Enable autostart': '开启自启',
 		'Disable autostart': '关闭自启',
-		'Emergency': '紧急',
-		'Stops the core and restores plain internet access (removes the IPv6 leak block and the dead DNS upstream). The panel stays reachable.':
-			'停止内核并恢复正常上网(移除 IPv6 泄漏拦截,摘掉已失效的 DNS 上游)。面板仍然可以访问。',
-		'Emergency stop / restore direct': '紧急停止 / 恢复直连',
-		'Panel': '面板',
 		'Version': '版本',
 		'Installed version': '当前版本',
 		'Check for updates': '检查更新',
@@ -66,11 +62,12 @@ var I18N = {
 			'兜底控制。完整管理請到 Open-Box 面板。',
 		'sing-box core': 'sing-box 核心',
 		'Open-Box panel': 'Open-Box 面板',
+		'Stopping also restores plain internet access: the IPv6 leak block and the Open-Box DNS upstream are removed. The panel stays reachable.':
+			'停止即恢復正常上網:IPv6 洩漏攔截與 Open-Box 寫入的 DNS 上游都會被移除。面板仍然可以存取。',
 		'Status': '狀態',
 		'Autostart': '開機自啟',
 		'running': '執行中',
 		'stopped': '已停止',
-		'unknown': '未知',
 		'on': '開',
 		'off': '關',
 		'Start': '啟動',
@@ -78,11 +75,6 @@ var I18N = {
 		'Restart': '重新啟動',
 		'Enable autostart': '開啟自啟',
 		'Disable autostart': '關閉自啟',
-		'Emergency': '緊急',
-		'Stops the core and restores plain internet access (removes the IPv6 leak block and the dead DNS upstream). The panel stays reachable.':
-			'停止核心並恢復正常上網(移除 IPv6 洩漏攔截,移除已失效的 DNS 上游)。面板仍然可以存取。',
-		'Emergency stop / restore direct': '緊急停止 / 恢復直連',
-		'Panel': '面板',
 		'Version': '版本',
 		'Installed version': '目前版本',
 		'Check for updates': '檢查更新',
@@ -289,7 +281,7 @@ return view.extend({
 		var panelUrl = 'http://' + window.location.hostname + ':2026';
 		var self = this;
 
-		function serviceCard(title, name, st) {
+		function serviceCard(title, name, st, extraRow, hint) {
 			return E('div', { 'class': 'cbi-section' }, [
 				E('h3', {}, tr(title)),
 				E('div', { 'style': ROW }, [
@@ -299,7 +291,7 @@ return view.extend({
 					E('span', { 'style': 'opacity:.5' }, '|'),
 					E('span', {}, tr('Autostart') + ':'),
 					E('strong', {}, st.enabled ? tr('on') : tr('off'))
-				]),
+				].concat(extraRow ? [ E('span', { 'style': 'opacity:.5' }, '|'), extraRow ] : [])),
 				E('div', { 'style': BTNROW }, [
 					E('button', { 'class': 'cbi-button cbi-button-apply',
 						'click': ui.createHandlerFn(self, function () { return act(name, 'start'); }) }, tr('Start')),
@@ -312,7 +304,7 @@ return view.extend({
 							return act(name, st.enabled ? 'disable' : 'enable');
 						}) }, st.enabled ? tr('Disable autostart') : tr('Enable autostart'))
 				])
-			]);
+			].concat(hint ? [ E('p', { 'style': 'opacity:.7;font-size:90%;margin:.2em 0 0 0' }, hint) ] : []));
 		}
 
 		function showUninstallDialog() {
@@ -375,25 +367,13 @@ return view.extend({
 			E('p', { 'class': 'cbi-section-descr' },
 				tr('Fallback controls. Full management lives in the Open-Box panel.')),
 
-			serviceCard('sing-box core', 'openbox', core),
-			serviceCard('Open-Box panel', 'openbox-panel', panel),
-
-			E('div', { 'class': 'cbi-section' }, [
-				E('h3', {}, tr('Emergency')),
-				E('p', {}, tr('Stops the core and restores plain internet access (removes the IPv6 leak block and the dead DNS upstream). The panel stays reachable.')),
-				E('div', { 'style': BTNROW }, [
-					E('button', { 'class': 'cbi-button cbi-button-negative',
-						'click': ui.createHandlerFn(self, function () { return act('openbox', 'stop'); }) },
-						tr('Emergency stop / restore direct'))
-				])
-			]),
-
-			E('div', { 'class': 'cbi-section' }, [
-				E('h3', {}, tr('Panel')),
-				E('div', { 'style': ROW }, [
-					E('a', { 'href': panelUrl, 'target': '_blank', 'rel': 'noreferrer' }, panelUrl)
-				])
-			]),
+			// 「停止」本身就会恢复正常上网(init 脚本的 stop_service 会摘掉 Open-Box 写入的
+			// dnsmasq 上游、删掉 IPv6 泄漏拦截),所以不再单列一个「紧急停止」按钮——那和
+			// 这里的「停止」是同一个动作。把这层保证写成说明挂在按钮下面即可。
+			serviceCard('sing-box core', 'openbox', core, null,
+				tr('Stopping also restores plain internet access: the IPv6 leak block and the Open-Box DNS upstream are removed. The panel stays reachable.')),
+			serviceCard('Open-Box panel', 'openbox-panel', panel,
+				E('a', { 'href': panelUrl, 'target': '_blank', 'rel': 'noreferrer' }, panelUrl)),
 
 			E('div', { 'class': 'cbi-section' }, [
 				E('h3', {}, tr('Uninstall')),
