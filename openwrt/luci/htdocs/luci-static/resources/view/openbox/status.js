@@ -70,6 +70,9 @@ var I18N = {
 		'Update failed to start': '启动更新失败/无响应',
 		'Update did not start. No response after 20 seconds — check the log below, or run the update over SSH instead: sh /opt/open-box/update.sh':
 			'更新未能启动,20 秒内没有任何响应——请查看下方日志,或改用 SSH 手动执行:sh /opt/open-box/update.sh',
+		'Update progress unavailable': '无法读取更新进度',
+		'Cannot read update progress for this session. The update may still be running in the background — this usually means the LuCI session needs to log in again for newly granted permissions to take effect. You can also check directly over SSH: cat /tmp/openbox-update.status':
+			'本次会话无法读取更新进度。更新可能仍在后台运行——这通常是因为需要重新登录 LuCI 让新授予的权限生效。也可以改用 SSH 直接查看:cat /tmp/openbox-update.status',
 		'Recent update log:': '最近的更新日志:',
 		'Update script not found. Run it manually over SSH.': '未找到升级脚本,请通过 SSH 手动执行。',
 		'Preparing...': '正在准备…',
@@ -160,6 +163,9 @@ var I18N = {
 		'Update failed to start': '啟動更新失敗/無回應',
 		'Update did not start. No response after 20 seconds — check the log below, or run the update over SSH instead: sh /opt/open-box/update.sh':
 			'更新未能啟動,20 秒內沒有任何回應——請查看下方日誌,或改用 SSH 手動執行:sh /opt/open-box/update.sh',
+		'Update progress unavailable': '無法讀取更新進度',
+		'Cannot read update progress for this session. The update may still be running in the background — this usually means the LuCI session needs to log in again for newly granted permissions to take effect. You can also check directly over SSH: cat /tmp/openbox-update.status':
+			'本次工作階段無法讀取更新進度。更新可能仍在背景執行——這通常是因為需要重新登入 LuCI 讓新授予的權限生效。也可以改用 SSH 直接檢視:cat /tmp/openbox-update.status',
 		'Recent update log:': '最近的更新日誌:',
 		'Update script not found. Run it manually over SSH.': '找不到升級腳本,請透過 SSH 手動執行。',
 		'Preparing...': '正在準備…',
@@ -391,14 +397,20 @@ var UPDATE_POLL_TIMEOUT_MS = 480000; // 8 分钟:78MB 下载 + 解包 + 换文�
 // 状态文件(见该脚本 --detach 小节的注释)。如果子进程随后因为任何原因没有真正
 // 跑起来或者刚起来就死掉(fork 失败、rpcd 提前收走了进程组、脚本路径/权限出了
 // 问题……),状态文件会永远停在 starting——只靠上面 8 分钟的总超时,技术上"最终
-// 会结束",但用户会盯着一句"正在准备…"干等 8 分钟,期间没有任何信息,这正是本次
-// 要修的问题(见 startUpdate() 里 handleStartingStuck() 的说明)。这里单独给
-// "starting 阶段本身"设一个短得多的兜底超时:轮询到 stage 仍是 starting(或状态
-// 文件还没读到——同样视为尚未真正起步)累计超过这个时长,就不再当成正常进度,
-// 转而直接展示一个"启动失败/无响应"的明确结论。stage 一旦推进到 starting 之外的
-// 任何阶段(包括 failed/cancelled 这些终态——它们有自己明确的结论,不需要这个
-// 兜底),这个计时器就会被重置——正常路径(几秒内就该进入 probing/downloading)
-// 不受任何影响。
+// 会结束",但用户会盯着一句"正在准备…"干等 8 分钟,期间没有任何信息。这里单独给
+// "starting 阶段本身"设一个短得多的兜底超时:轮询到状态文件确实读到了、但 stage
+// 仍是 starting(或空)累计超过这个时长,就不再当成正常进度,转而直接展示一个
+// "启动失败/无响应"的明确结论(见 startUpdate() 里 handleStartingStuck() 的说明)。
+// stage 一旦推进到 starting 之外的任何阶段(包括 failed/cancelled 这些终态——它们
+// 有自己明确的结论,不需要这个兜底),这个计时器就会被重置——正常路径(几秒内
+// 就该进入 probing/downloading)不受任何影响。
+//
+// 这个阈值同时也被复用为另一路独立计时的判定线:状态文件本身读取失败(不是
+// "读到了但 stage 还没推进",而是 fs.read 直接被拒绝/出错,典型情况见
+// readUpdateStatus() 顶部关于 LuCI 会话级 ACL 的说明)累计超过这个时长,走的是
+// handleStatusUnreadable() 那条完全不同的提示,不会被这里的"启动失败"结论
+// 冒名——两路计时各自独立、只是共用同一个"多久算异常"的时长判断,见 startUpdate()
+// 里 progressTimer 回调对 res.ok 的分支处理。
 var STARTING_STUCK_TIMEOUT_MS = 20000; // 20 秒
 
 // update.sh 每秒左右重写一次的进度/取消状态文件,纯 key=value 文本(不是
@@ -441,11 +453,25 @@ function parseUpdateStatus(txt) {
 	return out;
 }
 
+// 读取失败(rpcd ACL 拒绝、文件暂不存在等)与"读到了但内容为空/还没写出有效
+// stage"是两种含义完全不同的情况,不能再像旧版 .catch(() => null) 那样把两者
+// 压成同一个 null——真实故障案例证明了这一点:LuCI 的会话在登录时就把该会话
+// 能读写哪些 ubus/文件对象一次性算好并缓存下来,之后新增的 ACL 授权不会让已经
+// 登录的旧会话跟着变宽(哪怕重启 rpcd 也不会,重启只影响此后新建立的会话)。
+// /tmp/openbox-update.status 的读权限是后来才加进 ACL 的,一个跨越了这次权限
+// 变更的旧会话读它会一直被拒绝,而读 meta.json(更早就在 ACL 里)照样成功——
+// 界面上会出现"版本读得到、状态读不到"这种局部失灵,旧版把这种"读不到"和
+// "文件确实还没写出内容"混成同一个 null,调用方没法区分,只能眼睁睁看着进度
+// 卡在初始文案。返回值统一三态:{ ok:true, status } 读到了(status.stage 可能
+// 是空字符串,代表"读到了但还没来得及写出有效阶段");{ ok:false, error } 读取
+// 本身失败,error 原样带出,供调用方在需要时展示细节或据此单独计时(参见
+// startUpdate() 里 handleStatusUnreadable() 的用法,与 handleStartingStuck()
+// 是两条不冒充彼此结论的独立路径)。
 function readUpdateStatus() {
 	return fs.read(UPDATE_STATUS_PATH).then(function (txt) {
-		return parseUpdateStatus(txt);
-	}).catch(function () {
-		return null;
+		return { ok: true, status: parseUpdateStatus(txt), error: null };
+	}).catch(function (err) {
+		return { ok: false, status: null, error: err };
 	});
 }
 
@@ -540,11 +566,15 @@ function runUpdate(channel) {
 	});
 }
 
+// 同 readUpdateStatus():区分"读取失败"与"读到了",理由同上。始终附带 text
+// 字段(失败时为空字符串),方便大多数只关心"能展示什么"的调用方直接取用,
+// 不必先判断 ok 再决定怎么退化——和旧版把两者都压成一个空字符串相比,唯一的
+// 差别只是把 error 也带出来给需要区分的调用方(目前只有极少数调用点关心)。
 function readUpdateLogTail() {
 	return fs.read(UPDATE_LOG_PATH).then(function (txt) {
-		return String(txt || '').split('\n').slice(-12).join('\n').replace(/^\s+|\s+$/g, '');
-	}).catch(function () {
-		return '';
+		return { ok: true, text: String(txt || '').split('\n').slice(-12).join('\n').replace(/^\s+|\s+$/g, ''), error: null };
+	}).catch(function (err) {
+		return { ok: false, text: '', error: err };
 	});
 }
 
@@ -603,7 +633,13 @@ function pollForUpdateCompletion(oldVersion, onTick) {
 
 		function tick() {
 			Promise.all([ readInstalledVersion(), readUpdateLogTail(), readUpdateStatus() ]).then(function (res) {
-				var version = res[0], logTail = res[1], status = res[2];
+				// 版本号判定(下面这个 if)排在最前面、且完全不看 statusRes——这就是
+				// "更新到底成功没有"这个结论对状态文件的读取失败免疫的落地点:哪怕
+				// readUpdateStatus() 这次(乃至这次更新期间自始至终)都是 ok:false,
+				// 版本号一旦真的变了,这里照样能 resolve 出成功,不依赖状态文件半点
+				// 信息。状态文件只在下面 statusRes.ok 为真时,负责一件事:提前给出
+				// "已取消"这个终态,免得白等到超时——不参与成功/失败本身的判定。
+				var version = res[0], logTail = res[1].text, statusRes = res[2];
 				if (onTick) onTick(logTail);
 				if (version && version !== oldVersion) {
 					resolve({ ok: true, noop: false, version: version, logTail: logTail });
@@ -622,8 +658,10 @@ function pollForUpdateCompletion(oldVersion, onTick) {
 					return;
 				}
 				// 状态文件先于日志正则给出"已取消"这个明确结论——用户点了取消按钮,
-				// 不该被当成超时或失败处理,单独给一个结局分支。
-				if (status && status.stage === 'cancelled') {
+				// 不该被当成超时或失败处理,单独给一个结局分支。statusRes.ok 为假(这次
+				// 读取失败)时天然跳过这个分支、落到下面的 scheduleNext 继续轮询,不会
+				// 被误判成"没有取消"——读取失败不代表任何结论,只是这次没读到。
+				if (statusRes.ok && statusRes.status && statusRes.status.stage === 'cancelled') {
 					resolve({ ok: false, cancelled: true, logTail: logTail });
 					return;
 				}
@@ -953,11 +991,36 @@ return view.extend({
 				finished = true;
 				stopProgressPolling();
 				ui.hideModal();
-				readUpdateLogTail().then(function (logTail) {
+				readUpdateLogTail().then(function (logRes) {
 					showUpdateFailure(
 						tr('Update did not start. No response after 20 seconds — check the log below, or run the update over SSH instead: sh /opt/open-box/update.sh'),
-						logTail,
+						logRes.text,
 						tr('Update failed to start')
+					);
+				});
+			}
+
+			// 状态文件在这次会话里持续读取失败(见 readUpdateStatus() 顶部关于 LuCI
+			// 会话级 ACL 的说明),累计到和"启动卡死"同样的 20 秒阈值后触发——但这和
+			// handleStartingStuck() 是两个含义完全不同的结论,不能共用那个"启动失败"
+			// 弹窗:那样会把"这次会话看不到状态文件"说成"更新根本没跑起来",而已知
+			// 的真实故障恰好是反例——状态文件读取失败,但更新其实一路跑完了。这里换
+			// 一个措辞诚实的独立提示(读不到 + 最可能的原因 + SSH 退路),并且刻意不把
+			// finished 置真、也不调用 ui.hideModal() 之外的任何东西去打断
+			// pollForUpdateCompletion():那条轮询只认版本号和日志正则(见 tick()
+			// 里的说明),完全不摸这个状态文件,后面一旦真的检测到版本号变化或日志
+			// 里的终态,下面 .then(result)/.catch(err) 两个收尾分支依然会把真正的
+			// 结论展示出来,自然替换掉这条"暂时读不到"的提示——两条路径各自只负责
+			// 自己那部分结论,不会互相打架、也不会有一个提前把另一个的结论吞掉。
+			function handleStatusUnreadable() {
+				if (finished) return;
+				stopProgressPolling();
+				readUpdateLogTail().then(function (logRes) {
+					if (finished) return;
+					showUpdateFailure(
+						tr('Cannot read update progress for this session. The update may still be running in the background — this usually means the LuCI session needs to log in again for newly granted permissions to take effect. You can also check directly over SSH: cat /tmp/openbox-update.status'),
+						logRes.text,
+						tr('Update progress unavailable')
 					);
 				});
 			}
@@ -965,18 +1028,41 @@ return view.extend({
 			return runUpdate(channel).then(function () {
 				progressBody.textContent = tr('Update started. This may take a few minutes (about 80MB to download).');
 				var startingElapsedMs = 0;
-				readUpdateStatus().then(applyStatus);
+				var statusReadFailMs = 0;
+				var statusUnreadableShown = false;
+
+				readUpdateStatus().then(function (res) { if (res.ok) applyStatus(res.status); });
+
 				progressTimer = window.setInterval(function () {
-					readUpdateStatus().then(function (status) {
-						applyStatus(status);
-						if (finished) return;
-						var stillStarting = !status || !status.stage || status.stage === 'starting';
-						startingElapsedMs = stillStarting ? startingElapsedMs + UPDATE_STATUS_POLL_INTERVAL_MS : 0;
-						if (isUpdateStartStuck(status, startingElapsedMs)) {
-							handleStartingStuck();
+					readUpdateStatus().then(function (res) {
+						if (finished || statusUnreadableShown) return;
+						if (res.ok) {
+							// 这次读到了(不管读到的 stage 是什么):说明状态文件对这次会话
+							// 是可读的,之前累积的"读取失败"计时不再成立,归零——只有连续
+							// 的读取失败才应该攒够阈值触发 handleStatusUnreadable()。
+							statusReadFailMs = 0;
+							applyStatus(res.status);
+							var stillStarting = !res.status.stage || res.status.stage === 'starting';
+							startingElapsedMs = stillStarting ? startingElapsedMs + UPDATE_STATUS_POLL_INTERVAL_MS : 0;
+							if (isUpdateStartStuck(res.status, startingElapsedMs)) {
+								handleStartingStuck();
+							}
+							return;
+						}
+						// 读取本身失败,和"读到了但还没推进"是两回事——不能计入
+						// startingElapsedMs,那样会把"这次会话读不到文件"误判成"更新真的
+						// 没启动",走 handleStartingStuck() 给出一个错误的"启动失败"结论。
+						// 这里单独累计"读取失败"这另一路时长,过阈值后转去
+						// handleStatusUnreadable() 展示一个措辞不同、如实反映"读不到"而
+						// 不是"失败了"的提示。
+						statusReadFailMs += UPDATE_STATUS_POLL_INTERVAL_MS;
+						if (statusReadFailMs >= STARTING_STUCK_TIMEOUT_MS) {
+							statusUnreadableShown = true;
+							handleStatusUnreadable();
 						}
 					});
 				}, UPDATE_STATUS_POLL_INTERVAL_MS);
+
 				return pollForUpdateCompletion(oldVersion, function (logTail) {
 					if (logTail) {
 						logBox.style.display = '';
