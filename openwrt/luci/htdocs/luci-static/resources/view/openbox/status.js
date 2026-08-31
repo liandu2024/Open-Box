@@ -18,6 +18,7 @@ var I18N = {
 			'兜底控制。完整管理请到 Open-Box 面板。',
 		'sing-box core': 'sing-box 内核',
 		'Open-Box panel': 'Open-Box 面板',
+		'Open-Box upgrade': 'Open-Box 升级',
 		'Stopping also turns off autostart (so it stays stopped after a reboot) and restores plain internet access: the IPv6 leak block and the Open-Box DNS upstream are removed. The panel stays reachable.':
 			'停止会同时关闭开机自启(重启后不会自己跑起来),并恢复正常上网:IPv6 泄漏拦截与 Open-Box 写入的 DNS 上游都会被移除。面板仍然可以访问。',
 		'Status': '状态',
@@ -32,8 +33,8 @@ var I18N = {
 		'Enable autostart': '开启自启',
 		'Disable autostart': '关闭自启',
 		'Kernel version': '内核版本',
-		'The kernel version is pinned to this Open-Box release and upgrades together with it. To upgrade, use "Update now" in the Open-Box panel section below.':
-			'内核版本随本次 Open-Box 发行版本一并固定,升级时随其一起更新。如需升级,请使用下方"Open-Box 面板"区块里的"立即更新"。',
+		'The kernel version is pinned to this Open-Box release and upgrades together with it. To upgrade, use "Update now" in the Open-Box upgrade section below.':
+			'内核版本随本次 Open-Box 发行版本一并固定,升级时随其一起更新。如需升级,请使用下方"Open-Box 升级"区块里的"立即更新"。',
 		'Installed version': '当前版本',
 		'Check for updates': '检查更新',
 		'Checking...': '检查中…',
@@ -51,7 +52,7 @@ var I18N = {
 		'GitHub direct': 'GitHub 直连',
 		'Channel': '渠道',
 		'Test all channels': '一键检测',
-		'Test this channel': '检测此渠道',
+		'Test': '检测',
 		'Testing...': '检测中…',
 		'Not tested yet': '未检测',
 		'Available %sms': '可用 %sms',
@@ -105,6 +106,7 @@ var I18N = {
 			'兜底控制。完整管理請到 Open-Box 面板。',
 		'sing-box core': 'sing-box 核心',
 		'Open-Box panel': 'Open-Box 面板',
+		'Open-Box upgrade': 'Open-Box 升級',
 		'Stopping also turns off autostart (so it stays stopped after a reboot) and restores plain internet access: the IPv6 leak block and the Open-Box DNS upstream are removed. The panel stays reachable.':
 			'停止會同時關閉開機自啟(重新啟動後不會自己執行),並恢復正常上網:IPv6 洩漏攔截與 Open-Box 寫入的 DNS 上游都會被移除。面板仍然可以存取。',
 		'Status': '狀態',
@@ -119,8 +121,8 @@ var I18N = {
 		'Enable autostart': '開啟自啟',
 		'Disable autostart': '關閉自啟',
 		'Kernel version': '核心版本',
-		'The kernel version is pinned to this Open-Box release and upgrades together with it. To upgrade, use "Update now" in the Open-Box panel section below.':
-			'核心版本隨本次 Open-Box 發行版本一併固定,升級時隨其一起更新。如需升級,請使用下方「Open-Box 面板」區塊裡的「立即更新」。',
+		'The kernel version is pinned to this Open-Box release and upgrades together with it. To upgrade, use "Update now" in the Open-Box upgrade section below.':
+			'核心版本隨本次 Open-Box 發行版本一併固定,升級時隨其一起更新。如需升級,請使用下方「Open-Box 升級」區塊裡的「立即更新」。',
 		'Installed version': '目前版本',
 		'Check for updates': '檢查更新',
 		'Checking...': '檢查中…',
@@ -138,7 +140,7 @@ var I18N = {
 		'GitHub direct': 'GitHub 直連',
 		'Channel': '渠道',
 		'Test all channels': '一鍵檢測',
-		'Test this channel': '檢測此渠道',
+		'Test': '檢測',
 		'Testing...': '檢測中…',
 		'Not tested yet': '未檢測',
 		'Available %sms': '可用 %sms',
@@ -527,7 +529,8 @@ function readUpdateLogTail() {
 // 一次只探测一个渠道:rpcd 的 fs.exec 本身有超时,4 个渠道放进一次 exec 里一起测
 // 有拖到超时的风险。所以"一键检测"改在页面这一层循环 4 个渠道、依次各发起一次
 // exec,每测完一个就更新那一行的状态(见 render() 里的 probeOneChannel())——这样
-// "一键检测"和"检测此渠道"两个按钮天然共用同一条代码路径,不用分别写两套逻辑。
+// "一键检测"按钮和每个渠道行自己的「检测」按钮天然共用同一条代码路径,不用分别
+// 写两套逻辑。
 //
 // update.sh 的 --probe 无论探测成功还是失败都固定以 exit 0 退出,靠 stdout 第一个
 // 词(ok / fail)区分,这里照着解析;exec 本身失败(脚本不存在、ACL 拒绝等)才走
@@ -605,10 +608,21 @@ function pollForUpdateCompletion(oldVersion, onTick) {
 //
 // 不用 cbi-page-actions:那是「页面底部」的操作栏(右对齐 + 特定外边距),
 // 一页只该出现一次。放进每张卡片会让按钮脱离卡片右飘、压到下一张卡片上。
-// 这里用普通 flex 行,并写内联样式以免依赖具体主题的 CSS。
+// 这里用普通 flex 行/CSS 网格,并写内联样式以免依赖具体主题的 CSS——LuCI 主题
+// 众多、还会在手机上被访问,内联样式是唯一能保证在任意主题、任意屏宽下都长一个
+// 样子的办法。
 // ---------------------------------------------------------------------------
 var ROW = 'display:flex;flex-wrap:wrap;align-items:center;gap:.5em;margin:.4em 0';
 var BTNROW = 'display:flex;flex-wrap:wrap;gap:.5em;margin:.8em 0 .2em 0';
+// 四张功能块拼成 2×2 网格,等宽两列;auto-fit + minmax(340px,1fr) 让窄屏(手机上的
+// LuCI)在放不下两个 340px 格子时自动收缩成单列纵向排列,不需要另写媒体查询。
+var GRID = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:1em';
+// 「Open-Box 升级」块里带边框的渠道列表:每行是"渠道名 + 状态"配一个独立的
+// 「检测」按钮,边框把这 4 行在视觉上圈成一组,和上面的渠道选择行、下面的
+// 检查更新/立即更新控制区分开。
+var CHANNEL_LIST = 'border:1px solid rgba(127,127,127,.2);border-radius:4px;padding:0 .6em;margin:.3em 0;font-size:92%';
+var CHANNEL_ROW = 'display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.5em;' +
+	'padding:.4em 0;border-top:1px solid rgba(127,127,127,.14)';
 
 function badge(text, color) {
 	return E('strong', { 'style': 'color:' + color }, text);
@@ -671,10 +685,11 @@ return view.extend({
 			return channelLabel(value) + ': ' + channelStatusSuffix(value);
 		}
 
-		// 每张卡片是一个自成一体的功能块:状态/控制在上,该组件的版本与升级区在下,
-		// 都装进同一个 cbi-section 容器里(extraSections,可选)——而不是像旧版那样把
-		// 「版本」拆成页面末尾单独一张卡片,那样读者要在两张卡片之间来回对应"这个
-		// 版本号说的是哪个组件"。
+		// 每张卡片是一个自成一体的功能块:状态/控制在上,该组件自己的版本信息(如有)
+		// 在下,都装进同一个 cbi-section 容器里(extraSections,可选)——而不是像旧版
+		// 那样把「版本」拆成页面末尾单独一张卡片,那样读者要在两张卡片之间来回对应
+		// "这个版本号说的是哪个组件"。渠道选择/探测/升级操作篇幅较大、也不是"某个
+		// 组件自己的版本信息",所以单独成一张「Open-Box 升级」卡片,不塞进这里。
 		function serviceCard(title, name, st, extraRow, hint, stopActions, extraSections) {
 			return E('div', { 'class': 'cbi-section' }, [
 				E('h3', {}, tr(title)),
@@ -895,7 +910,7 @@ return view.extend({
 			});
 		}
 
-		// 渠道已经在版本卡片的下拉框里显式选好了(见下方 CHANNELS/selectedChannel),
+		// 渠道已经在「Open-Box 升级」卡片的下拉框里显式选好了(见下方 CHANNELS/selectedChannel),
 		// 这里不再像旧版那样在确认弹窗里二次选择路线,只是把选中渠道当前的探测状态
 		// 复述一遍——不然用户在确认这一步完全看不到"这个渠道到底测没测过、测出来
 		// 怎么样",容易在一个刚探测失败的渠道上误点确认,白白等一次必然失败的
@@ -945,9 +960,13 @@ return view.extend({
 				});
 			}) }, tr('Check for updates'));
 
-		// 一键检测/单渠道检测的 DOM 挂接:每个渠道一行,exec 逐个发起、逐个更新
-		// (见 probeChannel() 定义处的注释——不是一次 exec 探测全部)。
+		// 一键检测 / 每行「检测」按钮共用的 DOM 挂接:每个渠道一行,exec 逐个发起、
+		// 逐个更新(见 probeChannel() 定义处的注释——不是一次 exec 探测全部)。
 		var channelRowEls = {};
+		// 探测期间要禁用的按钮集合:一键检测按钮本身,加上 4 个渠道各自的「检测」
+		// 按钮——不管是"一键检测"链式跑完 4 个,还是单独点某一行,都不希望这期间
+		// 还能再点出一次重叠的探测请求。
+		var channelBtnEls = {};
 
 		function updateChannelRow(value) {
 			var el = channelRowEls[value];
@@ -974,18 +993,22 @@ return view.extend({
 			});
 		}
 
+		function setProbingDisabled(disabled) {
+			probeAllBtn.disabled = disabled;
+			CHANNELS.forEach(function (c) {
+				var btn = channelBtnEls[c.value];
+				if (btn) btn.disabled = disabled;
+			});
+		}
+
 		var probeAllBtn = E('button', { 'class': 'cbi-button cbi-button-neutral',
 			'click': ui.createHandlerFn(self, function () {
-				probeAllBtn.disabled = true;
-				probeOneBtn.disabled = true;
+				setProbingDisabled(true);
 				var chain = Promise.resolve();
 				CHANNELS.forEach(function (c) {
 					chain = chain.then(function () { return probeOneChannel(c.value); });
 				});
-				return chain.then(function () {
-					probeAllBtn.disabled = false;
-					probeOneBtn.disabled = false;
-				});
+				return chain.then(function () { setProbingDisabled(false); });
 			}) }, tr('Test all channels'));
 
 		var selectedChannel = CHANNELS[0].value;
@@ -997,21 +1020,25 @@ return view.extend({
 			updateSelectedChannelLine();
 		});
 
-		var probeOneBtn = E('button', { 'class': 'cbi-button cbi-button-neutral',
-			'click': ui.createHandlerFn(self, function () {
-				probeAllBtn.disabled = true;
-				probeOneBtn.disabled = true;
-				return probeOneChannel(channelSelect.value).then(function () {
-					probeAllBtn.disabled = false;
-					probeOneBtn.disabled = false;
-				});
-			}) }, tr('Test this channel'));
-
-		var channelStatusList = E('div', { 'style': 'margin:.3em 0;font-size:92%' },
-			CHANNELS.map(function (c) {
-				var el = E('div', {}, channelStatusText(c.value));
-				channelRowEls[c.value] = el;
-				return el;
+		// 带边框的渠道列表(CHANNEL_LIST/CHANNEL_ROW,见其定义处的注释):每行是
+		// "渠道名: 状态"文本配一个独立的「检测」按钮——这个按钮测的是这一行自己的
+		// 渠道,不是上面下拉框里当前选中的那个(下拉框选的是"立即更新"要用哪个渠道,
+		// 两者不必相同,用户可能想先把 4 个渠道都探一遍再决定选哪个)。一键检测和
+		// 这里的按钮只是触发方式不同,底层都是同一个 probeOneChannel(),结果都写回
+		// 同一行,行为完全一致。
+		var channelStatusList = E('div', { 'style': CHANNEL_LIST },
+			CHANNELS.map(function (c, idx) {
+				var textEl = E('span', {}, channelStatusText(c.value));
+				channelRowEls[c.value] = textEl;
+				var btn = E('button', { 'class': 'cbi-button cbi-button-neutral',
+					'click': ui.createHandlerFn(self, function () {
+						setProbingDisabled(true);
+						return probeOneChannel(c.value).then(function () { setProbingDisabled(false); });
+					}) }, tr('Test'));
+				channelBtnEls[c.value] = btn;
+				return E('div', {
+					'style': CHANNEL_ROW + (idx === 0 ? ';border-top:none' : '')
+				}, [ textEl, btn ]);
 			}));
 
 		// 紧挨着「立即更新」摆一份选中渠道的实时状态,免得有人在某个渠道刚探测出
@@ -1024,62 +1051,75 @@ return view.extend({
 			E('p', { 'class': 'cbi-section-descr' },
 				tr('Fallback controls. Full management lives in the Open-Box panel.')),
 
-			// 「停止」本身就会恢复正常上网(init 脚本的 stop_service 会摘掉 Open-Box 写入的
-			// dnsmasq 上游、删掉 IPv6 泄漏拦截),所以不再单列一个「紧急停止」按钮——那和
-			// 这里的「停止」是同一个动作。把这层保证写成说明挂在按钮下面即可。
-			// 内核的「停止」同时关闭开机自启:部署成功会打开自启,若停止不关掉它,坏配置
-			// 把网搞断时停了内核、一重启又被拉起来,网再次断掉——那样的「停止」在真正
-			// 需要它的场景里是无效的。面板服务不做这件事:面板是唯一的管理入口,它应该
-			// 在重启后自己回来。
-			//
-			// 「sing-box 内核」这张卡片是一个自成一体的功能块:状态/控制在上,内核
-			// 版本 + 升级说明在下——内核版本号来自 meta.json 的 singboxVersion(构建期
-			// 钦定值,见 readInstalledSingboxVersion() 的注释),并且这里刻意不放一个
-			// 独立的"升级内核"按钮:内核版本与 Open-Box 发行版本是绑定发布的,配置是
-			// 照着这个确切内核版本生成的,独立升级内核有打破这层对应关系、生成的配置被
-			// 新内核拒绝启动的风险。升级入口统一指向下面「Open-Box 面板」卡片里的
-			// 「立即更新」——内核随整个发行版本一起换。
-			serviceCard('sing-box core', 'openbox', core, null,
-				tr('Stopping also turns off autostart (so it stays stopped after a reboot) and restores plain internet access: the IPv6 leak block and the Open-Box DNS upstream are removed. The panel stays reachable.'),
-				[ 'stop', 'disable' ],
-				[
-					E('div', { 'style': ROW + ';margin-top:.8em;padding-top:.6em;border-top:1px solid rgba(127,127,127,.2)' }, [
-						E('span', {}, tr('Kernel version') + ':'),
-						E('strong', {}, singboxVersion || tr('Not installed'))
+			// 2×2 网格,四张自成一体的功能块(见 GRID 定义处的注释):sing-box 内核、
+			// Open-Box 面板、Open-Box 升级、卸载——按负责人手绘草图从左到右、从上到下
+			// 排列,DOM 顺序即视觉顺序(auto-fit 网格按源码顺序逐行填格,不需要额外的
+			// grid-area/order 声明)。
+			E('div', { 'style': GRID }, [
+				// 「停止」本身就会恢复正常上网(init 脚本的 stop_service 会摘掉 Open-Box 写入的
+				// dnsmasq 上游、删掉 IPv6 泄漏拦截),所以不再单列一个「紧急停止」按钮——那和
+				// 这里的「停止」是同一个动作。把这层保证写成说明挂在按钮下面即可。
+				// 内核的「停止」同时关闭开机自启:部署成功会打开自启,若停止不关掉它,坏配置
+				// 把网搞断时停了内核、一重启又被拉起来,网再次断掉——那样的「停止」在真正
+				// 需要它的场景里是无效的。面板服务不做这件事:面板是唯一的管理入口,它应该
+				// 在重启后自己回来。
+				//
+				// 「sing-box 内核」这张卡片是一个自成一体的功能块:状态/控制在上,内核
+				// 版本 + 升级说明在下——内核版本号来自 meta.json 的 singboxVersion(构建期
+				// 钦定值,见 readInstalledSingboxVersion() 的注释),并且这里刻意不放一个
+				// 独立的"升级内核"按钮:内核版本与 Open-Box 发行版本是绑定发布的,配置是
+				// 照着这个确切内核版本生成的,独立升级内核有打破这层对应关系、生成的配置被
+				// 新内核拒绝启动的风险。升级入口统一指向下面「Open-Box 升级」卡片里的
+				// 「立即更新」——内核随整个发行版本一起换。
+				serviceCard('sing-box core', 'openbox', core, null,
+					tr('Stopping also turns off autostart (so it stays stopped after a reboot) and restores plain internet access: the IPv6 leak block and the Open-Box DNS upstream are removed. The panel stays reachable.'),
+					[ 'stop', 'disable' ],
+					[
+						E('div', { 'style': ROW + ';margin-top:.8em;padding-top:.6em;border-top:1px solid rgba(127,127,127,.2)' }, [
+							E('span', {}, tr('Kernel version') + ':'),
+							E('strong', {}, singboxVersion || tr('Not installed'))
+						]),
+						E('p', { 'style': 'opacity:.7;font-size:90%;margin:.2em 0 0 0' },
+							tr('The kernel version is pinned to this Open-Box release and upgrades together with it. To upgrade, use "Update now" in the Open-Box upgrade section below.'))
 					]),
-					E('p', { 'style': 'opacity:.7;font-size:90%;margin:.2em 0 0 0' },
-						tr('The kernel version is pinned to this Open-Box release and upgrades together with it. To upgrade, use "Update now" in the Open-Box panel section below.'))
-				]),
 
-			// 「Open-Box 面板」卡片同理是一个自成一体的功能块:状态/控制 + 面板地址在
-			// 上,该发行版本自身的版本号、渠道选择、探测与升级操作在下——这些原先是页面
-			// 末尾一张独立的「版本」卡片,现在合并进来,因为它们说的正是这张卡片对应的
-			// 组件(Open-Box 整个发行版本,内核也随它一起走,见上面的说明)。
-			serviceCard('Open-Box panel', 'openbox-panel', panel,
-				E('a', { 'href': panelUrl, 'target': '_blank', 'rel': 'noreferrer' }, panelUrl),
-				null, null,
-				[
-					E('div', { 'style': ROW + ';margin-top:.8em;padding-top:.6em;border-top:1px solid rgba(127,127,127,.2)' }, [
-						E('span', {}, tr('Installed version') + ':'),
-						E('strong', {}, installed || tr('Not installed'))
+				// 「Open-Box 面板」卡片同理是一个自成一体的功能块:状态/控制 + 面板地址在
+				// 上,该发行版本自身的版本号在下——这里只放版本号本身;渠道选择、探测与
+				// 升级操作篇幅大、也不是"这张卡片自己的版本信息",单独成一张紧跟在后面的
+				// 「Open-Box 升级」卡片(见下方),不再像旧版那样挤进面板卡片里。
+				serviceCard('Open-Box panel', 'openbox-panel', panel,
+					E('a', { 'href': panelUrl, 'target': '_blank', 'rel': 'noreferrer' }, panelUrl),
+					null, null,
+					[
+						E('div', { 'style': ROW + ';margin-top:.8em;padding-top:.6em;border-top:1px solid rgba(127,127,127,.2)' }, [
+							E('span', {}, tr('Installed version') + ':'),
+							E('strong', {}, installed || tr('Not installed'))
+						])
 					]),
-					E('div', { 'style': BTNROW }, [ probeAllBtn ]),
+
+				// 「Open-Box 升级」独立成一张卡片(负责人手绘草图的要求):最上面一行是
+				// 渠道下拉框 + 一键检测,中间一个带边框的列表把 4 个渠道各自的探测状态 +
+				// 单独的「检测」按钮圈在一起,最下面是检查更新/立即更新那组控制——三段
+				// 自上而下正好对应草图里同一张卡片的三个区域。
+				E('div', { 'class': 'cbi-section' }, [
+					E('h3', {}, tr('Open-Box upgrade')),
 					E('div', { 'style': ROW }, [
 						E('span', {}, tr('Channel') + ':'),
 						channelSelect,
-						probeOneBtn
+						probeAllBtn
 					]),
 					channelStatusList,
 					E('div', { 'style': BTNROW }, [ checkBtn, versionResult, updateBtn, selectedChannelLine ])
 				]),
 
-			E('div', { 'class': 'cbi-section' }, [
-				E('h3', {}, tr('Uninstall')),
-				E('p', {}, tr('Remove Open-Box from this router. Services are stopped, DNS and firewall changes are reverted, and the LuCI page disappears after the next refresh.')),
-				E('div', { 'style': BTNROW }, [
-					E('button', { 'class': 'cbi-button cbi-button-negative',
-						'click': ui.createHandlerFn(self, function () { return showUninstallDialog(); }) },
-						tr('Uninstall Open-Box'))
+				E('div', { 'class': 'cbi-section' }, [
+					E('h3', {}, tr('Uninstall')),
+					E('p', {}, tr('Remove Open-Box from this router. Services are stopped, DNS and firewall changes are reverted, and the LuCI page disappears after the next refresh.')),
+					E('div', { 'style': BTNROW }, [
+						E('button', { 'class': 'cbi-button cbi-button-negative',
+							'click': ui.createHandlerFn(self, function () { return showUninstallDialog(); }) },
+							tr('Uninstall Open-Box'))
+					])
 				])
 			])
 		]);
