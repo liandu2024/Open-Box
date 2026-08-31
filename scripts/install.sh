@@ -312,7 +312,9 @@ fi
 /etc/init.d/openbox-panel start || warn "面板启动命令返回了非零状态,请稍后访问面板地址确认;如不可用可到 LuCI → 服务 → Open-Box 中重试。"
 
 # ---------- 完成 ----------
-LAN_IP=$(uci -q get network.lan.ipaddr 2>/dev/null || true)
+# uci 里的 ipaddr 可能写成 CIDR(如 10.0.0.1/24),也可能是多值 list,
+# 这里统一取第一个地址并剥掉掩码后缀,否则拼出来的面板地址是坏的。
+LAN_IP=$(uci -q get network.lan.ipaddr 2>/dev/null | tr " " "\n" | head -n 1 | cut -d/ -f1)
 if [ -z "$LAN_IP" ] && command -v ip >/dev/null 2>&1; then
   LAN_IP=$(ip -4 -o addr show br-lan 2>/dev/null | awk '{ print $4 }' | cut -d/ -f1 | head -n 1)
 fi
