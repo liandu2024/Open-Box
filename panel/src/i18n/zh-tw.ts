@@ -496,6 +496,7 @@ const zhTW: LANG_MESSAGE = {
   kernelHideDetail: '\u96b1\u85cf\u8a73\u60c5',
   kernelActionStart: '\u555f\u52d5',
   kernelActionStop: '\u505c\u6b62',
+  kernelActionStopHint: '會同時關閉開機自啟,重新啟動後核心不會自己執行。',
   kernelActionRestart: '\u91cd\u555f',
   kernelActionEnable: '\u958b\u555f\u81ea\u52d5\u555f\u52d5',
   kernelActionDisable: '\u95dc\u9589\u81ea\u52d5\u555f\u52d5',

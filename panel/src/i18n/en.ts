@@ -506,6 +506,7 @@ const en = {
   kernelHideDetail: 'Hide detail',
   kernelActionStart: 'Start',
   kernelActionStop: 'Stop',
+  kernelActionStopHint: 'Also turns off autostart, so the core stays stopped after a reboot.',
   kernelActionRestart: 'Restart',
   kernelActionEnable: 'Enable autostart',
   kernelActionDisable: 'Disable autostart',

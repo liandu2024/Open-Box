@@ -18,8 +18,8 @@ var I18N = {
 			'兜底控制。完整管理请到 Open-Box 面板。',
 		'sing-box core': 'sing-box 内核',
 		'Open-Box panel': 'Open-Box 面板',
-		'Stopping also restores plain internet access: the IPv6 leak block and the Open-Box DNS upstream are removed. The panel stays reachable.':
-			'停止即恢复正常上网:IPv6 泄漏拦截与 Open-Box 写入的 DNS 上游都会被移除。面板仍然可以访问。',
+		'Stopping also turns off autostart (so it stays stopped after a reboot) and restores plain internet access: the IPv6 leak block and the Open-Box DNS upstream are removed. The panel stays reachable.':
+			'停止会同时关闭开机自启(重启后不会自己跑起来),并恢复正常上网:IPv6 泄漏拦截与 Open-Box 写入的 DNS 上游都会被移除。面板仍然可以访问。',
 		'Status': '状态',
 		'Autostart': '开机自启',
 		'running': '运行中',
@@ -62,8 +62,8 @@ var I18N = {
 			'兜底控制。完整管理請到 Open-Box 面板。',
 		'sing-box core': 'sing-box 核心',
 		'Open-Box panel': 'Open-Box 面板',
-		'Stopping also restores plain internet access: the IPv6 leak block and the Open-Box DNS upstream are removed. The panel stays reachable.':
-			'停止即恢復正常上網:IPv6 洩漏攔截與 Open-Box 寫入的 DNS 上游都會被移除。面板仍然可以存取。',
+		'Stopping also turns off autostart (so it stays stopped after a reboot) and restores plain internet access: the IPv6 leak block and the Open-Box DNS upstream are removed. The panel stays reachable.':
+			'停止會同時關閉開機自啟(重新啟動後不會自己執行),並恢復正常上網:IPv6 洩漏攔截與 Open-Box 寫入的 DNS 上游都會被移除。面板仍然可以存取。',
 		'Status': '狀態',
 		'Autostart': '開機自啟',
 		'running': '執行中',
@@ -183,12 +183,24 @@ function serviceState(name) {
 	});
 }
 
-function act(name, action) {
-	return callInitAction(name, action).then(function (ok) {
-		if (!ok) {
-			throw new Error(tr('init action failed'));
-		}
-		ui.addNotification(null, E('p', fmt('Action sent: %s %s', name, action)), 'info');
+// 按顺序执行一串 init 动作,全部成功才提示成功。内核的「停止」需要 stop + disable
+// 两步(见下方 serviceCard 的说明),所以这里接受数组而不是单个动作。
+function act(name, actions) {
+	var list = (typeof actions === 'string') ? [ actions ] : actions;
+	var chain = Promise.resolve();
+
+	list.forEach(function (action) {
+		chain = chain.then(function () {
+			return callInitAction(name, action).then(function (ok) {
+				if (!ok) {
+					throw new Error(tr('init action failed') + ' (' + action + ')');
+				}
+			});
+		});
+	});
+
+	return chain.then(function () {
+		ui.addNotification(null, E('p', fmt('Action sent: %s %s', name, list.join(' + '))), 'info');
 		window.setTimeout(function () { location.reload(); }, 1200);
 	}).catch(function (err) {
 		ui.addNotification(null, E('p', fmt('Action failed: %s', err.message || err)), 'error');
@@ -281,7 +293,7 @@ return view.extend({
 		var panelUrl = 'http://' + window.location.hostname + ':2026';
 		var self = this;
 
-		function serviceCard(title, name, st, extraRow, hint) {
+		function serviceCard(title, name, st, extraRow, hint, stopActions) {
 			return E('div', { 'class': 'cbi-section' }, [
 				E('h3', {}, tr(title)),
 				E('div', { 'style': ROW }, [
@@ -296,7 +308,7 @@ return view.extend({
 					E('button', { 'class': 'cbi-button cbi-button-apply',
 						'click': ui.createHandlerFn(self, function () { return act(name, 'start'); }) }, tr('Start')),
 					E('button', { 'class': 'cbi-button cbi-button-reset',
-						'click': ui.createHandlerFn(self, function () { return act(name, 'stop'); }) }, tr('Stop')),
+						'click': ui.createHandlerFn(self, function () { return act(name, stopActions || 'stop'); }) }, tr('Stop')),
 					E('button', { 'class': 'cbi-button cbi-button-neutral',
 						'click': ui.createHandlerFn(self, function () { return act(name, 'restart'); }) }, tr('Restart')),
 					E('button', { 'class': 'cbi-button cbi-button-neutral',
@@ -370,8 +382,13 @@ return view.extend({
 			// 「停止」本身就会恢复正常上网(init 脚本的 stop_service 会摘掉 Open-Box 写入的
 			// dnsmasq 上游、删掉 IPv6 泄漏拦截),所以不再单列一个「紧急停止」按钮——那和
 			// 这里的「停止」是同一个动作。把这层保证写成说明挂在按钮下面即可。
+			// 内核的「停止」同时关闭开机自启:部署成功会打开自启,若停止不关掉它,坏配置
+			// 把网搞断时停了内核、一重启又被拉起来,网再次断掉——那样的「停止」在真正
+			// 需要它的场景里是无效的。面板服务不做这件事:面板是唯一的管理入口,它应该
+			// 在重启后自己回来。
 			serviceCard('sing-box core', 'openbox', core, null,
-				tr('Stopping also restores plain internet access: the IPv6 leak block and the Open-Box DNS upstream are removed. The panel stays reachable.')),
+				tr('Stopping also turns off autostart (so it stays stopped after a reboot) and restores plain internet access: the IPv6 leak block and the Open-Box DNS upstream are removed. The panel stays reachable.'),
+				[ 'stop', 'disable' ]),
 			serviceCard('Open-Box panel', 'openbox-panel', panel,
 				E('a', { 'href': panelUrl, 'target': '_blank', 'rel': 'noreferrer' }, panelUrl)),
 

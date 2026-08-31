@@ -111,6 +111,7 @@
             type="button"
             class="btn btn-sm btn-outline btn-error"
             :disabled="isStopDisabled"
+            :title="$t('kernelActionStopHint')"
             @click="runAction('stop')"
           >
             <span

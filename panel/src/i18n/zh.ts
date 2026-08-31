@@ -496,6 +496,7 @@ const zh: LANG_MESSAGE = {
   kernelHideDetail: '\u9690\u85cf\u8be6\u60c5',
   kernelActionStart: '\u542f\u52a8',
   kernelActionStop: '\u505c\u6b62',
+  kernelActionStopHint: '会同时关闭开机自启,重启后内核不会自己跑起来。',
   kernelActionRestart: '\u91cd\u542f',
   kernelActionEnable: '\u5f00\u542f\u81ea\u542f',
   kernelActionDisable: '\u5173\u95ed\u81ea\u542f',

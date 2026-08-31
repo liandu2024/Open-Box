@@ -77,6 +77,45 @@ test('POST /api/openbox/service/core/stop → {ok,code,stderr}', async () => {
     const body = await res.json()
     assert.equal(body.ok, true)
     assert.ok(cmds(ctx).includes('/etc/init.d/openbox stop'))
+    // 停止必须同时关掉开机自启,否则坏配置把网搞断时「停止」扛不过一次重启。
+    assert.ok(cmds(ctx).includes('/etc/init.d/openbox disable'))
+  } finally {
+    await close()
+  }
+})
+
+test('停止失败时不应关闭自启(内核还在跑,关自启只会让状态更乱)', async () => {
+  const ctx = okCtx({ '/etc/init.d/openbox stop': { code: 1, stdout: '', stderr: 'boom' } })
+  const { baseUrl, close } = await startApp(ctx)
+  try {
+    const res = await fetch(`${baseUrl}/api/openbox/service/core/stop`, { method: 'POST' })
+    const body = await res.json()
+    assert.equal(body.ok, false)
+    assert.ok(!cmds(ctx).includes('/etc/init.d/openbox disable'))
+  } finally {
+    await close()
+  }
+})
+
+test('停止成功但关自启失败时,如实把原因带回来', async () => {
+  const ctx = okCtx({ '/etc/init.d/openbox disable': { code: 1, stdout: '', stderr: 'no rc.d' } })
+  const { baseUrl, close } = await startApp(ctx)
+  try {
+    const res = await fetch(`${baseUrl}/api/openbox/service/core/stop`, { method: 'POST' })
+    const body = await res.json()
+    assert.equal(body.ok, true)
+    assert.match(body.stderr, /disable autostart failed/)
+  } finally {
+    await close()
+  }
+})
+
+test('重启不得关闭自启(init 的 restart 内部就是 stop+start,不能顺手把自启关了)', async () => {
+  const ctx = okCtx()
+  const { baseUrl, close } = await startApp(ctx)
+  try {
+    await fetch(`${baseUrl}/api/openbox/service/core/restart`, { method: 'POST' })
+    assert.ok(!cmds(ctx).includes('/etc/init.d/openbox disable'))
   } finally {
     await close()
   }
