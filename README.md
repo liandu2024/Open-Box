@@ -33,13 +33,17 @@ OpenWrt 一体化透明代理方案:一条命令装完 sing-box 内核 + 管理�
 # 直连版(能正常访问 GitHub 时用这个)
 curl -fsSL https://raw.githubusercontent.com/liandu2024/Open-Box/main/scripts/install.sh | sh
 
-# 镜像加速版(GitHub 访问不畅时用这个;把 <镜像前缀> 换成你信任的加速站点域名)
-curl -fsSL https://<镜像前缀>/https://raw.githubusercontent.com/liandu2024/Open-Box/main/scripts/install.sh | sh -s -- --mirror <镜像前缀>
+# 加速版(GitHub 访问不畅时用这个;不用自己找加速站,脚本内置了几个,
+# 会依次探测、自动挑一个能用的)
+curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/liandu2024/Open-Box/main/scripts/install.sh | sh -s -- --mirror
 ```
 
 安装脚本会先做预检(架构、存储、内存、系统),校验通过才会下载对应架构的发布包、
 校验 SHA256、铺装到 `/opt/open-box/`,并启动面板服务。**校验不通过、下载失败,或
 架构/存储/内存不满足要求,系统不会有任何改动。**
+
+如果你已经有信得过的加速站,也可以指定具体前缀,跳过自动探测:
+`sh -s -- --mirror <镜像前缀>`(把 `<镜像前缀>` 换成该加速站点域名)。
 
 ### 安装完成后
 
@@ -54,11 +58,20 @@ curl -fsSL https://<镜像前缀>/https://raw.githubusercontent.com/liandu2024/O
 同样通过 SSH 以 root 身份登录路由器执行:
 
 ```bash
+# 不带参数:自动沿用安装时选择的下载通道(直连或镜像),无需重新指定
 curl -fsSL https://raw.githubusercontent.com/liandu2024/Open-Box/main/scripts/update.sh | sh
+
+# 强制直连 GitHub
+curl -fsSL https://raw.githubusercontent.com/liandu2024/Open-Box/main/scripts/update.sh | sh -s -- --direct
+
+# 强制走加速(内置列表自动挑一个能用的;也可以用 --mirror <前缀> 指定具体加速站)
+curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/liandu2024/Open-Box/main/scripts/update.sh | sh -s -- --mirror
 ```
 
-`update.sh` 不接受任何参数——它会自动沿用安装时选择的下载通道(直连或镜像),
-如果安装时用的是镜像通道,升级会自动继续用同一个镜像前缀,无需再手动指定。
+不加 `--direct`/`--mirror` 时,`update.sh` 会自动沿用安装时选择的下载通道——如果
+安装时用的是镜像通道,升级会自动继续用同一个镜像前缀,无需再手动指定。加
+`--direct` 或 `--mirror` 会覆盖这个记录,只对这一次升级生效。LuCI 兜底页的「立即
+更新」按钮同样会先让你选一次路线(GitHub 直连 / 代理加速),不依赖这里的命令行。
 
 升级会保留你的数据(`data/`,包括订阅、规则、面板密码)与已生效的运行配置,只替换
 程序本体;只重启面板,不会自动重启代理内核——如果之前配置并跑着代理,升级后请到

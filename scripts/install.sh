@@ -3,7 +3,10 @@
 #
 # 用法:
 #   sh install.sh                  # 直连 GitHub 下载
-#   sh install.sh --mirror <前缀>   # 通过镜像加速下载,例如 --mirror ghproxy.example.com
+#   sh install.sh --mirror         # 通过镜像加速下载,依次探测内置镜像列表,
+#                                   # 选中第一个探测通过的(见下方 BUILTIN_MIRRORS)
+#   sh install.sh --mirror <前缀>   # 通过镜像加速下载,使用给定的镜像前缀,
+#                                   # 例如 --mirror ghproxy.example.com
 #
 # 设计要点(修改本脚本时不要丢掉):
 # - 校验通过前绝不触碰 /opt:下载与 SHA256 校验都发生在临时目录,任何一步失败都
@@ -40,9 +43,12 @@ die() {
 
 usage() {
   cat <<'EOF'
-用法: sh install.sh [--mirror <前缀>]
+用法: sh install.sh [--mirror [前缀]]
 
-  --mirror <前缀>   使用镜像加速下载发布包,例如: --mirror ghproxy.example.com
+  --mirror          使用镜像加速下载发布包,依次探测内置镜像列表,选用第一个
+                     探测通过的(不知道用哪个加速站时用这个)
+  --mirror <前缀>   使用镜像加速下载发布包,指定具体前缀,例如:
+                     --mirror ghproxy.example.com
   -h, --help        显示本帮助
 EOF
 }
@@ -60,14 +66,24 @@ safe_rm_rf() {
 while [ $# -gt 0 ]; do
   case "$1" in
     --mirror)
-      [ $# -ge 2 ] || die "--mirror 需要一个参数,例如: --mirror ghproxy.example.com"
-      MIRROR_PREFIX="$2"
-      case "$MIRROR_PREFIX" in
-        '') die "--mirror 的值不能为空" ;;
-        *[!A-Za-z0-9._:/-]*) die "--mirror 的值包含非法字符(只允许字母、数字、. _ : / -):$MIRROR_PREFIX" ;;
-      esac
       CHANNEL="mirror"
-      shift 2
+      shift
+      # 值可选:紧跟的下一个参数若不是以 -- 开头,当作镜像前缀消费掉;否则
+      # (包括没有下一个参数,或下一个参数是另一个 -- 开头的选项)保持
+      # MIRROR_PREFIX 为空,交给下方内置镜像列表自动探测选用。
+      if [ $# -ge 1 ]; then
+        case "$1" in
+          --*) ;;
+          *)
+            MIRROR_PREFIX="$1"
+            case "$MIRROR_PREFIX" in
+              '') die "--mirror 的值不能为空(留空表示使用内置镜像列表,应省略这个参数)" ;;
+              *[!A-Za-z0-9._:/-]*) die "--mirror 的值包含非法字符(只允许字母、数字、. _ : / -):$MIRROR_PREFIX" ;;
+            esac
+            shift
+            ;;
+        esac
+      fi
       ;;
     -h|--help)
       usage
@@ -222,9 +238,91 @@ ASSET="open-box-linux-${ARCH}.tar.gz"
 ASSET_URL="https://github.com/$REPO/releases/latest/download/$ASSET"
 SHA_URL="$ASSET_URL.sha256"
 
+# ---------- 内置镜像列表(--mirror 不带前缀时使用)----------
+# 三个都是 2026-09-01 现场验证过的:能取到与直连字节级一致的 releases/latest 资产
+# (.sha256 与 78MB tarball 均验证过),也能代理 raw.githubusercontent.com。按此顺序
+# 依次探测,选中第一个探测通过的——加速站是出了名的会挂,所以不能假设列表里第一个
+# 永远可用,必须能在探测失败时继续试下一个,而不是直接报错退出。update.sh 里维护
+# 着同一份列表(两边都是 curl | sh 单文件直跑,没有可共享的公共库文件,只能保持
+# 内容一致、各自维护一份)。
+BUILTIN_MIRRORS="
+https://ghfast.top
+https://gh-proxy.com
+https://gh.llkk.cc
+"
+
+# 探测专用的下载函数:比 fetch_to_file 多加连接/总时长上限,避免探测阶段卡在一个
+# 已经死掉、只是不返回错误而是一直不响应的加速站上——真正下载正文时仍用不限时的
+# fetch_to_file,不希望网络慢的用户被这里的短超时误伤。
+fetch_to_file_probe() {
+  case "$DOWNLOADER" in
+    curl) curl -fsSL --connect-timeout 8 --max-time 20 -o "$2" "$1" ;;
+    wget) wget -q --timeout=20 -O "$2" "$1" ;;
+  esac
+}
+
+# 探测单个镜像前缀是否真的可用:请求发布资产的 .sha256 文件(几十字节,不是
+# 78MB 正文),并连内容一起校验格式(64 位十六进制哈希 + 空白 + 资产名)——失效
+# 的加速站经常返回 200 状态的 HTML 错误页而不是网络层错误,只看 curl/wget 的
+# 退出码不够,必须验证内容,否则会把"死了但仍应答"的镜像误判为可用。
+probe_mirror_prefix() {
+  candidate="$1"
+  probe_file="$TMP_DL/.mirror-probe"
+  rm -f "$probe_file"
+  MIRROR_PREFIX="$candidate"
+  probe_url=$(build_url "$SHA_URL")
+  if ! fetch_to_file_probe "$probe_url" "$probe_file" 2>/dev/null; then
+    rm -f "$probe_file"
+    return 1
+  fi
+  hash=$(awk 'NR==1{print $1}' "$probe_file" 2>/dev/null)
+  name=$(awk 'NR==1{print $2}' "$probe_file" 2>/dev/null)
+  rm -f "$probe_file"
+  name=${name#\*}
+  if [ "$name" != "$ASSET" ] || [ "${#hash}" != 64 ]; then
+    return 1
+  fi
+  case "$hash" in
+    *[!0-9a-fA-F]*) return 1 ;;
+  esac
+  return 0
+}
+
+# 依次尝试内置镜像列表,选中第一个探测通过的前缀写回 MIRROR_PREFIX;全部失败则
+# 报错退出(不触碰 /opt——此时还没开始下载正文)。用户仍可以用 --mirror <前缀>
+# 指定任意其它加速站,这个函数只负责"不知道用哪个"时的自动选择。
+select_builtin_mirror() {
+  info "未指定镜像前缀,依次探测内置镜像列表..."
+  tried=""
+  OLD_IFS=$IFS
+  IFS='
+'
+  for candidate in $BUILTIN_MIRRORS; do
+    IFS="$OLD_IFS"
+    [ -n "$candidate" ] || continue
+    tried="$tried $candidate"
+    info "探测:$candidate"
+    if probe_mirror_prefix "$candidate"; then
+      MIRROR_PREFIX="$candidate"
+      info "已选用镜像:$MIRROR_PREFIX"
+      return 0
+    fi
+    warn "镜像探测失败,尝试下一个:$candidate"
+    IFS='
+'
+  done
+  IFS="$OLD_IFS"
+  MIRROR_PREFIX=""
+  die "内置镜像列表全部探测失败(已尝试:$tried)。可用 --mirror <前缀> 指定其它加速站,或不加 --mirror 直连。"
+}
+
 # ---------- 下载到临时目录(此时仍未触碰 /opt) ----------
 TMP_DL=$(mktemp -d "${TMPDIR:-/tmp}/open-box-install.XXXXXX") || die "无法创建临时目录。"
 trap 'safe_rm_rf "$TMP_DL"' EXIT INT TERM
+
+if [ "$CHANNEL" = "mirror" ] && [ -z "$MIRROR_PREFIX" ]; then
+  select_builtin_mirror
+fi
 
 info "下载发布包:$ASSET"
 fetch_to_file "$(build_url "$ASSET_URL")" "$TMP_DL/$ASSET" || die "下载安装包失败:$ASSET_URL"

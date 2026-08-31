@@ -2,17 +2,23 @@
 # Open-Box 升级脚本(POSIX sh,兼容 OpenWrt ash)。
 #
 # 用法:
-#   sh update.sh            # 前台同步执行,直到升级完成或失败才返回
-#   sh update.sh --detach   # 派生一个后台子进程去真正执行升级,自己立即返回;
-#                            # 输出被子进程重定向到 ${TMPDIR:-/tmp}/openbox-update.log。
-#                            # 供 LuCI 兜底页一键升级调用——rpcd 的 fs.exec 有超时,
-#                            # 而升级要下载约 78MB,同步调用必然中途超时;详见下方
-#                            # 自迁移小节的说明。
+#   sh update.sh                    # 沿用安装时选择的通道(记录在 data/channel)
+#   sh update.sh --direct           # 强制直连 GitHub,忽略安装时记录的通道
+#   sh update.sh --mirror           # 强制走代理加速,依次探测内置镜像列表,
+#                                    # 选中第一个探测通过的(见下方 BUILTIN_MIRRORS)
+#   sh update.sh --mirror <前缀>     # 强制走代理加速,使用给定的镜像前缀
+#   sh update.sh --detach           # 派生一个后台子进程去真正执行升级,自己立即返回;
+#                                    # 输出被子进程重定向到 ${TMPDIR:-/tmp}/openbox-update.log。
+#                                    # 供 LuCI 兜底页一键升级调用——rpcd 的 fs.exec 有超时,
+#                                    # 而升级要下载约 78MB,同步调用必然中途超时;详见下方
+#                                    # 自迁移小节的说明。可以和 --direct/--mirror 组合,
+#                                    # 例如 sh update.sh --detach --mirror。
 #
-# 沿用安装时选择的下载通道(记录在 data/channel)。下载(到 /tmp)与 SHA256 校验
-# 都在临时目录完成;只有校验通过后,才把包解到 $INSTALL_ROOT 所在文件系统的暂存
-# 目录(不是 /tmp——/tmp 常是 tmpfs,512MB 机器装不下解包后的体积,见 Important 3),
-# 再停服务、换文件。任何一步失败都直接退出且不触碰现有安装。
+# 不带 --direct/--mirror 时沿用安装时选择的下载通道(记录在 data/channel),这是
+# 保持向后兼容的默认行为。下载(到 /tmp)与 SHA256 校验都在临时目录完成;只有
+# 校验通过后,才把包解到 $INSTALL_ROOT 所在文件系统的暂存目录(不是 /tmp——/tmp
+# 常是 tmpfs,512MB 机器装不下解包后的体积,见 Important 3),再停服务、换文件。
+# 任何一步失败都直接退出且不触碰现有安装。
 # 保留 data/(用户数据)与 etc/(部署出的运行配置),只替换 node/ panel/ bin/
 # openwrt/ 与 meta.json。升级只重启面板,不重启内核——内核是否曾在跑、跑的什么
 # 配置,升级脚本并不知道,交给用户/面板自己决定要不要重新下发。
@@ -66,20 +72,72 @@ if [ "${OPENBOX_UPDATE_RELOCATED:-0}" != "1" ]; then
   esac
 fi
 
-# ---------- 参数解析:仅接受可选的 --detach ----------
+# ---------- 参数解析:--detach 与至多一个 --direct/--mirror [前缀] ----------
+# CHANNEL_OVERRIDE 为空表示未显式指定路线,沿用 read_channel() 读到的安装时记录
+# (向后兼容:今天不传参数的调用方行为不变)。--direct 与 --mirror 互斥。
 DETACH=0
-if [ "${1:-}" = "--detach" ]; then
-  DETACH=1
-  shift
+CHANNEL_OVERRIDE=""
+CLI_MIRROR_PREFIX=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --detach)
+      DETACH=1
+      shift
+      ;;
+    --direct)
+      [ -z "$CHANNEL_OVERRIDE" ] || die "--direct 不能与 --mirror 同时使用。"
+      CHANNEL_OVERRIDE="direct"
+      shift
+      ;;
+    --mirror)
+      [ -z "$CHANNEL_OVERRIDE" ] || die "--mirror 不能与 --direct 同时使用。"
+      CHANNEL_OVERRIDE="mirror"
+      shift
+      # 值可选:紧跟的下一个参数若不是以 -- 开头,当作镜像前缀消费掉;否则
+      # (包括没有下一个参数,或下一个参数是另一个 -- 开头的选项)保持为空,
+      # 交给下方内置镜像列表自动探测选用。
+      if [ $# -ge 1 ]; then
+        case "$1" in
+          --*) ;;
+          *)
+            CLI_MIRROR_PREFIX="$1"
+            case "$CLI_MIRROR_PREFIX" in
+              '') die "--mirror 的值不能为空(留空表示使用内置镜像列表,应省略这个参数)" ;;
+              *[!A-Za-z0-9._:/-]*) die "--mirror 的值包含非法字符(只允许字母、数字、. _ : / -):$CLI_MIRROR_PREFIX" ;;
+            esac
+            shift
+            ;;
+        esac
+      fi
+      ;;
+    *)
+      die "未知参数:$1(可用参数:--detach、--direct、--mirror [前缀])"
+      ;;
+  esac
+done
+
+# 重建 --detach 转发下去时要带的参数(见下方 detach 分支):只包含路线选择,
+# 不包含 --detach 本身(避免子进程再次进入 detach 分支、无限派生)。POSIX sh
+# 没有数组,借 "$@"/set -- 传递,能正确处理镜像前缀里可能出现的特殊字符。
+if [ "$CHANNEL_OVERRIDE" = "direct" ]; then
+  set -- --direct
+elif [ "$CHANNEL_OVERRIDE" = "mirror" ]; then
+  if [ -n "$CLI_MIRROR_PREFIX" ]; then
+    set -- --mirror "$CLI_MIRROR_PREFIX"
+  else
+    set -- --mirror
+  fi
+else
+  set --
 fi
-[ $# -eq 0 ] || die "update.sh 只接受 --detach 参数(升级会沿用安装时选择的通道)。"
 
 # ---------- --detach:派生后台子进程,自己立即返回 ----------
 # LuCI 一键升级通过 rpcd 的 fs.exec 调用本脚本;fs.exec 是同步等待且有超时的,
 # 升级却要下载约 78MB,同步跑必然中途被杀。所以 --detach 分支只做一件事:再拉起
-# 一份自己(不带 --detach,避免无限递归),输出重定向到日志文件,然后立刻退出——
-# fs.exec 几乎瞬间就能返回,真正的下载/替换在后台独立进程里进行,LuCI 页面转而
-# 轮询 meta.json 的版本号与这份日志。
+# 一份自己(不带 --detach,避免无限递归,但带上原有的 --direct/--mirror 选择,
+# 见上方 set -- 重建),输出重定向到日志文件,然后立刻退出——fs.exec 几乎瞬间
+# 就能返回,真正的下载/替换在后台独立进程里进行,LuCI 页面转而轮询 meta.json
+# 的版本号与这份日志。
 #
 # 优先用 setsid 让后台进程彻底脱离当前会话/控制终端,防止 rpcd 那端后续的任何
 # 清理动作把它带着一起杀掉;并非所有固件都带 setsid,没有就退化成普通的后台子
@@ -93,9 +151,9 @@ if [ "$DETACH" = "1" ]; then
   # (可能误命中"错误:"或"无需升级"的匹配)。
   : > "$UPDATE_LOG" 2>/dev/null || true
   if command -v setsid >/dev/null 2>&1; then
-    setsid sh "$0" >"$UPDATE_LOG" 2>&1 </dev/null &
+    setsid sh "$0" "$@" >"$UPDATE_LOG" 2>&1 </dev/null &
   else
-    ( sh "$0" >"$UPDATE_LOG" 2>&1 </dev/null & )
+    ( sh "$0" "$@" >"$UPDATE_LOG" 2>&1 </dev/null & )
   fi
   info "升级已在后台启动,日志:$UPDATE_LOG"
   exit 0
@@ -201,6 +259,26 @@ read_channel() {
   fi
 }
 
+# 决定这次升级实际使用的通道:命令行显式指定(--direct / --mirror)的优先级
+# 高于安装时记录的通道,不传参数时行为与升级前完全一致(读记录)。--mirror 不带
+# 前缀时先把 MIRROR_PREFIX 留空,交给下方 select_builtin_mirror()(在资产地址与
+# 临时目录都就绪之后)从内置列表里探测选用。
+resolve_channel() {
+  case "$CHANNEL_OVERRIDE" in
+    direct)
+      CHANNEL="direct"
+      MIRROR_PREFIX=""
+      ;;
+    mirror)
+      CHANNEL="mirror"
+      MIRROR_PREFIX="$CLI_MIRROR_PREFIX"
+      ;;
+    *)
+      read_channel
+      ;;
+  esac
+}
+
 info "预检..."
 check_root
 check_openwrt
@@ -209,7 +287,7 @@ map_arch
 cleanup_stale_stage_dirs
 check_storage
 check_tmp_space
-read_channel
+resolve_channel
 info "预检通过(架构 $ARCH,通道 $CHANNEL)。"
 
 # ---------- 下载工具探测 ----------
@@ -265,6 +343,84 @@ SHA_URL="$ASSET_URL.sha256"
 
 OLD_VERSION=$(sed -n 's/.*"version" *: *"\([^"]*\)".*/\1/p' "$INSTALL_ROOT/meta.json" 2>/dev/null | head -n 1)
 
+# ---------- 内置镜像列表(--mirror 不带前缀时使用)----------
+# 三个都是 2026-09-01 现场验证过的:能取到与直连字节级一致的 releases/latest 资产
+# (.sha256 与 78MB tarball 均验证过),也能代理 raw.githubusercontent.com。按此顺序
+# 依次探测,选中第一个探测通过的——加速站是出了名的会挂,所以不能假设列表里第一个
+# 永远可用,必须能在探测失败时继续试下一个,而不是直接报错退出。install.sh 里维护
+# 着同一份列表(两边都是 curl | sh 单文件直跑,没有可共享的公共库文件,只能保持
+# 内容一致、各自维护一份)。
+BUILTIN_MIRRORS="
+https://ghfast.top
+https://gh-proxy.com
+https://gh.llkk.cc
+"
+
+# 探测专用的下载函数:比 fetch_to_file 多加连接/总时长上限,避免探测阶段卡在一个
+# 已经死掉、只是不返回错误而是一直不响应的加速站上——真正下载 78MB 正文时仍用不
+# 限时的 fetch_to_file,不希望网络慢的用户被这里的短超时误伤。
+fetch_to_file_probe() {
+  case "$DOWNLOADER" in
+    curl) curl -fsSL --connect-timeout 8 --max-time 20 -o "$2" "$1" ;;
+    wget) wget -q --timeout=20 -O "$2" "$1" ;;
+  esac
+}
+
+# 探测单个镜像前缀是否真的可用:请求发布资产的 .sha256 文件(几十字节,不是
+# 78MB 正文),并连内容一起校验格式(64 位十六进制哈希 + 空白 + 资产名)——失效
+# 的加速站经常返回 200 状态的 HTML 错误页而不是网络层错误,只看 curl/wget 的
+# 退出码不够,必须验证内容,否则会把"死了但仍应答"的镜像误判为可用。
+probe_mirror_prefix() {
+  candidate="$1"
+  probe_file="$TMP_DL/.mirror-probe"
+  rm -f "$probe_file"
+  MIRROR_PREFIX="$candidate"
+  probe_url=$(build_url "$SHA_URL")
+  if ! fetch_to_file_probe "$probe_url" "$probe_file" 2>/dev/null; then
+    rm -f "$probe_file"
+    return 1
+  fi
+  hash=$(awk 'NR==1{print $1}' "$probe_file" 2>/dev/null)
+  name=$(awk 'NR==1{print $2}' "$probe_file" 2>/dev/null)
+  rm -f "$probe_file"
+  name=${name#\*}
+  if [ "$name" != "$ASSET" ] || [ "${#hash}" != 64 ]; then
+    return 1
+  fi
+  case "$hash" in
+    *[!0-9a-fA-F]*) return 1 ;;
+  esac
+  return 0
+}
+
+# 依次尝试内置镜像列表,选中第一个探测通过的前缀写回 MIRROR_PREFIX;全部失败则
+# 报错退出(不触碰现有安装——此时还没开始下载正文)。用户仍可以用
+# --mirror <前缀> 指定任意其它加速站,这个函数只负责"不知道用哪个"时的自动选择。
+select_builtin_mirror() {
+  info "未指定镜像前缀,依次探测内置镜像列表..."
+  tried=""
+  OLD_IFS=$IFS
+  IFS='
+'
+  for candidate in $BUILTIN_MIRRORS; do
+    IFS="$OLD_IFS"
+    [ -n "$candidate" ] || continue
+    tried="$tried $candidate"
+    info "探测:$candidate"
+    if probe_mirror_prefix "$candidate"; then
+      MIRROR_PREFIX="$candidate"
+      info "已选用镜像:$MIRROR_PREFIX"
+      return 0
+    fi
+    warn "镜像探测失败,尝试下一个:$candidate"
+    IFS='
+'
+  done
+  IFS="$OLD_IFS"
+  MIRROR_PREFIX=""
+  die "内置镜像列表全部探测失败(已尝试:$tried)。可用 --mirror <前缀> 指定其它加速站,或改用 --direct 直连。现有安装未改动。"
+}
+
 # ---------- 下载到临时目录(此时仍未触碰现有安装) ----------
 # STAGE_DIR 在校验通过后才会被赋非空值并创建(见下方);清理函数统一处理两者,
 # 无论脚本在哪一步退出都不留半成品。
@@ -281,6 +437,10 @@ cleanup() {
 }
 TMP_DL=$(mktemp -d "${TMPDIR:-/tmp}/open-box-update.XXXXXX") || die "无法创建临时目录。"
 trap cleanup EXIT INT TERM
+
+if [ "$CHANNEL" = "mirror" ] && [ -z "$MIRROR_PREFIX" ]; then
+  select_builtin_mirror
+fi
 
 info "下载发布包:$ASSET"
 fetch_to_file "$(build_url "$ASSET_URL")" "$TMP_DL/$ASSET" || die "下载升级包失败:$ASSET_URL。现有安装未改动。"

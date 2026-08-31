@@ -46,6 +46,13 @@ var I18N = {
 		'Confirm update': '确认更新',
 		'This will stop services and replace program files. The panel will be briefly unavailable. Continue?':
 			'此操作会停止服务并替换程序文件,期间面板会短暂不可用。确定继续吗?',
+		'Choose how to download it:': '选择下载方式:',
+		'GitHub direct': 'GitHub 直连',
+		'Accelerated (proxy)': '代理加速',
+		'Tries a few built-in proxies in order; if one is down it automatically moves to the next.':
+			'会按顺序依次尝试内置的几个代理,某个不可用会自动换下一个。',
+		'Updating to %s (GitHub direct)...': '正在更新到 %s(GitHub 直连)…',
+		'Updating to %s (accelerated)...': '正在更新到 %s(代理加速)…',
 		'Updating to %s...': '正在更新到 %s…',
 		'Starting update...': '正在启动更新…',
 		'Update started. This may take a few minutes (about 80MB to download).':
@@ -108,6 +115,13 @@ var I18N = {
 		'Confirm update': '確認更新',
 		'This will stop services and replace program files. The panel will be briefly unavailable. Continue?':
 			'此操作會停止服務並替換程式檔案,期間面板會短暫無法使用。確定要繼續嗎?',
+		'Choose how to download it:': '選擇下載方式:',
+		'GitHub direct': 'GitHub 直連',
+		'Accelerated (proxy)': '代理加速',
+		'Tries a few built-in proxies in order; if one is down it automatically moves to the next.':
+			'會按順序依次嘗試內建的幾個代理,某個無法使用會自動換下一個。',
+		'Updating to %s (GitHub direct)...': '正在更新到 %s(GitHub 直連)…',
+		'Updating to %s (accelerated)...': '正在更新到 %s(代理加速)…',
 		'Updating to %s...': '正在更新到 %s…',
 		'Starting update...': '正在啟動更新…',
 		'Update started. This may take a few minutes (about 80MB to download).':
@@ -314,8 +328,17 @@ var UPDATE_LOG_PATH = '/tmp/openbox-update.log';
 var UPDATE_POLL_INTERVAL_MS = 4000;
 var UPDATE_POLL_TIMEOUT_MS = 480000; // 8 分钟:78MB 下载 + 解包 + 换文件的宽松上限
 
-function runUpdate() {
-	return fs.exec(UPDATE_PATH, [ '--detach' ]).then(function (res) {
+// route: 'direct' 强制直连 GitHub;'mirror' 强制走代理加速(update.sh 自己按内置
+// 列表依次探测、跳过挂掉的站点,见 scripts/update.sh 的 BUILTIN_MIRRORS)。两者都
+// 是显式选择,--detach 之外再各自带一个路线参数透传给 update.sh。
+function runUpdate(route) {
+	var args = [ '--detach' ];
+	if (route === 'direct') {
+		args.push('--direct');
+	} else if (route === 'mirror') {
+		args.push('--mirror');
+	}
+	return fs.exec(UPDATE_PATH, args).then(function (res) {
 		if (!res || res.code !== 0) {
 			var detail = (res && (res.stderr || res.stdout)) || ('exit ' + (res ? res.code : '?'));
 			throw new Error(String(detail).split('\n').slice(-3).join(' ').trim() || 'failed');
@@ -487,17 +510,22 @@ return view.extend({
 		// 更新走本地脚本(随发布包铺下来的那份,与卸载同理),不依赖外网页面本身
 		// 的可用性;总是带 --detach,原因见 runUpdate() 定义处的说明。这里只负责
 		// 触发 + 轮询 + 展示进度/结果,真正的下载/校验/换文件全在 update.sh 里。
-		function startUpdate(latestVersion) {
+		// route 是用户在 showUpdateDialog() 里显式选择的路线
+		// ('direct' 或 'mirror'),原样透传给 runUpdate()。
+		function startUpdate(latestVersion, route) {
+			var titleKey = route === 'direct' ? 'Updating to %s (GitHub direct)...'
+				: route === 'mirror' ? 'Updating to %s (accelerated)...'
+				: 'Updating to %s...';
 			var progressBody = E('p', { 'class': 'spinning' }, tr('Starting update...'));
 			var logBox = E('pre', {
 				'style': 'max-height:12em;overflow:auto;background:rgba(127,127,127,.08);' +
 					'padding:.5em;font-size:85%;white-space:pre-wrap;margin-top:.6em;display:none'
 			}, '');
-			ui.showModal(fmt('Updating to %s...', latestVersion), [ progressBody, logBox ]);
+			ui.showModal(fmt(titleKey, latestVersion), [ progressBody, logBox ]);
 
 			var oldVersion = installed;
 
-			return runUpdate().then(function () {
+			return runUpdate(route).then(function () {
 				progressBody.textContent = tr('Update started. This may take a few minutes (about 80MB to download).');
 				return pollForUpdateCompletion(oldVersion, function (logTail) {
 					if (logTail) {
@@ -531,15 +559,23 @@ return view.extend({
 			});
 		}
 
+		// 让用户在启动升级前显式选一条路线,而不是隐式沿用安装时记录的通道
+		// (update.sh 同样支持 --direct/--mirror,见该脚本文件头注释)。两个按钮
+		// 平级摆出来,不做默认推荐,比"先选路线再确认"两步走更干净。
 		function showUpdateDialog(latestVersion) {
 			ui.showModal(tr('Confirm update'), [
 				E('p', {}, tr('This will stop services and replace program files. The panel will be briefly unavailable. Continue?')),
+				E('p', { 'style': 'opacity:.75;font-size:90%;margin:.6em 0 0 0' }, tr('Choose how to download it:')),
+				E('p', { 'style': 'opacity:.6;font-size:85%;margin:.2em 0 0 0' }, tr('Tries a few built-in proxies in order; if one is down it automatically moves to the next.')),
 				E('div', { 'class': 'right', 'style': BTNROW }, [
 					E('button', { 'class': 'cbi-button',
 						'click': function () { ui.hideModal(); } }, tr('Cancel')),
+					E('button', { 'class': 'cbi-button cbi-button-neutral',
+						'click': ui.createHandlerFn(self, function () { return startUpdate(latestVersion, 'mirror'); }) },
+						tr('Accelerated (proxy)')),
 					E('button', { 'class': 'cbi-button cbi-button-apply',
-						'click': ui.createHandlerFn(self, function () { return startUpdate(latestVersion); }) },
-						tr('Confirm update'))
+						'click': ui.createHandlerFn(self, function () { return startUpdate(latestVersion, 'direct'); }) },
+						tr('GitHub direct'))
 				])
 			]);
 		}
