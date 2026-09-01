@@ -313,7 +313,8 @@ export interface OpenboxUserGroup {
 export interface OpenboxGroupsPayload {
   groups: OpenboxUserGroup[]
   types: OpenboxGroupType[]
-  availableNodes: string[]
+  // 带订阅名,供成员选择器按订阅筛选;组没有订阅归属,不在这个列表里
+  availableNodes: Array<{ name: string; subscription: string }>
   availableGroups: string[]
 }
 

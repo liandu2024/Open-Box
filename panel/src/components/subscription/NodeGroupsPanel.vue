@@ -160,7 +160,13 @@
                     :placeholder="$t('groupMemberFilter')"
                   />
                 </div>
-                <BulkPick @select-all="selectAll" @invert="invertSelection" @clear="clearSelection" />
+                <BulkPick
+                  v-model:subscription="memberSub"
+                  :subscriptions="subscriptionOptions"
+                  @select-all="selectAll(scopeOf(memberSub, memberFilter))"
+                  @invert="invertSelection(scopeOf(memberSub, memberFilter))"
+                  @clear="clearSelection(scopeOf(memberSub, memberFilter))"
+                />
               </div>
               <div class="max-h-64 overflow-y-auto">
                 <p
@@ -199,7 +205,13 @@
                     :placeholder="$t('groupMemberFilter')"
                   />
                 </div>
-                <BulkPick @select-all="selectAll" @invert="invertSelection" @clear="clearSelection" />
+                <BulkPick
+                  v-model:subscription="selectedSub"
+                  :subscriptions="subscriptionOptions"
+                  @select-all="selectAll(scopeOf(selectedSub, selectedFilter))"
+                  @invert="invertSelection(scopeOf(selectedSub, selectedFilter))"
+                  @clear="clearSelection(scopeOf(selectedSub, selectedFilter))"
+                />
               </div>
               <div class="max-h-64 overflow-y-auto">
                 <p
@@ -273,7 +285,7 @@ import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
 
 const groups = ref<OpenboxUserGroup[]>([])
-const availableNodes = ref<string[]>([])
+const availableNodes = ref<Array<{ name: string; subscription: string }>>([])
 const loading = ref(false)
 const error = ref('')
 // 保存后服务端回报的「落地不了的组」,见模板里的说明
@@ -304,6 +316,9 @@ const editing = ref<OpenboxUserGroup | null>(null)
 const draft = ref<OpenboxUserGroup | null>(null)
 const memberFilter = ref('')
 const selectedFilter = ref('')
+// 两栏各自的订阅下拉框,'' = 全部
+const memberSub = ref('')
+const selectedSub = ref('')
 const editorError = ref('')
 const saving = ref(false)
 
@@ -327,22 +342,48 @@ const openEditor = (group: OpenboxUserGroup | null) => {
   // 刷新自动跟着变。
   if (draft.value?.allNodes) {
     draft.value.allNodes = false
-    draft.value.members = [...availableNodes.value]
+    draft.value.members = availableNodes.value.map((n) => n.name)
   }
   memberFilter.value = ''
   selectedFilter.value = ''
+  memberSub.value = ''
+  selectedSub.value = ''
   editorError.value = ''
   showEditor.value = true
 }
 
 // 候选成员 = 所有节点 + 除自己以外的其它组(组可以套组,但不能套自己)
 const candidates = computed(() => {
-  const nodeItems = availableNodes.value.map((name) => ({ kind: 'node' as const, name }))
+  const nodeItems = availableNodes.value.map((n) => ({
+    kind: 'node' as const, name: n.name, subscription: n.subscription,
+  }))
   const groupItems = groups.value
     .filter((g) => g.name !== draft.value?.name)
-    .map((g) => ({ kind: 'group' as const, name: g.name }))
+    .map((g) => ({ kind: 'group' as const, name: g.name, subscription: '' }))
   return [...groupItems, ...nodeItems]
 })
+
+// 订阅下拉框的选项:节点实际来自的订阅,去重后按出现顺序排。空字符串(来源未知的
+// 老节点)不进下拉框——给一个选不出东西的选项没有意义。
+const subscriptionOptions = computed(() => {
+  const seen: string[] = []
+  for (const n of availableNodes.value) {
+    if (n.subscription && !seen.includes(n.subscription)) seen.push(n.subscription)
+  }
+  return seen
+})
+
+// 一栏的"作用范围" = 该栏下拉框 + 过滤框共同框定的候选集。三个批量按钮就按这个
+// 范围来:下拉框选中某条订阅、再按「全选」,加进来的正好是那条订阅的节点——这也是
+// 加这个下拉框的用处。两个都不设时,范围就是整份候选集,和以前一样。
+const scopeOf = (sub: string, keyword: string) => {
+  const kw = keyword.trim().toLowerCase()
+  return candidates.value.filter(
+    (item) =>
+      (!sub || item.subscription === sub) &&
+      (!kw || item.name.toLowerCase().includes(kw)),
+  )
+}
 
 // 左侧只列"还没选的":选走一个左边就少一个,不必再靠打勾去分辨状态。
 const availableCandidates = computed(() =>
@@ -350,9 +391,8 @@ const availableCandidates = computed(() =>
 )
 
 const filteredAvailable = computed(() => {
-  const kw = memberFilter.value.trim().toLowerCase()
-  if (!kw) return availableCandidates.value
-  return availableCandidates.value.filter((item) => item.name.toLowerCase().includes(kw))
+  const inScope = new Set(scopeOf(memberSub.value, memberFilter.value).map((c) => c.name))
+  return availableCandidates.value.filter((item) => inScope.has(item.name))
 })
 
 const addMember = (name: string) => {
@@ -381,26 +421,33 @@ const intervalMinutes = computed<number>({
 })
 
 const filteredSelected = computed(() => {
-  const kw = selectedFilter.value.trim().toLowerCase()
   const list = draft.value?.members || []
-  if (!kw) return list
-  return list.filter((name) => name.toLowerCase().includes(kw))
+  const inScope = new Set(scopeOf(selectedSub.value, selectedFilter.value).map((c) => c.name))
+  return list.filter((name) => inScope.has(name))
 })
 
-// 三个批量动作作用于整份候选集,不受任一侧过滤框影响——过滤是用来"找某一条"的,
-// 让它顺带改变"全选"的范围会让人不敢按(按下去到底选了几个?)。两栏放同一组按钮。
-const selectAll = () => {
-  if (!draft.value) return
-  draft.value.members = candidates.value.map((c) => c.name)
-}
-const clearSelection = () => {
-  if (!draft.value) return
-  draft.value.members = []
-}
-const invertSelection = () => {
+// 三个批量动作作用于**按下它的那一栏当前框出来的范围**(见 scopeOf):所见即所动。
+// 两栏各有自己的下拉框与过滤框,所以各自传自己的范围进来。
+const selectAll = (scope: Array<{ name: string }>) => {
   if (!draft.value) return
   const chosen = new Set(draft.value.members)
-  draft.value.members = candidates.value.map((c) => c.name).filter((n) => !chosen.has(n))
+  draft.value.members = [
+    ...draft.value.members,
+    ...scope.map((c) => c.name).filter((n) => !chosen.has(n)),
+  ]
+}
+const clearSelection = (scope: Array<{ name: string }>) => {
+  if (!draft.value) return
+  const drop = new Set(scope.map((c) => c.name))
+  draft.value.members = draft.value.members.filter((n) => !drop.has(n))
+}
+const invertSelection = (scope: Array<{ name: string }>) => {
+  if (!draft.value) return
+  const chosen = new Set(draft.value.members)
+  // 范围内已选的去掉、没选的加上;范围外的一个不动
+  const flipped = scope.map((c) => c.name).filter((n) => !chosen.has(n))
+  const dropped = new Set(scope.map((c) => c.name).filter((n) => chosen.has(n)))
+  draft.value.members = [...draft.value.members.filter((n) => !dropped.has(n)), ...flipped]
 }
 
 const persist = async (next: OpenboxUserGroup[]) => {

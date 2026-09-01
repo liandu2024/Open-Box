@@ -370,6 +370,7 @@ const zh: LANG_MESSAGE = {
   groupTolerance: '容差',
   groupUrltestHint: '定期测各成员的延迟并自动切到最快的一个;只有比当前快出「容差」这么多毫秒才会切,避免来回抖动。',
   groupMembersLabel: '成员',
+  groupFilterAllSubscriptions: '全部',
   groupSelectAll: '全选',
   groupInvert: '反选',
   groupSelectNone: '清空选择',

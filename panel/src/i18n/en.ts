@@ -373,6 +373,7 @@ const en = {
   groupTolerance: 'Tolerance',
   groupUrltestHint: 'Periodically measures each member and switches to the fastest; it only switches when the new one is faster by at least the tolerance, to avoid flapping.',
   groupMembersLabel: 'Members',
+  groupFilterAllSubscriptions: 'All subscriptions',
   groupSelectAll: 'All',
   groupInvert: 'Invert',
   groupSelectNone: 'Clear',

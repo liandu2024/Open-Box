@@ -12,10 +12,16 @@ export const registerGroupRoutes = (app, { store } = {}) => {
   router.get('/groups', (_req, res) => {
     const groups = store.getGroups()
     const nodes = store.getNodes()
+    // 每个节点带上它来自哪条订阅:成员选择器要按订阅筛选。用 subscriptionId 查名字,
+    // 而不是从节点名里猜——节点名前缀是可选的,关掉前缀就什么都猜不出来了。
+    const subscriptionName = new Map(store.getSubscriptions().map((s) => [s.id, s.name]))
     res.json({
       groups,
       types: [...GROUP_TYPES],
-      availableNodes: nodes.map((n) => n.tag),
+      availableNodes: nodes.map((n) => ({
+        name: n.tag,
+        subscription: subscriptionName.get(n.subscriptionId) || '',
+      })),
       availableGroups: groups.map((g) => g.name),
     })
   })
