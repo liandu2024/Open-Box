@@ -2,10 +2,9 @@
   <DialogWrapper
     v-model="isOpen"
     :title="$t(subscription ? 'subscriptionEditTitle' : 'subscriptionAddTitle')"
-    box-class="w-full max-w-4xl"
+    box-class="w-full max-w-2xl"
   >
-    <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
-      <!-- Left: source + name + rename rules -->
+    <div class="flex flex-col gap-4">
       <div class="flex flex-col gap-4">
         <div class="flex flex-col gap-1">
           <label class="text-xs font-medium">{{ $t('subscriptionNameLabel') }}</label>
@@ -59,8 +58,10 @@
         />
       </div>
 
-      <!-- Right: live preview -->
-      <div class="lg:border-base-content/10 flex min-h-0 flex-col gap-3 lg:border-l lg:pl-5">
+      <div class="divider my-0" />
+
+      <!-- 预览排在最后一屏:它是"填完之后看结果",不是填写过程中要来回对照的东西 -->
+      <div class="flex min-h-0 flex-col gap-3">
         <SubscriptionPreviewPanel
           :has-source="hasSource"
           :loading="previewing"
