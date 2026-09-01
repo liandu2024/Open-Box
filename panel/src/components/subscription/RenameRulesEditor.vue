@@ -102,12 +102,33 @@
         <template #item="{ element: row }">
           <div class="flex items-center gap-1.5">
             <Bars3Icon class="drag-handle text-base-content/40 h-4 w-4 shrink-0 cursor-move" />
-            <input
-              v-model="row.name"
-              type="text"
-              class="input input-sm w-24 shrink-0"
-              :placeholder="$t('subscriptionRenameRegionNamePlaceholder')"
+            <!-- 一行 = 一个国家/地区。绑到具体国家(而不是随手写的名字)之后,才谈得上
+                 配一面对应的国旗,匹配出来的节点也才有国别可言。老档案里手写的名字
+                 认不出国家时,下拉框顶上会留一条它自己,不会被悄悄清掉。 -->
+            <CountryFlag
+              :code="row.code"
+              :size="18"
+              :title="row.name"
             />
+            <select
+              class="select select-sm w-28 shrink-0"
+              :value="row.code"
+              @change="pickCountry(row, ($event.target as HTMLSelectElement).value)"
+            >
+              <option
+                v-if="!row.code"
+                value=""
+              >
+                {{ row.name || $t('subscriptionRenameRegionNamePlaceholder') }}
+              </option>
+              <option
+                v-for="c in countryOptions"
+                :key="c.code"
+                :value="c.code"
+              >
+                {{ c.label }}
+              </option>
+            </select>
             <input
               v-model="row.keywordsText"
               type="text"
@@ -185,6 +206,8 @@ import {
   DEFAULT_SEQ_PAD,
   DEFAULT_UNKNOWN_LABEL,
 } from './rename-defaults'
+import CountryFlag from '@/components/common/CountryFlag.vue'
+import { COUNTRIES, countryName, findCountry } from '@/constant/countries'
 import { ArrowUturnLeftIcon, Bars3Icon, PlusIcon, XMarkIcon } from '@heroicons/vue/24/outline'
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -199,10 +222,12 @@ const emit = defineEmits<{
 // 重命名规则悄悄改回默认——保存下去才发现节点名全变了。
 const props = defineProps<{ initial?: OpenboxRenameOptions | null }>()
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 interface RegionRow {
   id: string
+  // ISO 3166-1 alpha-2;空 = 这一行还没绑定国家(老档案里手写的名字)
+  code: string
   name: string
   keywordsText: string
 }
@@ -214,8 +239,37 @@ const makeId = () =>
 
 // 用不带空格的英文逗号拼接:分隔符本身就是逗号,后面那个空格只是显示习惯,
 // 而它会让用户以为空格是格式的一部分(splitKeywords 本来就会 trim,加不加都能解析)。
-const toRegionRows = (dict: { name: string; keywords: string[] }[]): RegionRow[] =>
-  dict.map((entry) => ({ id: makeId(), name: entry.name, keywordsText: entry.keywords.join(',') }))
+const toRegionRows = (dict: { code?: string; name: string; keywords: string[] }[]): RegionRow[] =>
+  dict.map((entry) => ({
+    id: makeId(),
+    // 只认目录里有的国家代码。老档案里 code 存的是一个随机行号(那时候它不表示国家),
+    // 认不出来就留空,这一行照旧按它自己的名字工作,直到用户挑一个国家。
+    code: findCountry(entry.code || '')?.code || '',
+    name: entry.name,
+    keywordsText: entry.keywords.join(','),
+  }))
+
+// 下拉框选项:按当前语言取名,并按名字排序——中文环境下按拼音/笔画排不现实,
+// 用 localeCompare 交给浏览器,至少同语言下顺序是稳定且可预期的。
+const countryOptions = computed(() =>
+  COUNTRIES.map((c) => ({ code: c.code, label: countryName(c, locale.value) })).sort((a, b) =>
+    a.label.localeCompare(b.label, locale.value),
+  ),
+)
+
+// 选中一个国家:名字与关键词都跟着走。关键词只在这一行还没被改过(仍是空的,或者
+// 还等于上一个国家的默认值)时才覆盖——用户精心加过的关键词不能因为换个国家就没了。
+const pickCountry = (row: RegionRow, code: string) => {
+  const country = findCountry(code)
+  if (!country) return
+  const previous = findCountry(row.code)
+  const untouched =
+    !row.keywordsText.trim() ||
+    (previous && row.keywordsText === previous.keywords.join(','))
+  row.code = country.code
+  row.name = countryName(country, locale.value)
+  if (untouched) row.keywordsText = country.keywords.join(',')
+}
 
 // 兼容旧档案:老的 featureDict 是 [{label, keywords}],扁平化成一条关键词表。
 const toFeatureKeywords = (input: unknown): string[] => {
@@ -301,7 +355,8 @@ const options = computed<OpenboxRenameOptions>(() => ({
   seqPad: Number.isFinite(seqPad.value) && seqPad.value > 0 ? Math.floor(seqPad.value) : DEFAULT_SEQ_PAD,
   regionDict: regionRows.value
     .filter((row) => row.name.trim() || row.keywordsText.trim())
-    .map((row) => ({ code: row.id, name: row.name.trim(), keywords: splitKeywords(row.keywordsText) })),
+    // code 是国家代码(没挑国家的行留空),不再是行号:节点的国别归属就是靠它带出去的
+    .map((row) => ({ code: row.code, name: row.name.trim(), keywords: splitKeywords(row.keywordsText) })),
   featureKeywords: splitKeywords(featureKeywordsText.value),
   excludeKeywords: splitKeywords(excludeKeywordsText.value),
 }))
@@ -315,7 +370,7 @@ watch(
 )
 
 const addRegionRow = () => {
-  regionRows.value.push({ id: makeId(), name: '', keywordsText: '' })
+  regionRows.value.push({ id: makeId(), code: '', name: '', keywordsText: '' })
 }
 const removeRegionRow = (id: string) => {
   const index = regionRows.value.findIndex((row) => row.id === id)

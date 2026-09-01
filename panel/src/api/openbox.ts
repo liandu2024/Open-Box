@@ -99,6 +99,9 @@ export interface OpenboxNodeSummary {
 export interface OpenboxRenamePreviewEntry {
   originalTag: string
   newTag: string
+  // 命中的地区所绑定的国家代码(ISO 3166-1 alpha-2),没命中任何地区时为空。
+  // 界面按它显示国旗——不从名字反推,名字可能被手工改过、也可能带订阅名前缀。
+  regionCode?: string
 }
 
 export interface OpenboxNodeGroup {

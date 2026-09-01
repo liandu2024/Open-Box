@@ -167,9 +167,13 @@ export const renameNodes = (nodes, options = {}) => {
     // 手工改名时用户看到的输入框里已经带着前缀,原样存下来就会是「破晓 | 破晓 | 香港-01」。
     // 判一下已有前缀,顺带也让"手工名写不写前缀"这件事怎么写都对。
     if (prefix && !tag.startsWith(`${prefix} | `)) tag = `${prefix} | ${tag}`
+    // 国别归属:地区词典的每一行都绑定一个国家代码(ISO 3166-1 alpha-2),命中哪行
+    // 就把那行的代码挂在节点上。界面据此显示国旗,不必再从名字里倒推一次——名字是
+    // 模板拼出来的,可能被手工改过、也可能带订阅名前缀,从它反推国家并不可靠。
+    const regionCode = region && region.code ? String(region.code).toUpperCase() : ''
     // regionRank 只用于排序,不进最终节点对象
     const regionRank = region ? regionDict.findIndex((r) => r.name === regionName) : -1
-    return { node: { ...node, tag }, regionRank }
+    return { node: { ...node, tag, regionCode }, regionRank }
   })
 
   // 按地区词典的顺序排列,未识别的(「其他」)一律垫底。词典顺序是用户在规则页拖出来
@@ -190,4 +194,8 @@ export const renameNodes = (nodes, options = {}) => {
 // 用改名结果自带的 originalTag 配对,不再按下标去索引入参:renameNodes 现在会重排,
 // 按下标配会把原名和新名错位。
 export const previewRename = (nodes, options = {}) =>
-  renameNodes(nodes, options).map((n) => ({ originalTag: n.originalTag, newTag: n.tag }))
+  renameNodes(nodes, options).map((n) => ({
+    originalTag: n.originalTag,
+    newTag: n.tag,
+    regionCode: n.regionCode || '',
+  }))

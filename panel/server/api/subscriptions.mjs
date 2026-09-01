@@ -249,7 +249,7 @@ const rebuildNodePool = (existingNodes, subscriptionsInOrder, subscriptionId, ne
   return dedupeNodeTags(merged)
 }
 
-const nodeSummary = (n) => ({ tag: n.tag, originalTag: n.originalTag, type: n.type, server: n.server })
+const nodeSummary = (n) => ({ tag: n.tag, originalTag: n.originalTag, type: n.type, server: n.server, regionCode: n.regionCode || '' })
 
 export const registerSubscriptionRoutes = (app, { store, fetchImpl = globalThis.fetch, lookup = dns.lookup } = {}) => {
   const router = express.Router({ caseSensitive: true })

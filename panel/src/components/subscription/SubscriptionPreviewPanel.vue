@@ -157,7 +157,18 @@
                   v-for="(entry, index) in rows"
                   :key="`${entry.originalTag}-${index}`"
                 >
-                  <td class="text-base-content/70 max-w-0 truncate text-sm">{{ entry.originalTag }}</td>
+                  <!-- 国旗放在原名前面:这一列是"节点本来叫什么",国别正是从它匹配出来的,
+                       两者摆在一起才看得出规则把这条判成了哪个国家。没匹配上的显示地球占位。 -->
+                  <td class="text-base-content/70 max-w-0 text-sm">
+                    <div class="flex items-center gap-1.5">
+                      <CountryFlag
+                        :code="entry.regionCode || ''"
+                        :size="16"
+                        :title="entry.regionCode || ''"
+                      />
+                      <span class="truncate">{{ entry.originalTag }}</span>
+                    </div>
+                  </td>
                   <td class="max-w-0">
                     <!-- 过滤页签下这条根本不会导入,没有"新名"可言,也不该能改 -->
                     <span
@@ -255,6 +266,7 @@
 <script setup lang="ts">
 import type { OpenboxLatencyResult, OpenboxRenameOptions, OpenboxSubscriptionPreview } from '@/api/openbox'
 import { testNodeLatency } from '@/api/openbox'
+import CountryFlag from '@/components/common/CountryFlag.vue'
 import {
   ArrowRightIcon,
   ArrowUturnLeftIcon,
@@ -292,10 +304,10 @@ const listTab = ref<'kept' | 'excluded' | 'disabled'>('kept')
 // 两个页签共用同一张表:过滤那边没有"新名",originalTag 复用同一列即可。
 const rows = computed(() => {
   if (listTab.value === 'excluded') {
-    return (props.preview?.excluded || []).map((item) => ({ originalTag: item.name, newTag: '' }))
+    return (props.preview?.excluded || []).map((item) => ({ originalTag: item.name, newTag: '', regionCode: '' }))
   }
   if (listTab.value === 'disabled') {
-    return (props.preview?.disabled || []).map((item) => ({ originalTag: item.name, newTag: '' }))
+    return (props.preview?.disabled || []).map((item) => ({ originalTag: item.name, newTag: '', regionCode: '' }))
   }
   return props.preview?.preview || []
 })

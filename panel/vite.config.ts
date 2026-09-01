@@ -34,6 +34,12 @@ export default defineConfig({
     __COMMIT_ID__: JSON.stringify(getGitCommitId()),
   },
   base: './',
+  build: {
+    // 国旗默认会被当成小资源内联成 data URI,52 面全塞进主 chunk 就是白白多背 300KB
+    // ——而一次界面上只会显示到其中几面。让 src/assets/flags 下的文件一律走独立文件,
+    // 浏览器按需去取;其余资源保持 Vite 的默认阈值不变。
+    assetsInlineLimit: (filePath: string) => (filePath.includes('/assets/flags/') ? false : undefined),
+  },
   server: {
     proxy: {
       '/api': {

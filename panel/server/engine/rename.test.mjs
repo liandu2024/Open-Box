@@ -80,7 +80,7 @@ test('renameNodes 不改原对象', () => {
 
 test('previewRename 原名→新名', () => {
   const pv = previewRename([mk('US-01')])
-  assert.deepEqual(pv, [{ originalTag: 'US-01', newTag: '美国-01' }])
+  assert.deepEqual(pv, [{ originalTag: 'US-01', newTag: '美国-01', regionCode: 'US' }])
 })
 
 test('applyTemplate 元字符 $&/$1 不被 String.replace 误解析(修复7)', () => {
@@ -210,8 +210,8 @@ test('previewRename 用节点自带的 originalTag 配对,重排后原名与新�
   const dict = [{ code: 'HK', name: '香港', keywords: ['香港'] }]
   const rows = previewRename(['美国01', '香港01'].map(mk), { regionDict: dict })
   assert.deepEqual(rows, [
-    { originalTag: '香港01', newTag: '香港-01' },
-    { originalTag: '美国01', newTag: '其他-01' },
+    { originalTag: '香港01', newTag: '香港-01', regionCode: 'HK' },
+    { originalTag: '美国01', newTag: '其他-01', regionCode: '' },
   ])
 })
 
@@ -292,4 +292,31 @@ test('前缀不影响地区识别与排序:匹配看的是原名', () => {
   const dict = [{ code: 'US', name: '美国', keywords: ['美国'] }, { code: 'HK', name: '香港', keywords: ['香港'] }]
   const out = renameNodes(['香港01', '美国01'].map(mk), { prefix: 'P', regionDict: dict })
   assert.deepEqual(out.map((n) => n.tag), ['P | 美国-01', 'P | 香港-01'])
+})
+
+// -------- 国别归属 --------
+
+test('命中地区的节点带上该地区的国家代码,未命中的为空', () => {
+  const dict = [
+    { code: 'HK', name: '香港', keywords: ['香港'] },
+    { code: 'us', name: '美国', keywords: ['美国'] },
+  ]
+  const out = renameNodes(['香港01', '美国01', '火星01'].map(mk), { regionDict: dict })
+  assert.deepEqual(
+    out.map((n) => [n.tag, n.regionCode]),
+    [['香港-01', 'HK'], ['美国-01', 'US'], ['其他-01', '']],
+  )
+})
+
+test('previewRename 把国家代码一并给出来:预览表要按它显示国旗', () => {
+  const dict = [{ code: 'JP', name: '日本', keywords: ['日本'] }]
+  assert.deepEqual(previewRename([mk('日本01')], { regionDict: dict }), [
+    { originalTag: '日本01', newTag: '日本-01', regionCode: 'JP' },
+  ])
+})
+
+test('手工改过名的节点同样带国别:国别看的是原名,与改成什么名字无关', () => {
+  const dict = [{ code: 'HK', name: '香港', keywords: ['香港'] }]
+  const out = renameNodes([mk('香港01')], { regionDict: dict, overrides: { 香港01: '我的节点' } })
+  assert.deepEqual(out.map((n) => [n.tag, n.regionCode]), [['我的节点', 'HK']])
 })
