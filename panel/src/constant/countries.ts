@@ -77,6 +77,18 @@ const BY_CODE = new Map(COUNTRIES.map((c) => [c.code, c]))
 export const findCountry = (code: string): Country | undefined =>
   BY_CODE.get(String(code || '').toUpperCase())
 
+// 按显示名反查。用来救老档案:国家代码这个字段以前存的是行号(那时它不表示国家),
+// 认不出代码时退回按名字认——存的名字就是「香港」「美国」这些,正好是下面这张表的键。
+const BY_NAME = new Map<string, Country>()
+for (const c of COUNTRIES) {
+  for (const n of [c.zh, c.tw, c.en]) {
+    const key = n.toLowerCase()
+    if (!BY_NAME.has(key)) BY_NAME.set(key, c)
+  }
+}
+export const findCountryByName = (name: string): Country | undefined =>
+  BY_NAME.get(String(name || '').trim().toLowerCase())
+
 // 按当前语言取显示名。locale 取值见 src/i18n('zh-CN' / 'zh-TW' / 'en')。
 export const countryName = (c: Country, locale: string): string => {
   if (!locale.startsWith('zh')) return c.en

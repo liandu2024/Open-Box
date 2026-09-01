@@ -445,6 +445,8 @@ const zhTW: LANG_MESSAGE = {
   groupDroppedCycle: '「{name}」和其他分組互相引用,不會寫進設定',
   subscriptionResetNames: '恢復預設名稱',
   subscriptionResetNamesHint: '把 {count} 條手工改過的名字改回規則算出來的名字',
+  subscriptionRenameCountrySearch: '搜尋國家/地區',
+  subscriptionRenameCountryNoMatch: '沒有符合的國家/地區',
   subscriptionRenamePrefixLabel: '節點名前加訂閱名(如「破曉 {sep} 香港-01」)',
   subscriptionRenameTokensHint: '拖曳排序:',
   subscriptionRenameUnknownLabel: '\u7121\u6cd5\u8b58\u5225\u5730\u5340\u6642\u7684\u6a19\u7c64',

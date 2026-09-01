@@ -103,32 +103,15 @@
           <div class="flex items-center gap-1.5">
             <Bars3Icon class="drag-handle text-base-content/40 h-4 w-4 shrink-0 cursor-move" />
             <!-- 一行 = 一个国家/地区。绑到具体国家(而不是随手写的名字)之后,才谈得上
-                 配一面对应的国旗,匹配出来的节点也才有国别可言。老档案里手写的名字
-                 认不出国家时,下拉框顶上会留一条它自己,不会被悄悄清掉。 -->
-            <CountryFlag
-              :code="row.code"
-              :size="18"
-              :title="row.name"
-            />
-            <select
-              class="select select-sm w-28 shrink-0"
-              :value="row.code"
-              @change="pickCountry(row, ($event.target as HTMLSelectElement).value)"
-            >
-              <option
-                v-if="!row.code"
-                value=""
-              >
-                {{ row.name || $t('subscriptionRenameRegionNamePlaceholder') }}
-              </option>
-              <option
-                v-for="c in countryOptions"
-                :key="c.code"
-                :value="c.code"
-              >
-                {{ c.label }}
-              </option>
-            </select>
+                 配一面对应的国旗,匹配出来的节点也才有国别可言。还没绑上的(老档案里
+                 手写的名字)在按钮上显示它原来的名字,不会被悄悄清掉。 -->
+            <div class="w-32 shrink-0">
+              <CountrySelect
+                :model-value="row.code"
+                :placeholder="row.name || $t('subscriptionRenameRegionNamePlaceholder')"
+                @update:model-value="pickCountry(row, $event)"
+              />
+            </div>
             <input
               v-model="row.keywordsText"
               type="text"
@@ -206,8 +189,8 @@ import {
   DEFAULT_SEQ_PAD,
   DEFAULT_UNKNOWN_LABEL,
 } from './rename-defaults'
-import CountryFlag from '@/components/common/CountryFlag.vue'
-import { COUNTRIES, countryName, findCountry } from '@/constant/countries'
+import CountrySelect from '@/components/common/CountrySelect.vue'
+import { countryName, findCountry, findCountryByName } from '@/constant/countries'
 import { ArrowUturnLeftIcon, Bars3Icon, PlusIcon, XMarkIcon } from '@heroicons/vue/24/outline'
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -242,33 +225,29 @@ const makeId = () =>
 const toRegionRows = (dict: { code?: string; name: string; keywords: string[] }[]): RegionRow[] =>
   dict.map((entry) => ({
     id: makeId(),
-    // 只认目录里有的国家代码。老档案里 code 存的是一个随机行号(那时候它不表示国家),
-    // 认不出来就留空,这一行照旧按它自己的名字工作,直到用户挑一个国家。
-    code: findCountry(entry.code || '')?.code || '',
+    // 老档案里 code 存的是一个随机行号(那时它不表示国家),认不出来就退回按名字认
+    // ——存的就是「香港」「美国」这些,正好能对上目录。两条都认不出才留空(自定义地区)。
+    code: findCountry(entry.code || '')?.code || findCountryByName(entry.name)?.code || '',
     name: entry.name,
     keywordsText: entry.keywords.join(','),
   }))
 
-// 下拉框选项:按当前语言取名,并按名字排序——中文环境下按拼音/笔画排不现实,
-// 用 localeCompare 交给浏览器,至少同语言下顺序是稳定且可预期的。
-const countryOptions = computed(() =>
-  COUNTRIES.map((c) => ({ code: c.code, label: countryName(c, locale.value) })).sort((a, b) =>
-    a.label.localeCompare(b.label, locale.value),
-  ),
-)
-
-// 选中一个国家:名字与关键词都跟着走。关键词只在这一行还没被改过(仍是空的,或者
-// 还等于上一个国家的默认值)时才覆盖——用户精心加过的关键词不能因为换个国家就没了。
+// 选中一个国家:名字跟着走,关键词在"还看得出是上一个国家的"时一并换掉。
+// 判据是子集而不是全等:老档案里存的关键词往往是默认值的一个子集(比如只剩
+// hk,香港),用全等判的话它们永远算"用户改过的",换成法国之后还挂着香港的词。
+// 反过来,只要有一个词不属于上一个国家(用户自己加的),整行就不动——精心加过的
+// 关键词不该因为换个国家就没了。
 const pickCountry = (row: RegionRow, code: string) => {
   const country = findCountry(code)
   if (!country) return
   const previous = findCountry(row.code)
-  const untouched =
-    !row.keywordsText.trim() ||
-    (previous && row.keywordsText === previous.keywords.join(','))
+  const current = splitKeywords(row.keywordsText).map((k) => k.toLowerCase())
+  const previousKeywords = new Set((previous?.keywords || []).map((k) => k.toLowerCase()))
+  const fromPreviousCountry =
+    !current.length || (previous !== undefined && current.every((k) => previousKeywords.has(k)))
   row.code = country.code
   row.name = countryName(country, locale.value)
-  if (untouched) row.keywordsText = country.keywords.join(',')
+  if (fromPreviousCountry) row.keywordsText = country.keywords.join(',')
 }
 
 // 兼容旧档案:老的 featureDict 是 [{label, keywords}],扁平化成一条关键词表。
