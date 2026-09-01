@@ -355,9 +355,15 @@ export const registerSubscriptionRoutes = (app, { store, fetchImpl = globalThis.
       const renameOptions =
         body.renameOptions === undefined ? existing.renameOptions || {} : body.renameOptions
 
+      // 开了「订阅名做前缀」时,改订阅名字就等于改掉全部节点名字,必须重新解析。
+      // 不带这个条件的话,改完名字节点上还挂着旧前缀,而界面上看不出任何异常。
+      const renamedWithPrefix =
+        renameOptions && renameOptions.usePrefix === true && name !== existing.name
+
       const needsRefetch =
         (source.url || '') !== (existing.url || '') ||
         (source.content || '') !== (existing.content || '') ||
+        renamedWithPrefix ||
         JSON.stringify(renameOptions || {}) !== JSON.stringify(existing.renameOptions || {})
 
       if (!needsRefetch) {

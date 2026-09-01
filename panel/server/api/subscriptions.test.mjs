@@ -689,6 +689,52 @@ test('只改名字不触发重新拉取(机场抽风时也得能改名)', async 
   }
 })
 
+test('开了订阅名前缀时,改名字必须重新解析(否则节点上挂着旧前缀)', async () => {
+  let fetchCount = 0
+  const fetchImpl = async () => {
+    fetchCount += 1
+    return { ok: true, status: 200, text: async () => SHARELINK_MULTI }
+  }
+  const { baseUrl, store, close } = await startApp(fetchImpl)
+  try {
+    const created = await (await postJson(baseUrl, '/api/openbox/subscriptions', {
+      url: 'https://sub.example.com/x', name: '旧名字', renameOptions: { usePrefix: true },
+    })).json()
+    assert.ok(store.getNodes().every((n) => n.tag.startsWith('旧名字 | ')), '建好时就该带前缀')
+
+    const res = await fetch(`${baseUrl}/api/openbox/subscriptions/${created.id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: '新名字' }),
+    })
+    assert.equal(res.status, 200)
+    assert.equal(fetchCount, 2, '名字即前缀,改名等于改所有节点名,必须重新解析')
+    assert.ok(store.getNodes().every((n) => n.tag.startsWith('新名字 | ')), '前缀要跟着新名字走')
+  } finally {
+    await close()
+  }
+})
+
+test('没开前缀时改名字仍然不重新拉取', async () => {
+  let fetchCount = 0
+  const fetchImpl = async () => {
+    fetchCount += 1
+    return { ok: true, status: 200, text: async () => SHARELINK_MULTI }
+  }
+  const { baseUrl, close } = await startApp(fetchImpl)
+  try {
+    const created = await (await postJson(baseUrl, '/api/openbox/subscriptions', { url: 'https://sub.example.com/x', name: 'A' })).json()
+    await fetch(`${baseUrl}/api/openbox/subscriptions/${created.id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'B' }),
+    })
+    assert.equal(fetchCount, 1)
+  } finally {
+    await close()
+  }
+})
+
 test('换订阅链接会重新拉取并替换该订阅的节点', async () => {
   const fetchImpl = async (url) => ({
     ok: true,
