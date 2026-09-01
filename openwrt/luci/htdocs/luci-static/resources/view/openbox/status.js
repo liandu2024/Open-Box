@@ -738,6 +738,10 @@ var STYLE_CSS =
 	// 标题行右端那一组按钮(升级卡片的「一键检测可用升级渠道」+「检查更新」)。
 	// 同样得自成一个 flex 容器,否则 space-between 会把它们摊开成"标题…按钮…按钮"。
 	'.ob-h3-right{margin-left:auto;display:flex;flex-wrap:wrap;align-items:center;gap:8px}' +
+	// 置灰不可点的兜底:Argon 自带 .cbi-button:disabled(opacity .5 + not-allowed),
+	// 但「没有更新时按钮必须是灰的、点不动」是这里的功能要求,不能指望每个主题都
+	// 替我们实现。pointer-events:none 连 hover 态一起掐掉,避免灰着却还有悬停高亮。
+	'.ob-card h3 .cbi-button:disabled{opacity:.5;cursor:not-allowed;pointer-events:none;box-shadow:none}' +
 	// 说明文字显式给字号与字重:它现在长在 <h2> 里,不这么写就会被标题的大号粗体
 	// 同化,读起来像第二个标题而不是一句注解。
 	'.ob-descr{font-size:.875rem;font-weight:400;opacity:.7;line-height:1.4}' +
@@ -1280,11 +1284,16 @@ return view.extend({
 			]);
 		}
 
-		var versionResult = E('span', { 'style': 'margin-left:.6em' }, '');
+		// 检查结果作为「Open-Box 升级」的副标题挂在标题后面(.ob-descr,和页面副标题
+		// 同一套样式),不再单独占底部一行。
+		var versionResult = E('span', { 'class': 'ob-descr' }, '');
 
 		var latestAvailable = null;
 
-		var updateBtn = E('button', { 'class': 'cbi-button cbi-button-apply', 'style': 'display:none',
+		// 「立即更新」常驻可见,靠 disabled 表达"现在没得更新",而不是像旧版那样
+		// display:none 整个消失——按钮忽隐忽现会让人以为功能没了,灰着则说明它存在、
+		// 只是还不能用(要先「检查更新」)。
+		var updateBtn = E('button', { 'class': 'cbi-button cbi-button-apply', 'disabled': 'disabled',
 			'click': ui.createHandlerFn(self, function () { return showUpdateDialog(latestAvailable); }) },
 			tr('Update now'));
 
@@ -1292,16 +1301,15 @@ return view.extend({
 			'click': ui.createHandlerFn(self, function () {
 				versionResult.textContent = tr('Checking...');
 				latestAvailable = null;
-				updateBtn.style.display = 'none';
+				updateBtn.disabled = true;
 				return checkLatest().then(function (latest) {
-					if (!installed) {
-						versionResult.textContent = fmt('New version available: %s', latest);
-						return;
-					}
-					if (cmpVersion(latest, installed) > 0) {
+					// 读不到已装版本(meta.json 缺失或损坏)时无从比较,但这本身就说明
+					// 这套安装是坏的,重装一遍恰恰是修法——所以照样放行,而不是让人
+					// 对着一句"发现新版本"和一颗按不动的灰按钮干瞪眼。
+					if (!installed || cmpVersion(latest, installed) > 0) {
 						versionResult.textContent = fmt('New version available: %s', latest);
 						latestAvailable = latest;
-						updateBtn.style.display = '';
+						updateBtn.disabled = false;
 					} else {
 						versionResult.textContent = tr('Up to date.');
 					}
@@ -1476,30 +1484,26 @@ return view.extend({
 					]),
 
 					// 「Open-Box 升级」独立成一张卡片(负责人手绘草图的要求):标题行右侧是
-					// 「一键检测可用升级渠道」,中间一个带边框的列表把 4 个渠道各自的探测
-					// 状态、单选按钮(选中即"立即更新"要用的渠道)、单独的「检测」按钮圈
-					// 在一起(.ob-chan),最下面是检查更新/立即更新那组控制 + 选中渠道的
-					// 实时摘要——不再像旧版那样单独一个下拉框选渠道,选择直接并进渠道
-					// 列表每一行的开头(见 channelStatusList 定义处)。这张卡片内容明显
-					// 比另外两张多,横跨两列给了它整行宽度,渠道行不再像旧版 auto-fit
-					// 三列时那样被挤成窄条。
+					// 整张卡片一行标题 + 一个渠道列表:标题行左边是标题 + 检查结果副标题,
+					// 右边是「一键检测可用升级渠道 / 检查更新 / 立即更新」三个按钮;中间一个
+					// 带边框的列表把 4 个渠道各自的探测状态、单选按钮(选中即"立即更新"要用
+					// 的渠道)、单独的「检测」按钮圈在一起(.ob-chan);最下面是选中渠道的实时
+					// 摘要——不再像旧版那样单独一个下拉框选渠道,选择直接并进渠道列表每一行
+					// 的开头(见 channelStatusList 定义处)。这张卡片内容明显比另外两张多,
+					// 横跨两列给了它整行宽度,渠道行不再像旧版 auto-fit 三列时那样被挤成窄条。
 					E('div', { 'class': 'ob-card ob-card-wide' }, [
-						// 标题行右侧是「一键检测可用升级渠道」+「检查更新」两个按钮,和另外
-						// 两张卡片版本号的落位是同一个模式(.ob-card h3 的
-						// justify-content:space-between)。它们原本各自占一行,白白吃掉两行
-						// 高度,而右边那一大片空白正好没人用。两个按钮必须裹进 .ob-h3-right:
-						// space-between 会把平铺进来的多个子元素摊开,标题和两个按钮之间会
-						// 各撑出一段空隙,而不是"两个按钮挨在一起靠右"。
+						// 三个按钮必须裹进 .ob-h3-right:h3 是 justify-content:space-between,
+						// 平铺进来的多个子元素会被逐个摊开,变成"标题…按钮…按钮…按钮",而不是
+						// "三个按钮挨在一起靠右"。左侧的标题 + 结果副标题同理裹进 .ob-h3-left。
 						E('h3', {}, [
-							E('span', {}, tr('Open-Box upgrade')),
-							E('div', { 'class': 'ob-h3-right' }, [ probeAllBtn, checkBtn ])
+							E('div', { 'class': 'ob-h3-left' }, [
+								E('span', {}, tr('Open-Box upgrade')),
+								versionResult
+							]),
+							E('div', { 'class': 'ob-h3-right' }, [ probeAllBtn, checkBtn, updateBtn ])
 						]),
 						channelStatusList,
 						E('div', { 'class': 'ob-div' }),
-						// versionResult 留在底部这一行、紧挨着「立即更新」:它是"要更到哪个
-						// 版本"的说明,和按下去就开始下载的那个按钮放在一起才有意义;跟着
-						// 「检查更新」挪到标题行反而离动作更远。
-						E('div', { 'class': 'ob-btns' }, [ versionResult, updateBtn ]),
 						selectedChannelLine
 					])
 				])
