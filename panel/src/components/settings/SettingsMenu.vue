@@ -48,37 +48,38 @@
 
 <script setup lang="ts">
 import { useCtrlsBar } from '@/composables/useCtrlsBar'
-import { SETTINGS_MENU_KEY } from '@/constant'
 import { Cog6ToothIcon } from '@heroicons/vue/24/outline'
 import { useSwipe } from '@vueuse/core'
 import type { Component } from 'vue'
 import { ref } from 'vue'
 import SettingsVisibilityDialog from './SettingsVisibilityDialog.vue'
 
+// key 故意放宽成 string:这个条形菜单原本只服务于面板设置内部的分组
+// (SETTINGS_MENU_KEY),现在改为驱动设置页的一级页签(SETTINGS_TAB)。两者是不同
+// 的枚举,组件本身并不关心具体是哪一个,只负责"渲染一排、点哪个发哪个 key"。
 type MenuItem = {
-  key: SETTINGS_MENU_KEY
+  key: string
   label: string
   icon: Component
-  component: Component
 }
 
 const props = defineProps<{
   menuItems: MenuItem[]
-  activeMenuKey: SETTINGS_MENU_KEY
+  activeMenuKey: string
 }>()
 
 const emit = defineEmits<{
-  (e: 'menu-click', key: SETTINGS_MENU_KEY): void
+  (e: 'menu-click', key: string): void
 }>()
 
 const showVisibilityDialog = ref(false)
 
 const menuRef = ref<HTMLDivElement>()
-const menuItemRefs = ref(new Map<SETTINGS_MENU_KEY, HTMLButtonElement>())
+const menuItemRefs = ref(new Map<string, HTMLButtonElement>())
 
 useCtrlsBar()
 
-const setMenuItemRef = (el: HTMLButtonElement | null, key: SETTINGS_MENU_KEY) => {
+const setMenuItemRef = (el: HTMLButtonElement | null, key: string) => {
   if (!el) {
     menuItemRefs.value.delete(key)
     return
@@ -98,12 +99,12 @@ const { isSwiping } = useSwipe(menuRef, {
   },
 })
 
-const handleMenuClick = (key: SETTINGS_MENU_KEY) => {
+const handleMenuClick = (key: string) => {
   if (isSwiping.value) return
   emit('menu-click', key)
 }
 
-const getMenuItemAtPosition = (x: number): SETTINGS_MENU_KEY | null => {
+const getMenuItemAtPosition = (x: number): string | null => {
   if (!menuRef.value) return null
 
   const menuRect = menuRef.value.getBoundingClientRect()
@@ -116,7 +117,7 @@ const getMenuItemAtPosition = (x: number): SETTINGS_MENU_KEY | null => {
     const itemWidth = itemRect.width
 
     if (relativeX >= itemRelativeX && relativeX <= itemRelativeX + itemWidth) {
-      return itemEl.dataset.key as SETTINGS_MENU_KEY
+      return itemEl.dataset.key as string
     }
   }
 

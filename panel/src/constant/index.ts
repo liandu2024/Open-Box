@@ -217,6 +217,16 @@ export enum IP_INFO_API {
   IPAPI = 'ipapi.is',
 }
 
+// 设置页顶部的一级页签。SETTINGS_MENU_KEY(见下)是「面板设置」这一个页签**内部**
+// 堆叠的那几组卡片,两者层级不同:一级页签切换的是整块内容,SETTINGS_MENU_KEY 只
+// 决定面板设置里各组卡片的显示与顺序(仍由齿轮里的可见性弹窗控制)。
+export enum SETTINGS_TAB {
+  panel = 'panel',
+  subscriptions = 'subscriptions',
+  routing = 'routing',
+  kernel = 'kernel',
+}
+
 export enum SETTINGS_MENU_KEY {
   general = 'generalSettings',
   backend = 'backendSettings',

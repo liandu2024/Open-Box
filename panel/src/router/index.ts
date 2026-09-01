@@ -1,4 +1,4 @@
-import { ROUTE_NAME } from '@/constant'
+import { ROUTE_NAME, SETTINGS_TAB } from '@/constant'
 import { renderRoutes } from '@/helper'
 import { i18n } from '@/i18n'
 import {
@@ -10,16 +10,13 @@ import {
 import { language } from '@/store/settings'
 import ConnectionsPage from '@/views/ConnectionsPage.vue'
 import HomePage from '@/views/HomePage.vue'
-import KernelPage from '@/views/KernelPage.vue'
 import LoginPage from '@/views/LoginPage.vue'
 import LogsPage from '@/views/LogsPage.vue'
 import OverviewPage from '@/views/OverviewPage.vue'
 import ProxiesPage from '@/views/ProxiesPage.vue'
-import RoutingPage from '@/views/RoutingPage.vue'
 import RulesPage from '@/views/RulesPage.vue'
 import SettingsPage from '@/views/SettingsPage.vue'
 import SetupPasswordPage from '@/views/SetupPasswordPage.vue'
-import SubscriptionsPage from '@/views/SubscriptionsPage.vue'
 import { useTitle } from '@vueuse/core'
 import { watch } from 'vue'
 import { createRouter, createWebHashHistory } from 'vue-router'
@@ -62,20 +59,21 @@ const childrenRouter = [
     name: ROUTE_NAME.rules,
     component: RulesPage,
   },
+  // 订阅/分流/内核已并入「设置」页的一级页签。这里保留三条重定向而不是直接删掉:
+  // 老书签、以及升级前存在 localStorage 里的"上次所在页面",都还会指过来,落到
+  // 404 或空白比多三行路由糟得多。它们不带 name——带了就会重新出现在 renderRoutes
+  // 里(那个列表是遍历 ROUTE_NAME 枚举生成的),侧边栏又会把它们冒出来。
   {
     path: 'subscriptions',
-    name: ROUTE_NAME.subscriptions,
-    component: SubscriptionsPage,
+    redirect: { name: ROUTE_NAME.settings, query: { tab: SETTINGS_TAB.subscriptions } },
   },
   {
     path: 'routing',
-    name: ROUTE_NAME.routing,
-    component: RoutingPage,
+    redirect: { name: ROUTE_NAME.settings, query: { tab: SETTINGS_TAB.routing } },
   },
   {
     path: 'kernel',
-    name: ROUTE_NAME.kernel,
-    component: KernelPage,
+    redirect: { name: ROUTE_NAME.settings, query: { tab: SETTINGS_TAB.kernel } },
   },
   {
     path: 'settings',

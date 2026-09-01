@@ -157,6 +157,12 @@ export const renderRoutes = computed(() => {
     return ![
       ROUTE_NAME.login,
       ROUTE_NAME.setup,
+      // 订阅/分流/内核已并入「设置」页的一级页签,不再是侧边栏里的独立目的地。
+      // renderRoutes 同时驱动侧边栏、键盘快捷键和左右滑动切页,从这里摘掉就三处
+      // 一起生效;它们的路由本身保留为重定向(见 router/index.ts),老书签仍能落地。
+      ROUTE_NAME.subscriptions,
+      ROUTE_NAME.routing,
+      ROUTE_NAME.kernel,
       !splitOverviewPage.value && ROUTE_NAME.overview,
     ].includes(r)
   })

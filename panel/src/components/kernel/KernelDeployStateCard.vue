@@ -26,7 +26,7 @@
       </p>
 
       <RouterLink
-        :to="{ name: ROUTE_NAME.routing }"
+        :to="{ name: ROUTE_NAME.settings, query: { tab: SETTINGS_TAB.routing } }"
         class="link link-hover text-xs"
       >
         {{ $t('kernelDeployStateGoToRouting') }}
@@ -37,7 +37,7 @@
 
 <script setup lang="ts">
 import type { OpenboxDeployState } from '@/api/openbox'
-import { ROUTE_NAME } from '@/constant'
+import { ROUTE_NAME, SETTINGS_TAB } from '@/constant'
 import { CheckCircleIcon, ClockIcon, ExclamationTriangleIcon } from '@heroicons/vue/24/outline'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
