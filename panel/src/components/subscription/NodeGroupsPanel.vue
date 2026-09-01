@@ -99,21 +99,27 @@
           <template v-if="draft.type === 'urltest'">
             <div class="flex flex-col gap-1">
               <label class="text-xs font-medium">{{ $t('groupInterval') }}</label>
-              <input
-                v-model="draft.interval"
-                type="text"
-                class="input input-sm w-24"
-                placeholder="3m"
-              />
+              <div class="flex items-center gap-1">
+                <input
+                  v-model.number="intervalMinutes"
+                  type="number"
+                  min="1"
+                  class="input input-sm w-20"
+                />
+                <span class="text-base-content/60 text-xs">{{ $t('groupUnitMinute') }}</span>
+              </div>
             </div>
             <div class="flex flex-col gap-1">
               <label class="text-xs font-medium">{{ $t('groupTolerance') }}</label>
-              <input
-                v-model.number="draft.tolerance"
-                type="number"
-                min="0"
-                class="input input-sm w-24"
-              />
+              <div class="flex items-center gap-1">
+                <input
+                  v-model.number="draft.tolerance"
+                  type="number"
+                  min="0"
+                  class="input input-sm w-20"
+                />
+                <span class="text-base-content/60 text-xs">{{ $t('groupUnitMs') }}</span>
+              </div>
             </div>
           </template>
         </div>
@@ -126,32 +132,24 @@
 
         <div class="divider my-0" />
 
-        <label class="flex cursor-pointer items-center gap-2 text-sm">
-          <input
-            v-model="draft.allNodes"
-            type="checkbox"
-            class="checkbox checkbox-sm"
-          />
-          {{ $t('groupAllNodes') }}
-        </label>
-        <p class="text-base-content/50 -mt-2 text-xs">{{ $t('groupAllNodesHint') }}</p>
-
         <!-- 左右穿梭:左边是还没选的,右边是已选的。点一条就挪到另一边,不再用勾选框
              ——勾选框要靠"有没有打勾"去分辨选没选,几十个节点混在一列里根本看不出来
              自己到底选了哪些;拆成两栏后"已选"本身就是一份清单。 -->
-        <template v-if="!draft.allNodes">
-          <div class="grid grid-cols-2 gap-3">
+        <div class="grid grid-cols-2 gap-3">
             <div class="border-base-content/10 flex min-h-0 flex-col rounded-lg border">
-              <div class="border-base-content/10 flex items-center gap-2 border-b px-2 py-1.5">
-                <span class="text-xs font-medium whitespace-nowrap">
-                  {{ $t('groupAvailable') }} ({{ availableCandidates.length }})
-                </span>
-                <input
-                  v-model="memberFilter"
-                  type="text"
-                  class="input input-xs min-w-0 flex-1"
-                  :placeholder="$t('groupMemberFilter')"
-                />
+              <div class="border-base-content/10 flex flex-col gap-1 border-b px-2 py-1.5">
+                <div class="flex items-center gap-2">
+                  <span class="text-xs font-medium whitespace-nowrap">
+                    {{ $t('groupAvailable') }} ({{ availableCandidates.length }})
+                  </span>
+                  <input
+                    v-model="memberFilter"
+                    type="text"
+                    class="input input-xs min-w-0 flex-1"
+                    :placeholder="$t('groupMemberFilter')"
+                  />
+                </div>
+                <BulkPick @select-all="selectAll" @invert="invertSelection" @clear="clearSelection" />
               </div>
               <div class="max-h-64 overflow-y-auto">
                 <p
@@ -178,28 +176,29 @@
             </div>
 
             <div class="border-base-content/10 flex min-h-0 flex-col rounded-lg border">
-              <div class="border-base-content/10 flex items-center justify-between gap-2 border-b px-2 py-1.5">
-                <span class="text-xs font-medium">
-                  {{ $t('groupSelected') }} ({{ draft.members.length }})
-                </span>
-                <button
-                  v-if="draft.members.length"
-                  type="button"
-                  class="btn btn-ghost btn-xs"
-                  @click="draft.members = []"
-                >
-                  {{ $t('groupClear') }}
-                </button>
+              <div class="border-base-content/10 flex flex-col gap-1 border-b px-2 py-1.5">
+                <div class="flex items-center gap-2">
+                  <span class="text-xs font-medium whitespace-nowrap">
+                    {{ $t('groupSelected') }} ({{ draft.members.length }})
+                  </span>
+                  <input
+                    v-model="selectedFilter"
+                    type="text"
+                    class="input input-xs min-w-0 flex-1"
+                    :placeholder="$t('groupMemberFilter')"
+                  />
+                </div>
+                <BulkPick @select-all="selectAll" @invert="invertSelection" @clear="clearSelection" />
               </div>
               <div class="max-h-64 overflow-y-auto">
                 <p
-                  v-if="!draft.members.length"
+                  v-if="!filteredSelected.length"
                   class="text-base-content/50 p-3 text-center text-xs"
                 >
                   {{ $t('groupNoSelected') }}
                 </p>
                 <button
-                  v-for="name in draft.members"
+                  v-for="name in filteredSelected"
                   :key="name"
                   type="button"
                   class="hover:bg-base-200/60 flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm"
@@ -210,8 +209,7 @@
                 </button>
               </div>
             </div>
-          </div>
-        </template>
+        </div>
 
         <p
           v-if="editorError"
@@ -248,6 +246,7 @@
 <script setup lang="ts">
 import type { OpenboxUserGroup } from '@/api/openbox'
 import { fetchNodeGroups, saveNodeGroups } from '@/api/openbox'
+import BulkPick from '@/components/subscription/BulkPick.vue'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import { routingPendingDeploy } from '@/store/routing'
 import {
@@ -291,6 +290,7 @@ const showEditor = ref(false)
 const editing = ref<OpenboxUserGroup | null>(null)
 const draft = ref<OpenboxUserGroup | null>(null)
 const memberFilter = ref('')
+const selectedFilter = ref('')
 const editorError = ref('')
 const saving = ref(false)
 
@@ -308,7 +308,16 @@ const openEditor = (group: OpenboxUserGroup | null) => {
         interval: '3m',
         tolerance: 50,
       }
+  // 编辑器里不再有「包含所有有效节点」这个开关(改成了全选/反选/全不选),所以打开
+  // 一个 allNodes 组时,把它当前代表的节点落成一份显式名单摆到「已选」里——否则右栏
+  // 会是空的,看起来像这个组什么都没选。代价:保存后它就变成固定名单,不再随订阅
+  // 刷新自动跟着变。
+  if (draft.value?.allNodes) {
+    draft.value.allNodes = false
+    draft.value.members = [...availableNodes.value]
+  }
   memberFilter.value = ''
+  selectedFilter.value = ''
   editorError.value = ''
   showEditor.value = true
 }
@@ -343,6 +352,44 @@ const removeMember = (name: string) => {
   draft.value.members = draft.value.members.filter((m) => m !== name)
 }
 
+// 界面上填的是分钟数,存进去仍是 sing-box 认的 "3m" 形式。原来直接让用户手写
+// "3m" 这种带单位的字符串:写成 "3" 或 "3分钟" 都会被内核当成非法值,而界面上看不出
+// 哪种写法才对。
+const intervalMinutes = computed<number>({
+  get: () => {
+    const m = /^(\d+)/.exec(draft.value?.interval || '')
+    return m ? Number(m[1]) : 3
+  },
+  set: (v: number) => {
+    if (!draft.value) return
+    const n = Number.isFinite(v) && v >= 1 ? Math.floor(v) : 1
+    draft.value.interval = `${n}m`
+  },
+})
+
+const filteredSelected = computed(() => {
+  const kw = selectedFilter.value.trim().toLowerCase()
+  const list = draft.value?.members || []
+  if (!kw) return list
+  return list.filter((name) => name.toLowerCase().includes(kw))
+})
+
+// 三个批量动作作用于整份候选集,不受任一侧过滤框影响——过滤是用来"找某一条"的,
+// 让它顺带改变"全选"的范围会让人不敢按(按下去到底选了几个?)。两栏放同一组按钮。
+const selectAll = () => {
+  if (!draft.value) return
+  draft.value.members = candidates.value.map((c) => c.name)
+}
+const clearSelection = () => {
+  if (!draft.value) return
+  draft.value.members = []
+}
+const invertSelection = () => {
+  if (!draft.value) return
+  const chosen = new Set(draft.value.members)
+  draft.value.members = candidates.value.map((c) => c.name).filter((n) => !chosen.has(n))
+}
+
 const persist = async (next: OpenboxUserGroup[]) => {
   const res = await saveNodeGroups(next)
   groups.value = res.groups
@@ -363,7 +410,7 @@ const saveDraft = async () => {
     editorError.value = t('groupNameDuplicate')
     return
   }
-  if (!draft.value.allNodes && !draft.value.members.length) {
+  if (!draft.value.members.length) {
     editorError.value = t('groupMembersRequired')
     return
   }
