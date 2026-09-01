@@ -287,6 +287,39 @@ export const testNodeLatency = async (payload: {
   return data.results
 }
 
+// 用户自定义节点组(策略组)。类型只有两种,因为 sing-box 只有这两种——Clash 的
+// fallback 在 sing-box 里不存在(实测 1.13.14 报 unknown outbound type)。
+export type OpenboxGroupType = 'urltest' | 'selector'
+
+// 名字不用 OpenboxNodeGroup:那个已经被"按地区自动切分的组"占了(见上方,形状是
+// { name, type, nodeTags }),两者是不同的东西,重名会让人以为可以互换。
+export interface OpenboxUserGroup {
+  id: string
+  name: string
+  type: OpenboxGroupType
+  // true = 成员是"当前所有有效节点",随订阅刷新自动跟着变
+  allNodes: boolean
+  members: string[]
+  interval?: string
+  tolerance?: number
+}
+
+export interface OpenboxGroupsPayload {
+  groups: OpenboxUserGroup[]
+  types: OpenboxGroupType[]
+  availableNodes: string[]
+  availableGroups: string[]
+}
+
+export const fetchNodeGroups = async (): Promise<OpenboxGroupsPayload> =>
+  requestJson<OpenboxGroupsPayload>('/api/openbox/groups')
+
+// 整份覆盖而不是逐条改:组之间可以互相引用,逐条改会让中间状态出现悬空引用或环。
+export const saveNodeGroups = async (
+  groups: OpenboxUserGroup[],
+): Promise<{ ok: boolean; groups: OpenboxUserGroup[]; dropped: Array<{ name: string; reason: string }> }> =>
+  requestJson('/api/openbox/groups', { method: 'PUT', body: JSON.stringify({ groups }) })
+
 export const deleteSubscription = async (id: string): Promise<{ ok: boolean }> => {
   return requestJson(`/api/openbox/subscriptions/${encodeURIComponent(id)}`, {
     method: 'DELETE',

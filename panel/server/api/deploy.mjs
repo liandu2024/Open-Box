@@ -29,7 +29,7 @@ const buildCurrentConfig = (store) => {
   const nodes = store.getNodes()
   const { groups } = groupNodesByRegion(nodes)
   const clashApiSecret = store.getClashSecret()
-  const config = buildConfig({ nodes, regionGroups: groups, profile: { ...profile, clashApiSecret } })
+  const config = buildConfig({ nodes, regionGroups: groups, userGroups: store.getGroups(), profile: { ...profile, clashApiSecret } })
   return { config, profile }
 }
 

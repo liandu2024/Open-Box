@@ -1,9 +1,11 @@
 import { randomBytes } from 'node:crypto'
+import { defaultGroups, normalizeGroups } from '../engine/user-groups.mjs'
 
 export const KEYS = {
   profile: 'openbox/profile',
   subscriptions: 'openbox/subscriptions',
   nodes: 'openbox/nodes',
+  groups: 'openbox/groups',
   deployState: 'openbox/deploy-state',
   clashSecret: 'openbox/clash-secret',
 }
@@ -103,9 +105,30 @@ export const createStore = ({ get, set, del }, { randomHex = defaultRandomHex } 
     return generated
   }
 
+  // 用户自定义节点组。第一次读取时落地两个默认组(所有-自动 / 所有-手动)并写回,
+  // 这样"默认值"只在这里定义一次,前端拿到的永远是真实存在的记录,而不是靠界面
+  // 自己临时编两条出来。
+  const getGroups = () => {
+    const raw = get(KEYS.groups)
+    if (raw) {
+      try {
+        const list = JSON.parse(raw)
+        if (Array.isArray(list)) return normalizeGroups(list)
+      } catch { /* 落到下面的默认值 */ }
+    }
+    const seeded = normalizeGroups(defaultGroups())
+    set(KEYS.groups, JSON.stringify(seeded))
+    return seeded
+  }
+  const setGroups = (list) => {
+    set(KEYS.groups, JSON.stringify(normalizeGroups(Array.isArray(list) ? list : [])))
+  }
+
   return {
     getProfile,
     setProfile,
+    getGroups,
+    setGroups,
     getSubscriptions,
     setSubscriptions,
     getNodes,

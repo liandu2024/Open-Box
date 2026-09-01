@@ -1,20 +1,25 @@
 import { emitOutbound } from './emit-outbound.mjs'
 import { emitEndpoint } from './emit-endpoint.mjs'
 import { emitGroupOutbounds } from './emit-groups.mjs'
+import { emitUserGroups } from './user-groups.mjs'
 import { buildRoute } from './routing.mjs'
 import { buildDns } from './dns.mjs'
 
 const TUN_V4 = '172.19.0.1/30'
 const TUN_V6 = 'fdfe:dcba:9876::1/126'
 
-export const buildConfig = ({ nodes, regionGroups, profile }) => {
+export const buildConfig = ({ nodes, regionGroups, profile, userGroups }) => {
   const proxyTag = profile.routing.proxyTag || 'PROXY'
   const wireguardNodes = nodes.filter((n) => n.type === 'wireguard')
   const outboundNodes = nodes.filter((n) => n.type !== 'wireguard')
 
+  // 用户自定义节点组排在自动生成的地区组之后:emitUserGroups 已经保证了成员非空、
+  // 无悬空引用、无环(sing-box check 只能挡住第一条,见 user-groups.mjs 的说明)。
+  const { outbounds: userGroupOutbounds } = emitUserGroups(userGroups || [], nodes)
   const outbounds = [
     { type: 'direct', tag: 'direct' },
     ...emitGroupOutbounds(regionGroups, { proxyTag }),
+    ...userGroupOutbounds,
     ...outboundNodes.map(emitOutbound),
   ]
   const endpoints = wireguardNodes.map(emitEndpoint)
@@ -27,6 +32,7 @@ export const buildConfig = ({ nodes, regionGroups, profile }) => {
     'direct',
     proxyTag,
     ...regionGroups.map((g) => g.name),
+    ...userGroupOutbounds.map((g) => g.tag),
     ...outboundNodes.map((n) => n.tag),
     ...wireguardNodes.map((n) => n.tag),
   ])

@@ -5,9 +5,30 @@
       :style="padding"
     >
       <div class="flex flex-col gap-3 p-3">
+        <!-- 标题位改成页签:订阅与节点组是这一屏并列的两件事(节点从订阅来,策略组
+             把节点编成组),挤在一个标题下反而看不出并列关系。 -->
         <div class="flex items-center justify-between gap-2">
-          <h1 class="text-lg font-semibold">{{ $t('subscriptions') }}</h1>
+          <div
+            role="tablist"
+            class="tabs-box tabs tabs-sm"
+          >
+            <a
+              role="tab"
+              :class="['tab', pageTab === 'subs' && 'tab-active']"
+              @click="pageTab = 'subs'"
+            >
+              {{ $t('subscriptions') }}
+            </a>
+            <a
+              role="tab"
+              :class="['tab', pageTab === 'groups' && 'tab-active']"
+              @click="pageTab = 'groups'"
+            >
+              {{ $t('groupsTab') }}
+            </a>
+          </div>
           <button
+            v-if="pageTab === 'subs'"
             type="button"
             class="btn btn-primary btn-sm"
             @click="showAddDialog = true"
@@ -17,6 +38,9 @@
           </button>
         </div>
 
+        <NodeGroupsPanel v-if="pageTab === 'groups'" />
+
+        <template v-if="pageTab === 'subs'">
         <p
           v-if="listError"
           class="text-error text-sm"
@@ -62,6 +86,7 @@
             @edit="requestEdit(sub)"
           />
         </div>
+        </template>
       </div>
     </div>
 
@@ -125,6 +150,7 @@ import type { OpenboxSubscription } from '@/api/openbox'
 import { deleteSubscription, fetchSubscriptions, refreshSubscription } from '@/api/openbox'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import AddSubscriptionDialog from '@/components/subscription/AddSubscriptionDialog.vue'
+import NodeGroupsPanel from '@/components/subscription/NodeGroupsPanel.vue'
 import SubscriptionCard from '@/components/subscription/SubscriptionCard.vue'
 import { usePaddingForViews } from '@/composables/paddingViews'
 import { routingPendingDeploy } from '@/store/routing'
@@ -137,6 +163,8 @@ const { padding } = usePaddingForViews({
   offsetTop: 0,
   offsetBottom: 0,
 })
+
+const pageTab = ref<'subs' | 'groups'>('subs')
 
 const subscriptions = ref<OpenboxSubscription[]>([])
 const loading = ref(false)
