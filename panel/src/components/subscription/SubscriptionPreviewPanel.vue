@@ -148,8 +148,10 @@
             <table class="table table-sm table-pin-rows">
               <thead>
                 <tr>
-                  <th class="w-1/2">{{ $t('subscriptionRenameOriginalColumn') }}</th>
-                  <th class="w-1/2">{{ $t('subscriptionRenameNewColumn') }}</th>
+                  <!-- 原名只是个参照,新名那一列要装下输入框 + 延迟 + 两颗图标,
+                       所以不再对半分:原名压到 1/3,省下的宽度全给输入框。 -->
+                  <th class="w-1/3">{{ $t('subscriptionRenameOriginalColumn') }}</th>
+                  <th>{{ $t('subscriptionRenameNewColumn') }}</th>
                 </tr>
               </thead>
               <tbody>
@@ -157,18 +159,7 @@
                   v-for="(entry, index) in rows"
                   :key="`${entry.originalTag}-${index}`"
                 >
-                  <!-- 国旗放在原名前面:这一列是"节点本来叫什么",国别正是从它匹配出来的,
-                       两者摆在一起才看得出规则把这条判成了哪个国家。没匹配上的显示地球占位。 -->
-                  <td class="text-base-content/70 max-w-0 text-sm">
-                    <div class="flex items-center gap-1.5">
-                      <CountryFlag
-                        :code="entry.regionCode || ''"
-                        :size="16"
-                        :title="entry.regionCode || ''"
-                      />
-                      <span class="truncate">{{ entry.originalTag }}</span>
-                    </div>
-                  </td>
+                  <td class="text-base-content/70 max-w-0 truncate text-sm">{{ entry.originalTag }}</td>
                   <td class="max-w-0">
                     <!-- 过滤页签下这条根本不会导入,没有"新名"可言,也不该能改 -->
                     <span
@@ -200,6 +191,14 @@
                       class="flex items-center gap-1"
                     >
                       <ArrowRightIcon class="text-base-content/30 h-3 w-3 shrink-0" />
+                      <!-- 国旗跟着**新名**走:这一列才是最终写进配置的名字,国旗贴在它
+                           前面,一眼就是"这条节点是哪个国家的"。放在原名那列的话,中间
+                           隔着大半个表格,反而看不出对应关系。 -->
+                      <CountryFlag
+                        :code="entry.regionCode || ''"
+                        :size="16"
+                        :title="entry.regionCode || ''"
+                      />
                       <!-- 没在编辑这一行时,一律显示服务端算出来的最终名字:手工改过的
                            名字也可能被再加工(比如套上订阅名前缀),显示本地存的原始值
                            会和真正写进配置的名字对不上。
