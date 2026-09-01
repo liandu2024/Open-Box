@@ -9,8 +9,7 @@ export const DEFAULT_REGION_DICT = [
   { code: 'DE', name: '德国', keywords: ['de', 'germany', '德国', '德國', '法兰克福', '法蘭克福'] },
 ]
 
-export const DEFAULT_FEATURE_DICT = [
-  { label: '专线', keywords: ['iepl', 'iplc', '专线', '專線'] },
-  { label: '家宽', keywords: ['residential', '家宽', '家寬', '家庭'] },
-  { label: '2x', keywords: ['x2', '2x', '2倍', '倍率'] },
-]
+// 特征不再是「标签 + 一堆同义词」两层结构,而是一条扁平关键词表:命中哪个关键词就把
+// 那个词本身(转大写)写进节点名。之前 iepl/iplc/专线 都会被折叠成同一个标签「专线」,
+// 现在 iplc 命中就显示 IPLC,信息不再被抹掉。
+export const DEFAULT_FEATURE_KEYWORDS = ['iepl', 'iplc', 'ipv6', '专线', '家宽', '2x']

@@ -408,7 +408,7 @@ const zh: LANG_MESSAGE = {
   subscriptionRenameRemoveRow: '\u5220\u9664',
   subscriptionRenameNoRows: '\u8fd8\u6ca1\u6709\u6761\u76ee,\u8282\u70b9\u4f1a\u5f52\u5230"\u65e0\u6cd5\u8bc6\u522b\u5730\u533a"\u7684\u6807\u7b7e\u4e0b\u3002',
   subscriptionRenameFeatureDictLabel: '\u7279\u5f81\u5173\u952e\u8bcd',
-  subscriptionRenameFeatureDictHint: '\u6bd4\u5982\u4e13\u7ebf\u3001\u500d\u7387\u4e4b\u7c7b\u7684\u6807\u7b7e,\u5339\u914d\u65b9\u5f0f\u76f8\u540c\u3002',
+  subscriptionRenameFeatureDictHint: '命中哪个关键词,就把那个词转成大写写进节点名。例:填 iplc,ipv6,节点「美国 IPLC IPv6 01」会变成 美国-IPLC-IPV6-01。',
   subscriptionRenameFeatureLabelPlaceholder: '\u7279\u5f81\u6807\u7b7e',
 
   // --- \u5206\u6d41\u89c4\u5219\u3001\u7b56\u7565\u7ec4\u3001DNS \u4e0e IPv6(P4b Task 6) ---

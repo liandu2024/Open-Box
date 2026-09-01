@@ -1,5 +1,5 @@
-export { DEFAULT_REGION_DICT, DEFAULT_FEATURE_DICT } from './dictionaries.mjs'
-import { DEFAULT_REGION_DICT as REGIONS, DEFAULT_FEATURE_DICT as FEATURES } from './dictionaries.mjs'
+export { DEFAULT_REGION_DICT, DEFAULT_FEATURE_KEYWORDS } from './dictionaries.mjs'
+import { DEFAULT_REGION_DICT as REGIONS, DEFAULT_FEATURE_KEYWORDS as FEATURES } from './dictionaries.mjs'
 
 // 纯 ASCII 短码(如 us/hk/jp/uk/de,长度 2~3)容易在 Russia/Sweden/Ukraine/Australia
 // 等词中被 includes 子串误配,需要 token 边界匹配(前后是非字母或字符串边界)。
@@ -41,16 +41,34 @@ export const matchRegion = (name, dict) => {
   return null
 }
 
-export const extractFeatures = (name, dict) => {
-  const lower = normalizeForMatch(name)
-  const labels = []
-  for (const feature of dict) {
-    if (labels.includes(feature.label)) continue
-    if (feature.keywords.some((kw) => lower.includes(normalizeForMatch(kw).trim()))) {
-      labels.push(feature.label)
+// 兼容旧档案:老的 featureDict 是 [{label, keywords}] 两层结构,扁平化成关键词表。
+// 语义会随之改变(以前命中 iplc 显示「专线」,现在显示 IPLC),这正是本次要的效果。
+export const toFeatureKeywords = (input) => {
+  if (!Array.isArray(input)) return []
+  const out = []
+  for (const item of input) {
+    if (typeof item === 'string') {
+      if (item.trim()) out.push(item.trim())
+    } else if (item && Array.isArray(item.keywords)) {
+      for (const kw of item.keywords) if (String(kw).trim()) out.push(String(kw).trim())
     }
   }
-  return labels
+  return out
+}
+
+// 命中哪个关键词就返回哪个关键词,统一转大写(中文没有大小写,原样保留)。
+// 按关键词表的先后顺序输出,同一个词只出现一次——节点名里同时写了 IPLC 和 iplc
+// 不该产出 "IPLC-IPLC"。
+export const extractFeatures = (name, dict) => {
+  const lower = normalizeForMatch(name)
+  const hits = []
+  for (const kw of toFeatureKeywords(dict)) {
+    const needle = normalizeForMatch(kw).trim()
+    if (!needle || !lower.includes(needle)) continue
+    const shown = String(kw).toUpperCase()
+    if (!hits.includes(shown)) hits.push(shown)
+  }
+  return hits
 }
 
 const applyTemplate = (template, region, feature, seq) => {
@@ -72,7 +90,9 @@ const applyTemplate = (template, region, feature, seq) => {
 
 export const renameNodes = (nodes, options = {}) => {
   const regionDict = options.regionDict || REGIONS
-  const featureDict = options.featureDict || FEATURES
+  // featureKeywords 是新写法(扁平关键词表);featureDict 是老档案里的两层结构,
+  // extractFeatures 内部会扁平化,这里只负责挑一个非空的来源。
+  const featureDict = options.featureKeywords || options.featureDict || FEATURES
   const template = options.template || '{region}-{feature}-{seq}'
   const unknownLabel = options.unknownLabel || '其他'
   const seqPad = options.seqPad ?? 2

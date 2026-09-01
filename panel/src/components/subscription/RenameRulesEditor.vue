@@ -124,54 +124,18 @@
       />
     </div>
 
-    <!-- Feature dictionary -->
-    <div class="flex flex-col gap-2">
-      <div class="flex items-center justify-between">
-        <label class="text-xs font-medium">{{ $t('subscriptionRenameFeatureDictLabel') }}</label>
-        <button
-          type="button"
-          class="btn btn-ghost btn-xs"
-          @click="addFeatureRow"
-        >
-          <PlusIcon class="h-3.5 w-3.5" />
-          {{ $t('subscriptionRenameAddRow') }}
-        </button>
-      </div>
+    <!-- 特征不再是「标签 + 同义词」两层结构:命中哪个关键词就把那个词本身(转大写)
+         写进节点名。所以这里只需要一行关键词,不再有标签列,也不再有多行增删。
+         例:关键词填 iplc,ipv6,节点名 "美国 IPLC IPv6 01" → 美国-IPLC-IPV6-01。 -->
+    <div class="flex flex-col gap-1">
+      <label class="text-xs font-medium">{{ $t('subscriptionRenameFeatureDictLabel') }}</label>
       <p class="text-base-content/50 text-xs">{{ $t('subscriptionRenameFeatureDictHint') }}</p>
-      <div class="flex flex-col gap-1.5">
-        <div
-          v-for="row in featureRows"
-          :key="row.id"
-          class="flex items-center gap-1.5"
-        >
-          <input
-            v-model="row.label"
-            type="text"
-            class="input input-sm w-24 shrink-0"
-            :placeholder="$t('subscriptionRenameFeatureLabelPlaceholder')"
-          />
-          <input
-            v-model="row.keywordsText"
-            type="text"
-            class="input input-sm min-w-0 flex-1"
-            :placeholder="$t('subscriptionRenameKeywordsPlaceholder')"
-          />
-          <button
-            type="button"
-            class="btn btn-ghost btn-circle btn-xs shrink-0"
-            :aria-label="$t('subscriptionRenameRemoveRow')"
-            @click="removeFeatureRow(row.id)"
-          >
-            <XMarkIcon class="h-3.5 w-3.5" />
-          </button>
-        </div>
-        <p
-          v-if="featureRows.length === 0"
-          class="text-base-content/50 text-xs"
-        >
-          {{ $t('subscriptionRenameNoRows') }}
-        </p>
-      </div>
+      <input
+        v-model="featureKeywordsText"
+        type="text"
+        class="input input-sm w-full"
+        :placeholder="$t('subscriptionRenameKeywordsPlaceholder')"
+      />
     </div>
   </div>
 </template>
@@ -179,7 +143,7 @@
 <script setup lang="ts">
 import type { OpenboxRenameOptions } from '@/api/openbox'
 import {
-  DEFAULT_FEATURE_DICT,
+  DEFAULT_FEATURE_KEYWORDS,
   DEFAULT_REGION_DICT,
   DEFAULT_RENAME_TEMPLATE,
   DEFAULT_SEQ_PAD,
@@ -207,22 +171,31 @@ interface RegionRow {
   keywordsText: string
 }
 
-interface FeatureRow {
-  id: string
-  label: string
-  keywordsText: string
-}
-
 const makeId = () =>
   typeof crypto !== 'undefined' && crypto.randomUUID
     ? crypto.randomUUID()
     : `row-${Math.random().toString(36).slice(2)}`
 
+// 用不带空格的英文逗号拼接:分隔符本身就是逗号,后面那个空格只是显示习惯,
+// 而它会让用户以为空格是格式的一部分(splitKeywords 本来就会 trim,加不加都能解析)。
 const toRegionRows = (dict: { name: string; keywords: string[] }[]): RegionRow[] =>
-  dict.map((entry) => ({ id: makeId(), name: entry.name, keywordsText: entry.keywords.join(', ') }))
+  dict.map((entry) => ({ id: makeId(), name: entry.name, keywordsText: entry.keywords.join(',') }))
 
-const toFeatureRows = (dict: { label: string; keywords: string[] }[]): FeatureRow[] =>
-  dict.map((entry) => ({ id: makeId(), label: entry.label, keywordsText: entry.keywords.join(', ') }))
+// 兼容旧档案:老的 featureDict 是 [{label, keywords}],扁平化成一条关键词表。
+const toFeatureKeywords = (input: unknown): string[] => {
+  if (!Array.isArray(input)) return []
+  const out: string[] = []
+  for (const item of input) {
+    if (typeof item === 'string') {
+      if (item.trim()) out.push(item.trim())
+    } else if (item && Array.isArray((item as { keywords?: unknown }).keywords)) {
+      for (const kw of (item as { keywords: unknown[] }).keywords) {
+        if (String(kw).trim()) out.push(String(kw).trim())
+      }
+    }
+  }
+  return out
+}
 
 // 逐项回退到默认值:已存规则里缺哪一项(老版本存下的记录可能没有 featureDict)就用
 // 默认补上,而不是整份 initial 有就全用、没有就全默认。
@@ -232,9 +205,15 @@ const seqPad = ref(init?.seqPad ?? DEFAULT_SEQ_PAD)
 const regionRows = reactive<RegionRow[]>(
   toRegionRows(init?.regionDict?.length ? init.regionDict : DEFAULT_REGION_DICT),
 )
-const featureRows = reactive<FeatureRow[]>(
-  toFeatureRows(init?.featureDict?.length ? init.featureDict : DEFAULT_FEATURE_DICT),
-)
+// 特征只有一行:命中哪个关键词就显示哪个词(转大写)。旧档案里的两层 featureDict
+// 会被扁平化过来,不至于一升级就把用户配过的词全丢掉。
+const initialFeatureKeywords =
+  toFeatureKeywords(init?.featureKeywords) .length
+    ? toFeatureKeywords(init?.featureKeywords)
+    : toFeatureKeywords(init?.featureDict).length
+      ? toFeatureKeywords(init?.featureDict)
+      : [...DEFAULT_FEATURE_KEYWORDS]
+const featureKeywordsText = ref(initialFeatureKeywords.join(','))
 
 const splitKeywords = (text: string) =>
   text
@@ -275,9 +254,7 @@ const options = computed<OpenboxRenameOptions>(() => ({
   regionDict: regionRows
     .filter((row) => row.name.trim() || row.keywordsText.trim())
     .map((row) => ({ code: row.id, name: row.name.trim(), keywords: splitKeywords(row.keywordsText) })),
-  featureDict: featureRows
-    .filter((row) => row.label.trim() || row.keywordsText.trim())
-    .map((row) => ({ label: row.label.trim(), keywords: splitKeywords(row.keywordsText) })),
+  featureKeywords: splitKeywords(featureKeywordsText.value),
 }))
 
 watch(
@@ -296,13 +273,6 @@ const removeRegionRow = (id: string) => {
   if (index !== -1) regionRows.splice(index, 1)
 }
 
-const addFeatureRow = () => {
-  featureRows.push({ id: makeId(), label: '', keywordsText: '' })
-}
-const removeFeatureRow = (id: string) => {
-  const index = featureRows.findIndex((row) => row.id === id)
-  if (index !== -1) featureRows.splice(index, 1)
-}
 
 
 // 拿当前模板 + 当前序号位数算一个真实样例,改模板时实时跟着变。序号用 seqPad 补零,
@@ -320,6 +290,6 @@ const resetToDefaults = () => {
   unknownLabel.value = DEFAULT_UNKNOWN_LABEL
   seqPad.value = DEFAULT_SEQ_PAD
   regionRows.splice(0, regionRows.length, ...toRegionRows(DEFAULT_REGION_DICT))
-  featureRows.splice(0, featureRows.length, ...toFeatureRows(DEFAULT_FEATURE_DICT))
+  featureKeywordsText.value = DEFAULT_FEATURE_KEYWORDS.join(',')
 }
 </script>

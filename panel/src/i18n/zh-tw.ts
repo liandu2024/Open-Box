@@ -408,7 +408,7 @@ const zhTW: LANG_MESSAGE = {
   subscriptionRenameRemoveRow: '\u522a\u9664',
   subscriptionRenameNoRows: '\u9084\u6c92\u6709\u9805\u76ee,\u7bc0\u9ede\u6703\u6b78\u5230\u300c\u7121\u6cd5\u8b58\u5225\u5730\u5340\u300d\u7684\u6a19\u7c64\u4e0b\u3002',
   subscriptionRenameFeatureDictLabel: '\u7279\u5fb5\u95dc\u9375\u5b57',
-  subscriptionRenameFeatureDictHint: '\u50cf\u662f\u5c08\u7dda\u3001\u500d\u7387\u4e4b\u985e\u7684\u6a19\u7c64,\u6bd4\u5c0d\u65b9\u5f0f\u76f8\u540c\u3002',
+  subscriptionRenameFeatureDictHint: '命中哪個關鍵詞,就把那個詞轉成大寫寫進節點名。例:填 iplc,ipv6,節點「美國 IPLC IPv6 01」會變成 美國-IPLC-IPV6-01。',
   subscriptionRenameFeatureLabelPlaceholder: '\u7279\u5fb5\u6a19\u7c64',
 
   // --- \u5206\u6d41\u898f\u5247\u3001\u7b56\u7565\u7d44\u3001DNS \u8207 IPv6(P4b Task 6) ---

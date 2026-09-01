@@ -411,7 +411,7 @@ const en = {
   subscriptionRenameRemoveRow: 'Remove',
   subscriptionRenameNoRows: 'No entries — nodes will fall back to the unrecognized-region label.',
   subscriptionRenameFeatureDictLabel: 'Feature keywords',
-  subscriptionRenameFeatureDictHint: 'Tags like line type or multiplier, matched the same way.',
+  subscriptionRenameFeatureDictHint: 'Whichever keyword matches is written into the node name in upper case. iplc,ipv6 turns US IPLC IPv6 01 into US-IPLC-IPV6-01.',
   subscriptionRenameFeatureLabelPlaceholder: 'Feature label',
 
   // --- Routing rules, policy groups, DNS & IPv6 (P4b Task 6) ---

@@ -57,6 +57,9 @@ export interface OpenboxRenameFeatureEntry {
 
 export interface OpenboxRenameOptions {
   regionDict?: OpenboxRenameRegionEntry[]
+  // 特征关键词扁平表:命中哪个词就把那个词本身(转大写)写进节点名。
+  featureKeywords?: string[]
+  // 旧档案里的两层结构,只为兼容读取而保留(见 server/engine/rename.mjs 的 toFeatureKeywords)
   featureDict?: OpenboxRenameFeatureEntry[]
   template?: string
   unknownLabel?: string

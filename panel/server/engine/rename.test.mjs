@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { DEFAULT_REGION_DICT, DEFAULT_FEATURE_DICT, matchRegion, extractFeatures, renameNodes, previewRename } from './rename.mjs'
+import { DEFAULT_REGION_DICT, DEFAULT_FEATURE_KEYWORDS, matchRegion, extractFeatures, renameNodes, previewRename } from './rename.mjs'
 import { createNode } from './node-model.mjs'
 
 const mk = (name) => createNode({ tag: name, type: 'trojan', server: 'a.com', server_port: 443, fields: { password: 'x', tls: { enabled: true } }, source: 'sharelink' })
@@ -25,9 +25,10 @@ test('matchRegion 短 ASCII 码需 token 边界,避免子串误配(修复4)', ()
   assert.equal(matchRegion('香港 IEPL', DEFAULT_REGION_DICT).name, '香港')
 })
 
-test('extractFeatures 多命中按序去重', () => {
-  assert.deepEqual(extractFeatures('US-IEPL-x2', DEFAULT_FEATURE_DICT), ['专线', '2x'])
-  assert.deepEqual(extractFeatures('普通节点', DEFAULT_FEATURE_DICT), [])
+test('extractFeatures 返回命中的关键词本身(转大写),按关键词表顺序去重', () => {
+  // 语义变更:以前 iepl/iplc/专线 会被折叠成统一标签「专线」,现在命中哪个词就显示哪个词
+  assert.deepEqual(extractFeatures('US-IEPL-2x', DEFAULT_FEATURE_KEYWORDS), ['IEPL', '2X'])
+  assert.deepEqual(extractFeatures('普通节点', DEFAULT_FEATURE_KEYWORDS), [])
 })
 
 test('词典结构完整', () => {
@@ -38,10 +39,24 @@ test('词典结构完整', () => {
 })
 
 test('renameNodes 模板 + 序号 + 特征省略', () => {
-  const out = renameNodes([mk('US-IEPL-x2 洛杉矶 01'), mk('US-IEPL 02'), mk('美国普通')])
-  assert.equal(out[0].tag, '美国-专线-2x-01')
-  assert.equal(out[1].tag, '美国-专线-02')
+  // 命中多个关键词就按关键词表顺序依次拼接,全部转大写
+  const out = renameNodes([mk('US-IEPL-2x 洛杉矶 01'), mk('US-IEPL 02'), mk('美国普通')])
+  assert.equal(out[0].tag, '美国-IEPL-2X-01')
+  // 序号只按「区域 + 首个特征」分组,所以 IEPL 与 IEPL-2X 共用同一组序号(原有设计)
+  assert.equal(out[1].tag, '美国-IEPL-02')
   assert.equal(out[2].tag, '美国-01')          // 无特征:省略 feature 段
+})
+
+test('用户给的例子:关键词 iplc,ipv6 全命中 → 美国-IPLC-IPV6-01', () => {
+  const out = renameNodes([mk('美国 IPLC IPv6 01')], { featureKeywords: ['iplc', 'ipv6'] })
+  assert.equal(out[0].tag, '美国-IPLC-IPV6-01')
+})
+
+test('旧档案的两层 featureDict 仍能读:扁平化成关键词表(语义随之变成显示关键词本身)', () => {
+  const out = renameNodes([mk('香港 IEPL 01')], {
+    featureDict: [{ label: '专线', keywords: ['iepl', 'iplc'] }],
+  })
+  assert.equal(out[0].tag, '香港-IEPL-01')
 })
 
 test('renameNodes 序号按 区域+特征 组合独立递增', () => {
