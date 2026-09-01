@@ -170,3 +170,47 @@ test('纯 ASCII 短过滤词受 token 边界保护,不会误伤', () => {
   assert.equal(isExcludedName('VIP-US-01', ['vip']), true)
   assert.equal(isExcludedName('Advipsory 节点', ['vip']), false)
 })
+
+// -------- 输出顺序 --------
+// 地区词典的顺序是用户在规则页拖出来的:它既是匹配优先级,也理应是节点的呈现顺序。
+
+test('节点按地区词典顺序排列,未识别的归到最后', () => {
+  const dict = [
+    { code: 'HK', name: '香港', keywords: ['hk', '香港'] },
+    { code: 'US', name: '美国', keywords: ['us', '美国'] },
+  ]
+  const raw = ['美国01', '法国01', '香港01', '美国02', '法国02', '香港02']
+  const out = renameNodes(raw.map(mk), { regionDict: dict })
+  assert.deepEqual(out.map((n) => n.tag), [
+    '香港-01', '香港-02',   // 词典里香港在前
+    '美国-01', '美国-02',
+    '其他-01', '其他-02',   // 未识别垫底
+  ])
+})
+
+test('调换词典顺序,节点顺序跟着变', () => {
+  const raw = ['美国01', '香港01']
+  const hkFirst = [
+    { code: 'HK', name: '香港', keywords: ['香港'] },
+    { code: 'US', name: '美国', keywords: ['美国'] },
+  ]
+  const usFirst = [hkFirst[1], hkFirst[0]]
+  assert.deepEqual(renameNodes(raw.map(mk), { regionDict: hkFirst }).map((n) => n.tag), ['香港-01', '美国-01'])
+  assert.deepEqual(renameNodes(raw.map(mk), { regionDict: usFirst }).map((n) => n.tag), ['美国-01', '香港-01'])
+})
+
+test('组内保持订阅原始次序,序号仍然连续', () => {
+  const raw = ['香港01', '美国01', '香港02', '美国02', '香港03']
+  const dict = [{ code: 'US', name: '美国', keywords: ['美国'] }, { code: 'HK', name: '香港', keywords: ['香港'] }]
+  const out = renameNodes(raw.map(mk), { regionDict: dict })
+  assert.deepEqual(out.map((n) => n.tag), ['美国-01', '美国-02', '香港-01', '香港-02', '香港-03'])
+})
+
+test('previewRename 用节点自带的 originalTag 配对,重排后原名与新名不会错位', () => {
+  const dict = [{ code: 'HK', name: '香港', keywords: ['香港'] }]
+  const rows = previewRename(['美国01', '香港01'].map(mk), { regionDict: dict })
+  assert.deepEqual(rows, [
+    { originalTag: '香港01', newTag: '香港-01' },
+    { originalTag: '美国01', newTag: '其他-01' },
+  ])
+})

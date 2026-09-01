@@ -125,7 +125,7 @@ export const renameNodes = (nodes, options = {}) => {
   const seqPad = options.seqPad ?? 2
   const counters = new Map()
 
-  return nodes.map((node) => {
+  const renamed = nodes.map((node) => {
     const region = matchRegion(node.originalTag, regionDict)
     const features = extractFeatures(node.originalTag, featureDict)
     // 未命中区域就用「无法识别地区时的标签」,其余照常走模板——不再把原名整个塞进
@@ -141,9 +141,27 @@ export const renameNodes = (nodes, options = {}) => {
     counters.set(key, next)
     const seq = String(next).padStart(seqPad, '0')
     const tag = applyTemplate(template, regionName, featureStr, seq)
-    return { ...node, tag }
+    // regionRank 只用于排序,不进最终节点对象
+    const regionRank = region ? regionDict.findIndex((r) => r.name === regionName) : -1
+    return { node: { ...node, tag }, regionRank }
   })
+
+  // 按地区词典的顺序排列,未识别的(「其他」)一律垫底。词典顺序是用户在规则页拖出来
+  // 的,那既是匹配优先级,也理应是节点的呈现顺序——否则界面上排在最前的地区,到了
+  // 节点列表和策略组里还是按订阅原始顺序乱着。
+  // 用 Array.prototype.sort 的稳定性保证组内次序不变,序号(01/02/03)是在上面按原始
+  // 顺序发的,排完仍然连续。
+  return renamed
+    .map((item, index) => ({ ...item, index }))
+    .sort((a, b) => {
+      const ra = a.regionRank < 0 ? Number.POSITIVE_INFINITY : a.regionRank
+      const rb = b.regionRank < 0 ? Number.POSITIVE_INFINITY : b.regionRank
+      return ra - rb || a.index - b.index
+    })
+    .map((item) => item.node)
 }
 
+// 用改名结果自带的 originalTag 配对,不再按下标去索引入参:renameNodes 现在会重排,
+// 按下标配会把原名和新名错位。
 export const previewRename = (nodes, options = {}) =>
-  renameNodes(nodes, options).map((n, i) => ({ originalTag: nodes[i].originalTag, newTag: n.tag }))
+  renameNodes(nodes, options).map((n) => ({ originalTag: n.originalTag, newTag: n.tag }))
