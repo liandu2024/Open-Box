@@ -1,4 +1,4 @@
-import { disconnectByIdAPI, isSingBox, updateProxyProviderAPI } from '@/api'
+import { disconnectByIdAPI, isSingBox } from '@/api'
 import { nodeGroups, policyGroups, renderGroups } from '@/composables/proxies'
 import { useCtrlsBar } from '@/composables/useCtrlsBar'
 import { PROXY_SORT_TYPE, PROXY_TAB_TYPE, ROUTE_NAME, SETTINGS_MENU_KEY } from '@/constant'
@@ -9,6 +9,11 @@ import {
 } from '@/helper/proxyCategory'
 import { getMinCardWidth } from '@/helper/utils'
 import { configs, updateConfigs } from '@/store/config'
+import {
+  openboxSubscriptions,
+  refreshAllOpenboxSubscriptions,
+} from '@/store/openboxSubscriptions'
+import { routingPendingDeploy } from '@/store/routing'
 import { activeConnections } from '@/store/connections'
 import {
   allProxiesLatencyTest,
@@ -69,17 +74,17 @@ export default defineComponent({
     const settingsModel = ref(false)
     const { isLargeCtrlsBar } = useCtrlsBar()
 
+    // 订阅标签下的「全部刷新」现在刷的是 Open-Box 订阅,不再是 Clash provider——
+    // Open-Box 从不生成 provider,原来那个按钮点了永远是空转。
     const handlerClickUpdateAllProviders = async () => {
       if (isUpgrading.value) return
       isUpgrading.value = true
       try {
-        await Promise.all(
-          proxyProviederList.value.map((provider) => updateProxyProviderAPI(provider.name)),
-        )
+        await refreshAllOpenboxSubscriptions()
+        // 刷新可能换掉节点,和在订阅设置页刷新一样要提示需要重新部署
+        routingPendingDeploy.value = true
         await fetchProxies()
-        isUpgrading.value = false
-      } catch {
-        await fetchProxies()
+      } finally {
         isUpgrading.value = false
       }
     }
@@ -215,7 +220,7 @@ export default defineComponent({
               ? policyGroups.value.length
               : type === PROXY_TAB_TYPE.NODE
                 ? nodeGroups.value.length
-                : proxyProviederList.value.length,
+                : openboxSubscriptions.value.length,
         }
       })
     })

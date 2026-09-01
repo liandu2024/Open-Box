@@ -367,6 +367,7 @@ const en = {
   subscriptionDeleteTitle: 'Delete subscription',
   subscriptionDeleteConfirm: 'Delete "{name}"? Its nodes will be removed too. This can\'t be undone.',
   subscriptionDeleteFailed: "Couldn't delete: {message}",
+  subscriptionEditTitle: 'Edit Subscription',
   subscriptionAddTitle: 'Add subscription',
   subscriptionNameLabel: 'Name',
   subscriptionNamePlaceholder: 'e.g. "My subscription"',

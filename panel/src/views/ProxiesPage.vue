@@ -8,7 +8,7 @@
       :style="padding"
       @scroll.passive="handleScroll"
     >
-      <template v-if="displayTwoColumns">
+      <template v-if="displayTwoColumns && proxiesTabShow !== PROXY_TAB_TYPE.PROVIDER">
         <div class="grid grid-cols-2 gap-2 p-2">
           <div
             v-for="idx in [0, 1]"
@@ -32,6 +32,29 @@
           </div>
         </div>
       </template>
+      <!-- 订阅标签渲染 Open-Box 自己的订阅(见 store/openboxSubscriptions.ts 的说明:
+           Clash 的 provider 概念在 Open-Box 里不存在)。不走两列布局:订阅通常只有一两条,
+           摊成两列反而稀疏。 -->
+      <div
+        class="grid grid-cols-1 gap-2 p-2"
+        v-else-if="proxiesTabShow === PROXY_TAB_TYPE.PROVIDER"
+      >
+        <p
+          v-if="!openboxSubscriptions.length"
+          class="text-base-content/60 py-10 text-center text-sm"
+        >
+          {{ $t('subscriptionEmptyHint') }}
+        </p>
+        <SubscriptionCard
+          v-for="sub in openboxSubscriptions"
+          :key="sub.id"
+          :subscription="sub"
+          :refreshing="refreshingSubId === sub.id"
+          @refresh="handleSubscriptionRefresh(sub.id)"
+          @edit="goToSubscriptionSettings"
+          @delete="goToSubscriptionSettings"
+        />
+      </div>
       <div
         class="grid grid-cols-1 gap-2 p-2"
         v-else
@@ -61,6 +84,7 @@ import ProxyGroupForMobile from '@/components/proxies/ProxyGroupForMobile.vue'
 import ProxyGroupUnit from '@/components/proxies/ProxyGroupUnit.vue'
 import ProxyProvider from '@/components/proxies/ProxyProvider.vue'
 import ProxiesCtrl from '@/components/sidebar/ProxiesCtrl.tsx'
+import SubscriptionCard from '@/components/subscription/SubscriptionCard.vue'
 import { usePaddingForViews } from '@/composables/paddingViews'
 import {
   disableProxiesPageScroll,
@@ -68,7 +92,14 @@ import {
   nodeGroupBlocks,
   renderGroups,
 } from '@/composables/proxies'
-import { PROXY_TAB_TYPE } from '@/constant'
+import { refreshSubscription } from '@/api/openbox'
+import { PROXY_TAB_TYPE, ROUTE_NAME, SETTINGS_TAB } from '@/constant'
+import {
+  loadOpenboxSubscriptions,
+  openboxSubscriptions,
+} from '@/store/openboxSubscriptions'
+import { routingPendingDeploy } from '@/store/routing'
+import { useRouter } from 'vue-router'
 import { isMiddleScreen } from '@/helper/utils'
 import {
   fetchProxies,
@@ -85,6 +116,33 @@ const { padding } = usePaddingForViews({
   offsetTop: 0,
   offsetBottom: 0,
 })
+const router = useRouter()
+
+// 订阅标签用的是 Open-Box 自己的订阅列表(不是 Clash provider),进页面就拉一次。
+onMounted(loadOpenboxSubscriptions)
+
+const refreshingSubId = ref<string | null>(null)
+const handleSubscriptionRefresh = async (id: string) => {
+  if (refreshingSubId.value) return
+  refreshingSubId.value = id
+  try {
+    await refreshSubscription(id)
+    // 刷新会换掉这条订阅的节点,和在订阅设置页刷新是同一件事,同样要提示需要重新部署
+    routingPendingDeploy.value = true
+    await loadOpenboxSubscriptions()
+  } catch {
+    // 失败原因在订阅设置页会逐条显示;这里是只读入口,不重复铺错误文案
+  } finally {
+    refreshingSubId.value = null
+  }
+}
+
+// 编辑/删除都是有后果的操作,留在订阅设置页统一做——这里只把人带过去,
+// 避免同一个操作在两处各有一套确认流程。
+const goToSubscriptionSettings = () => {
+  router.push({ name: ROUTE_NAME.settings, query: { tab: SETTINGS_TAB.subscriptions } })
+}
+
 const proxiesRef = ref()
 const documentVisible = useDocumentVisibility()
 const autoRefreshTimer = ref<number>()

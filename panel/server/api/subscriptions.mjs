@@ -286,6 +286,65 @@ export const registerSubscriptionRoutes = (app, { store, fetchImpl = globalThis.
     res.json({ ok: true })
   })
 
+  // 修改:改名 / 换订阅链接 / 调整重命名规则。
+  // 只改名字时不重新拉取——链接和重命名规则都没动,节点必然还是那一批,为了改个名字
+  // 去发一次网络请求毫无意义,而且机场抽风时会连改名都做不了。链接或重命名规则一旦
+  // 变化才重新解析,失败在 store 写入之前抛出,原记录与节点原样保留。
+  router.patch('/:id', async (req, res) => {
+    const { id } = req.params
+    const subs = store.getSubscriptions()
+    const idx = subs.findIndex((s) => s.id === id)
+    if (idx === -1) {
+      res.status(404).json({ error: 'subscription not found' })
+      return
+    }
+    try {
+      const existing = subs[idx]
+      const body = req.body || {}
+
+      const name = body.name === undefined ? existing.name : body.name
+      if (typeof name !== 'string' || !name.trim()) throw new Error('name is required')
+
+      const url = body.url === undefined ? existing.url : body.url
+      if (typeof url !== 'string' || !url.trim()) throw new Error('url is required')
+
+      const renameOptions =
+        body.renameOptions === undefined ? existing.renameOptions || {} : body.renameOptions
+
+      const needsRefetch =
+        url !== existing.url ||
+        JSON.stringify(renameOptions || {}) !== JSON.stringify(existing.renameOptions || {})
+
+      if (!needsRefetch) {
+        const updated = { ...existing, name, updatedAt: Date.now() }
+        store.setSubscriptions(subs.map((s, i) => (i === idx ? updated : s)))
+        res.json({ id, name, nodeCount: existing.nodeCount, skipped: [] })
+        return
+      }
+
+      const resolved = await resolveNodes({ url }, fetchImpl, renameOptions, lookup)
+      const { renamed, skipped, format } = resolved
+
+      const updated = {
+        ...existing,
+        name,
+        url,
+        format,
+        nodeCount: renamed.length,
+        renameOptions: resolved.renameOptions || {},
+        updatedAt: Date.now(),
+      }
+      const newNodesForSub = renamed.map((n) => ({ ...n, subscriptionId: id }))
+
+      store.setNodes(rebuildNodePool(store.getNodes(), subs, id, newNodesForSub))
+      store.setSubscriptions(subs.map((s, i) => (i === idx ? updated : s)))
+
+      res.json({ id, name, nodeCount: renamed.length, skipped })
+    } catch (err) {
+      res.status(400).json({ error: errorMessage(err) })
+    }
+  })
+
   // 刷新:重新拉取解析,只替换该订阅的节点。拉取/解析失败时在 store 写入之前就已抛出,
   // 已存的订阅记录与节点保持原样不变。
   router.post('/:id/refresh', async (req, res) => {

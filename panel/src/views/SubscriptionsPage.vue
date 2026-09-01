@@ -59,6 +59,7 @@
             :refresh-error="refreshErrors[sub.id]"
             @refresh="handleRefresh(sub.id)"
             @delete="requestDelete(sub)"
+            @edit="requestEdit(sub)"
           />
         </div>
       </div>
@@ -67,6 +68,16 @@
     <AddSubscriptionDialog
       v-model="showAddDialog"
       @saved="handleSaved"
+    />
+
+    <!-- 编辑用同一个弹窗组件,传入 subscription 即切到编辑模式。v-if 保证每次打开都是
+         全新实例:弹窗内部在 open 时才 resetForm,而重命名规则编辑器的初始值只在挂载时
+         读一次,复用实例会把上一个订阅的规则带过来 -->
+    <AddSubscriptionDialog
+      v-if="editing"
+      v-model="showEditDialog"
+      :subscription="editing"
+      @saved="handleEdited"
     />
 
     <DialogWrapper
@@ -153,6 +164,21 @@ const handleSaved = () => {
   // (Important 2, P4b final review) — the routing/kernel banners need to know a redeploy is due,
   // same as an edit made through RoutingPage itself.
   routingPendingDeploy.value = true
+  void loadSubscriptions()
+}
+
+const showEditDialog = ref(false)
+const editing = ref<OpenboxSubscription | null>(null)
+
+const requestEdit = (sub: OpenboxSubscription) => {
+  editing.value = sub
+  showEditDialog.value = true
+}
+
+const handleEdited = () => {
+  // 改了链接或重命名规则都会换掉这条订阅的节点,和新增/刷新一样要提示需要重新部署
+  routingPendingDeploy.value = true
+  editing.value = null
   void loadSubscriptions()
 }
 

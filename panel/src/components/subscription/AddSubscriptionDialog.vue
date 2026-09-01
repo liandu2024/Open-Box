@@ -1,7 +1,7 @@
 <template>
   <DialogWrapper
     v-model="isOpen"
-    :title="$t('subscriptionAddTitle')"
+    :title="$t(subscription ? 'subscriptionEditTitle' : 'subscriptionAddTitle')"
     box-class="w-full max-w-4xl"
   >
     <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
@@ -50,7 +50,13 @@
 
         <div class="divider my-0" />
 
-        <RenameRulesEditor @change="handleRenameOptionsChange" />
+        <!-- key 绑到订阅 id:切换编辑对象时强制重建编辑器,否则它内部的 reactive 行
+             不会随 initial 变化重新初始化,会把上一个订阅的规则带过来 -->
+        <RenameRulesEditor
+          :key="subscription?.id || 'new'"
+          :initial="subscription?.renameOptions"
+          @change="handleRenameOptionsChange"
+        />
       </div>
 
       <!-- Right: live preview -->
@@ -97,14 +103,18 @@
 </template>
 
 <script setup lang="ts">
-import type { OpenboxRenameOptions, OpenboxSubscriptionPreview } from '@/api/openbox'
-import { createSubscription, previewSubscription } from '@/api/openbox'
+import type { OpenboxRenameOptions, OpenboxSubscription, OpenboxSubscriptionPreview } from '@/api/openbox'
+import { createSubscription, previewSubscription, updateSubscription } from '@/api/openbox'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import { debounce } from 'lodash'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import RenameRulesEditor from './RenameRulesEditor.vue'
 import SubscriptionPreviewPanel from './SubscriptionPreviewPanel.vue'
+
+// 传 subscription 即进入编辑模式:同一个弹窗复用,连带重命名规则编辑与实时预览
+// 一起复用——编辑订阅要看的东西和新建时完全一样,没有理由再造一个只能改名字的框。
+const props = defineProps<{ subscription?: OpenboxSubscription | null }>()
 
 const isOpen = defineModel<boolean>({ required: true })
 
@@ -114,8 +124,11 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 
-const name = ref('')
-const url = ref('')
+// 初始值直接从 props 取,不能只靠 resetForm():编辑弹窗是 v-if 挂载的,挂载时
+// isOpen 已经是 true,而 watch(isOpen) 不是 immediate —— 它一次都不会触发,字段
+// 会停在空字符串上(实测:打开「修改订阅」名称和链接都是空的)。
+const name = ref(props.subscription?.name ?? '')
+const url = ref(props.subscription?.url ?? '')
 const content = ref('')
 const pasteMode = ref(false)
 
@@ -199,8 +212,9 @@ watch(
 const resetForm = () => {
   debouncedPreview.cancel()
   previewSeq += 1
-  name.value = ''
-  url.value = ''
+  // 编辑模式下用现存值预填;新建时清空
+  name.value = props.subscription?.name ?? ''
+  url.value = props.subscription?.url ?? ''
   content.value = ''
   pasteMode.value = false
   preview.value = null
@@ -225,11 +239,16 @@ const handleSave = async () => {
   saveErrorMessage.value = ''
 
   try {
-    await createSubscription({
+    const payload = {
       url: url.value.trim(),
       name: name.value.trim() || t('subscriptionDefaultName'),
       renameOptions: renameOptions.value,
-    })
+    }
+    if (props.subscription) {
+      await updateSubscription(props.subscription.id, payload)
+    } else {
+      await createSubscription(payload)
+    }
     emit('saved')
     isOpen.value = false
   } catch (error) {

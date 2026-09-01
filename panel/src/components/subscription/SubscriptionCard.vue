@@ -1,15 +1,30 @@
 <template>
   <div class="card bg-base-100 border-base-content/10 border p-3">
     <div class="flex items-start justify-between gap-2">
-      <div class="min-w-0 flex-1">
+      <!-- 整块信息区可点进入编辑。用 button 而不是给外层 div 挂 click:键盘可聚焦、
+           回车可触发,也不会让右侧的刷新/删除按钮变成"点了会连带触发编辑"的嵌套点击区 -->
+      <button
+        type="button"
+        class="min-w-0 flex-1 cursor-pointer text-left"
+        :aria-label="$t('subscriptionEditTitle')"
+        @click="$emit('edit')"
+      >
         <div class="truncate text-base font-medium">{{ subscription.name }}</div>
         <div class="text-base-content/60 mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
           <span>{{ $t('subscriptionNodeCount', { count: subscription.nodeCount }) }}</span>
           <span>·</span>
           <span>{{ $t('updated') }} {{ updatedAtText }}</span>
         </div>
-      </div>
+      </button>
       <div class="flex shrink-0 gap-1.5">
+        <button
+          type="button"
+          class="btn btn-circle btn-ghost btn-sm"
+          :aria-label="$t('subscriptionEditTitle')"
+          @click="$emit('edit')"
+        >
+          <PencilSquareIcon class="h-4 w-4" />
+        </button>
         <button
           type="button"
           class="btn btn-circle btn-ghost btn-sm"
@@ -40,7 +55,7 @@
 
 <script setup lang="ts">
 import type { OpenboxSubscription } from '@/api/openbox'
-import { ArrowPathIcon, TrashIcon } from '@heroicons/vue/24/outline'
+import { ArrowPathIcon, PencilSquareIcon, TrashIcon } from '@heroicons/vue/24/outline'
 import dayjs from 'dayjs'
 import { computed } from 'vue'
 
@@ -53,6 +68,7 @@ const props = defineProps<{
 defineEmits<{
   refresh: []
   delete: []
+  edit: []
 }>()
 
 const updatedAtText = computed(() => dayjs(props.subscription.updatedAt).fromNow())

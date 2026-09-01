@@ -364,6 +364,7 @@ const zh: LANG_MESSAGE = {
   subscriptionDeleteTitle: '\u5220\u9664\u8ba2\u9605',
   subscriptionDeleteConfirm: '\u5220\u9664"{name}"?\u5b83\u7684\u8282\u70b9\u4e5f\u4f1a\u4e00\u5e76\u79fb\u9664,\u4e14\u65e0\u6cd5\u64a4\u9500\u3002',
   subscriptionDeleteFailed: '\u6ca1\u5220\u9664\u6210\u529f:{message}',
+  subscriptionEditTitle: '修改订阅',
   subscriptionAddTitle: '\u6dfb\u52a0\u8ba2\u9605',
   subscriptionNameLabel: '\u540d\u79f0',
   subscriptionNamePlaceholder: '\u6bd4\u5982"\u6211\u7684\u8ba2\u9605"',

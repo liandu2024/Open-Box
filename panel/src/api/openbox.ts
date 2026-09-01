@@ -234,6 +234,19 @@ export const createSubscription = async (payload: {
   })
 }
 
+// Edits an existing subscription. Only the fields you pass are changed; omitted fields keep
+// their stored value. The server skips re-fetching when neither url nor renameOptions changed,
+// so a plain rename works even while the provider is unreachable (see subscriptions.mjs PATCH).
+export const updateSubscription = async (
+  id: string,
+  payload: { name?: string; url?: string; renameOptions?: OpenboxRenameOptions },
+): Promise<OpenboxSubscriptionSaveResult> => {
+  return requestJson(`/api/openbox/subscriptions/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  })
+}
+
 export const deleteSubscription = async (id: string): Promise<{ ok: boolean }> => {
   return requestJson(`/api/openbox/subscriptions/${encodeURIComponent(id)}`, {
     method: 'DELETE',

@@ -174,6 +174,11 @@ const emit = defineEmits<{
   change: [OpenboxRenameOptions]
 }>()
 
+// 编辑已有订阅时用它的已存规则起步。没有这个 prop 的话编辑器总是从默认词典起步,
+// 而它挂载时就会 emit 一次(watch immediate),等于一打开编辑弹窗就把用户辛苦调过的
+// 重命名规则悄悄改回默认——保存下去才发现节点名全变了。
+const props = defineProps<{ initial?: OpenboxRenameOptions | null }>()
+
 interface RegionRow {
   id: string
   name: string
@@ -191,17 +196,24 @@ const makeId = () =>
     ? crypto.randomUUID()
     : `row-${Math.random().toString(36).slice(2)}`
 
-const toRegionRows = (dict: typeof DEFAULT_REGION_DICT): RegionRow[] =>
+const toRegionRows = (dict: { name: string; keywords: string[] }[]): RegionRow[] =>
   dict.map((entry) => ({ id: makeId(), name: entry.name, keywordsText: entry.keywords.join(', ') }))
 
-const toFeatureRows = (dict: typeof DEFAULT_FEATURE_DICT): FeatureRow[] =>
+const toFeatureRows = (dict: { label: string; keywords: string[] }[]): FeatureRow[] =>
   dict.map((entry) => ({ id: makeId(), label: entry.label, keywordsText: entry.keywords.join(', ') }))
 
-const template = ref(DEFAULT_RENAME_TEMPLATE)
-const unknownLabel = ref(DEFAULT_UNKNOWN_LABEL)
-const seqPad = ref(DEFAULT_SEQ_PAD)
-const regionRows = reactive<RegionRow[]>(toRegionRows(DEFAULT_REGION_DICT))
-const featureRows = reactive<FeatureRow[]>(toFeatureRows(DEFAULT_FEATURE_DICT))
+// 逐项回退到默认值:已存规则里缺哪一项(老版本存下的记录可能没有 featureDict)就用
+// 默认补上,而不是整份 initial 有就全用、没有就全默认。
+const init = props.initial
+const template = ref(init?.template || DEFAULT_RENAME_TEMPLATE)
+const unknownLabel = ref(init?.unknownLabel || DEFAULT_UNKNOWN_LABEL)
+const seqPad = ref(init?.seqPad ?? DEFAULT_SEQ_PAD)
+const regionRows = reactive<RegionRow[]>(
+  toRegionRows(init?.regionDict?.length ? init.regionDict : DEFAULT_REGION_DICT),
+)
+const featureRows = reactive<FeatureRow[]>(
+  toFeatureRows(init?.featureDict?.length ? init.featureDict : DEFAULT_FEATURE_DICT),
+)
 
 const splitKeywords = (text: string) =>
   text

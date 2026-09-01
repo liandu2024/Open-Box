@@ -661,3 +661,95 @@ test('刷新失败时保留原有节点,不会把订阅刷成 0 个节点', asyn
     await close()
   }
 })
+
+// -------- 修改订阅(PATCH) --------
+
+test('只改名字不触发重新拉取(机场抽风时也得能改名)', async () => {
+  let fetchCount = 0
+  const fetchImpl = async () => {
+    fetchCount += 1
+    return { ok: true, status: 200, text: async () => SHARELINK_MULTI }
+  }
+  const { baseUrl, store, close } = await startApp(fetchImpl)
+  try {
+    const created = await (await postJson(baseUrl, '/api/openbox/subscriptions', { url: 'https://sub.example.com/x', name: '旧名字' })).json()
+    assert.equal(fetchCount, 1)
+
+    const res = await fetch(`${baseUrl}/api/openbox/subscriptions/${created.id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: '新名字' }),
+    })
+    assert.equal(res.status, 200)
+    assert.equal(fetchCount, 1, '链接与重命名规则都没变,不应再发请求')
+    assert.equal(store.getSubscriptions()[0].name, '新名字')
+    assert.equal(store.getSubscriptions()[0].nodeCount, 2, '节点数不该被改动')
+  } finally {
+    await close()
+  }
+})
+
+test('换订阅链接会重新拉取并替换该订阅的节点', async () => {
+  const fetchImpl = async (url) => ({
+    ok: true,
+    status: 200,
+    text: async () => (url.includes('/new') ? HK_LINE : SHARELINK_MULTI),
+  })
+  const { baseUrl, store, close } = await startApp(fetchImpl)
+  try {
+    const created = await (await postJson(baseUrl, '/api/openbox/subscriptions', { url: 'https://sub.example.com/old', name: 'S' })).json()
+    assert.equal(created.nodeCount, 2)
+
+    const res = await fetch(`${baseUrl}/api/openbox/subscriptions/${created.id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ url: 'https://sub.example.com/new' }),
+    })
+    assert.equal(res.status, 200)
+    assert.equal((await res.json()).nodeCount, 1)
+    assert.equal(store.getSubscriptions()[0].url, 'https://sub.example.com/new')
+    assert.equal(store.getNodes().length, 1)
+  } finally {
+    await close()
+  }
+})
+
+test('改成一个拉不通的链接 → 400,原有名称/链接/节点全部保留', async () => {
+  const fetchImpl = async (url) => {
+    if (url.includes('/bad')) return { ok: false, status: 500, text: async () => 'boom' }
+    return { ok: true, status: 200, text: async () => SHARELINK_MULTI }
+  }
+  const { baseUrl, store, close } = await startApp(fetchImpl)
+  try {
+    const created = await (await postJson(baseUrl, '/api/openbox/subscriptions', { url: 'https://sub.example.com/ok', name: '原名' })).json()
+
+    const res = await fetch(`${baseUrl}/api/openbox/subscriptions/${created.id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: '改坏了', url: 'https://sub.example.com/bad' }),
+    })
+    assert.equal(res.status, 400)
+
+    const sub = store.getSubscriptions()[0]
+    assert.equal(sub.name, '原名', '失败时名称也不能被改掉')
+    assert.equal(sub.url, 'https://sub.example.com/ok')
+    assert.equal(store.getNodes().length, 2)
+  } finally {
+    await close()
+  }
+})
+
+test('PATCH 不存在的订阅 → 404', async () => {
+  const fetchImpl = async () => ({ ok: true, status: 200, text: async () => SHARELINK_MULTI })
+  const { baseUrl, close } = await startApp(fetchImpl)
+  try {
+    const res = await fetch(`${baseUrl}/api/openbox/subscriptions/nope`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'x' }),
+    })
+    assert.equal(res.status, 404)
+  } finally {
+    await close()
+  }
+})
