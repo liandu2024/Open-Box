@@ -67,6 +67,8 @@ export interface OpenboxSubscription {
   id: string
   name: string
   url: string
+  // 「节点」模式(粘贴保存)的订阅没有 url,内容存在这里
+  content?: string
   format: string
   nodeCount: number
   renameOptions?: OpenboxRenameOptions
@@ -220,11 +222,12 @@ export const previewSubscription = async (payload: {
   })
 }
 
-// NOTE: the create route only accepts a fetchable `url` (no `content`-only body) — pasted
-// content can be previewed but not saved directly. See server/api/subscriptions.mjs's `/` POST
-// handler: `if (typeof url !== 'string' || !url.trim()) throw new Error('url is required')`.
+// url 与 content 二选一(见 server/api/subscriptions.mjs 的 normalizeSource):
+// content 走的是「节点」模式——手上只有一堆分享链接、没有订阅地址时直接粘贴保存,
+// 服务端会把内容一并存下来,以便日后改重命名规则时重新解析。
 export const createSubscription = async (payload: {
-  url: string
+  url?: string
+  content?: string
   name: string
   renameOptions?: OpenboxRenameOptions
 }): Promise<OpenboxSubscriptionSaveResult> => {
@@ -239,7 +242,7 @@ export const createSubscription = async (payload: {
 // so a plain rename works even while the provider is unreachable (see subscriptions.mjs PATCH).
 export const updateSubscription = async (
   id: string,
-  payload: { name?: string; url?: string; renameOptions?: OpenboxRenameOptions },
+  payload: { name?: string; url?: string; content?: string; renameOptions?: OpenboxRenameOptions },
 ): Promise<OpenboxSubscriptionSaveResult> => {
   return requestJson(`/api/openbox/subscriptions/${encodeURIComponent(id)}`, {
     method: 'PATCH',

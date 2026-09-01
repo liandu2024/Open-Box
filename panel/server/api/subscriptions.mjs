@@ -25,6 +25,9 @@ const SUBSCRIPTION_USER_AGENTS = Object.freeze([
 
 const SUBSCRIPTION_FETCH_TIMEOUT_MS = 15000
 const MAX_SUBSCRIPTION_RESPONSE_BYTES = 5 * 1024 * 1024
+// 粘贴保存下来的内容会跟着订阅记录一起进 store,并在每次改重命名规则时重新解析。
+// 给个上限:store 是整条 JSON 读写的,塞进去一个几 MB 的配置会让每次读订阅列表都变慢。
+const MAX_PASTED_CONTENT_BYTES = 1024 * 1024
 const MAX_SUBSCRIPTION_REDIRECTS = 3
 
 // 响应体大小上限:优先走真实 fetch 的可读流累计计数(边读边截断,避免恶意/超大响应把
@@ -157,6 +160,20 @@ const describeEmptyResult = ({ format, skipped }) => {
   return `订阅解析成功(${format} 格式),但里面一个节点都没有。`
 }
 
+// url / content 二选一,统一成 resolveNodes 认的形状。粘贴保存是「节点」模式的正路,
+// 不再是"只能预览":用户手上只有一堆分享链接、没有订阅地址的情况很常见。
+export const normalizeSource = ({ url, content }) => {
+  const trimmedContent = typeof content === 'string' ? content.trim() : ''
+  if (trimmedContent) {
+    if (Buffer.byteLength(trimmedContent, 'utf8') > MAX_PASTED_CONTENT_BYTES) {
+      throw new Error(`粘贴内容超过 ${MAX_PASTED_CONTENT_BYTES} 字节上限`)
+    }
+    return { content: trimmedContent }
+  }
+  if (typeof url === 'string' && url.trim()) return { url: url.trim() }
+  throw new Error('url or content is required')
+}
+
 // preview/create/refresh 共用的解析管道:优先用直传的 content,否则用 fetchImpl 拉取 url;
 // 再走 parseSubscription → renameNodes/previewRename。拉取或校验失败在这里抛出,
 // 调用方在 store 写入之前捕获,天然保证"失败不破坏已存状态"。
@@ -242,11 +259,11 @@ export const registerSubscriptionRoutes = (app, { store, fetchImpl = globalThis.
   // 创建:拉取解析后保存订阅记录 + 合并节点(全局去重)。
   router.post('/', async (req, res) => {
     try {
-      const { url, name, renameOptions } = req.body || {}
-      if (typeof url !== 'string' || !url.trim()) throw new Error('url is required')
+      const { url, content, name, renameOptions } = req.body || {}
+      const source = normalizeSource({ url, content })
       if (typeof name !== 'string' || !name.trim()) throw new Error('name is required')
 
-      const resolved = await resolveNodes({ url }, fetchImpl, renameOptions, lookup)
+      const resolved = await resolveNodes(source, fetchImpl, renameOptions, lookup)
       const { renamed, skipped, format } = resolved
 
       const id = randomUUID()
@@ -254,7 +271,10 @@ export const registerSubscriptionRoutes = (app, { store, fetchImpl = globalThis.
       const record = {
         id,
         name,
-        url,
+        url: source.url || '',
+        // 粘贴来的订阅没有可回源的地址,内容必须存下来:改重命名规则时要拿它重新解析,
+        // 否则一改规则节点就全没了。
+        ...(source.content ? { content: source.content } : {}),
         format,
         nodeCount: renamed.length,
         renameOptions: resolved.renameOptions || {},
@@ -305,14 +325,17 @@ export const registerSubscriptionRoutes = (app, { store, fetchImpl = globalThis.
       const name = body.name === undefined ? existing.name : body.name
       if (typeof name !== 'string' || !name.trim()) throw new Error('name is required')
 
-      const url = body.url === undefined ? existing.url : body.url
-      if (typeof url !== 'string' || !url.trim()) throw new Error('url is required')
+      // url / content 两者都没传时沿用已存的来源;创建时就保证了至少有一个非空。
+      const url = body.url === undefined ? existing.url || '' : body.url
+      const content = body.content === undefined ? existing.content || '' : body.content
+      const source = normalizeSource({ url, content })
 
       const renameOptions =
         body.renameOptions === undefined ? existing.renameOptions || {} : body.renameOptions
 
       const needsRefetch =
-        url !== existing.url ||
+        (source.url || '') !== (existing.url || '') ||
+        (source.content || '') !== (existing.content || '') ||
         JSON.stringify(renameOptions || {}) !== JSON.stringify(existing.renameOptions || {})
 
       if (!needsRefetch) {
@@ -322,13 +345,14 @@ export const registerSubscriptionRoutes = (app, { store, fetchImpl = globalThis.
         return
       }
 
-      const resolved = await resolveNodes({ url }, fetchImpl, renameOptions, lookup)
+      const resolved = await resolveNodes(source, fetchImpl, renameOptions, lookup)
       const { renamed, skipped, format } = resolved
 
       const updated = {
         ...existing,
         name,
-        url,
+        url: source.url || '',
+        content: source.content || undefined,
         format,
         nodeCount: renamed.length,
         renameOptions: resolved.renameOptions || {},
@@ -345,6 +369,9 @@ export const registerSubscriptionRoutes = (app, { store, fetchImpl = globalThis.
     }
   })
 
+  // 粘贴来源的订阅没有可回源的地址,刷新就是拿已存内容重新解析一遍(不走网络)。
+  const existingSource = (sub) => (sub.url ? { url: sub.url } : { content: sub.content || '' })
+
   // 刷新:重新拉取解析,只替换该订阅的节点。拉取/解析失败时在 store 写入之前就已抛出,
   // 已存的订阅记录与节点保持原样不变。
   router.post('/:id/refresh', async (req, res) => {
@@ -358,7 +385,7 @@ export const registerSubscriptionRoutes = (app, { store, fetchImpl = globalThis.
     try {
       const existing = subs[idx]
       const requestedRenameOptions = (req.body && req.body.renameOptions) || existing.renameOptions || {}
-      const resolved = await resolveNodes({ url: existing.url }, fetchImpl, requestedRenameOptions, lookup)
+      const resolved = await resolveNodes(existingSource(existing), fetchImpl, requestedRenameOptions, lookup)
       const { renamed, skipped, format } = resolved
       const renameOptions = resolved.renameOptions || {}
 

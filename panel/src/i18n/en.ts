@@ -376,11 +376,9 @@ const en = {
   subscriptionNamePlaceholder: 'e.g. "My subscription"',
   subscriptionUrlLabel: 'Subscription link',
   subscriptionUrlHint: 'Needed to save — the server fetches it (private/local addresses are rejected).',
-  subscriptionUsePasteShow: 'No link? Paste the content instead',
-  subscriptionUsePasteHide: 'Hide pasted content',
+  subscriptionContentLabel: 'Nodes',
+  subscriptionContentHint: 'One node link per line (ss:// / trojan:// / vless:// …); a whole Clash or sing-box config also works.',
   subscriptionContentPlaceholder: 'Paste ss:// / trojan:// / hysteria2:// lines, or a Clash/sing-box config…',
-  subscriptionContentPreviewOnlyHint:
-    'Pasted content is preview-only — saving still needs the subscription link above.',
   subscriptionSave: 'Save',
   subscriptionPreviewFailed: "Couldn't preview: {message}",
   subscriptionSaveFailed: "Couldn't save: {message}",

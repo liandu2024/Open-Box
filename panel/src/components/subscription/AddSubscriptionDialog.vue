@@ -8,20 +8,41 @@
          RenameRulesEditor 把地区/特征词典存在自己内部的 reactive 数组里,并且挂载时
          会 emit 一次初始值。用 v-if 的话每次切走再切回都会重建组件,用户刚编辑的规则
          直接丢失、还会把 renameOptions 悄悄改回初始值——和之前编辑弹窗踩过的是同一类坑。 -->
-    <div
-      role="tablist"
-      class="tabs-box tabs tabs-sm mb-4 w-full"
-    >
-      <a
-        v-for="item in tabs"
-        :key="item.key"
-        role="tab"
-        :class="['tab flex-1', activeTab === item.key && 'tab-active']"
-        @click="activeTab = item.key"
+    <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
+      <!-- 左:来源模式。订阅=填链接由服务端去抓;节点=直接粘贴一堆节点链接。
+           它取代了原来那个「没有链接?粘贴内容试试」的文字开关——那个写法既不显眼,
+           也没表达出"这是两条并列的录入方式"。 -->
+      <div
+        role="tablist"
+        class="tabs-box tabs tabs-sm"
       >
-        {{ $t(item.label) }}<template v-if="item.key === 'nodes' && preview">
-          ({{ preview.nodes.length }})</template>
-      </a>
+        <a
+          v-for="item in sourceModes"
+          :key="item.key"
+          role="tab"
+          :class="['tab', sourceMode === item.key && 'tab-active']"
+          @click="sourceMode = item.key"
+        >
+          {{ $t(item.label) }}
+        </a>
+      </div>
+
+      <!-- 右:内容分区 -->
+      <div
+        role="tablist"
+        class="tabs-box tabs tabs-sm"
+      >
+        <a
+          v-for="item in tabs"
+          :key="item.key"
+          role="tab"
+          :class="['tab', activeTab === item.key && 'tab-active']"
+          @click="activeTab = item.key"
+        >
+          {{ $t(item.label) }}<template v-if="item.key === 'nodes' && preview">
+            ({{ preview.nodes.length }})</template>
+        </a>
+      </div>
     </div>
 
     <div class="flex flex-col gap-4">
@@ -39,7 +60,10 @@
           />
         </div>
 
-        <div class="flex flex-col gap-1">
+        <div
+          v-if="sourceMode === 'url'"
+          class="flex flex-col gap-1"
+        >
           <label class="text-xs font-medium">{{ $t('subscriptionUrlLabel') }}</label>
           <input
             v-model="url"
@@ -51,23 +75,18 @@
           <p class="text-base-content/50 text-xs">{{ $t('subscriptionUrlHint') }}</p>
         </div>
 
-        <div class="flex flex-col gap-1">
-          <button
-            type="button"
-            class="text-primary self-start text-xs underline-offset-2 hover:underline"
-            @click="togglePasteMode"
-          >
-            {{ pasteMode ? $t('subscriptionUsePasteHide') : $t('subscriptionUsePasteShow') }}
-          </button>
-          <template v-if="pasteMode">
-            <textarea
-              v-model="content"
-              rows="5"
-              class="textarea textarea-sm w-full font-mono"
-              :placeholder="$t('subscriptionContentPlaceholder')"
-            />
-            <p class="text-warning text-xs">{{ $t('subscriptionContentPreviewOnlyHint') }}</p>
-          </template>
+        <div
+          v-else
+          class="flex flex-col gap-1"
+        >
+          <label class="text-xs font-medium">{{ $t('subscriptionContentLabel') }}</label>
+          <textarea
+            v-model="content"
+            rows="8"
+            class="textarea textarea-sm w-full font-mono"
+            :placeholder="$t('subscriptionContentPlaceholder')"
+          />
+          <p class="text-base-content/50 text-xs">{{ $t('subscriptionContentHint') }}</p>
         </div>
 
       </div>
@@ -149,7 +168,15 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 
+type SourceMode = 'url' | 'paste'
 type DialogTab = 'source' | 'rules' | 'nodes'
+
+const sourceModes: { key: SourceMode; label: string }[] = [
+  { key: 'url', label: 'subscriptionTabSource' },
+  { key: 'paste', label: 'subscriptionTabNodes' },
+]
+// 编辑已有订阅时,按它到底是"有链接"还是"粘贴来的"决定初始模式
+const sourceMode = ref<SourceMode>(props.subscription && !props.subscription.url ? 'paste' : 'url')
 
 const tabs: { key: DialogTab; label: string }[] = [
   { key: 'source', label: 'subscriptionTabSource' },
@@ -163,8 +190,7 @@ const activeTab = ref<DialogTab>('source')
 // 会停在空字符串上(实测:打开「修改订阅」名称和链接都是空的)。
 const name = ref(props.subscription?.name ?? '')
 const url = ref(props.subscription?.url ?? '')
-const content = ref('')
-const pasteMode = ref(false)
+const content = ref(props.subscription?.content ?? '')
 
 const renameOptions = ref<OpenboxRenameOptions>({})
 const handleRenameOptionsChange = (value: OpenboxRenameOptions) => {
@@ -180,23 +206,20 @@ const saveErrorMessage = ref('')
 // content (when the paste-mode textarea is non-empty) wins over url — mirrors
 // server/api/subscriptions.mjs's resolveNodes priority, so what's shown in the preview panel is
 // always exactly what a save/preview call with these fields would produce.
-const effectiveSource = computed(() => {
-  const trimmedContent = content.value.trim()
-  if (trimmedContent) return { content: trimmedContent }
+// 只认当前模式那一路。以前是"有 content 就优先用 content",在模式切换后会出问题:
+// 切回「订阅」模式时上一次粘贴的内容还留在 content 里,预览和保存都会继续用它,
+// 而界面上根本看不到那段文字。
+const effectiveSource = computed<{ url?: string; content?: string } | null>(() => {
+  if (sourceMode.value === 'paste') {
+    const trimmedContent = content.value.trim()
+    return trimmedContent ? { content: trimmedContent } : null
+  }
   const trimmedUrl = url.value.trim()
-  if (trimmedUrl) return { url: trimmedUrl }
-  return null
+  return trimmedUrl ? { url: trimmedUrl } : null
 })
 const hasSource = computed(() => effectiveSource.value !== null)
 
-const canSave = computed(() => Boolean(url.value.trim()) && !previewing.value)
-
-const togglePasteMode = () => {
-  pasteMode.value = !pasteMode.value
-  if (!pasteMode.value) {
-    content.value = ''
-  }
-}
+const canSave = computed(() => hasSource.value && !previewing.value)
 
 // Monotonic guard against out-of-order responses: a slow preview call for stale input must
 // never clobber a newer one that resolved first.
@@ -250,8 +273,8 @@ const resetForm = () => {
   // 编辑模式下用现存值预填;新建时清空
   name.value = props.subscription?.name ?? ''
   url.value = props.subscription?.url ?? ''
-  content.value = ''
-  pasteMode.value = false
+  content.value = props.subscription?.content ?? ''
+  sourceMode.value = props.subscription && !props.subscription.url ? 'paste' : 'url'
   preview.value = null
   previewing.value = false
   previewErrorMessage.value = ''
@@ -274,8 +297,9 @@ const handleSave = async () => {
   saveErrorMessage.value = ''
 
   try {
+    // 保存哪一路由当前模式决定,和预览用的是同一个来源
     const payload = {
-      url: url.value.trim(),
+      ...(effectiveSource.value || {}),
       name: name.value.trim() || t('subscriptionDefaultName'),
       renameOptions: renameOptions.value,
     }

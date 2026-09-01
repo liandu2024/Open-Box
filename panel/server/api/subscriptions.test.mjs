@@ -753,3 +753,99 @@ test('PATCH 不存在的订阅 → 404', async () => {
     await close()
   }
 })
+
+// -------- 粘贴节点保存(「节点」模式)--------
+// 此前粘贴内容只能预览、不能保存(创建接口硬性要求 url)。但"手上只有一堆分享链接、
+// 没有订阅地址"是很常见的情况,所以现在 url / content 二选一。
+
+test('只粘贴内容也能创建订阅(url 为空),内容被存下来', async () => {
+  let fetched = false
+  const fetchImpl = async () => { fetched = true; throw new Error('不该走网络') }
+  const { baseUrl, store, close } = await startApp(fetchImpl)
+  try {
+    const res = await postJson(baseUrl, '/api/openbox/subscriptions', {
+      name: '手动节点', content: SHARELINK_MULTI,
+    })
+    assert.equal(res.status, 200)
+    assert.equal((await res.json()).nodeCount, 2)
+    assert.equal(fetched, false, '粘贴来源不该发起任何网络请求')
+    const sub = store.getSubscriptions()[0]
+    assert.equal(sub.url, '')
+    assert.equal(sub.content, SHARELINK_MULTI, '内容要存下来:改重命名规则时要拿它重新解析')
+  } finally {
+    await close()
+  }
+})
+
+test('粘贴来源的订阅刷新时重新解析已存内容,不走网络', async () => {
+  let fetched = false
+  const fetchImpl = async () => { fetched = true; throw new Error('不该走网络') }
+  const { baseUrl, store, close } = await startApp(fetchImpl)
+  try {
+    const created = await (await postJson(baseUrl, '/api/openbox/subscriptions', {
+      name: '手动节点', content: SHARELINK_MULTI,
+    })).json()
+    const res = await postJson(baseUrl, `/api/openbox/subscriptions/${created.id}/refresh`, {})
+    assert.equal(res.status, 200)
+    assert.equal((await res.json()).nodeCount, 2)
+    assert.equal(fetched, false)
+    assert.equal(store.getNodes().length, 2)
+  } finally {
+    await close()
+  }
+})
+
+test('改粘贴内容会重新解析并换掉该订阅的节点', async () => {
+  const fetchImpl = async () => { throw new Error('不该走网络') }
+  const { baseUrl, store, close } = await startApp(fetchImpl)
+  try {
+    const created = await (await postJson(baseUrl, '/api/openbox/subscriptions', {
+      name: '手动节点', content: SHARELINK_MULTI,
+    })).json()
+    assert.equal(created.nodeCount, 2)
+
+    const res = await fetch(`${baseUrl}/api/openbox/subscriptions/${created.id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ content: HK_LINE }),
+    })
+    assert.equal(res.status, 200)
+    assert.equal((await res.json()).nodeCount, 1)
+    assert.equal(store.getNodes().length, 1)
+    assert.equal(store.getSubscriptions()[0].content, HK_LINE)
+  } finally {
+    await close()
+  }
+})
+
+test('粘贴来源只改名字同样不重新解析', async () => {
+  const fetchImpl = async () => { throw new Error('不该走网络') }
+  const { baseUrl, store, close } = await startApp(fetchImpl)
+  try {
+    const created = await (await postJson(baseUrl, '/api/openbox/subscriptions', {
+      name: '旧名', content: SHARELINK_MULTI,
+    })).json()
+    const res = await fetch(`${baseUrl}/api/openbox/subscriptions/${created.id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: '新名' }),
+    })
+    assert.equal(res.status, 200)
+    assert.equal(store.getSubscriptions()[0].name, '新名')
+    assert.equal(store.getSubscriptions()[0].content, SHARELINK_MULTI)
+  } finally {
+    await close()
+  }
+})
+
+test('url 和 content 都没有 → 400', async () => {
+  const fetchImpl = async () => ({ ok: true, status: 200, text: async () => SHARELINK_MULTI })
+  const { baseUrl, close } = await startApp(fetchImpl)
+  try {
+    const res = await postJson(baseUrl, '/api/openbox/subscriptions', { name: 'x' })
+    assert.equal(res.status, 400)
+    assert.match((await res.json()).error, /url or content/)
+  } finally {
+    await close()
+  }
+})
