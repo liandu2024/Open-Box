@@ -137,12 +137,26 @@
         :placeholder="$t('subscriptionRenameKeywordsPlaceholder')"
       />
     </div>
+
+    <!-- 过滤:命中就整条不导入。机场订阅里常混着「官网｜https://xxx」「请提工单开通」
+         这类公告条目,它们不是节点,却会被当成节点参与分组、出现在策略组里。 -->
+    <div class="flex flex-col gap-1">
+      <label class="text-xs font-medium">{{ $t('subscriptionRenameExcludeLabel') }}</label>
+      <p class="text-base-content/50 text-xs">{{ $t('subscriptionRenameExcludeHint') }}</p>
+      <input
+        v-model="excludeKeywordsText"
+        type="text"
+        class="input input-sm w-full"
+        :placeholder="$t('subscriptionRenameKeywordsPlaceholder')"
+      />
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import type { OpenboxRenameOptions } from '@/api/openbox'
 import {
+  DEFAULT_EXCLUDE_KEYWORDS,
   DEFAULT_FEATURE_KEYWORDS,
   DEFAULT_REGION_DICT,
   DEFAULT_RENAME_TEMPLATE,
@@ -215,6 +229,12 @@ const initialFeatureKeywords =
       : [...DEFAULT_FEATURE_KEYWORDS]
 const featureKeywordsText = ref(initialFeatureKeywords.join(','))
 
+// 过滤关键词。显式给了空数组就尊重"不过滤",只有整个字段缺失才回落到默认值——
+// 否则用户清空这一栏、保存、再打开,默认词又自己冒回来了。
+const excludeKeywordsText = ref(
+  (Array.isArray(init?.excludeKeywords) ? init.excludeKeywords : DEFAULT_EXCLUDE_KEYWORDS).join(','),
+)
+
 const splitKeywords = (text: string) =>
   text
     .split(/[,，]/)
@@ -255,6 +275,7 @@ const options = computed<OpenboxRenameOptions>(() => ({
     .filter((row) => row.name.trim() || row.keywordsText.trim())
     .map((row) => ({ code: row.id, name: row.name.trim(), keywords: splitKeywords(row.keywordsText) })),
   featureKeywords: splitKeywords(featureKeywordsText.value),
+  excludeKeywords: splitKeywords(excludeKeywordsText.value),
 }))
 
 watch(
@@ -291,5 +312,6 @@ const resetToDefaults = () => {
   seqPad.value = DEFAULT_SEQ_PAD
   regionRows.splice(0, regionRows.length, ...toRegionRows(DEFAULT_REGION_DICT))
   featureKeywordsText.value = DEFAULT_FEATURE_KEYWORDS.join(',')
+  excludeKeywordsText.value = DEFAULT_EXCLUDE_KEYWORDS.join(',')
 }
 </script>

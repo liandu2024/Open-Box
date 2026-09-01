@@ -59,6 +59,8 @@ export interface OpenboxRenameOptions {
   regionDict?: OpenboxRenameRegionEntry[]
   // 特征关键词扁平表:命中哪个词就把那个词本身(转大写)写进节点名。
   featureKeywords?: string[]
+  // 过滤关键词:原始节点名命中任一词就整条不导入(机场的公告/广告条目)。
+  excludeKeywords?: string[]
   // 旧档案里的两层结构,只为兼容读取而保留(见 server/engine/rename.mjs 的 toFeatureKeywords)
   featureDict?: OpenboxRenameFeatureEntry[]
   template?: string
@@ -101,6 +103,8 @@ export interface OpenboxSubscriptionPreview {
   format: string
   nodes: OpenboxNodeSummary[]
   skipped: Array<{ name: string; type: string }>
+  // 被过滤关键词剔除的条目
+  excluded?: Array<{ name: string }>
   preview: OpenboxRenamePreviewEntry[]
   groups: OpenboxNodeGroup[]
 }

@@ -67,6 +67,26 @@
           </ul>
         </div>
 
+        <!-- 被过滤掉的条目。必须列出来:过滤会让节点凭空消失,只给个"解析出 N 个"
+             的话,用户既看不出过滤有没有生效,也无从发现自己写的关键词误伤了真节点。 -->
+        <div
+          v-if="preview.excluded?.length"
+          class="border-base-content/15 flex flex-col gap-1 rounded-lg border px-3 py-2"
+        >
+          <p class="text-base-content/70 text-xs font-medium">
+            {{ $t('subscriptionExcludedSummary', { count: preview.excluded.length }) }}
+          </p>
+          <ul class="text-base-content/60 flex max-h-24 flex-col gap-0.5 overflow-y-auto text-xs">
+            <li
+              v-for="(item, index) in preview.excluded"
+              :key="`${item.name}-${index}`"
+              class="truncate"
+            >
+              {{ item.name }}
+            </li>
+          </ul>
+        </div>
+
         <!-- The hero: original -> renamed mapping table -->
         <div class="border-base-content/10 min-h-0 flex-1 overflow-hidden rounded-lg border">
           <div

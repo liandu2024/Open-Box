@@ -384,6 +384,7 @@ const zhTW: LANG_MESSAGE = {
   subscriptionPreviewEmptyHint: '\u586b\u5beb\u9023\u7d50\u6216\u8cbc\u4e0a\u5167\u5bb9\u5f8c,\u9019\u88e1\u6703\u5373\u6642\u986f\u793a\u9810\u89bd\u7d50\u679c\u3002',
   subscriptionPreviewLoading: '\u8f09\u5165\u4e2d\u2026',
   subscriptionPreviewSummary: '\u89e3\u6790\u51fa {count} \u500b\u7bc0\u9ede',
+  subscriptionExcludedSummary: '已過濾 {count} 條(不匯入)',
   subscriptionSkippedSummary: '\u8df3\u904e\u4e86 {count} \u500b',
   subscriptionSkippedReason: '{name} \u2014\u2014 \u985e\u578b\u672a\u8b58\u5225({type})',
   subscriptionPreviewNoNodes: '\u9084\u6c92\u89e3\u6790\u51fa\u7bc0\u9ede\u3002',
@@ -408,6 +409,8 @@ const zhTW: LANG_MESSAGE = {
   subscriptionRenameRemoveRow: '\u522a\u9664',
   subscriptionRenameNoRows: '\u9084\u6c92\u6709\u9805\u76ee,\u7bc0\u9ede\u6703\u6b78\u5230\u300c\u7121\u6cd5\u8b58\u5225\u5730\u5340\u300d\u7684\u6a19\u7c64\u4e0b\u3002',
   subscriptionRenameFeatureDictLabel: '\u7279\u5fb5\u95dc\u9375\u5b57',
+  subscriptionRenameExcludeLabel: '過濾節點',
+  subscriptionRenameExcludeHint: '原始節點名命中任一關鍵詞就整條不匯入。機場訂閱裡常混著「官網」「請提工單開通」這類公告條目,它們不是節點。清空則不過濾。',
   subscriptionRenameFeatureDictHint: '命中哪個關鍵詞,就把那個詞轉成大寫寫進節點名。例:填 iplc,ipv6,節點「美國 IPLC IPv6 01」會變成 美國-IPLC-IPV6-01。',
   subscriptionRenameFeatureLabelPlaceholder: '\u7279\u5fb5\u6a19\u7c64',
 

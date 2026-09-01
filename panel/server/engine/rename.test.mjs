@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { DEFAULT_REGION_DICT, DEFAULT_FEATURE_KEYWORDS, matchRegion, extractFeatures, renameNodes, previewRename } from './rename.mjs'
+import { DEFAULT_REGION_DICT, DEFAULT_FEATURE_KEYWORDS, matchRegion, extractFeatures, renameNodes, previewRename, excludeNodes, isExcludedName } from './rename.mjs'
 import { createNode } from './node-model.mjs'
 
 const mk = (name) => createNode({ tag: name, type: 'trojan', server: 'a.com', server_port: 443, fields: { password: 'x', tls: { enabled: true } }, source: 'sharelink' })
@@ -124,4 +124,43 @@ test('默认地区词典里不再含无法输入的国旗字符', () => {
       assert.ok(!flag.test(kw), `${region.name} 的关键词 ${kw} 仍是国旗`)
     }
   }
+})
+
+// -------- 过滤节点 --------
+// 机场订阅里混着公告/广告条目(「官网｜https://xxx.com」「高速倍率节点请提工单开通」),
+// 它们不是节点却会被当成节点导入、参与分组、出现在策略组里。
+
+test('命中过滤关键词的条目被整条剔除,真节点保留', () => {
+  const nodes = [
+    mk('官网｜https://破晓.com'),
+    mk('高速倍率节点请提工单开通'),
+    mk('🇭🇰香港 01 | 三网'),
+    mk('美国 IPLC 01'),
+  ]
+  const { kept, excluded } = excludeNodes(nodes)
+  assert.deepEqual(kept.map((n) => n.originalTag), ['🇭🇰香港 01 | 三网', '美国 IPLC 01'])
+  assert.equal(excluded.length, 2)
+})
+
+test('过滤发生在改名之前:预览表里不会出现被过滤的条目,序号也不给它留号', () => {
+  const nodes = [mk('官网｜https://破晓.com'), mk('香港 01'), mk('香港 02')]
+  const { kept } = excludeNodes(nodes)
+  assert.deepEqual(renameNodes(kept).map((n) => n.tag), ['香港-01', '香港-02'])
+})
+
+test('自定义过滤词覆盖默认值', () => {
+  const nodes = [mk('官网 通知'), mk('测试节点 01')]
+  // 只过滤「测试」时,默认的「官网」不再生效
+  const { kept } = excludeNodes(nodes, { excludeKeywords: ['测试'] })
+  assert.deepEqual(kept.map((n) => n.originalTag), ['官网 通知'])
+})
+
+test('过滤词为空数组时不过滤任何东西', () => {
+  const nodes = [mk('官网｜https://破晓.com'), mk('香港 01')]
+  assert.equal(excludeNodes(nodes, { excludeKeywords: [] }).kept.length, 2)
+})
+
+test('纯 ASCII 短过滤词受 token 边界保护,不会误伤', () => {
+  assert.equal(isExcludedName('VIP-US-01', ['vip']), true)
+  assert.equal(isExcludedName('Advipsory 节点', ['vip']), false)
 })

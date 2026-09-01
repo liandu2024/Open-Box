@@ -384,6 +384,7 @@ const zh: LANG_MESSAGE = {
   subscriptionPreviewEmptyHint: '\u586b\u5199\u94fe\u63a5\u6216\u7c98\u8d34\u5185\u5bb9\u540e,\u8fd9\u91cc\u4f1a\u5b9e\u65f6\u663e\u793a\u9884\u89c8\u7ed3\u679c\u3002',
   subscriptionPreviewLoading: '\u52a0\u8f7d\u4e2d\u2026',
   subscriptionPreviewSummary: '\u89e3\u6790\u51fa {count} \u4e2a\u8282\u70b9',
+  subscriptionExcludedSummary: '已过滤 {count} 条(不导入)',
   subscriptionSkippedSummary: '\u8df3\u8fc7\u4e86 {count} \u4e2a',
   subscriptionSkippedReason: '{name} \u2014\u2014 \u7c7b\u578b\u672a\u8bc6\u522b({type})',
   subscriptionPreviewNoNodes: '\u8fd8\u6ca1\u89e3\u6790\u51fa\u8282\u70b9\u3002',
@@ -408,6 +409,8 @@ const zh: LANG_MESSAGE = {
   subscriptionRenameRemoveRow: '\u5220\u9664',
   subscriptionRenameNoRows: '\u8fd8\u6ca1\u6709\u6761\u76ee,\u8282\u70b9\u4f1a\u5f52\u5230"\u65e0\u6cd5\u8bc6\u522b\u5730\u533a"\u7684\u6807\u7b7e\u4e0b\u3002',
   subscriptionRenameFeatureDictLabel: '\u7279\u5f81\u5173\u952e\u8bcd',
+  subscriptionRenameExcludeLabel: '过滤节点',
+  subscriptionRenameExcludeHint: '原始节点名命中任一关键词就整条不导入。机场订阅里常混着「官网」「请提工单开通」这类公告条目,它们不是节点。清空则不过滤。',
   subscriptionRenameFeatureDictHint: '命中哪个关键词,就把那个词转成大写写进节点名。例:填 iplc,ipv6,节点「美国 IPLC IPv6 01」会变成 美国-IPLC-IPV6-01。',
   subscriptionRenameFeatureLabelPlaceholder: '\u7279\u5f81\u6807\u7b7e',
 

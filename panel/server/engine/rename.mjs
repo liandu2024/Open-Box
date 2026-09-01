@@ -1,5 +1,9 @@
-export { DEFAULT_REGION_DICT, DEFAULT_FEATURE_KEYWORDS } from './dictionaries.mjs'
-import { DEFAULT_REGION_DICT as REGIONS, DEFAULT_FEATURE_KEYWORDS as FEATURES } from './dictionaries.mjs'
+export { DEFAULT_REGION_DICT, DEFAULT_FEATURE_KEYWORDS, DEFAULT_EXCLUDE_KEYWORDS } from './dictionaries.mjs'
+import {
+  DEFAULT_REGION_DICT as REGIONS,
+  DEFAULT_FEATURE_KEYWORDS as FEATURES,
+  DEFAULT_EXCLUDE_KEYWORDS as EXCLUDES,
+} from './dictionaries.mjs'
 
 // 纯 ASCII 短码(如 us/hk/jp/uk/de,长度 2~3)容易在 Russia/Sweden/Ukraine/Australia
 // 等词中被 includes 子串误配,需要 token 边界匹配(前后是非字母或字符串边界)。
@@ -86,6 +90,29 @@ const applyTemplate = (template, region, feature, seq) => {
     })
   }
   return out.replace('{region}', () => region).replace('{seq}', () => seq)
+}
+
+// 过滤:原始节点名命中任一关键词就整条丢弃。和区域匹配共用 keywordMatches,所以
+// 纯 ASCII 短码(如 "vip")同样受 token 边界保护,不会因为出现在别的单词里就误伤——
+// 这个功能会让节点凭空消失,误伤的代价比漏网大得多。
+export const isExcludedName = (name, keywords) => {
+  const list = Array.isArray(keywords) ? keywords : []
+  if (!list.length) return false
+  const lower = normalizeForMatch(name)
+  return list.some((kw) => String(kw).trim() && keywordMatches(lower, kw))
+}
+
+// 在改名之前先过滤:renameNodes / previewRename 是按下标一一对应的,若在改名内部
+// 丢条目,预览表的原名与新名就会错位。
+export const excludeNodes = (nodes, options = {}) => {
+  const keywords = options.excludeKeywords || EXCLUDES
+  const kept = []
+  const excluded = []
+  for (const node of nodes) {
+    if (isExcludedName(node.originalTag, keywords)) excluded.push(node)
+    else kept.push(node)
+  }
+  return { kept, excluded }
 }
 
 export const renameNodes = (nodes, options = {}) => {

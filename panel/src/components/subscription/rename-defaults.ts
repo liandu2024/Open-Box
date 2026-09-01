@@ -31,3 +31,7 @@ export const DEFAULT_REGION_DICT: OpenboxRenameRegionEntry[] = [
 // 特征改成扁平关键词表:命中哪个词就把那个词本身(转大写)写进节点名,
 // 不再折叠成一个统一标签(见 server/engine/dictionaries.mjs 的同名常量)。
 export const DEFAULT_FEATURE_KEYWORDS: string[] = ['iepl', 'iplc', 'ipv6', '专线', '家宽', '2x']
+
+// 过滤关键词:机场订阅里混着的公告/广告条目。默认只放最没歧义的三个词——这是个
+// "会让节点消失"的功能,默认值宁可保守(见 server/engine/dictionaries.mjs 同名常量)。
+export const DEFAULT_EXCLUDE_KEYWORDS: string[] = ['官网', '工单', '客服']

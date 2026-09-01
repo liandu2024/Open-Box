@@ -387,6 +387,7 @@ const en = {
   subscriptionPreviewEmptyHint: 'Enter a link or paste content to see a live preview here.',
   subscriptionPreviewLoading: 'Loading…',
   subscriptionPreviewSummary: 'Found {count} nodes',
+  subscriptionExcludedSummary: '{count} entries filtered out (not imported)',
   subscriptionSkippedSummary: '{count} skipped',
   subscriptionSkippedReason: '{name} — unrecognized type ({type})',
   subscriptionPreviewNoNodes: 'No nodes parsed from this yet.',
@@ -411,6 +412,8 @@ const en = {
   subscriptionRenameRemoveRow: 'Remove',
   subscriptionRenameNoRows: 'No entries — nodes will fall back to the unrecognized-region label.',
   subscriptionRenameFeatureDictLabel: 'Feature keywords',
+  subscriptionRenameExcludeLabel: 'Exclude nodes',
+  subscriptionRenameExcludeHint: 'Entries whose original name matches any keyword are not imported — provider notices like a homepage link or a support-ticket entry are not nodes. Leave empty to keep everything.',
   subscriptionRenameFeatureDictHint: 'Whichever keyword matches is written into the node name in upper case. iplc,ipv6 turns US IPLC IPv6 01 into US-IPLC-IPV6-01.',
   subscriptionRenameFeatureLabelPlaceholder: 'Feature label',
 

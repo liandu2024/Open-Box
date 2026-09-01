@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import dns from 'node:dns/promises'
 import express from 'express'
 import { parseSubscription } from '../engine/subscription.mjs'
-import { renameNodes, previewRename } from '../engine/rename.mjs'
+import { renameNodes, previewRename, excludeNodes } from '../engine/rename.mjs'
 import { groupNodesByRegion } from '../engine/groups.mjs'
 import { assertPublicUrl } from './net-guard.mjs'
 
@@ -181,13 +181,19 @@ const resolveNodes = async ({ url, content }, fetchImpl, renameOptions, lookup) 
   // renameNodes/groupNodesByRegion 的默认参数只兜底 undefined;显式传 null(合法 JSON 值)
   // 会在其内部触发 "options.xxx of null" —— 这里统一归一化,避免因此误判 400。
   const opts = renameOptions && typeof renameOptions === 'object' ? renameOptions : undefined
-  const finish = (parsed) => ({
-    renamed: renameNodes(parsed.nodes, opts),
-    skipped: parsed.skipped,
-    format: parsed.format,
-    preview: previewRename(parsed.nodes, opts),
-    renameOptions: opts,
-  })
+  // 过滤必须发生在改名之前:renameNodes / previewRename 按下标一一对应,
+  // 而且被过滤掉的条目连预览表都不该出现——它们压根不算节点。
+  const finish = (parsed) => {
+    const { kept, excluded } = excludeNodes(parsed.nodes, opts || {})
+    return {
+      renamed: renameNodes(kept, opts),
+      skipped: parsed.skipped,
+      excluded: excluded.map((n) => ({ name: n.originalTag })),
+      format: parsed.format,
+      preview: previewRename(kept, opts),
+      renameOptions: opts,
+    }
+  }
 
   if (typeof content === 'string' && content.trim()) {
     const parsed = parseSubscription(content)
@@ -242,12 +248,15 @@ export const registerSubscriptionRoutes = (app, { store, fetchImpl = globalThis.
     try {
       const { url, content, renameOptions } = req.body || {}
       const resolved = await resolveNodes({ url, content }, fetchImpl, renameOptions, lookup)
-      const { renamed, skipped, format, preview } = resolved
+      const { renamed, skipped, excluded, format, preview } = resolved
       const { groups } = groupNodesByRegion(renamed, resolved.renameOptions)
       res.json({
         format,
         nodes: renamed.map(nodeSummary),
         skipped,
+        // 被过滤掉的条目要如实报出来:这个功能会让节点凭空消失,不给个数的话
+        // 用户既看不出过滤有没有生效,也无从发现自己写的关键词误伤了真节点。
+        excluded,
         preview,
         groups,
       })

@@ -13,3 +13,8 @@ export const DEFAULT_REGION_DICT = [
 // 那个词本身(转大写)写进节点名。之前 iepl/iplc/专线 都会被折叠成同一个标签「专线」,
 // 现在 iplc 命中就显示 IPLC,信息不再被抹掉。
 export const DEFAULT_FEATURE_KEYWORDS = ['iepl', 'iplc', 'ipv6', '专线', '家宽', '2x']
+
+// 过滤关键词:机场订阅里混着的公告/广告条目——「官网｜https://xxx.com」「高速倍率节点
+// 请提工单开通」之类。它们不是节点,却会被当成节点导入、参与分组、出现在策略组里。
+// 默认只放最没有歧义的三个词;这是个"会让节点消失"的功能,默认值宁可保守,多的让用户自己加。
+export const DEFAULT_EXCLUDE_KEYWORDS = ['官网', '工单', '客服']
