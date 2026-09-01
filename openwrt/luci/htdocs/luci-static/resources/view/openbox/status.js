@@ -86,7 +86,6 @@ var I18N = {
 		'Cancel request failed: %s': '取消请求失败:%s',
 		'Past this point, cancelling is no longer possible.': '进入此阶段后将无法取消。',
 		'Close': '关闭',
-		'Uninstall': '卸载',
 		'Remove Open-Box from this router. Services are stopped, DNS and firewall changes are reverted, and the LuCI page disappears after the next refresh.':
 			'从这台路由器上移除 Open-Box。服务会被停止,DNS 与防火墙改动会被还原,刷新后本页面也会消失。',
 		'Uninstall Open-Box': '卸载 Open-Box',
@@ -174,7 +173,6 @@ var I18N = {
 		'Cancel request failed: %s': '取消請求失敗:%s',
 		'Past this point, cancelling is no longer possible.': '進入此階段後將無法取消。',
 		'Close': '關閉',
-		'Uninstall': '解除安裝',
 		'Remove Open-Box from this router. Services are stopped, DNS and firewall changes are reverted, and the LuCI page disappears after the next refresh.':
 			'從這台路由器上移除 Open-Box。服務會被停止,DNS 與防火牆變更會被還原,重新整理後本頁面也會消失。',
 		'Uninstall Open-Box': '解除安裝 Open-Box',
@@ -720,11 +718,22 @@ var BTNROW = 'display:flex;flex-wrap:wrap;gap:.5em;margin:.8em 0 .2em 0';
 // 主题的 CSS 撞车。2×2 网格 + 900px 断点收缩成单列是这里唯一的媒体查询,
 // align-items:start 让矮的卡片保持自身高度、不被网格拉伸成一格空盒子。
 var STYLE_CSS =
+	// 页面标题行:标题在左、卸载按钮在最右。卸载原本是网格里的第四张卡片,但
+	// 那让一个纯破坏性动作占据了和三个日常功能同等的版面权重;现在它退到页面
+	// 标题右侧,和 LuCI 各页面把全局动作放标题行的习惯一致。注意这个类是加在
+	// <h2> 自己身上、而不是外面再套一层 <div>:主题对页面标题的样式常写成
+	// `#maincontent > .container > h2` 这类直接子元素选择器,包一层会让标题
+	// 在部分主题下丢掉样式。按钮显式给字号,否则它会继承 h2 的大字号。
+	'h2.ob-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.75em}' +
+	'h2.ob-head .cbi-button{font-size:.875rem;font-weight:600;line-height:1.4}' +
 	'.ob-wrap{max-width:1400px}' +
 	'.ob-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;margin-top:12px}' +
+	// 卸载卡片撤走后网格只剩三张:两列排布会在右下角留一个空格子。让内容最多的
+	// 「Open-Box 升级」横跨两列把这个洞填掉(渠道列表另有 max-width 兜着,不会
+	// 被拉成横贯全屏的稀疏长条)。
+	'.ob-card-wide{grid-column:1/-1}' +
 	'@media (max-width:900px){.ob-grid{grid-template-columns:1fr}}' +
 	'.ob-card{border:1px solid rgba(127,127,127,.22);border-radius:10px;padding:16px 18px;background:rgba(127,127,127,.04)}' +
-	'.ob-card-danger{border-color:rgba(208,74,74,.35)}' +
 	'.ob-card h3{margin:0 0 12px;font-size:1.05em;font-weight:600;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.75em}' +
 	'.ob-ver{font-size:.85em;font-weight:600;opacity:.75;white-space:nowrap}' +
 	'.ob-pills{display:flex;flex-wrap:wrap;gap:8px;align-items:center}' +
@@ -737,7 +746,9 @@ var STYLE_CSS =
 	'.ob-meta{display:flex;flex-wrap:wrap;gap:.5em;align-items:baseline;margin:.4em 0;font-size:.95em}' +
 	'.ob-hint{margin:10px 0 0;font-size:.85em;opacity:.65;line-height:1.55}' +
 	'.ob-div{height:1px;background:rgba(127,127,127,.18);margin:14px -18px 12px}' +
-	'.ob-chan{border:1px solid rgba(127,127,127,.2);border-radius:8px;overflow:hidden;margin:10px 0 12px}' +
+	// max-width:升级卡片横跨两列后,渠道行若跟着撑满整屏,行首的名字和行尾的
+	// 状态/按钮之间会拉开一大片空白,读起来要来回扫视。
+	'.ob-chan{border:1px solid rgba(127,127,127,.2);border-radius:8px;overflow:hidden;margin:10px 0 12px;max-width:720px}' +
 	'.ob-chan-row{display:flex;align-items:center;gap:10px;padding:9px 12px}' +
 	'.ob-chan-row+.ob-chan-row{border-top:1px solid rgba(127,127,127,.14)}' +
 	'.ob-chan-row:hover{background:rgba(127,127,127,.06)}' +
@@ -846,6 +857,10 @@ return view.extend({
 		function showUninstallDialog() {
 			var purgeBox = E('input', { 'type': 'checkbox', 'id': 'ob-purge' });
 			ui.showModal(tr('Uninstall Open-Box'), [
+				// 「卸载到底会发生什么」原本写在卸载卡片的说明里,卡片撤掉后这句话
+				// 必须跟着搬进来——否则用户点开确认框只剩一句"不可撤销",不知道
+				// 撤销的是什么。
+				E('p', {}, tr('Remove Open-Box from this router. Services are stopped, DNS and firewall changes are reverted, and the LuCI page disappears after the next refresh.')),
 				E('p', {}, tr('This cannot be undone. Continue?')),
 				E('div', { 'style': ROW }, [
 					purgeBox,
@@ -1340,15 +1355,25 @@ return view.extend({
 			// 这里都会重新生成、也只生成这一份 <style>,不会在页面里累积出多份。
 			E('style', {}, STYLE_CSS),
 
-			E('h2', {}, 'Open-Box'),
+			// 卸载按钮挂在页面标题行最右侧(.ob-head,定义见 STYLE_CSS),不再是
+			// 网格里的第四张卡片:卸载是整个页面级别的破坏性动作,和「内核」「面板」
+			// 「升级」这三个日常功能不是一个量级,给它一张同等大小的卡片既抬高了它的
+			// 存在感、也在网格里多占一格。真正的说明与二次确认都在
+			// showUninstallDialog() 里,这里只留触发点。
+			E('h2', { 'class': 'ob-head' }, [
+				E('span', {}, 'Open-Box'),
+				E('button', { 'class': 'cbi-button cbi-button-negative',
+					'click': ui.createHandlerFn(self, function () { return showUninstallDialog(); }) },
+					tr('Uninstall Open-Box'))
+			]),
 			E('p', { 'class': 'cbi-section-descr' },
 				tr('Fallback controls. Full management lives in the Open-Box panel.')),
 
-			// .ob-wrap > .ob-grid 是固定两列、900px 断点收缩成单列的 2×2 网格(定义见
-			// STYLE_CSS),四张自成一体的功能块:sing-box 内核、Open-Box 面板、
-			// Open-Box 升级、卸载——按负责人手绘草图从左到右、从上到下排列,DOM 顺序
-			// 即视觉顺序(CSS 网格按源码顺序逐行填格,不需要额外的 grid-area/order
-			// 声明)。
+			// .ob-wrap > .ob-grid 是固定两列、900px 断点收缩成单列的网格(定义见
+			// STYLE_CSS),三张自成一体的功能块:第一行 sing-box 内核 + Open-Box
+			// 面板,第二行 Open-Box 升级横跨两列(.ob-card-wide,否则右下角会空一格)。
+			// DOM 顺序即视觉顺序(CSS 网格按源码顺序逐行填格,不需要额外的
+			// grid-area/order 声明)。卸载不在网格里,它在页面标题行右侧。
 			E('div', { 'class': 'ob-wrap' }, [
 				E('div', { 'class': 'ob-grid' }, [
 					// 「停止」本身就会恢复正常上网(init 脚本的 stop_service 会摘掉 Open-Box 写入的
@@ -1404,27 +1429,13 @@ return view.extend({
 					// 列表每一行的开头(见 channelStatusList 定义处)。这张卡片内容明显
 					// 比其它三张多,固定两列的网格给了它和面板卡片一样的整栏宽度,渠道行
 					// 不再像旧版 auto-fit 三列时那样被挤成窄条。
-					E('div', { 'class': 'ob-card' }, [
+					E('div', { 'class': 'ob-card ob-card-wide' }, [
 						E('h3', {}, tr('Open-Box upgrade')),
 						E('div', { 'class': 'ob-sel-row' }, [ probeAllBtn ]),
 						channelStatusList,
 						E('div', { 'class': 'ob-div' }),
 						E('div', { 'class': 'ob-btns' }, [ checkBtn, versionResult, updateBtn ]),
 						selectedChannelLine
-					]),
-
-					E('div', { 'class': 'ob-card ob-card-danger' }, [
-						// 卸载按钮挪进标题行、右对齐:和上面三张卡片版本号(.ob-ver)在
-						// h3 里的落位是同一个模式(见 STYLE_CSS 里 .ob-card h3 的
-						// justify-content:space-between),这里放的不是版本号而是那个
-						// 破坏性操作本身。确认弹窗(showUninstallDialog())原样不动。
-						E('h3', {}, [
-							E('span', {}, tr('Uninstall')),
-							E('button', { 'class': 'cbi-button cbi-button-negative',
-								'click': ui.createHandlerFn(self, function () { return showUninstallDialog(); }) },
-								tr('Uninstall Open-Box'))
-						]),
-						E('p', {}, tr('Remove Open-Box from this router. Services are stopped, DNS and firewall changes are reverted, and the LuCI page disappears after the next refresh.'))
 					])
 				])
 			])
