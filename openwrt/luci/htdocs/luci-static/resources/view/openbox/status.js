@@ -734,7 +734,20 @@ var STYLE_CSS =
 	'.ob-card-wide{grid-column:1/-1}' +
 	'@media (max-width:900px){.ob-grid{grid-template-columns:1fr}}' +
 	'.ob-card{border:1px solid rgba(127,127,127,.22);border-radius:10px;padding:16px 18px;background:rgba(127,127,127,.04)}' +
-	'.ob-card h3{margin:0 0 12px;font-size:1.05em;font-weight:600;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.75em}' +
+	// 卡片标题行:标题在左、版本在右,底下一条横线收口。
+	//
+	// background/padding/border-radius/box-shadow 这四个是**复位**,不是装饰:
+	// 主题会把裸 <h3> 当成"卡片头"来画。Argon 的 cascade.css 里就是
+	//   h3{padding:.8755rem 1.25rem;border-radius:.25rem;background:var(--white);
+	//      display:block;width:100%}
+	// 于是我们卡片里的标题被套上一层白色圆角块,看起来像卡片里又嵌了张卡片。
+	// 这些是裸元素选择器(0-0-1),`.ob-card h3` 是 0-1-1、且注入的 <style> 在
+	// <body> 里排在主题 <link> 之后,足以压过去,不需要 !important。其它主题若
+	// 也按这个套路给标题上底色,同样会被这几条复位掉。
+	//
+	// 横线用 h3 自己的 border-bottom,而不是再插一个元素:它天然只有 h3 那么宽
+	// (卡片内容宽度,不含卡片左右 18px 内边距),不会像 .ob-div 那样通栏。
+	'.ob-card h3{margin:0 0 12px;padding:0 0 10px;background:none;border:0;border-bottom:1px solid rgba(127,127,127,.22);border-radius:0;box-shadow:none;font-size:1.05em;font-weight:600;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.75em}' +
 	'.ob-ver{font-size:.85em;font-weight:600;opacity:.75;white-space:nowrap}' +
 	'.ob-pills{display:flex;flex-wrap:wrap;gap:8px;align-items:center}' +
 	'.ob-pill{display:inline-flex;align-items:center;gap:.35em;padding:.15em .65em;border-radius:999px;font-size:.85em;border:1px solid currentColor;white-space:nowrap}' +
@@ -745,7 +758,10 @@ var STYLE_CSS =
 	'.ob-btns{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 0}' +
 	'.ob-meta{display:flex;flex-wrap:wrap;gap:.5em;align-items:baseline;margin:.4em 0;font-size:.95em}' +
 	'.ob-hint{margin:10px 0 0;font-size:.85em;opacity:.65;line-height:1.55}' +
-	'.ob-div{height:1px;background:rgba(127,127,127,.18);margin:14px -18px 12px}' +
+	// 升级卡片中段那条分隔线跟着标题线一起收进内容宽度:原来用负 margin 通栏
+	// (margin:14px -18px)顶到卡片边缘,现在同一张卡片里若一条线通栏、一条线
+	// 不通栏,会显得是没对齐的 bug。
+	'.ob-div{height:1px;background:rgba(127,127,127,.18);margin:14px 0 12px}' +
 	// max-width:升级卡片横跨两列后,渠道行若跟着撑满整屏,行首的名字和行尾的
 	// 状态/按钮之间会拉开一大片空白,读起来要来回扫视。
 	'.ob-chan{border:1px solid rgba(127,127,127,.2);border-radius:8px;overflow:hidden;margin:10px 0 12px;max-width:720px}' +
