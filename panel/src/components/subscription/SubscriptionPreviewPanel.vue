@@ -183,10 +183,14 @@
                         @input="onRename(entry, ($event.target as HTMLInputElement).value)"
                       />
                       <!-- 独立测速:结果就地显示在按钮旁,不另开一列——一列只为几个数字
-                           占掉的宽度,比把数字挤在按钮边上更浪费。 -->
+                           占掉的宽度,比把数字挤在按钮边上更浪费。
+                           这一格固定宽度且常驻(没测过就写「未测速」):否则有结果的行会把
+                           输入框挤窄,同一列里的文本框宽度参差不齐。 -->
                       <span
-                        v-if="latency[entry.originalTag]"
-                        :class="['shrink-0 text-xs whitespace-nowrap', latencyClass(entry.originalTag)]"
+                        :class="[
+                          'w-16 shrink-0 text-right text-xs whitespace-nowrap',
+                          latencyClass(entry.originalTag),
+                        ]"
                       >
                         {{ latencyText(entry.originalTag) }}
                       </span>
@@ -283,12 +287,13 @@ const testingAll = ref(false)
 
 const latencyText = (originalTag: string) => {
   const r = latency.value[originalTag]
-  if (!r) return ''
+  if (!r) return t('subscriptionLatencyUntested')
   return r.ok ? `${r.ms}ms` : t('subscriptionLatencyFailed')
 }
 const latencyClass = (originalTag: string) => {
   const r = latency.value[originalTag]
-  if (!r) return ''
+  // 没测过是"暂无信息",不是坏消息,用最淡的颜色,别和失败抢注意力
+  if (!r) return 'text-base-content/30'
   if (!r.ok) return 'text-error'
   const ms = r.ms ?? 0
   return ms < 200 ? 'text-success' : ms < 500 ? 'text-warning' : 'text-error'

@@ -391,6 +391,7 @@ const en = {
   subscriptionSkippedReason: '{name} — unrecognized type ({type})',
   subscriptionLatencyTestAll: 'Test all',
   subscriptionLatencyTestOne: 'Test',
+  subscriptionLatencyUntested: 'untested',
   subscriptionLatencyFailed: 'failed',
   subscriptionLatencyHint: 'Measures the TCP handshake time to the node endpoint. Not proxy speed, and it does not verify credentials.',
   subscriptionPreviewTabKept: 'Kept ({count})',

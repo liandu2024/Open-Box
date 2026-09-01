@@ -388,6 +388,7 @@ const zhTW: LANG_MESSAGE = {
   subscriptionSkippedReason: '{name} \u2014\u2014 \u985e\u578b\u672a\u8b58\u5225({type})',
   subscriptionLatencyTestAll: '一鍵測速',
   subscriptionLatencyTestOne: '測速',
+  subscriptionLatencyUntested: '未測速',
   subscriptionLatencyFailed: '失敗',
   subscriptionLatencyHint: '測的是到節點入口的 TCP 握手時延,不代表代理速度,也不驗證密碼是否正確。',
   subscriptionPreviewTabKept: '有效 ({count})',

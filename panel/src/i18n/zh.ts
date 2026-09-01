@@ -388,6 +388,7 @@ const zh: LANG_MESSAGE = {
   subscriptionSkippedReason: '{name} \u2014\u2014 \u7c7b\u578b\u672a\u8bc6\u522b({type})',
   subscriptionLatencyTestAll: '一键测速',
   subscriptionLatencyTestOne: '测速',
+  subscriptionLatencyUntested: '未测速',
   subscriptionLatencyFailed: '失败',
   subscriptionLatencyHint: '测的是到节点入口的 TCP 握手时延,不代表代理速度,也不验证密码是否正确。',
   subscriptionPreviewTabKept: '有效 ({count})',
