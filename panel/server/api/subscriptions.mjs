@@ -11,6 +11,18 @@ import { assertPublicUrl } from './net-guard.mjs'
 // 不够(域名不解析就直接放行、IPv6 十六进制形式的 IPv4-mapped 地址漏判、redirect 不复检
 // 等四种绕过均有 PoC),所以这里改为:assertPublicUrl 真正解析 hostname(node:dns/promises
 // lookup + {all:true}),对每一个解析出的地址都判定;拉取时手动处理重定向,每一跳都重新校验。
+// 机场订阅端点普遍按 User-Agent 决定回什么:UA 里带 clash / sing-box 之类的关键字才
+// 给对应格式的订阅,不认识的 UA 通常退回一份 base64 分享链接、有时干脆是网页。Node 的
+// fetch 默认发 "User-Agent: node",没有任何机场会认——实测同一个订阅地址三种 UA 拿到
+// 三份完全不同的响应(base64 8.5KB / Clash YAML 36KB / sing-box JSON 15KB)。
+// 按信息量从高到低依次尝试,拿到能解析出节点的那一份就停:Clash YAML 字段最全(udp、
+// 指纹、alpn 都在),sing-box JSON 次之,最后才退回默认 UA 那一份。
+const SUBSCRIPTION_USER_AGENTS = Object.freeze([
+  'clash-verge/v2.0.0',
+  'sing-box/1.13.14',
+  'Open-Box/1.0',
+])
+
 const SUBSCRIPTION_FETCH_TIMEOUT_MS = 15000
 const MAX_SUBSCRIPTION_RESPONSE_BYTES = 5 * 1024 * 1024
 const MAX_SUBSCRIPTION_REDIRECTS = 3
@@ -79,7 +91,7 @@ const errorMessage = (err) => (err instanceof Error ? err.message : String(err))
 // Location 完全不设防——P4a 复审的 PoC 正是靠一个"看起来公网"的地址 302 到回环端口
 // 拿到命中。这里用 redirect:'manual' 拿到原始 3xx 响应,每一跳(含首跳)都先跑
 // assertPublicUrl,再决定要不要继续跟——最多跟 3 跳,超出或缺 Location 头一律拒绝。
-const fetchSubscriptionResponse = async (initialUrl, fetchImpl, lookup) => {
+const fetchSubscriptionResponse = async (initialUrl, fetchImpl, lookup, userAgent) => {
   let currentUrl = initialUrl
   let redirectsFollowed = 0
 
@@ -90,6 +102,7 @@ const fetchSubscriptionResponse = async (initialUrl, fetchImpl, lookup) => {
     try {
       res = await fetchImpl(currentUrl, {
         redirect: 'manual',
+        headers: { 'User-Agent': userAgent },
         signal: AbortSignal.timeout(SUBSCRIPTION_FETCH_TIMEOUT_MS),
       })
     } catch (err) {
@@ -123,30 +136,62 @@ const fetchSubscriptionResponse = async (initialUrl, fetchImpl, lookup) => {
   }
 }
 
-const fetchSubscriptionText = async (url, fetchImpl, lookup) => {
-  const res = await fetchSubscriptionResponse(url, fetchImpl, lookup)
+const fetchSubscriptionText = async (url, fetchImpl, lookup, userAgent) => {
+  const res = await fetchSubscriptionResponse(url, fetchImpl, lookup, userAgent)
   return readSubscriptionBody(res, MAX_SUBSCRIPTION_RESPONSE_BYTES)
+}
+
+// 一个节点都没解析出来时,把原因说清楚。以前这种情况是"静默成功":订阅照样存下、
+// nodeCount 记 0,界面上只剩一句「0 个节点」,既看不出是没抓到、没认出格式,还是
+// 协议不支持——用户除了反复点刷新无事可做。
+const describeEmptyResult = ({ format, skipped }) => {
+  if (format === 'unknown') {
+    return '无法识别订阅内容的格式(既不是 Clash YAML、sing-box JSON,也不是分享链接)。' +
+      '请确认订阅地址填的是订阅链接本身,而不是机场的网页地址。'
+  }
+  const types = [...new Set((skipped || []).map((s) => s.type).filter(Boolean))]
+  if (types.length) {
+    return `订阅解析成功(${format} 格式),但其中 ${skipped.length} 个节点使用的协议都不受支持:` +
+      `${types.join('、')}。`
+  }
+  return `订阅解析成功(${format} 格式),但里面一个节点都没有。`
 }
 
 // preview/create/refresh 共用的解析管道:优先用直传的 content,否则用 fetchImpl 拉取 url;
 // 再走 parseSubscription → renameNodes/previewRename。拉取或校验失败在这里抛出,
 // 调用方在 store 写入之前捕获,天然保证"失败不破坏已存状态"。
 const resolveNodes = async ({ url, content }, fetchImpl, renameOptions, lookup) => {
-  let text
-  if (typeof content === 'string' && content.trim()) {
-    text = content
-  } else if (typeof url === 'string' && url.trim()) {
-    text = await fetchSubscriptionText(url, fetchImpl, lookup)
-  } else {
-    throw new Error('url or content is required')
-  }
   // renameNodes/groupNodesByRegion 的默认参数只兜底 undefined;显式传 null(合法 JSON 值)
   // 会在其内部触发 "options.xxx of null" —— 这里统一归一化,避免因此误判 400。
   const opts = renameOptions && typeof renameOptions === 'object' ? renameOptions : undefined
-  const { nodes, skipped, format } = parseSubscription(text)
-  const renamed = renameNodes(nodes, opts)
-  const preview = previewRename(nodes, opts)
-  return { renamed, skipped, format, preview, renameOptions: opts }
+  const finish = (parsed) => ({
+    renamed: renameNodes(parsed.nodes, opts),
+    skipped: parsed.skipped,
+    format: parsed.format,
+    preview: previewRename(parsed.nodes, opts),
+    renameOptions: opts,
+  })
+
+  if (typeof content === 'string' && content.trim()) {
+    const parsed = parseSubscription(content)
+    if (!parsed.nodes.length) throw new Error(describeEmptyResult(parsed))
+    return finish(parsed)
+  }
+
+  if (typeof url !== 'string' || !url.trim()) {
+    throw new Error('url or content is required')
+  }
+
+  // 逐个 UA 试,第一份能解析出节点的就采用。多发的请求只在失败路径上产生:
+  // 首选 UA 就拿到节点时(绝大多数情况)只有一次请求。
+  let firstParsed = null
+  for (const userAgent of SUBSCRIPTION_USER_AGENTS) {
+    const text = await fetchSubscriptionText(url, fetchImpl, lookup, userAgent)
+    const parsed = parseSubscription(text)
+    if (parsed.nodes.length) return finish(parsed)
+    if (!firstParsed) firstParsed = parsed
+  }
+  throw new Error(describeEmptyResult(firstParsed))
 }
 
 // 把某订阅的新节点并入全局节点池:其它订阅的节点原样保留,按 subscriptions 记录的顺序

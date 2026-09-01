@@ -88,6 +88,16 @@ const MAPPERS = {
       tls: { enabled: true, ...(p.sni || p.servername ? { server_name: p.sni || p.servername } : {}), ...(p.alpn ? { alpn: toArray(p.alpn) } : {}) },
     },
   }),
+  // anytls 强制 TLS。buildClashTls 只有在 tls:true / 有 sni 之类的线索时才返回对象,
+  // 而机场发的 anytls 条目往往不写 tls 字段(协议本身就隐含),所以这里给一个兜底,
+  // 并把 skip-cert-verify / client-fingerprint 显式并进去——真实响应里就带这两项。
+  anytls: (p) => ({
+    type: 'anytls',
+    fields: {
+      password: p.password,
+      tls: buildClashTls({ ...p, tls: true }) || { enabled: true },
+    },
+  }),
   wireguard: (p) => ({
     type: 'wireguard',
     fields: {

@@ -23,8 +23,11 @@ test('createNode 非法端口抛错', () => {
   assert.throws(() => createNode({ tag: 'x', type: 'trojan', server: 'a', server_port: 'abc', source: 'clash' }), /port/)
 })
 
-test('NODE_TYPES 覆盖七协议,isNodeType 判定', () => {
-  assert.deepEqual([...NODE_TYPES].sort(), ['hysteria2','shadowsocks','trojan','tuic','vless','vmess','wireguard'])
+test('NODE_TYPES 覆盖八协议,isNodeType 判定', () => {
+  assert.deepEqual([...NODE_TYPES].sort(), ['anytls','hysteria2','shadowsocks','trojan','tuic','vless','vmess','wireguard'])
   assert.equal(isNodeType('vless'), true)
-  assert.equal(isNodeType('anytls'), false)
+  // anytls 是第八个:真机上遇到过整个订阅 35 个节点全是 anytls 的机场,不支持就是 0 个节点
+  assert.equal(isNodeType('anytls'), true)
+  // 换一个确实不支持的类型继续守住"未知类型判 false"这条
+  assert.equal(isNodeType('ssh'), false)
 })

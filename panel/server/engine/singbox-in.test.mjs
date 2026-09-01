@@ -8,7 +8,8 @@ const doc = JSON.stringify({
     { type: 'vless', tag: 'VL', server: 'v.com', server_port: 443, uuid: 'u', tls: { enabled: true, server_name: 'v.com' } },
     { type: 'selector', tag: 'PROXY', outbounds: ['SS-US', 'VL'] },
     { type: 'direct', tag: 'direct' },
-    { type: 'anytls', tag: 'AT', server: 'a.com', server_port: 443 },
+    // 换成仍不支持的 ssh(anytls 现已支持),继续覆盖"未知代理类型计入 skipped"
+    { type: 'ssh', tag: 'SSH', server: 'a.com', server_port: 22 },
   ],
 })
 
@@ -16,7 +17,7 @@ test('parseSingboxOutbounds 只取代理节点,忽略 selector/direct,未知代�
   const { nodes, skipped } = parseSingboxOutbounds(doc)
   assert.deepEqual(nodes.map((n) => n.originalTag).sort(), ['SS-US', 'VL'])
   assert.equal(nodes.find((n) => n.originalTag === 'SS-US').fields.method, 'aes-256-gcm')
-  assert.deepEqual(skipped, [{ name: 'AT', type: 'anytls' }])
+  assert.deepEqual(skipped, [{ name: 'SSH', type: 'ssh' }])
 })
 
 test('从 endpoints 采 wireguard', () => {

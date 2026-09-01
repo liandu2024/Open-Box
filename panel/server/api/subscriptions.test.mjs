@@ -579,3 +579,85 @@ test('round2:域名解析失败(NXDOMAIN 等) → 400,且从未真正拉取', as
     await close()
   }
 })
+
+// -------- User-Agent 协商 与 空结果 --------
+// 真机诊断的结论:机场订阅端点按 User-Agent 决定返回什么。Node 的 fetch 默认发
+// "User-Agent: node",实测同一个订阅地址三种 UA 拿到三份完全不同的响应。此前面板
+// 不设任何请求头,拿到的是最贫瘠的那一份;更糟的是解析出 0 个节点时照样按成功存下,
+// 界面上只剩一句「0 个节点」,用户无从判断问题出在哪。
+
+test('拉订阅时必须带机场认得的 User-Agent,而不是 Node 默认的 "node"', async () => {
+  const seenUserAgents = []
+  const fetchImpl = async (_url, init) => {
+    seenUserAgents.push(init?.headers?.['User-Agent'])
+    return { ok: true, status: 200, text: async () => SHARELINK_MULTI }
+  }
+  const { baseUrl, close } = await startApp(fetchImpl)
+  try {
+    const res = await postJson(baseUrl, '/api/openbox/subscriptions', { url: 'https://sub.example.com/x', name: 'S' })
+    assert.equal(res.status, 200)
+    assert.equal(seenUserAgents.length, 1, '首选 UA 就拿到节点时只应请求一次')
+    assert.match(seenUserAgents[0], /clash/i)
+  } finally {
+    await close()
+  }
+})
+
+test('首选 UA 解析不出节点时,换下一个 UA 重试', async () => {
+  const seenUserAgents = []
+  const fetchImpl = async (_url, init) => {
+    const ua = init?.headers?.['User-Agent']
+    seenUserAgents.push(ua)
+    // 模拟"只认 sing-box UA"的机场:其余 UA 一律回一个网页
+    const body = /sing-box/i.test(ua)
+      ? JSON.stringify({ outbounds: [{ type: 'anytls', tag: 'HK', server: 'a.com', server_port: 443, password: 'pw', tls: { enabled: true } }] })
+      : '<html><body>请使用客户端订阅</body></html>'
+    return { ok: true, status: 200, text: async () => body }
+  }
+  const { baseUrl, store, close } = await startApp(fetchImpl)
+  try {
+    const res = await postJson(baseUrl, '/api/openbox/subscriptions', { url: 'https://sub.example.com/x', name: 'S' })
+    assert.equal(res.status, 200)
+    assert.equal((await res.json()).nodeCount, 1)
+    assert.ok(seenUserAgents.length >= 2, '第一个 UA 落空后应当继续试下一个')
+    assert.equal(store.getNodes()[0].type, 'anytls')
+  } finally {
+    await close()
+  }
+})
+
+test('所有 UA 都解析不出节点 → 400 并说明原因,而不是静默存成 0 个节点', async () => {
+  const fetchImpl = async () => ({ ok: true, status: 200, text: async () => '<html>机场官网</html>' })
+  const { baseUrl, store, close } = await startApp(fetchImpl)
+  try {
+    const res = await postJson(baseUrl, '/api/openbox/subscriptions', { url: 'https://sub.example.com/x', name: 'S' })
+    assert.equal(res.status, 400)
+    assert.match((await res.json()).error, /无法识别订阅内容的格式/)
+    // 关键:失败不能留下一条"0 个节点"的空订阅记录
+    assert.equal(store.getSubscriptions().length, 0)
+  } finally {
+    await close()
+  }
+})
+
+test('刷新失败时保留原有节点,不会把订阅刷成 0 个节点', async () => {
+  let serveGarbage = false
+  const fetchImpl = async () => ({
+    ok: true,
+    status: 200,
+    text: async () => (serveGarbage ? '<html>机场官网</html>' : SHARELINK_MULTI),
+  })
+  const { baseUrl, store, close } = await startApp(fetchImpl)
+  try {
+    const created = await (await postJson(baseUrl, '/api/openbox/subscriptions', { url: 'https://sub.example.com/x', name: 'S' })).json()
+    assert.equal(created.nodeCount, 2)
+
+    serveGarbage = true
+    const res = await postJson(baseUrl, `/api/openbox/subscriptions/${created.id}/refresh`, {})
+    assert.equal(res.status, 400)
+    assert.equal(store.getNodes().length, 2, '刷新失败必须保留原有节点')
+    assert.equal(store.getSubscriptions()[0].nodeCount, 2)
+  } finally {
+    await close()
+  }
+})

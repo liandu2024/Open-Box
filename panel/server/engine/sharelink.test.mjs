@@ -43,7 +43,9 @@ test('vmess:// v2rayN base64(JSON)', () => {
 })
 
 test('未知协议返回 null', () => {
-  assert.equal(parseShareLink('anytls://whatever@a.com:443#x'), null)
+  // 原来这里用的是 anytls://,但 anytls 现已支持(见 anytls.test.mjs),
+  // 换成仍不支持的 ssr:// 来守住这条断言
+  assert.equal(parseShareLink('ssr://whatever@a.com:443#x'), null)
   assert.equal(parseShareLink('not-a-uri'), null)
 })
 

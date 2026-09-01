@@ -3,7 +3,7 @@ import { parseShareLink } from './sharelink.mjs'
 import { parseClashProxies } from './clash.mjs'
 import { parseSingboxOutbounds } from './singbox-in.mjs'
 
-const SHARELINK_PREFIX = /^(ss|ssr|vmess|vless|trojan|hysteria2|hy2|tuic):\/\//
+const SHARELINK_PREFIX = /^(ss|ssr|vmess|vless|trojan|hysteria2|hy2|tuic|anytls):\/\//
 
 export const detectSubscriptionFormat = (text) => {
   const trimmed = String(text || '').trim()

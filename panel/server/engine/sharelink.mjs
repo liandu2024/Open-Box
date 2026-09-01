@@ -1,7 +1,7 @@
 import { createNode } from './node-model.mjs'
 import { decodeBase64, parseUri } from './codec.mjs'
 
-export const SHARELINK_SCHEMES = ['ss', 'vmess', 'vless', 'trojan', 'hysteria2', 'tuic']
+export const SHARELINK_SCHEMES = ['ss', 'vmess', 'vless', 'trojan', 'hysteria2', 'tuic', 'anytls']
 
 // decodeURIComponent 失败(非法 % 序列)时回退原值,而不是抛异常
 const safeDecode = (s) => {
@@ -164,6 +164,18 @@ const parseTrojan = (uri) => {
   return createNode({ tag: u.fragment, type: 'trojan', server: u.host, server_port: u.port, fields, source: 'sharelink' })
 }
 
+// anytls://<password>@host:port?sni=...&insecure=1#name
+// 与 trojan 同构:userinfo 就是密码,且协议本身强制 TLS,所以 security 缺省也按 tls
+// 处理——否则 insecure/sni/alpn/fp 这些查询参数会被 buildTlsFromQuery 整个丢掉,
+// 而机场发的 anytls 链接基本都带 insecure=1 和一个伪装 sni,丢了就连不上。
+const parseAnytls = (uri) => {
+  const u = parseUri(uri)
+  const fields = { password: safeDecode(u.userinfo) }
+  if (!u.query.get('security')) u.query.set('security', 'tls')
+  fields.tls = buildTlsFromQuery(u.query, u.host) || { enabled: true, ...(u.host ? { server_name: u.host } : {}) }
+  return createNode({ tag: u.fragment, type: 'anytls', server: u.host, server_port: u.port, fields, source: 'sharelink' })
+}
+
 const parseHysteria2 = (uri) => {
   const u = parseUri(uri)
   const fields = { password: safeDecode(u.userinfo) }
@@ -209,6 +221,7 @@ export const parseShareLink = (uri) => {
     if (uri.startsWith('hysteria2://')) return parseHysteria2(uri)
     if (uri.startsWith('hy2://')) return parseHysteria2('hysteria2://' + uri.slice('hy2://'.length))
     if (uri.startsWith('tuic://')) return parseTuic(uri)
+    if (uri.startsWith('anytls://')) return parseAnytls(uri)
     return null
   } catch {
     return null

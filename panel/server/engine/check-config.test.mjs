@@ -30,6 +30,7 @@ test('生成的配置通过 sing-box check(全协议 + wireguard + DNS 分流 + 
       'ss://YWVzLTI1Ni1nY206c2VjcmV0cHc=@us.example.com:8388#US-01',
       'trojan://pw@jp.example.com:443?sni=jp.example.com#JP-01',
       'hysteria2://pw@hk.example.com:8443?sni=hk.example.com#HK-01',
+      'anytls://pw@sg.example.com:23130/?insecure=1&sni=buylite.music.apple.com#SG-01',
     ].join('\n')
     const { nodes } = parseSubscription(sub)
     const renamed = renameNodes(nodes)
@@ -126,6 +127,7 @@ test('生成的配置通过 sing-box check(dns.mode=dnsmasq;仅 dns-in 入站被
       'ss://YWVzLTI1Ni1nY206c2VjcmV0cHc=@us.example.com:8388#US-01',
       'trojan://pw@jp.example.com:443?sni=jp.example.com#JP-01',
       'hysteria2://pw@hk.example.com:8443?sni=hk.example.com#HK-01',
+      'anytls://pw@sg.example.com:23130/?insecure=1&sni=buylite.music.apple.com#SG-01',
     ].join('\n')
     const { nodes } = parseSubscription(sub)
     const renamed = renameNodes(nodes)

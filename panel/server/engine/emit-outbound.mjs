@@ -40,6 +40,7 @@ const EMITTERS = {
     return withTls(withTransport(o, n.fields), n.fields)
   },
   trojan: (n) => withTls(withTransport({ type: 'trojan', ...base(n), password: n.fields.password }, n.fields), n.fields),
+  anytls: (n) => withTls({ type: 'anytls', ...base(n), password: n.fields.password }, n.fields),
   hysteria2: (n) => {
     const o = withTls({ type: 'hysteria2', ...base(n), password: n.fields.password }, n.fields)
     if (n.fields.obfs) o.obfs = n.fields.obfs
