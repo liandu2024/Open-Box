@@ -726,12 +726,18 @@ var STYLE_CSS =
 	// 在部分主题下丢掉样式。按钮显式给字号,否则它会继承 h2 的大字号。
 	'h2.ob-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.75em}' +
 	'h2.ob-head .cbi-button{font-size:.875rem;font-weight:600;line-height:1.4}' +
-	// 标题条、说明文字、下面的网格三者共用同一个宽度上限,右边缘才会对齐。
-	// 主题把 <h2> 画成一条通栏白条,不限宽的话它会一直顶到窗口右侧,而内容网格
-	// 停在 1400px,宽屏上右边缘差出一大截。box-sizing 显式写成 border-box:主题
-	// 给 h2 加了左右内边距,若继承到 content-box,这条白条会比网格宽出内边距那
-	// 么多,仍然对不齐。
-	'h2.ob-head,.ob-descr,.ob-wrap{max-width:1400px;box-sizing:border-box}' +
+	// 标题条和下面的网格共用同一个宽度上限,右边缘才会对齐。主题把 <h2> 画成一条
+	// 通栏白条,不限宽的话它会一直顶到窗口右侧,而内容网格停在 1400px,宽屏上右边
+	// 缘差出一大截。box-sizing 显式写成 border-box:主题给 h2 加了左右内边距,若
+	// 继承到 content-box,这条白条会比网格宽出内边距那么多,仍然对不齐。
+	'h2.ob-head,.ob-wrap{max-width:1400px;box-sizing:border-box}' +
+	// 标题行里"贴着标题走"的那一组(h2 是说明文字,h3 是状态徽标)。必须自成一个
+	// flex 容器:h2/h3 本身是 justify-content:space-between,平铺进去的话中间那项
+	// 会被摊到行正中,而不是紧跟标题。
+	'.ob-h2-left,.ob-h3-left{display:flex;flex-wrap:wrap;align-items:center;gap:.75em;min-width:0}' +
+	// 说明文字显式给字号与字重:它现在长在 <h2> 里,不这么写就会被标题的大号粗体
+	// 同化,读起来像第二个标题而不是一句注解。
+	'.ob-descr{font-size:.875rem;font-weight:400;opacity:.7;line-height:1.4}' +
 	'.ob-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;margin-top:12px}' +
 	// 卸载卡片撤走后网格只剩三张:两列排布会在右下角留一个空格子。让内容最多的
 	// 「Open-Box 升级」横跨两列把这个洞填掉(渠道列表另有 max-width 兜着,不会
@@ -758,11 +764,16 @@ var STYLE_CSS =
 	'.ob-card h3 .cbi-button{font-size:.875rem;font-weight:600;line-height:1.4}' +
 	'.ob-ver{font-size:.85em;font-weight:600;opacity:.75;white-space:nowrap}' +
 	'.ob-pills{display:flex;flex-wrap:wrap;gap:8px;align-items:center}' +
-	'.ob-pill{display:inline-flex;align-items:center;gap:.35em;padding:.15em .65em;border-radius:999px;font-size:.85em;border:1px solid currentColor;white-space:nowrap}' +
+	// font-weight/font-size 写死:徽标现在长在 <h3> 里,不写就会继承标题的粗体、
+	// 字号也跟着 h3 放大,一行里两种粗体读起来分不出主次。
+	'.ob-pill{display:inline-flex;align-items:center;gap:.35em;padding:.15em .65em;border-radius:999px;font-size:.8rem;font-weight:400;border:1px solid currentColor;white-space:nowrap}' +
 	'.ob-pill-on{color:#2e9e4f}' +
 	'.ob-pill-off{color:#d04a4a}' +
 	'.ob-pill-muted{opacity:.7;border-color:rgba(127,127,127,.4)}' +
-	'.ob-link{margin-left:auto;font-size:.9em;white-space:nowrap}' +
+	// margin-left:auto 是徽标还在这一行时用来把地址顶到最右的;徽标挪进标题行后
+	// 它成了本行唯一的内容,再右对齐就会在左边拖出一条空白。左对齐让它压在下方
+	// 「启动」按钮的左边缘上,和控制区连成一块。
+	'.ob-link{font-size:.9em;white-space:nowrap}' +
 	'.ob-btns{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 0}' +
 	'.ob-meta{display:flex;flex-wrap:wrap;gap:.5em;align-items:baseline;margin:.4em 0;font-size:.95em}' +
 	'.ob-hint{margin:10px 0 0;font-size:.85em;opacity:.65;line-height:1.55}' +
@@ -851,15 +862,23 @@ return view.extend({
 		// 启停控制四个按钮)完全一致,所以拆成 statusPills()/serviceButtons() 两个
 		// 小工具,分别在下面 render() 返回值里拼装两张卡片,而不是像旧版 serviceCard()
 		// 那样塞一堆可选参数把两种结构揉进一个函数。
-		function statusPills(st, linkEl) {
-			var pills = [
+		function statusPills(st) {
+			return [
 				E('span', { 'class': 'ob-pill ' + (st.running ? 'ob-pill-on' : 'ob-pill-off') },
 					'● ' + (st.running ? tr('running') : tr('stopped'))),
 				E('span', { 'class': 'ob-pill ob-pill-muted' },
 					tr('Autostart') + ' ' + (st.enabled ? tr('on') : tr('off')))
 			];
-			if (linkEl) pills.push(linkEl);
-			return E('div', { 'class': 'ob-pills' }, pills);
+		}
+
+		// 卡片标题行:标题 + 紧跟其后的状态徽标在左,版本号在右。
+		// 徽标必须和标题一起裹进 .ob-h3-left:h3 是 justify-content:space-between,
+		// 直接把三者平铺进去的话,徽标会被摊到行正中间,而不是"贴着标题"。
+		function cardTitle(title, st, version) {
+			return E('h3', {}, [
+				E('div', { 'class': 'ob-h3-left' }, [ E('span', {}, title) ].concat(statusPills(st))),
+				E('span', { 'class': 'ob-ver' }, version)
+			]);
 		}
 
 		// stopHint:挂在「停止」按钮上的悬停提示。内核的「停止」顺带关掉开机自启,
@@ -1389,14 +1408,19 @@ return view.extend({
 			// 「升级」这三个日常功能不是一个量级,给它一张同等大小的卡片既抬高了它的
 			// 存在感、也在网格里多占一格。真正的说明与二次确认都在
 			// showUninstallDialog() 里,这里只留触发点。
+			// 说明文字并进标题行、紧跟标题(.ob-h2-left 把两者绑成一组,道理同
+			// .ob-h3-left:h2 也是 space-between,平铺会把说明摊到行正中间)。它原本
+			// 是标题下面独立的一段 <p>,只为一句话吃掉一整行。
 			E('h2', { 'class': 'ob-head' }, [
-				E('span', {}, 'Open-Box'),
+				E('div', { 'class': 'ob-h2-left' }, [
+					E('span', {}, 'Open-Box'),
+					E('span', { 'class': 'ob-descr' },
+						tr('Fallback controls. Full management lives in the Open-Box panel.'))
+				]),
 				E('button', { 'class': 'cbi-button cbi-button-negative',
 					'click': ui.createHandlerFn(self, function () { return showUninstallDialog(); }) },
 					tr('Uninstall Open-Box'))
 			]),
-			E('p', { 'class': 'cbi-section-descr ob-descr' },
-				tr('Fallback controls. Full management lives in the Open-Box panel.')),
 
 			// .ob-wrap > .ob-grid 是固定两列、900px 断点收缩成单列的网格(定义见
 			// STYLE_CSS),三张自成一体的功能块:第一行 sing-box 内核 + Open-Box
@@ -1425,27 +1449,21 @@ return view.extend({
 						// 「内核版本: x.y.z」,加一条分隔线和一段说明。标签、分隔线、
 						// 说明都是冗余的——内核卡片里没有升级入口,升级统一在
 						// 「Open-Box 升级」卡片,这层关系不必再用文字重复一遍。
-						E('h3', {}, [
-							E('span', {}, tr('sing-box core')),
-							E('span', { 'class': 'ob-ver' }, singboxVersion || tr('Not installed'))
-						]),
-						statusPills(core, null),
+						cardTitle(tr('sing-box core'), core, singboxVersion || tr('Not installed')),
 						serviceButtons('openbox', core, [ 'stop', 'disable' ],
 							tr('Stopping also turns off autostart (so it stays stopped after a reboot) and restores plain internet access: the IPv6 leak block and the Open-Box DNS upstream are removed. The panel stays reachable.'))
 					]),
 
-					// 「Open-Box 面板」卡片同理是一个自成一体的功能块:状态/控制 + 面板地址在
-					// 上,该发行版本自身的版本号在下——这里只放版本号本身;渠道选择、探测与
+					// 「Open-Box 面板」卡片同理是一个自成一体的功能块:标题行是标题 + 状态
+					// 徽标 + 版本号,下面一行是面板地址,再下面是启停控制。渠道选择、探测与
 					// 升级操作篇幅大、也不是"这张卡片自己的版本信息",单独成一张紧跟在后面的
-					// 「Open-Box 升级」卡片(见下方),不再像旧版那样挤进面板卡片里。面板地址
-					// 用 .ob-link(margin-left:auto)推到徽标行最右侧,不再需要额外的分隔符。
+					// 「Open-Box 升级」卡片(见下方),不再像旧版那样挤进面板卡片里。
+					// 面板地址留在自己那一行,左对齐(见 .ob-link 的注释)。
 					E('div', { 'class': 'ob-card' }, [
-						E('h3', {}, [
-							E('span', {}, tr('Open-Box panel')),
-							E('span', { 'class': 'ob-ver' }, installed || tr('Not installed'))
+						cardTitle(tr('Open-Box panel'), panel, installed || tr('Not installed')),
+						E('div', { 'class': 'ob-pills' }, [
+							E('a', { 'class': 'ob-link', 'href': panelUrl, 'target': '_blank', 'rel': 'noreferrer' }, panelUrl)
 						]),
-						statusPills(panel,
-							E('a', { 'class': 'ob-link', 'href': panelUrl, 'target': '_blank', 'rel': 'noreferrer' }, panelUrl)),
 						serviceButtons('openbox-panel', panel, null)
 					]),
 
