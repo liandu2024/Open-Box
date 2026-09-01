@@ -1,11 +1,11 @@
 <template>
   <!-- 带搜索的国家选择器。用 daisyUI 的 dropdown(靠 :focus-within 展开),不是原生
        <select>:原生 select 既放不下国旗,也没法在几十个国家里打字筛选。 -->
-  <div class="dropdown">
+  <div class="dropdown w-full">
     <div
       tabindex="0"
       role="button"
-      class="input input-sm flex w-full items-center gap-1.5"
+      class="input input-sm hover:border-base-content/30 flex w-full cursor-pointer items-center gap-1.5"
     >
       <CountryFlag
         :code="modelValue"
