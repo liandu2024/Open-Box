@@ -11,17 +11,24 @@
     <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
       <!-- 左:来源模式。订阅=填链接由服务端去抓;节点=直接粘贴一堆节点链接。
            它取代了原来那个「没有链接?粘贴内容试试」的文字开关——那个写法既不显眼,
-           也没表达出"这是两条并列的录入方式"。 -->
+           也没表达出"这是两条并列的录入方式"。
+           修改已有订阅时锁死:一条订阅到底是"有地址、可回源刷新"还是"粘贴保存的",
+           是它的固有属性。允许中途切换只会得到一个两边都不完整的记录——切到节点模式
+           时链接被清空、再也刷不了,切到订阅模式时已存的节点内容被丢掉。要换来源就
+           新建一条。 -->
       <div
         role="tablist"
         class="tabs-box tabs tabs-sm"
+        :class="isEditing && 'pointer-events-none opacity-60'"
+        :aria-disabled="isEditing || undefined"
+        :title="isEditing ? $t('subscriptionSourceLocked') : undefined"
       >
         <a
           v-for="item in sourceModes"
           :key="item.key"
           role="tab"
           :class="['tab', sourceMode === item.key && 'tab-active']"
-          @click="sourceMode = item.key"
+          @click="!isEditing && (sourceMode = item.key)"
         >
           {{ $t(item.label) }}
         </a>
@@ -177,6 +184,7 @@ const sourceModes: { key: SourceMode; label: string }[] = [
 ]
 // 编辑已有订阅时,按它到底是"有链接"还是"粘贴来的"决定初始模式
 const sourceMode = ref<SourceMode>(props.subscription && !props.subscription.url ? 'paste' : 'url')
+const isEditing = computed(() => Boolean(props.subscription))
 
 const tabs: { key: DialogTab; label: string }[] = [
   { key: 'source', label: 'subscriptionTabSource' },
