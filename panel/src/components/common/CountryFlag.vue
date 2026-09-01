@@ -1,28 +1,33 @@
 <template>
-  <!-- 标准 4:3 长方形国旗,不做圆角。给不出对应国家时(自定义地区行、没匹配上任何
-       地区的节点)显示一个中性的地球占位,而不是留空:留空那一格会塌掉,同一列里的
-       名字就对不齐了。圆角这里也用不了:main.css 里
-       `#app-content .rounded-sm` 被改写成 0.5rem !important,套在 16px 的小图上
-       就直接变成一个圆片(之前看到的"圆形国旗"就是这么来的)。
-       描一道极淡的边:日本、瑞士这种大面积白底的旗,在浅色主题下没有边就糊在背景里。 -->
-  <img
-    v-if="src"
-    :src="src"
-    :alt="code"
+  <!-- 一个固定 4:3 的盒子,国旗和地球都放在里面居中——两者外框一模一样,列表里
+       图标后面的文字才对得齐。
+       国旗铺满整个盒子;地球是圆的,按 0.85 缩一点再居中:同样 16px 高的一个圆
+       和一个扁长方形摆在一起,圆看着明显更大(视觉重心问题,不是尺寸问题)。 -->
+  <span
+    class="inline-flex shrink-0 items-center justify-center"
+    :style="{ width: `${boxWidth}px`, height: `${size}px` }"
     :title="title || code"
-    class="ring-base-content/15 shrink-0 object-cover ring-1"
-    :style="{ width: `${Math.round((size * 4) / 3)}px`, height: `${size}px` }"
-  />
-  <!-- 地球图标:节点组可以选它(跨地区的组配国旗都不对)。同时也是"认不出代码"时的
-       占位——按同样的宽度渲染,否则有旗和没旗的行文字对不齐。
-       选中的地球用正常前景色,占位用淡色:一个是用户挑的图标,一个是"这里没有图标"。 -->
-  <component
-    :is="globeComponent"
-    v-else
-    class="shrink-0"
-    :class="isGlobe ? 'text-base-content/70' : 'text-base-content/30'"
-    :style="{ width: `${Math.round((size * 4) / 3)}px`, height: `${size}px` }"
-  />
+  >
+    <img
+      v-if="src"
+      :src="src"
+      :alt="code"
+      :class="isGlobe ? '' : 'ring-base-content/15 ring-1'"
+      :style="
+        isGlobe
+          ? { width: `${glyph}px`, height: `${glyph}px` }
+          : { width: `${boxWidth}px`, height: `${size}px`, objectFit: 'cover' }
+      "
+    />
+    <!-- 线条地球:节点组可以选,也是"认不出代码"时的占位。选中的用正常前景色,
+         占位用淡色——一个是用户挑的图标,一个是"这里没有图标"。 -->
+    <component
+      :is="globeComponent"
+      v-else
+      :class="isGlobe ? 'text-base-content/70' : 'text-base-content/30'"
+      :style="{ width: `${glyph}px`, height: `${glyph}px` }"
+    />
+  </span>
 </template>
 
 <script setup lang="ts">
@@ -62,10 +67,24 @@ const GLOBE_COMPONENT: Record<string, unknown> = {
   'globe:europe': GlobeEuropeAfricaIcon,
   'globe:americas': GlobeAmericasIcon,
 }
-const globeComponent = computed(() => GLOBE_COMPONENT[props.code] || GlobeAltIcon)
+const globeComponent = computed(() => GLOBE_COMPONENT[String(props.code).toLowerCase()] || GlobeAltIcon)
+
+// 彩色地球和国旗一样是图片资源,只是放在另一个目录
+const GLOBE_URL = import.meta.glob<string>('../../assets/globes/*.svg', {
+  eager: true,
+  query: '?url',
+  import: 'default',
+})
+
+const boxWidth = computed(() => Math.round((props.size * 4) / 3))
+// 圆形图标按 0.85 缩,和扁长方形的国旗在视觉上一样大
+const glyph = computed(() => Math.round(props.size * 0.85))
 
 const src = computed(() => {
-  if (isGlobe.value) return ''
+  if (isGlobe.value) {
+    const variant = props.code.slice('globe:'.length).toLowerCase()
+    return GLOBE_URL[`../../assets/globes/${variant}.svg`] || ''
+  }
   const code = String(props.code || '').toLowerCase()
   if (!code) return ''
   return FLAG_URL[`../../assets/flags/${code}.svg`] || ''

@@ -61,6 +61,9 @@ const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0
 const normalizeIcon = (raw) => {
   if (!isNonEmptyString(raw)) return ''
   const v = raw.trim()
+  // 国家代码统一大写(hk -> HK),地球图标统一小写(GLOBE:ASIA -> globe:asia)。
+  // 两种都归一,是因为界面按这个值去查图标:大小写不一致就查不到,直接显示成空白。
+  if (/^globe:/i.test(v)) return v.toLowerCase()
   return /^[A-Za-z]{2}$/.test(v) ? v.toUpperCase() : v
 }
 

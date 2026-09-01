@@ -155,9 +155,10 @@ test('图标存国家代码并统一成大写;不写就是空', () => {
   assert.equal(normalizeGroup({ id: 'x', name: 'n' }).icon, '')
 })
 
-test('地球图标原样保留,不能跟着转大写', () => {
-  // 转成 GLOBE:ASIA 的话界面按值查不到图标,直接变空白
+test('地球图标统一成小写,不能跟着国家代码转大写', () => {
+  // 界面按这个值查图标:变成 GLOBE:ASIA 就查不到,直接显示空白(本地跑的时候就这么中过)
   assert.equal(normalizeGroup({ id: 'x', name: 'n', icon: 'globe:asia' }).icon, 'globe:asia')
+  assert.equal(normalizeGroup({ id: 'x', name: 'n', icon: 'GLOBE:EARTH-ASIA' }).icon, 'globe:earth-asia')
 })
 
 test('图标不进 sing-box 出站:那边没有这个字段', () => {

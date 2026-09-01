@@ -74,13 +74,27 @@ export const COUNTRIES: Country[] = [
 
 // 不属于任何国家的图标:节点组常有「所有-自动」「回国」这种跨地区的组,给它们配一面
 // 国旗都不对。值统一带 globe: 前缀,和两位国家代码天然分得开(见 CountryFlag)。
-export const GLOBE_ICONS = ['globe:generic', 'globe:asia', 'globe:europe', 'globe:americas'] as const
+// 前四个是线条风格(heroicons,跟界面上别的图标同一套),后四个是彩色的(Twemoji,
+// 见 src/assets/globes/README)。并列给出来,想要哪种风格都有。
+export const GLOBE_ICONS = [
+  'globe:generic',
+  'globe:asia',
+  'globe:europe',
+  'globe:americas',
+  'globe:earth-meridians',
+  'globe:earth-asia',
+  'globe:earth-europe',
+  'globe:earth-americas',
+] as const
 export type GlobeIcon = (typeof GLOBE_ICONS)[number]
 
-export const isGlobeIcon = (value: string): boolean => String(value || '').startsWith('globe:')
+// 大小写都认:值是存在数据库里的,历史记录里可能有大写的(早期服务端把图标一律
+// 转成大写,把 globe:asia 变成了 GLOBE:ASIA)。
+export const isGlobeIcon = (value: string): boolean => /^globe:/i.test(String(value || ''))
 
 // i18n 键:globeIcon_generic / globeIcon_asia / ...
-export const globeIconKey = (value: string): string => `globeIcon_${String(value).slice('globe:'.length)}`
+export const globeIconKey = (value: string): string =>
+  `globeIcon_${String(value).slice('globe:'.length).toLowerCase()}`
 
 const BY_CODE = new Map(COUNTRIES.map((c) => [c.code, c]))
 
