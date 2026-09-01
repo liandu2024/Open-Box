@@ -41,6 +41,8 @@ var I18N = {
 		'Action failed: %s': '操作失败:%s',
 		'init action failed': '服务操作未成功',
 		'Update now': '立即更新',
+		'Current version: %s': '当前版本:%s',
+		'New version: %s': '新版本:%s',
 		'Confirm update': '确认更新',
 		'This will stop services and replace program files. The panel will be briefly unavailable. Continue?':
 			'此操作会停止服务并替换程序文件,期间面板会短暂不可用。确定继续吗?',
@@ -128,6 +130,8 @@ var I18N = {
 		'Action failed: %s': '操作失敗:%s',
 		'init action failed': '服務操作未成功',
 		'Update now': '立即更新',
+		'Current version: %s': '目前版本:%s',
+		'New version: %s': '新版本:%s',
 		'Confirm update': '確認更新',
 		'This will stop services and replace program files. The panel will be briefly unavailable. Continue?':
 			'此操作會停止服務並替換程式檔案,期間面板會短暫無法使用。確定要繼續嗎?',
@@ -1274,6 +1278,14 @@ return view.extend({
 		function showUpdateDialog(latestVersion) {
 			var channel = selectedChannel;
 			ui.showModal(tr('Confirm update'), [
+				// 当前版本 / 新版本摆在最前面:这个弹窗现在是「检查更新」发现新版后
+				// 直接弹出来的,用户不再是"看清楚版本号之后自己按下立即更新",两个
+				// 版本号必须在弹窗里说清楚,否则他根本不知道要更到哪儿去。
+				E('p', { 'style': ROW }, [
+					E('span', {}, fmt('Current version: %s', installed || tr('Not installed'))),
+					E('span', { 'style': 'opacity:.5' }, '→'),
+					E('span', { 'style': 'font-weight:600' }, fmt('New version: %s', latestVersion))
+				]),
 				E('p', {}, tr('This will stop services and replace program files. The panel will be briefly unavailable. Continue?')),
 				E('p', { 'style': 'opacity:.8;font-size:90%;margin:.6em 0 0 0' }, channelStatusText(channel)),
 				E('div', { 'class': 'right', 'style': BTNROW }, [
@@ -1292,18 +1304,10 @@ return view.extend({
 
 		var latestAvailable = null;
 
-		// 「立即更新」常驻可见,靠 disabled 表达"现在没得更新",而不是像旧版那样
-		// display:none 整个消失——按钮忽隐忽现会让人以为功能没了,灰着则说明它存在、
-		// 只是还不能用(要先「检查更新」)。
-		var updateBtn = E('button', { 'class': 'cbi-button cbi-button-apply', 'disabled': 'disabled',
-			'click': ui.createHandlerFn(self, function () { return showUpdateDialog(latestAvailable); }) },
-			tr('Update now'));
-
 		var checkBtn = E('button', { 'class': 'cbi-button cbi-button-neutral',
 			'click': ui.createHandlerFn(self, function () {
 				versionResult.textContent = tr('Checking...');
 				latestAvailable = null;
-				updateBtn.disabled = true;
 				return checkLatest().then(function (latest) {
 					// 读不到已装版本(meta.json 缺失或损坏)时无从比较,但这本身就说明
 					// 这套安装是坏的,重装一遍恰恰是修法——所以照样放行,而不是让人
@@ -1311,9 +1315,14 @@ return view.extend({
 					if (!installed || cmpVersion(latest, installed) > 0) {
 						versionResult.textContent = fmt('New version available: %s', latest);
 						latestAvailable = latest;
-					} else {
-						versionResult.textContent = tr('Up to date.');
+						refreshUpdateControls();
+						// 查到新版本就直接把确认框弹出来:原来还要再点一次「立即更新」,
+						// 而那一步没有任何可决策的内容——版本号、渠道、后果都在弹窗里,
+						// 决定权仍然在弹窗的「取消 / 立即更新」上,没有跳过任何确认。
+						showUpdateDialog(latest);
+						return;
 					}
+					versionResult.textContent = tr('Up to date.');
 					refreshUpdateControls();
 				}).catch(function () {
 					versionResult.textContent = tr('Could not check (network unreachable or blocked).');
@@ -1361,7 +1370,6 @@ return view.extend({
 			});
 			var noRoute = (tested === CHANNELS.length && reachable === 0);
 			checkBtn.disabled = noRoute;
-			updateBtn.disabled = noRoute || !latestAvailable;
 		}
 
 		function probeOneChannel(value) {
@@ -1533,7 +1541,7 @@ return view.extend({
 								E('span', {}, tr('Open-Box upgrade')),
 								versionResult
 							]),
-							E('div', { 'class': 'ob-h3-right' }, [ probeAllBtn, checkBtn, updateBtn ])
+							E('div', { 'class': 'ob-h3-right' }, [ probeAllBtn, checkBtn ])
 						]),
 						channelStatusList
 					])
