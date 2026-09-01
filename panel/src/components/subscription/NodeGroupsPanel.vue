@@ -143,10 +143,11 @@
 
         <div class="divider my-0" />
 
-        <!-- 左右穿梭:左边是还没选的,右边是已选的。点一条就挪到另一边,不再用勾选框
-             ——勾选框要靠"有没有打勾"去分辨选没选,几十个节点混在一列里根本看不出来
-             自己到底选了哪些;拆成两栏后"已选"本身就是一份清单。 -->
-        <div class="grid grid-cols-2 gap-3">
+        <!-- 左右穿梭:左边是还没选的,右边是已选的,中间两个箭头搬运勾中的条目。
+             每行的勾选框只表示"这条要不要搬",与"选没选中它当成员"是两回事——后者
+             由它在左边还是右边表示,所以不会出现"几十个节点混在一列里看不出选了谁"
+             的老问题。行末的 › ‹ 是单条快捷键:不用先勾再按箭头,一下就挪过去。 -->
+        <div class="grid grid-cols-[1fr_auto_1fr] gap-3">
             <div class="border-base-content/10 flex min-h-0 flex-col rounded-lg border">
               <div class="border-base-content/10 flex flex-col gap-1 border-b px-2 py-1.5">
                 <div class="flex items-center gap-2">
@@ -163,9 +164,9 @@
                 <BulkPick
                   v-model:subscription="memberSub"
                   :subscriptions="subscriptionOptions"
-                  @select-all="selectAll(scopeOf(memberSub, memberFilter))"
-                  @invert="invertSelection(scopeOf(memberSub, memberFilter))"
-                  @clear="clearSelection(scopeOf(memberSub, memberFilter))"
+                  @select-all="tickAll('available')"
+                  @invert="tickInvert('available')"
+                  @clear="tickNone('available')"
                 />
               </div>
               <div class="max-h-64 overflow-y-auto">
@@ -175,21 +176,55 @@
                 >
                   {{ $t('groupNoCandidates') }}
                 </p>
-                <button
+                <label
                   v-for="item in filteredAvailable"
                   :key="item.kind + item.name"
-                  type="button"
-                  class="hover:bg-base-200/60 flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm"
-                  @click="addMember(item.name)"
+                  class="hover:bg-base-200/60 flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm"
                 >
+                  <input
+                    v-model="checkedAvailable"
+                    type="checkbox"
+                    class="checkbox checkbox-xs shrink-0"
+                    :value="item.name"
+                  />
                   <span class="truncate">{{ item.name }}</span>
                   <span
                     v-if="item.kind === 'group'"
                     class="badge badge-ghost badge-xs"
                   >{{ $t('groupsTab') }}</span>
-                  <ChevronRightIcon class="text-base-content/30 ml-auto h-4 w-4 shrink-0" />
-                </button>
+                  <button
+                    type="button"
+                    class="btn btn-ghost btn-xs ml-auto shrink-0 px-1"
+                    :title="$t('groupMoveRight')"
+                    @click.prevent="addMember(item.name)"
+                  >
+                    <ChevronRightIcon class="text-base-content/30 h-4 w-4" />
+                  </button>
+                </label>
               </div>
+            </div>
+
+            <!-- 中间的搬运按钮:把勾中的条目整批挪过去。没勾任何东西时置灰,
+                 免得按下去什么都不发生还以为是坏的。 -->
+            <div class="flex flex-col items-center justify-center gap-2">
+              <button
+                type="button"
+                class="btn btn-sm btn-square"
+                :disabled="!checkedAvailable.length"
+                :title="$t('groupMoveRight')"
+                @click="moveRight"
+              >
+                <ChevronRightIcon class="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                class="btn btn-sm btn-square"
+                :disabled="!checkedSelected.length"
+                :title="$t('groupMoveLeft')"
+                @click="moveLeft"
+              >
+                <ChevronLeftIcon class="h-4 w-4" />
+              </button>
             </div>
 
             <div class="border-base-content/10 flex min-h-0 flex-col rounded-lg border">
@@ -208,9 +243,9 @@
                 <BulkPick
                   v-model:subscription="selectedSub"
                   :subscriptions="subscriptionOptions"
-                  @select-all="selectAll(scopeOf(selectedSub, selectedFilter))"
-                  @invert="invertSelection(scopeOf(selectedSub, selectedFilter))"
-                  @clear="clearSelection(scopeOf(selectedSub, selectedFilter))"
+                  @select-all="tickAll('selected')"
+                  @invert="tickInvert('selected')"
+                  @clear="tickNone('selected')"
                 />
               </div>
               <div class="max-h-64 overflow-y-auto">
@@ -220,16 +255,27 @@
                 >
                   {{ $t('groupNoSelected') }}
                 </p>
-                <button
+                <label
                   v-for="name in filteredSelected"
                   :key="name"
-                  type="button"
-                  class="hover:bg-base-200/60 flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm"
-                  @click="removeMember(name)"
+                  class="hover:bg-base-200/60 flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm"
                 >
-                  <ChevronLeftIcon class="text-base-content/30 h-4 w-4 shrink-0" />
+                  <input
+                    v-model="checkedSelected"
+                    type="checkbox"
+                    class="checkbox checkbox-xs shrink-0"
+                    :value="name"
+                  />
+                  <button
+                    type="button"
+                    class="btn btn-ghost btn-xs shrink-0 px-1"
+                    :title="$t('groupMoveLeft')"
+                    @click.prevent="removeMember(name)"
+                  >
+                    <ChevronLeftIcon class="text-base-content/30 h-4 w-4" />
+                  </button>
                   <span class="truncate">{{ name }}</span>
-                </button>
+                </label>
               </div>
             </div>
         </div>
@@ -319,6 +365,9 @@ const selectedFilter = ref('')
 // 两栏各自的订阅下拉框,'' = 全部
 const memberSub = ref('')
 const selectedSub = ref('')
+// 两栏各自的勾选状态(按名字记)。勾选 ≠ 成员:勾只表示"这条要不要被箭头搬走"。
+const checkedAvailable = ref<string[]>([])
+const checkedSelected = ref<string[]>([])
 const editorError = ref('')
 const saving = ref(false)
 
@@ -348,6 +397,8 @@ const openEditor = (group: OpenboxUserGroup | null) => {
   selectedFilter.value = ''
   memberSub.value = ''
   selectedSub.value = ''
+  checkedAvailable.value = []
+  checkedSelected.value = []
   editorError.value = ''
   showEditor.value = true
 }
@@ -398,11 +449,13 @@ const filteredAvailable = computed(() => {
 const addMember = (name: string) => {
   if (!draft.value || draft.value.members.includes(name)) return
   draft.value.members = [...draft.value.members, name]
+  checkedAvailable.value = checkedAvailable.value.filter((n) => n !== name)
 }
 
 const removeMember = (name: string) => {
   if (!draft.value) return
   draft.value.members = draft.value.members.filter((m) => m !== name)
+  checkedSelected.value = checkedSelected.value.filter((n) => n !== name)
 }
 
 // 界面上填的是分钟数,存进去仍是 sing-box 认的 "3m" 形式。原来直接让用户手写
@@ -426,28 +479,47 @@ const filteredSelected = computed(() => {
   return list.filter((name) => inScope.has(name))
 })
 
-// 三个批量动作作用于**按下它的那一栏当前框出来的范围**(见 scopeOf):所见即所动。
-// 两栏各有自己的下拉框与过滤框,所以各自传自己的范围进来。
-const selectAll = (scope: Array<{ name: string }>) => {
+// 三个批量动作改的是**勾选状态**,不是成员归属:成员归属由"在左边还是右边"表示,
+// 勾选只回答"这条要不要被箭头搬走"。作用范围是按下它的那一栏**当前列出来的那些**
+// (下拉框 + 过滤框筛过之后),所见即所动;栏外、被筛掉的一条都不动。
+type Pane = 'available' | 'selected'
+const visibleOf = (pane: Pane) =>
+  pane === 'available' ? filteredAvailable.value.map((i) => i.name) : filteredSelected.value
+const checkedOf = (pane: Pane) => (pane === 'available' ? checkedAvailable : checkedSelected)
+
+const tickAll = (pane: Pane) => {
+  const box = checkedOf(pane)
+  box.value = [...new Set([...box.value, ...visibleOf(pane)])]
+}
+const tickNone = (pane: Pane) => {
+  const box = checkedOf(pane)
+  const visible = new Set(visibleOf(pane))
+  box.value = box.value.filter((n) => !visible.has(n))
+}
+const tickInvert = (pane: Pane) => {
+  const box = checkedOf(pane)
+  const ticked = new Set(box.value)
+  const visible = visibleOf(pane)
+  const add = visible.filter((n) => !ticked.has(n))
+  const remove = new Set(visible.filter((n) => ticked.has(n)))
+  box.value = [...box.value.filter((n) => !remove.has(n)), ...add]
+}
+
+// 两个箭头:把勾中的整批搬到另一边,搬完清掉这一侧的勾(它们已经不在这一栏了)
+const moveRight = () => {
   if (!draft.value) return
   const chosen = new Set(draft.value.members)
   draft.value.members = [
     ...draft.value.members,
-    ...scope.map((c) => c.name).filter((n) => !chosen.has(n)),
+    ...checkedAvailable.value.filter((n) => !chosen.has(n)),
   ]
+  checkedAvailable.value = []
 }
-const clearSelection = (scope: Array<{ name: string }>) => {
+const moveLeft = () => {
   if (!draft.value) return
-  const drop = new Set(scope.map((c) => c.name))
+  const drop = new Set(checkedSelected.value)
   draft.value.members = draft.value.members.filter((n) => !drop.has(n))
-}
-const invertSelection = (scope: Array<{ name: string }>) => {
-  if (!draft.value) return
-  const chosen = new Set(draft.value.members)
-  // 范围内已选的去掉、没选的加上;范围外的一个不动
-  const flipped = scope.map((c) => c.name).filter((n) => !chosen.has(n))
-  const dropped = new Set(scope.map((c) => c.name).filter((n) => chosen.has(n)))
-  draft.value.members = [...draft.value.members.filter((n) => !dropped.has(n)), ...flipped]
+  checkedSelected.value = []
 }
 
 const persist = async (next: OpenboxUserGroup[]) => {
