@@ -441,6 +441,8 @@ const en = {
   subscriptionRenameSampleFeature: 'IEPL',
   groupDroppedEmpty: '“{name}” has no usable members and will not be written to the config (members may have been invalidated by node renames)',
   groupDroppedCycle: '“{name}” and another group reference each other; it will not be written to the config',
+  subscriptionResetNames: 'Reset names',
+  subscriptionResetNamesHint: 'Revert {count} manually edited name(s) to the rule-generated ones',
   subscriptionRenamePrefixLabel: 'Prefix node names with the subscription name (e.g. “MySub {sep} HK-01”)',
   subscriptionRenameTokensHint: 'Drag to reorder:',
   subscriptionRenameUnknownLabel: 'Label for unrecognized region',

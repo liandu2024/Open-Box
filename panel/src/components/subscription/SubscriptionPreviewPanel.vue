@@ -97,6 +97,21 @@
             </a>
           </div>
 
+          <!-- 手工改过的名字在表里看不出是手工的(它就是一个普通输入框),改完想回到
+               规则算出来的名字,只能靠回忆原文一个字一个字敲回去。这个按钮把所有手工
+               改名一次清掉;没改过任何一条时它是灰的,顺带也说明了"当前有没有手工名"。 -->
+          <button
+            v-if="listTab === 'kept'"
+            type="button"
+            class="btn btn-sm"
+            :disabled="!overrideCount"
+            :title="$t('subscriptionResetNamesHint', { count: overrideCount })"
+            @click="emit('resetOverrides')"
+          >
+            <ArrowUturnLeftIcon class="h-4 w-4" />
+            {{ $t('subscriptionResetNames') }}
+          </button>
+
           <button
             v-if="listTab === 'kept'"
             type="button"
@@ -174,12 +189,17 @@
                       class="flex items-center gap-1"
                     >
                       <ArrowRightIcon class="text-base-content/30 h-3 w-3 shrink-0" />
-                      <!-- 值取本地覆盖优先:直接绑 entry.newTag 的话,每次预览返回都会
-                           把正在输入的内容顶掉,光标也会跳。 -->
+                      <!-- 没在编辑这一行时,一律显示服务端算出来的最终名字:手工改过的
+                           名字也可能被再加工(比如套上订阅名前缀),显示本地存的原始值
+                           会和真正写进配置的名字对不上。
+                           正在编辑的那一行用本地草稿,否则 450ms 后预览返回会把还在输入
+                           的内容顶掉、光标也跳走。 -->
                       <input
                         type="text"
                         class="input input-sm w-full text-sm font-medium"
-                        :value="overrides?.[entry.originalTag] ?? entry.newTag"
+                        :value="editingTag === entry.originalTag ? draft : entry.newTag"
+                        @focus="startEdit(entry)"
+                        @blur="editingTag = null"
                         @input="onRename(entry, ($event.target as HTMLInputElement).value)"
                       />
                       <!-- 独立测速:结果就地显示在按钮旁,不另开一列——一列只为几个数字
@@ -237,6 +257,7 @@ import type { OpenboxLatencyResult, OpenboxRenameOptions, OpenboxSubscriptionPre
 import { testNodeLatency } from '@/api/openbox'
 import {
   ArrowRightIcon,
+  ArrowUturnLeftIcon,
   BoltIcon,
   CheckCircleIcon,
   MagnifyingGlassIcon,
@@ -258,8 +279,11 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   override: [{ originalTag: string; newTag: string }]
+  resetOverrides: []
   toggleDisabled: [{ originalTag: string; disabled: boolean }]
 }>()
+
+const overrideCount = computed(() => Object.keys(props.overrides || {}).length)
 
 const { t } = useI18n()
 
@@ -337,7 +361,16 @@ const testAll = async () => {
 // 改回模板算出来的名字就等于取消覆盖(交由父组件按空值删除),这样用户不必知道
 // "怎么撤销"——把名字改回去就行。
 const onRename = (entry: { originalTag: string; newTag: string }, value: string) => {
+  draft.value = value
   emit('override', { originalTag: entry.originalTag, newTag: value === entry.newTag ? '' : value })
+}
+
+// 正在编辑的那一行(见输入框上的说明)
+const editingTag = ref<string | null>(null)
+const draft = ref('')
+const startEdit = (entry: { originalTag: string; newTag: string }) => {
+  editingTag.value = entry.originalTag
+  draft.value = entry.newTag
 }
 
 const statusText = computed(() => {

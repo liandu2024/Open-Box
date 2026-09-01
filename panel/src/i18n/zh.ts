@@ -438,6 +438,8 @@ const zh: LANG_MESSAGE = {
   subscriptionRenameSampleFeature: '专线',
   groupDroppedEmpty: '「{name}」没有可用成员,不会写进配置(成员可能因为节点改名而失效)',
   groupDroppedCycle: '「{name}」和别的分组互相引用,不会写进配置',
+  subscriptionResetNames: '恢复默认名称',
+  subscriptionResetNamesHint: '把 {count} 条手工改过的名字改回规则算出来的名字',
   subscriptionRenamePrefixLabel: '节点名前加订阅名(如「破晓 {sep} 香港-01」)',
   subscriptionRenameTokensHint: '拖拽排序:',
   subscriptionRenameUnknownLabel: '\u65e0\u6cd5\u8bc6\u522b\u5730\u533a\u65f6\u7684\u6807\u7b7e',

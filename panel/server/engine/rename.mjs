@@ -137,8 +137,9 @@ export const renameNodes = (nodes, options = {}) => {
   // 里会出现 香港-01 / 我的香港 / 香港-03 这种跳号。
   const overrides = (options.overrides && typeof options.overrides === 'object') ? options.overrides : {}
   // 名称前缀:形如「破晓 | 香港-三网-03」,用来一眼看出节点来自哪个订阅。
-  // 只加在模板算出来的名字上,不动手工改过的名字——用户手工指定的就是他要的完整名字,
-  // 再给它套一层前缀等于不认这个指定。
+  // 手工改过名的节点同样要加:开关叫"每个节点都带订阅名",破例的话用户会看到
+  // 一堆带前缀的名字里夹着一两个不带的,而界面上没有任何东西说明为什么。
+  // 前缀是"这条节点来自哪个订阅",手工改名改的是节点自己的名字,两者不冲突。
   const prefix = typeof options.prefix === 'string' ? options.prefix.trim() : ''
   const counters = new Map()
 
@@ -162,8 +163,10 @@ export const renameNodes = (nodes, options = {}) => {
       const next = (counters.get(key) || 0) + 1
       counters.set(key, next)
       tag = applyTemplate(template, regionName, featureStr, String(next).padStart(seqPad, '0'))
-      if (prefix) tag = `${prefix} | ${tag}`
     }
+    // 手工改名时用户看到的输入框里已经带着前缀,原样存下来就会是「破晓 | 破晓 | 香港-01」。
+    // 判一下已有前缀,顺带也让"手工名写不写前缀"这件事怎么写都对。
+    if (prefix && !tag.startsWith(`${prefix} | `)) tag = `${prefix} | ${tag}`
     // regionRank 只用于排序,不进最终节点对象
     const regionRank = region ? regionDict.findIndex((r) => r.name === regionName) : -1
     return { node: { ...node, tag }, regionRank }

@@ -268,11 +268,19 @@ test('prefix 加在模板算出来的名字前面,格式「前缀 | 名字」', 
   assert.deepEqual(out.map((n) => n.tag), ['破晓 | 香港-01', '破晓 | 香港-02'])
 })
 
-test('手工改过名的不加前缀:用户指定的就是完整名字', () => {
+test('手工改过名的也加前缀:开关说的是「每个节点」,不该有例外', () => {
   const out = renameNodes(['香港01', '香港02'].map(mk), {
     prefix: '破晓', overrides: { 香港01: '我的香港' },
   })
-  assert.deepEqual(out.map((n) => n.tag), ['我的香港', '破晓 | 香港-01'])
+  assert.deepEqual(out.map((n) => n.tag), ['破晓 | 我的香港', '破晓 | 香港-01'])
+})
+
+test('手工名里已经带了前缀就不再套一层', () => {
+  // 输入框里显示的就是带前缀的名字,用户改一个字再存回来,存下的自然带前缀
+  const out = renameNodes(['香港01'].map(mk), {
+    prefix: '破晓', overrides: { 香港01: '破晓 | 我的香港' },
+  })
+  assert.deepEqual(out.map((n) => n.tag), ['破晓 | 我的香港'])
 })
 
 test('前缀为空串/纯空白时不加任何东西', () => {

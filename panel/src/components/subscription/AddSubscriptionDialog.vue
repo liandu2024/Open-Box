@@ -121,6 +121,7 @@
           :source="effectiveSource"
           :rename-options="effectiveRenameOptions"
           @override="handleOverride"
+          @reset-overrides="overrides = {}"
           @toggle-disabled="handleToggleDisabled"
         />
       </div>
@@ -293,8 +294,11 @@ const runPreviewNow = async () => {
 
 const debouncedPreview = debounce(runPreviewNow, 450)
 
+// overrides 也要在里面:手工改名会挪动序号(改过名的节点不占序号),开了订阅名前缀
+// 之后最终名字还会在手工名上再加一层——两件事都只有服务端算得准,少了这个依赖,
+// 清空手工改名后表里还留着旧名字。450ms 的防抖已经挡住了逐字输入的抖动。
 watch(
-  [effectiveSource, renameOptions, disabledTags],
+  [effectiveSource, renameOptions, disabledTags, overrides],
   () => {
     if (!hasSource.value) {
       debouncedPreview.cancel()
