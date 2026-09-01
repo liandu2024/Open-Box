@@ -1007,13 +1007,23 @@ cp "$INSTALL_ROOT/openwrt/luci/root/usr/share/luci/menu.d/luci-app-openbox.json"
   /usr/share/luci/menu.d/luci-app-openbox.json || die "无法安装 LuCI 菜单文件。"
 
 mkdir -p /usr/share/rpcd/acl.d || die "无法创建 rpcd ACL 目录。"
-cp "$INSTALL_ROOT/openwrt/luci/root/usr/share/rpcd/acl.d/luci-app-openbox.json" \
-  /usr/share/rpcd/acl.d/luci-app-openbox.json || die "无法安装 rpcd ACL 文件。"
+# 先比对再覆盖:rpcd 只有在 ACL 真的变了时才需要重启,而重启 rpcd 会清空它内存里的
+# 全部 LuCI 会话——用户每升一次级就被踢回登录页(实测反馈:「更新之后,一定要重新
+# 登录?」)。ACL 文件多数升级里根本没动,那种情况不该付出重新登录的代价。
+_ACL_SRC="$INSTALL_ROOT/openwrt/luci/root/usr/share/rpcd/acl.d/luci-app-openbox.json"
+_ACL_DST=/usr/share/rpcd/acl.d/luci-app-openbox.json
+_acl_changed=0
+if [ ! -f "$_ACL_DST" ] || ! cmp -s "$_ACL_SRC" "$_ACL_DST"; then
+  _acl_changed=1
+fi
+cp "$_ACL_SRC" "$_ACL_DST" || die "无法安装 rpcd ACL 文件。"
 
 # 用 -rf 而不是 -f:OpenWrt <=22.03 的 Lua 版 LuCI 里 /tmp/luci-modulecache 是
 # 目录,rm -f 对目录返回非零,在 set -eu 下会直接中止脚本(P6 终审 Important 4)。
+# 菜单/视图文件的变化靠清缓存即可生效,不需要动 rpcd。
 rm -rf /tmp/luci-*cache* 2>/dev/null || true
-if [ -x /etc/init.d/rpcd ]; then
+if [ "$_acl_changed" = "1" ] && [ -x /etc/init.d/rpcd ]; then
+  info "rpcd 权限文件有变化,重启 rpcd(LuCI 需要重新登录一次)..."
   /etc/init.d/rpcd restart >/dev/null 2>&1 || warn "重启 rpcd 失败,LuCI 页面权限可能要等下次重启路由器后才生效。"
 fi
 

@@ -391,15 +391,24 @@ cp "$INSTALL_ROOT/openwrt/luci/root/usr/share/luci/menu.d/luci-app-openbox.json"
   /usr/share/luci/menu.d/luci-app-openbox.json || die "无法安装 LuCI 菜单文件。"
 
 mkdir -p /usr/share/rpcd/acl.d || die "无法创建 rpcd ACL 目录。"
-cp "$INSTALL_ROOT/openwrt/luci/root/usr/share/rpcd/acl.d/luci-app-openbox.json" \
-  /usr/share/rpcd/acl.d/luci-app-openbox.json || die "无法安装 rpcd ACL 文件。"
+# 先比对再覆盖:重启 rpcd 会清空它内存里的全部 LuCI 会话(等于把人踢回登录页),
+# 而这只有在 ACL 真的变了时才必要。首次安装时目标文件不存在,照样会重启;
+# 覆盖安装同一版本时就不再无谓地把人踢下线。
+_ACL_SRC="$INSTALL_ROOT/openwrt/luci/root/usr/share/rpcd/acl.d/luci-app-openbox.json"
+_ACL_DST=/usr/share/rpcd/acl.d/luci-app-openbox.json
+_acl_changed=0
+if [ ! -f "$_ACL_DST" ] || ! cmp -s "$_ACL_SRC" "$_ACL_DST"; then
+  _acl_changed=1
+fi
+cp "$_ACL_SRC" "$_ACL_DST" || die "无法安装 rpcd ACL 文件。"
 
-# 不清缓存/不重启 rpcd 的话,新 ACL 不会立即生效(P5 review 记录过的坑)。
+# 不清缓存的话,新菜单/视图不会立即生效(P5 review 记录过的坑);这一步与 ACL 无关,
+# 无条件做。
 # 用 -rf 而不是 -f:OpenWrt <=22.03 的 Lua 版 LuCI 里 /tmp/luci-modulecache 是
 # 目录,rm -f 对目录返回非零,在 set -eu 下会直接中止脚本,留下"/opt 已铺好但面板
 # 从未 enable/启动"的半吊子状态(P6 终审 Important 4)。
 rm -rf /tmp/luci-*cache* 2>/dev/null || true
-if [ -x /etc/init.d/rpcd ]; then
+if [ "$_acl_changed" = "1" ] && [ -x /etc/init.d/rpcd ]; then
   /etc/init.d/rpcd restart >/dev/null 2>&1 || warn "重启 rpcd 失败,LuCI 页面权限可能要等下次重启路由器后才生效。"
 fi
 
