@@ -21,18 +21,25 @@
         class="input input-sm w-full font-mono"
         :placeholder="DEFAULT_RENAME_TEMPLATE"
       />
+      <!-- 占位符按钮改成中文名(点一下插入对应占位符),并在下面直接给出这套模板
+           算出来的样子。原来只丢三个 {region}/{feature}/{seq} 出来,面向小白基本
+           等于没说——用户原话:「这个模板,能说人话吗?」 -->
       <div class="flex flex-wrap items-center gap-1.5">
         <span class="text-base-content/50 text-xs">{{ $t('subscriptionRenameTokensHint') }}</span>
         <button
-          v-for="token in ['{region}', '{feature}', '{seq}']"
-          :key="token"
+          v-for="item in TOKENS"
+          :key="item.token"
           type="button"
-          class="badge badge-outline badge-sm font-mono hover:badge-primary"
-          @click="insertToken(token)"
+          class="badge badge-outline badge-sm hover:badge-primary"
+          :title="item.token"
+          @click="insertToken(item.token)"
         >
-          {{ token }}
+          {{ $t(item.label) }}
         </button>
       </div>
+      <p class="text-base-content/60 text-xs">
+        {{ $t('subscriptionRenameTemplateExample', { example: templateExample }) }}
+      </p>
     </div>
 
     <div class="grid grid-cols-2 gap-3">
@@ -169,6 +176,7 @@ import {
 } from './rename-defaults'
 import { ArrowUturnLeftIcon, PlusIcon, XMarkIcon } from '@heroicons/vue/24/outline'
 import { computed, reactive, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 const emit = defineEmits<{
   change: [OpenboxRenameOptions]
@@ -178,6 +186,8 @@ const emit = defineEmits<{
 // 而它挂载时就会 emit 一次(watch immediate),等于一打开编辑弹窗就把用户辛苦调过的
 // 重命名规则悄悄改回默认——保存下去才发现节点名全变了。
 const props = defineProps<{ initial?: OpenboxRenameOptions | null }>()
+
+const { t } = useI18n()
 
 interface RegionRow {
   id: string
@@ -258,6 +268,23 @@ const removeFeatureRow = (id: string) => {
   const index = featureRows.findIndex((row) => row.id === id)
   if (index !== -1) featureRows.splice(index, 1)
 }
+
+// 占位符 → 中文名。按钮上显示人话,插进模板的仍是 {region} 这类记号。
+const TOKENS = [
+  { token: '{region}', label: 'subscriptionRenameTokenRegion' },
+  { token: '{feature}', label: 'subscriptionRenameTokenFeature' },
+  { token: '{seq}', label: 'subscriptionRenameTokenSeq' },
+]
+
+// 拿当前模板 + 当前序号位数算一个真实样例,改模板时实时跟着变。序号用 seqPad 补零,
+// 和真正改名时的行为一致,免得示例和结果对不上。
+const templateExample = computed(() => {
+  const pad = Number.isFinite(seqPad.value) && seqPad.value > 0 ? Math.floor(seqPad.value) : DEFAULT_SEQ_PAD
+  return (template.value.trim() || DEFAULT_RENAME_TEMPLATE)
+    .replace(/\{region\}/g, t('subscriptionRenameSampleRegion'))
+    .replace(/\{feature\}/g, t('subscriptionRenameSampleFeature'))
+    .replace(/\{seq\}/g, String(1).padStart(pad, '0'))
+})
 
 const insertToken = (token: string) => {
   const current = template.value

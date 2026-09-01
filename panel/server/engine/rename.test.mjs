@@ -71,3 +71,42 @@ test('applyTemplate 元字符 $&/$1 不被 String.replace 误解析(修复7)', (
   // 未命中区域,原名整体进入 {feature} 位;修复前 $& 会被当替换模式吃掉,输出会混入字面 "{feature}"
   assert.equal(out[0].tag, '其他-node-$&-tag-01')
 })
+
+// -------- 国旗 emoji --------
+// 用户反馈:词典里带国旗关键词,但国旗没法用键盘输入。国旗本质就是两个「区域指示符」
+// 字母(🇭🇰 = H,K),所以匹配前把它们还原成 ASCII,已有的 "hk" 就能命中,词典里不必
+// 再收一份打不出来的字符。
+
+test('节点名里的国旗被还原成国家代码,用可键入的关键词就能匹配', () => {
+  const dict = [{ code: 'HK', name: '香港', keywords: ['hk', '香港'] }]
+  assert.deepEqual(matchRegion('🇭🇰香港 01', dict), { code: 'HK', name: '香港' })
+  // 只有国旗、没有任何文字的节点名也能认出来
+  assert.deepEqual(matchRegion('🇭🇰 01', dict), { code: 'HK', name: '香港' })
+})
+
+test('两个国旗连着写也不会粘成一个词而漏配', () => {
+  const dict = [{ code: 'HK', name: '香港', keywords: ['hk'] }]
+  assert.deepEqual(matchRegion('🇭🇰🇨🇳 01', dict), { code: 'HK', name: '香港' })
+})
+
+test('老词典里残留的国旗关键词仍然有效(改动不破坏已存配置)', () => {
+  const dict = [{ code: 'HK', name: '香港', keywords: ['🇭🇰'] }]
+  assert.deepEqual(matchRegion('🇭🇰 01', dict), { code: 'HK', name: '香港' })
+  assert.deepEqual(matchRegion('香港 01', dict), null)
+})
+
+test('短码的 token 边界保护没有被削弱', () => {
+  const dict = [{ code: 'US', name: '美国', keywords: ['us'] }]
+  assert.equal(matchRegion('Russia 01', dict), null)
+  assert.equal(matchRegion('Australia', dict), null)
+  assert.deepEqual(matchRegion('US-Premium', dict), { code: 'US', name: '美国' })
+})
+
+test('默认地区词典里不再含无法输入的国旗字符', () => {
+  const flag = /[\u{1F1E6}-\u{1F1FF}]/u
+  for (const region of DEFAULT_REGION_DICT) {
+    for (const kw of region.keywords) {
+      assert.ok(!flag.test(kw), `${region.name} 的关键词 ${kw} 仍是国旗`)
+    }
+  }
+})

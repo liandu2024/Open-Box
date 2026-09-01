@@ -6,8 +6,24 @@ import { DEFAULT_REGION_DICT as REGIONS, DEFAULT_FEATURE_DICT as FEATURES } from
 // CJK/城市名/emoji 关键字不受此影响,继续用 includes。
 const SHORT_ASCII_CODE = /^[a-z]{2,3}$/i
 
+// 国旗 emoji 本质就是两个「区域指示符」字母:🇭🇰 = U+1F1ED U+1F1F0 = H,K。
+// 匹配前把它们还原成 ASCII 字母,于是 "🇭🇰香港 01" 天然被已有的关键词 "hk" 命中,
+// 词典里就不必再收一份没法用键盘输入的国旗(用户反馈:规则里国旗没法输入)。
+// 两侧都要归一:老用户已存的词典里可能还留着国旗关键词,归一后它变成 "hk",
+// 照样能匹配上,不会因为这次改动突然失效。
+// 左右补空格是为了保住 token 边界——两个国旗连着写(🇭🇰🇨🇳)否则会粘成 "hkcn",
+// 而 hk 的短码匹配要求前后不是字母。
+const REGIONAL_INDICATOR_PAIR = /[\u{1F1E6}-\u{1F1FF}]{2}/gu
+export const normalizeForMatch = (text) =>
+  String(text || '')
+    .replace(REGIONAL_INDICATOR_PAIR, (flag) =>
+      ' ' + [...flag].map((c) => String.fromCharCode(c.codePointAt(0) - 0x1f1e6 + 97)).join('') + ' ',
+    )
+    .toLowerCase()
+
 const keywordMatches = (lower, kw) => {
-  const needle = String(kw).toLowerCase()
+  const needle = normalizeForMatch(kw).trim()
+  if (!needle) return false
   if (SHORT_ASCII_CODE.test(needle)) {
     const boundary = new RegExp(`(^|[^a-z])${needle}([^a-z]|$)`, 'i')
     return boundary.test(lower)
@@ -16,7 +32,7 @@ const keywordMatches = (lower, kw) => {
 }
 
 export const matchRegion = (name, dict) => {
-  const lower = String(name || '').toLowerCase()
+  const lower = normalizeForMatch(name)
   for (const region of dict) {
     for (const kw of region.keywords) {
       if (keywordMatches(lower, kw)) return { code: region.code, name: region.name }
@@ -26,11 +42,11 @@ export const matchRegion = (name, dict) => {
 }
 
 export const extractFeatures = (name, dict) => {
-  const lower = String(name || '').toLowerCase()
+  const lower = normalizeForMatch(name)
   const labels = []
   for (const feature of dict) {
     if (labels.includes(feature.label)) continue
-    if (feature.keywords.some((kw) => lower.includes(String(kw).toLowerCase()))) {
+    if (feature.keywords.some((kw) => lower.includes(normalizeForMatch(kw).trim()))) {
       labels.push(feature.label)
     }
   }
