@@ -64,9 +64,11 @@ test('renameNodes 序号按 区域+特征 组合独立递增', () => {
   assert.deepEqual(out.map((n) => n.tag), ['香港-01', '香港-02', '日本-01'])
 })
 
-test('renameNodes 未命中区域:归其他并保留原名', () => {
-  const out = renameNodes([mk('火星基地')])
-  assert.equal(out[0].tag, '其他-火星基地-01')
+test('renameNodes 未命中区域:归到"其他"并正常编号,不再把原名塞进 feature 位', () => {
+  // 旧行为是 其他-火星基地-01:原名整个进 feature 位,而且原名当序号分组键,
+  // 于是每个未识别节点各成一组、全都是 -01(真机上三条法国节点就是这样)。
+  const out = renameNodes([mk('火星基地'), mk('月球基地'), mk('🇫🇷法国01｜三网')])
+  assert.deepEqual(out.map((n) => n.tag), ['其他-01', '其他-02', '其他-03'])
 })
 
 test('renameNodes 不改原对象', () => {
@@ -82,9 +84,13 @@ test('previewRename 原名→新名', () => {
 })
 
 test('applyTemplate 元字符 $&/$1 不被 String.replace 误解析(修复7)', () => {
-  const out = renameNodes([mk('node-$&-tag')])
-  // 未命中区域,原名整体进入 {feature} 位;修复前 $& 会被当替换模式吃掉,输出会混入字面 "{feature}"
-  assert.equal(out[0].tag, '其他-node-$&-tag-01')
+  // 原名不再进 feature 位,但这条防护仍然需要:region 名、无法识别标签、特征关键词
+  // 都是用户自己填的,任何一个写成 "$&" 都会被 String.replace 当成替换模式吃掉。
+  const viaUnknownLabel = renameNodes([mk('火星基地')], { unknownLabel: 'A$&B' })
+  assert.equal(viaUnknownLabel[0].tag, 'A$&B-01')
+
+  const viaFeature = renameNodes([mk('香港 $1 节点')], { featureKeywords: ['$1'] })
+  assert.equal(viaFeature[0].tag, '香港-$1-01')
 })
 
 // -------- 国旗 emoji --------

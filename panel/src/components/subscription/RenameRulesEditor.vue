@@ -77,33 +77,45 @@
         </button>
       </div>
       <p class="text-base-content/50 text-xs">{{ $t('subscriptionRenameRegionDictHint') }}</p>
-      <div class="flex flex-col gap-1.5">
-        <div
-          v-for="row in regionRows"
-          :key="row.id"
-          class="flex items-center gap-1.5"
-        >
-          <input
-            v-model="row.name"
-            type="text"
-            class="input input-sm w-24 shrink-0"
-            :placeholder="$t('subscriptionRenameRegionNamePlaceholder')"
-          />
-          <input
-            v-model="row.keywordsText"
-            type="text"
-            class="input input-sm min-w-0 flex-1"
-            :placeholder="$t('subscriptionRenameKeywordsPlaceholder')"
-          />
-          <button
-            type="button"
-            class="btn btn-ghost btn-circle btn-xs shrink-0"
-            :aria-label="$t('subscriptionRenameRemoveRow')"
-            @click="removeRegionRow(row.id)"
-          >
-            <XMarkIcon class="h-3.5 w-3.5" />
-          </button>
-        </div>
+      <!-- 顺序即优先级:matchRegion 返回第一个命中的地区,所以排在前面的先生效。
+           比如「香港」排在「中国」前面,节点名「中国香港 01」才会被认成香港。
+           handle 限定成那个图标:不限定的话按住输入框拖会变成拖行,连字都选不了。 -->
+      <Draggable
+        v-model="regionRows"
+        :animation="150"
+        :force-fallback="true"
+        handle=".drag-handle"
+        ghost-class="opacity-40"
+        item-key="id"
+        class="flex flex-col gap-1.5"
+      >
+        <template #item="{ element: row }">
+          <div class="flex items-center gap-1.5">
+            <Bars3Icon class="drag-handle text-base-content/40 h-4 w-4 shrink-0 cursor-move" />
+            <input
+              v-model="row.name"
+              type="text"
+              class="input input-sm w-24 shrink-0"
+              :placeholder="$t('subscriptionRenameRegionNamePlaceholder')"
+            />
+            <input
+              v-model="row.keywordsText"
+              type="text"
+              class="input input-sm min-w-0 flex-1"
+              :placeholder="$t('subscriptionRenameKeywordsPlaceholder')"
+            />
+            <button
+              type="button"
+              class="btn btn-ghost btn-circle btn-xs shrink-0"
+              :aria-label="$t('subscriptionRenameRemoveRow')"
+              @click="removeRegionRow(row.id)"
+            >
+              <XMarkIcon class="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </template>
+      </Draggable>
+      <div>
         <p
           v-if="regionRows.length === 0"
           class="text-base-content/50 text-xs"
@@ -164,7 +176,7 @@ import {
   DEFAULT_UNKNOWN_LABEL,
 } from './rename-defaults'
 import { ArrowUturnLeftIcon, Bars3Icon, PlusIcon, XMarkIcon } from '@heroicons/vue/24/outline'
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Draggable from 'vuedraggable'
 
@@ -216,7 +228,9 @@ const toFeatureKeywords = (input: unknown): string[] => {
 const init = props.initial
 const unknownLabel = ref(init?.unknownLabel || DEFAULT_UNKNOWN_LABEL)
 const seqPad = ref(init?.seqPad ?? DEFAULT_SEQ_PAD)
-const regionRows = reactive<RegionRow[]>(
+// 必须是 ref 而不是 reactive:vuedraggable 的 v-model 在拖放结束时会**整体赋一个新
+// 数组**,reactive 数组没法被重新赋值,拖了不会生效。
+const regionRows = ref<RegionRow[]>(
   toRegionRows(init?.regionDict?.length ? init.regionDict : DEFAULT_REGION_DICT),
 )
 // 特征只有一行:命中哪个关键词就显示哪个词(转大写)。旧档案里的两层 featureDict
@@ -271,7 +285,7 @@ const options = computed<OpenboxRenameOptions>(() => ({
   template: template.value || DEFAULT_RENAME_TEMPLATE,
   unknownLabel: unknownLabel.value.trim() || DEFAULT_UNKNOWN_LABEL,
   seqPad: Number.isFinite(seqPad.value) && seqPad.value > 0 ? Math.floor(seqPad.value) : DEFAULT_SEQ_PAD,
-  regionDict: regionRows
+  regionDict: regionRows.value
     .filter((row) => row.name.trim() || row.keywordsText.trim())
     .map((row) => ({ code: row.id, name: row.name.trim(), keywords: splitKeywords(row.keywordsText) })),
   featureKeywords: splitKeywords(featureKeywordsText.value),
@@ -287,11 +301,11 @@ watch(
 )
 
 const addRegionRow = () => {
-  regionRows.push({ id: makeId(), name: '', keywordsText: '' })
+  regionRows.value.push({ id: makeId(), name: '', keywordsText: '' })
 }
 const removeRegionRow = (id: string) => {
-  const index = regionRows.findIndex((row) => row.id === id)
-  if (index !== -1) regionRows.splice(index, 1)
+  const index = regionRows.value.findIndex((row) => row.id === id)
+  if (index !== -1) regionRows.value.splice(index, 1)
 }
 
 
@@ -310,7 +324,7 @@ const resetToDefaults = () => {
   tokenOrder.value = orderFromTemplate(DEFAULT_RENAME_TEMPLATE)
   unknownLabel.value = DEFAULT_UNKNOWN_LABEL
   seqPad.value = DEFAULT_SEQ_PAD
-  regionRows.splice(0, regionRows.length, ...toRegionRows(DEFAULT_REGION_DICT))
+  regionRows.value = toRegionRows(DEFAULT_REGION_DICT)
   featureKeywordsText.value = DEFAULT_FEATURE_KEYWORDS.join(',')
   excludeKeywordsText.value = DEFAULT_EXCLUDE_KEYWORDS.join(',')
 }

@@ -128,11 +128,14 @@ export const renameNodes = (nodes, options = {}) => {
   return nodes.map((node) => {
     const region = matchRegion(node.originalTag, regionDict)
     const features = extractFeatures(node.originalTag, featureDict)
+    // 未命中区域就用「无法识别地区时的标签」,其余照常走模板——不再把原名整个塞进
+    // feature 位。旧写法有两处坏处:节点名会变成「其他-🇫🇷法国01｜三网-01」这种又长又
+    // 没规整的东西;而且序号是按"区域+首个特征"分组的,原名当特征等于每个节点各成一组,
+    // 于是全都是 -01(真机上三条法国节点就是这样)。现在它们是 其他-01/02/03。
     const regionName = region ? region.name : unknownLabel
-    // 未命中区域:把原名作为 feature 位保留
-    const featureStr = region ? features.join('-') : node.originalTag
+    const featureStr = features.join('-')
     // 序号分组只看首个命中的特征(而非完整拼接串),让 "专线" 与 "专线-2x" 共用同一组序号
-    const keyFeature = region ? (features[0] || '') : node.originalTag
+    const keyFeature = features[0] || ''
     const key = `${regionName}|${keyFeature}`
     const next = (counters.get(key) || 0) + 1
     counters.set(key, next)
