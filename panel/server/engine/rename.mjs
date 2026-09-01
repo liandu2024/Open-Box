@@ -25,7 +25,9 @@ export const normalizeForMatch = (text) =>
     )
     .toLowerCase()
 
-const keywordMatches = (lower, kw) => {
+// 导出给节点组的"动态组"用:那边按关键词挑节点,规则必须和地区词典这边完全一致
+// ——同一个关键词在两处匹配出不同结果,没人说得清哪个才算对。
+export const keywordMatches = (lower, kw) => {
   const needle = normalizeForMatch(kw).trim()
   if (!needle) return false
   if (SHORT_ASCII_CODE.test(needle)) {

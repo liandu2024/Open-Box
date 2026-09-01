@@ -46,6 +46,12 @@
         :key="group.id"
         class="card bg-base-100 border-base-content/10 flex flex-row items-center gap-2 border p-3"
       >
+        <CountryFlag
+          v-if="group.icon"
+          :code="group.icon"
+          :size="18"
+          :title="group.icon"
+        />
         <div class="min-w-0 flex-1">
           <div class="flex items-center gap-2">
             <span class="truncate text-base font-medium">{{ group.name }}</span>
@@ -86,13 +92,27 @@
         v-if="draft"
         class="flex flex-col gap-4"
       >
-        <div class="flex flex-col gap-1">
-          <label class="text-xs font-medium">{{ $t('groupNameLabel') }}</label>
-          <input
-            v-model="draft.name"
-            type="text"
-            class="input input-sm w-full"
-          />
+        <div class="flex items-end gap-2">
+          <!-- 图标:和地区关键词那边同一个国旗选择器。节点组多半就是按国家/地区分的
+               (香港-自动、台湾-自动),给它配一面旗,列表里一眼就找得到。 -->
+          <div class="flex flex-col gap-1">
+            <label class="text-xs font-medium">{{ $t('groupIconLabel') }}</label>
+            <div class="w-28">
+              <CountrySelect
+                v-model="draft.icon"
+                clearable
+                :placeholder="$t('groupIconNone')"
+              />
+            </div>
+          </div>
+          <div class="flex min-w-0 flex-1 flex-col gap-1">
+            <label class="text-xs font-medium">{{ $t('groupNameLabel') }}</label>
+            <input
+              v-model="draft.name"
+              type="text"
+              class="input input-sm w-full"
+            />
+          </div>
         </div>
 
         <div class="flex flex-wrap items-end gap-3">
@@ -134,20 +154,36 @@
             </div>
           </template>
         </div>
-        <p
-          v-if="draft.type === 'urltest'"
-          class="text-base-content/50 text-xs"
+        <!-- 成员怎么来:动态组按关键词现算,静态组手工挑。放在这儿是因为下面整块
+             (穿梭框 / 关键词框)都归它管。 -->
+        <div
+          role="tablist"
+          class="tabs-box tabs tabs-sm w-fit"
         >
-          {{ $t('groupUrltestHint') }}
-        </p>
-
-        <div class="divider my-0" />
+          <a
+            role="tab"
+            :class="['tab', draft.mode === 'dynamic' && 'tab-active']"
+            @click="draft.mode = 'dynamic'"
+          >
+            {{ $t('groupModeDynamic') }}
+          </a>
+          <a
+            role="tab"
+            :class="['tab', draft.mode === 'static' && 'tab-active']"
+            @click="draft.mode = 'static'"
+          >
+            {{ $t('groupModeStatic') }}
+          </a>
+        </div>
 
         <!-- 左右穿梭:左边是还没选的,右边是已选的,中间两个箭头搬运勾中的条目。
              每行的勾选框只表示"这条要不要搬",与"选没选中它当成员"是两回事——后者
              由它在左边还是右边表示,所以不会出现"几十个节点混在一列里看不出选了谁"
              的老问题。行末的 › ‹ 是单条快捷键:不用先勾再按箭头,一下就挪过去。 -->
-        <div class="grid grid-cols-[1fr_auto_1fr] gap-3">
+        <div
+          v-if="draft.mode === 'static'"
+          class="grid grid-cols-[1fr_auto_1fr] gap-3"
+        >
             <div class="border-base-content/10 flex min-h-0 flex-col rounded-lg border">
               <div class="border-base-content/10 flex flex-col gap-1 border-b px-2 py-1.5">
                 <div class="flex items-center gap-2">
@@ -280,6 +316,45 @@
             </div>
         </div>
 
+        <!-- 动态组:成员不落名单,只存关键词,生成配置时按当前节点现算。这样以后新加
+             的订阅,只要节点名命中关键词,下次部署就自动进这个组,不用回来重勾一遍。
+             下面实时列出"按现在的节点会选中谁",免得关键词写完还得靠猜。 -->
+        <div
+          v-else
+          class="flex flex-col gap-2"
+        >
+          <div class="flex flex-col gap-1">
+            <label class="text-xs font-medium">{{ $t('groupKeywordsLabel') }}</label>
+            <input
+              v-model="keywordsText"
+              type="text"
+              class="input input-sm w-full"
+              :placeholder="$t('groupKeywordsPlaceholder')"
+            />
+            <p class="text-base-content/50 text-xs">{{ $t('groupKeywordsHint') }}</p>
+          </div>
+          <div class="border-base-content/10 rounded-lg border">
+            <div class="border-base-content/10 border-b px-3 py-1.5 text-xs font-medium">
+              {{ $t('groupDynamicMatched', { count: dynamicMatched.length }) }}
+            </div>
+            <div class="max-h-56 overflow-y-auto">
+              <p
+                v-if="!dynamicMatched.length"
+                class="text-base-content/50 p-3 text-center text-xs"
+              >
+                {{ $t('groupDynamicNoMatch') }}
+              </p>
+              <div
+                v-for="name in dynamicMatched"
+                :key="name"
+                class="px-3 py-1.5 text-sm"
+              >
+                <span class="truncate">{{ name }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <p
           v-if="editorError"
           class="text-error text-sm"
@@ -316,6 +391,9 @@
 import type { OpenboxUserGroup } from '@/api/openbox'
 import { fetchNodeGroups, saveNodeGroups } from '@/api/openbox'
 import BulkPick from '@/components/subscription/BulkPick.vue'
+import CountryFlag from '@/components/common/CountryFlag.vue'
+import CountrySelect from '@/components/common/CountrySelect.vue'
+import { keywordMatches, normalizeForMatch } from '@/helper/keywordMatch'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import { routingPendingDeploy } from '@/store/routing'
 import {
@@ -352,9 +430,21 @@ const load = async () => {
 }
 onMounted(load)
 
+// 动态组报"按当前节点算出来是几个",静态组报名单里有几个。动态组的数字会随订阅
+// 变化,这正是它的意义所在,所以列表里就该显示算出来的那个数,而不是关键词条数。
+const matchedNodes = (group: OpenboxUserGroup) => {
+  const keywords = group.keywords || []
+  const names = availableNodes.value.map((n) => n.name)
+  if (!keywords.length) return names
+  return names.filter((name) => {
+    const lower = normalizeForMatch(name)
+    return keywords.some((kw) => keywordMatches(lower, kw))
+  })
+}
+
 const memberSummary = (group: OpenboxUserGroup) =>
-  group.allNodes
-    ? t('groupAllNodesSummary', { count: availableNodes.value.length })
+  group.mode === 'dynamic'
+    ? t('groupDynamicSummary', { count: matchedNodes(group).length })
     : t('groupMembersSummary', { count: group.members.length })
 
 const showEditor = ref(false)
@@ -374,24 +464,26 @@ const saving = ref(false)
 const openEditor = (group: OpenboxUserGroup | null) => {
   editing.value = group
   // 深拷贝:直接编辑列表里的对象会让"取消"也留下改动
+  // 新建默认静态组:新建一个组多半是为了挑几个特定节点,默认成"不带关键词的动态组"
+  // 等于一上来就把全部节点圈进去,不是人想要的。
   draft.value = group
     ? JSON.parse(JSON.stringify(group))
     : {
         id: '',
         name: '',
         type: 'urltest',
-        allNodes: false,
+        mode: 'static',
+        icon: '',
+        keywords: [],
         members: [],
         interval: '3m',
         tolerance: 50,
       }
-  // 编辑器里不再有「包含所有有效节点」这个开关(改成了全选/反选/全不选),所以打开
-  // 一个 allNodes 组时,把它当前代表的节点落成一份显式名单摆到「已选」里——否则右栏
-  // 会是空的,看起来像这个组什么都没选。代价:保存后它就变成固定名单,不再随订阅
-  // 刷新自动跟着变。
-  if (draft.value?.allNodes) {
-    draft.value.allNodes = false
-    draft.value.members = availableNodes.value.map((n) => n.name)
+  // 老记录可能没有这几个字段(服务端读的时候会补,但这里编辑的是本地副本)
+  if (draft.value) {
+    if (!draft.value.mode) draft.value.mode = 'static'
+    if (!draft.value.keywords) draft.value.keywords = []
+    if (draft.value.icon === undefined) draft.value.icon = ''
   }
   memberFilter.value = ''
   selectedFilter.value = ''
@@ -529,6 +621,21 @@ const moveLeft = () => {
   checkedSelected.value = []
 }
 
+// 关键词在界面上是一行逗号分隔的文本,存下去是数组
+const keywordsText = computed({
+  get: () => (draft.value?.keywords || []).join(','),
+  set: (v: string) => {
+    if (!draft.value) return
+    draft.value.keywords = v
+      .split(',')
+      .map((k) => k.trim())
+      .filter(Boolean)
+  },
+})
+
+// 按当前节点实时算一遍:关键词写完能立刻看到会选中谁,不用保存了再回来看
+const dynamicMatched = computed(() => (draft.value ? matchedNodes(draft.value) : []))
+
 const persist = async (next: OpenboxUserGroup[]) => {
   const res = await saveNodeGroups(next)
   groups.value = res.groups
@@ -550,7 +657,8 @@ const saveDraft = async () => {
     editorError.value = t('groupNameDuplicate')
     return
   }
-  if (!draft.value.members.length) {
+  // 动态组不需要成员名单:关键词为空就是"全部节点",本身是合法的一种组
+  if (draft.value.mode === 'static' && !draft.value.members.length) {
     editorError.value = t('groupMembersRequired')
     return
   }

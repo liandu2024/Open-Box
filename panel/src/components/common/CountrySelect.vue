@@ -31,6 +31,17 @@
         clearable
       />
       <ul class="mt-1 max-h-56 overflow-y-auto">
+        <!-- 可清空时给一条「无」:图标是可选的,选错了得有路退回去 -->
+        <li v-if="clearable">
+          <button
+            type="button"
+            class="hover:bg-base-200 text-base-content/60 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm"
+            :class="{ 'bg-base-200': !modelValue }"
+            @click="choose('')"
+          >
+            {{ placeholder || $t('subscriptionRenameCountrySearch') }}
+          </button>
+        </li>
         <li
           v-for="c in filtered"
           :key="c.code"
@@ -69,10 +80,12 @@ import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{
-  // ISO 3166-1 alpha-2;空 = 还没选
-  modelValue: string
+  // ISO 3166-1 alpha-2;空/未定义 = 还没选(老记录里这个字段可能压根没有)
+  modelValue?: string
   // 还没选国家时显示的文字(老档案里手写的地区名就放在这儿,不会被悄悄清掉)
   placeholder?: string
+  // 列表顶上多给一条「无」,用来清空选择
+  clearable?: boolean
 }>()
 
 const emit = defineEmits<{ 'update:modelValue': [string] }>()
@@ -81,7 +94,7 @@ const { locale } = useI18n()
 const keyword = ref('')
 
 const label = computed(() => {
-  const c = findCountry(props.modelValue)
+  const c = findCountry(props.modelValue || '')
   return c ? countryName(c, locale.value) : ''
 })
 

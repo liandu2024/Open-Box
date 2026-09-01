@@ -16,7 +16,16 @@
 //   3. 不能有环(自引用或互相引用)—— check 同样不拦
 // 也就是说"生成的配置能过 check"并不足以保证这几点,只能在生成时自己挡。
 
+import { keywordMatches, normalizeForMatch } from './rename.mjs'
+
 export const GROUP_TYPES = Object.freeze(['urltest', 'selector'])
+
+// 成员怎么来:
+//   static  —— 手工挑,members 里存的是节点名/组名(下面那套左右穿梭选出来的)
+//   dynamic —— 按关键词现算,keywords 命中哪些节点就是哪些成员
+// 动态组的意义在于"以后加的订阅也自动进来":成员是在生成配置时按当前节点算的,
+// 新订阅刷进来只要名字命中关键词,下次部署就自动在组里,不用回来重新勾一遍。
+export const GROUP_MODES = Object.freeze(['static', 'dynamic'])
 
 export const DEFAULT_TEST_URL = 'https://www.gstatic.com/generate_204'
 export const DEFAULT_INTERVAL = '3m'
@@ -29,7 +38,8 @@ export const defaultGroups = () => ([
     id: 'all-auto',
     name: '所有-自动',
     type: 'urltest',
-    allNodes: true,
+    mode: 'dynamic',
+    keywords: [],
     members: [],
     interval: DEFAULT_INTERVAL,
     tolerance: DEFAULT_TOLERANCE,
@@ -38,7 +48,8 @@ export const defaultGroups = () => ([
     id: 'all-manual',
     name: '所有-手动',
     type: 'selector',
-    allNodes: true,
+    mode: 'dynamic',
+    keywords: [],
     members: [],
   },
 ])
@@ -49,11 +60,18 @@ const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0
 // 这个函数同时用于读取历史数据,老记录缺字段是正常的。
 export const normalizeGroup = (raw, index = 0) => {
   const type = GROUP_TYPES.includes(raw?.type) ? raw.type : 'selector'
+  // allNodes 是 mode 之前的写法(只有"全部节点"这一种动态),等价于一个不带关键词的
+  // 动态组。老记录照这个规则迁移,行为不变。
+  const mode = GROUP_MODES.includes(raw?.mode) ? raw.mode : (raw?.allNodes === true ? 'dynamic' : 'static')
   const group = {
     id: isNonEmptyString(raw?.id) ? raw.id.trim() : `group-${index}`,
     name: isNonEmptyString(raw?.name) ? raw.name.trim() : `分组-${index + 1}`,
     type,
-    allNodes: raw?.allNodes === true,
+    mode,
+    // 图标:国家代码(ISO 3166-1 alpha-2),空表示不显示。纯界面用,不进 sing-box 配置
+    // ——那边没有这个字段,写进去内核直接报未知字段。
+    icon: isNonEmptyString(raw?.icon) ? raw.icon.trim().toUpperCase() : '',
+    keywords: Array.isArray(raw?.keywords) ? raw.keywords.filter(isNonEmptyString).map((k) => k.trim()) : [],
     members: Array.isArray(raw?.members) ? raw.members.filter(isNonEmptyString).map((m) => m.trim()) : [],
   }
   if (type === 'urltest') {
@@ -67,10 +85,21 @@ export const normalizeGroup = (raw, index = 0) => {
 export const normalizeGroups = (list) =>
   (Array.isArray(list) ? list : []).map((g, i) => normalizeGroup(g, i))
 
-// 解析成员:allNodes 展开成全部节点;显式成员里剔除"指向不存在的东西"的条目。
-// 组之间可以互相引用,但引用必须最终落到真实存在的组上。
-const resolveMembers = (group, nodeTagSet, groupNameSet) => {
-  if (group.allNodes) return [...nodeTagSet]
+// 解析成员:
+//   dynamic —— 按关键词从当前节点里现挑(不带关键词 = 全部节点)。只认节点,不认别的
+//              组:组名同样可能命中关键词,那样会凭空长出环来,而"按名字挑一批节点"
+//              本来也不需要把组算进去。
+//   static  —— 用显式成员,剔除"指向不存在的东西"的条目;组之间可以互相引用,但引用
+//              必须最终落到真实存在的组上。
+const resolveMembers = (group, nodeTags, groupNameSet) => {
+  const nodeTagSet = new Set(nodeTags)
+  if (group.mode === 'dynamic') {
+    if (!group.keywords.length) return [...nodeTags]
+    return nodeTags.filter((tag) => {
+      const lower = normalizeForMatch(tag)
+      return group.keywords.some((kw) => keywordMatches(lower, kw))
+    })
+  }
   const seen = new Set()
   const out = []
   for (const m of group.members) {
@@ -98,7 +127,8 @@ const dropCycles = (groups) => {
     progressed = false
     for (let i = 0; i < pending.length; i++) {
       const g = pending[i]
-      const groupDeps = g.allNodes
+      // 动态组只挑节点,不引用别的组,所以永远没有依赖,也就不可能成环
+      const groupDeps = g.mode === 'dynamic'
         ? []
         : g.members.filter((m) => m !== g.name && allGroupNames.has(m))
       if (groupDeps.some((d) => !acceptedNames.has(d))) continue
@@ -118,7 +148,9 @@ const dropCycles = (groups) => {
 export const emitUserGroups = (groups, nodes, options = {}) => {
   const testUrl = options.testUrl || DEFAULT_TEST_URL
   const normalized = normalizeGroups(groups)
-  const nodeTagSet = new Set((nodes || []).map((n) => n.tag))
+  // 保持节点原有顺序:节点已经按地区词典排过序了(见 rename.mjs),组里的成员顺序
+  // 跟着它走,策略组列表看起来才和节点列表一致。
+  const nodeTags = (nodes || []).map((n) => n.tag)
 
   const withoutCycles = dropCycles(normalized)
   const droppedByCycle = normalized.filter((g) => !withoutCycles.includes(g))
@@ -128,7 +160,7 @@ export const emitUserGroups = (groups, nodes, options = {}) => {
   const dropped = droppedByCycle.map((g) => ({ name: g.name, reason: 'cycle' }))
 
   for (const g of withoutCycles) {
-    const members = resolveMembers(g, nodeTagSet, groupNameSet)
+    const members = resolveMembers(g, nodeTags, groupNameSet)
     if (!members.length) {
       dropped.push({ name: g.name, reason: 'empty' })
       continue

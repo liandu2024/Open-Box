@@ -302,12 +302,20 @@ export type OpenboxGroupType = 'urltest' | 'selector'
 
 // 名字不用 OpenboxNodeGroup:那个已经被"按地区自动切分的组"占了(见上方,形状是
 // { name, type, nodeTags }),两者是不同的东西,重名会让人以为可以互换。
+// 成员怎么来:static 手工挑(members),dynamic 按关键词现算(keywords)。
+// 动态组的意义是"以后加的订阅也自动进来"——成员在生成配置时按当前节点算。
+export type OpenboxGroupMode = 'static' | 'dynamic'
+
 export interface OpenboxUserGroup {
   id: string
   name: string
   type: OpenboxGroupType
-  // true = 成员是"当前所有有效节点",随订阅刷新自动跟着变
-  allNodes: boolean
+  mode: OpenboxGroupMode
+  // 国家代码(ISO 3166-1 alpha-2),空 = 不显示图标。纯界面用,不进 sing-box 配置。
+  icon?: string
+  // dynamic 用:命中任一关键词的节点即成员;为空 = 全部节点
+  keywords?: string[]
+  // static 用:手工挑出来的节点名/组名
   members: string[]
   interval?: string
   tolerance?: number
