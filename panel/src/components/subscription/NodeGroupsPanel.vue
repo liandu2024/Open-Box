@@ -136,42 +136,80 @@
         </label>
         <p class="text-base-content/50 -mt-2 text-xs">{{ $t('groupAllNodesHint') }}</p>
 
+        <!-- 左右穿梭:左边是还没选的,右边是已选的。点一条就挪到另一边,不再用勾选框
+             ——勾选框要靠"有没有打勾"去分辨选没选,几十个节点混在一列里根本看不出来
+             自己到底选了哪些;拆成两栏后"已选"本身就是一份清单。 -->
         <template v-if="!draft.allNodes">
-          <div class="flex items-center justify-between gap-2">
-            <label class="text-xs font-medium">
-              {{ $t('groupMembersLabel') }} ({{ draft.members.length }})
-            </label>
-            <input
-              v-model="memberFilter"
-              type="text"
-              class="input input-sm w-48"
-              :placeholder="$t('groupMemberFilter')"
-            />
-          </div>
-          <div class="border-base-content/10 max-h-64 overflow-y-auto rounded-lg border">
-            <p
-              v-if="!filteredCandidates.length"
-              class="text-base-content/50 p-3 text-center text-sm"
-            >
-              {{ $t('groupNoCandidates') }}
-            </p>
-            <label
-              v-for="item in filteredCandidates"
-              :key="item.kind + item.name"
-              class="hover:bg-base-200/60 flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm"
-            >
-              <input
-                type="checkbox"
-                class="checkbox checkbox-xs"
-                :checked="draft.members.includes(item.name)"
-                @change="toggleMember(item.name)"
-              />
-              <span class="truncate">{{ item.name }}</span>
-              <span
-                v-if="item.kind === 'group'"
-                class="badge badge-ghost badge-xs ml-auto"
-              >{{ $t('groupsTab') }}</span>
-            </label>
+          <div class="grid grid-cols-2 gap-3">
+            <div class="border-base-content/10 flex min-h-0 flex-col rounded-lg border">
+              <div class="border-base-content/10 flex items-center gap-2 border-b px-2 py-1.5">
+                <span class="text-xs font-medium whitespace-nowrap">
+                  {{ $t('groupAvailable') }} ({{ availableCandidates.length }})
+                </span>
+                <input
+                  v-model="memberFilter"
+                  type="text"
+                  class="input input-xs min-w-0 flex-1"
+                  :placeholder="$t('groupMemberFilter')"
+                />
+              </div>
+              <div class="max-h-64 overflow-y-auto">
+                <p
+                  v-if="!filteredAvailable.length"
+                  class="text-base-content/50 p-3 text-center text-xs"
+                >
+                  {{ $t('groupNoCandidates') }}
+                </p>
+                <button
+                  v-for="item in filteredAvailable"
+                  :key="item.kind + item.name"
+                  type="button"
+                  class="hover:bg-base-200/60 flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm"
+                  @click="addMember(item.name)"
+                >
+                  <span class="truncate">{{ item.name }}</span>
+                  <span
+                    v-if="item.kind === 'group'"
+                    class="badge badge-ghost badge-xs"
+                  >{{ $t('groupsTab') }}</span>
+                  <ChevronRightIcon class="text-base-content/30 ml-auto h-4 w-4 shrink-0" />
+                </button>
+              </div>
+            </div>
+
+            <div class="border-base-content/10 flex min-h-0 flex-col rounded-lg border">
+              <div class="border-base-content/10 flex items-center justify-between gap-2 border-b px-2 py-1.5">
+                <span class="text-xs font-medium">
+                  {{ $t('groupSelected') }} ({{ draft.members.length }})
+                </span>
+                <button
+                  v-if="draft.members.length"
+                  type="button"
+                  class="btn btn-ghost btn-xs"
+                  @click="draft.members = []"
+                >
+                  {{ $t('groupClear') }}
+                </button>
+              </div>
+              <div class="max-h-64 overflow-y-auto">
+                <p
+                  v-if="!draft.members.length"
+                  class="text-base-content/50 p-3 text-center text-xs"
+                >
+                  {{ $t('groupNoSelected') }}
+                </p>
+                <button
+                  v-for="name in draft.members"
+                  :key="name"
+                  type="button"
+                  class="hover:bg-base-200/60 flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm"
+                  @click="removeMember(name)"
+                >
+                  <ChevronLeftIcon class="text-base-content/30 h-4 w-4 shrink-0" />
+                  <span class="truncate">{{ name }}</span>
+                </button>
+              </div>
+            </div>
           </div>
         </template>
 
@@ -212,7 +250,13 @@ import type { OpenboxUserGroup } from '@/api/openbox'
 import { fetchNodeGroups, saveNodeGroups } from '@/api/openbox'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import { routingPendingDeploy } from '@/store/routing'
-import { PencilSquareIcon, PlusIcon, TrashIcon } from '@heroicons/vue/24/outline'
+import {
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  PencilSquareIcon,
+  PlusIcon,
+  TrashIcon,
+} from '@heroicons/vue/24/outline'
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -278,18 +322,25 @@ const candidates = computed(() => {
   return [...groupItems, ...nodeItems]
 })
 
-const filteredCandidates = computed(() => {
+// 左侧只列"还没选的":选走一个左边就少一个,不必再靠打勾去分辨状态。
+const availableCandidates = computed(() =>
+  candidates.value.filter((item) => !draft.value?.members.includes(item.name)),
+)
+
+const filteredAvailable = computed(() => {
   const kw = memberFilter.value.trim().toLowerCase()
-  if (!kw) return candidates.value
-  return candidates.value.filter((item) => item.name.toLowerCase().includes(kw))
+  if (!kw) return availableCandidates.value
+  return availableCandidates.value.filter((item) => item.name.toLowerCase().includes(kw))
 })
 
-const toggleMember = (name: string) => {
+const addMember = (name: string) => {
+  if (!draft.value || draft.value.members.includes(name)) return
+  draft.value.members = [...draft.value.members, name]
+}
+
+const removeMember = (name: string) => {
   if (!draft.value) return
-  const set = new Set(draft.value.members)
-  if (set.has(name)) set.delete(name)
-  else set.add(name)
-  draft.value.members = [...set]
+  draft.value.members = draft.value.members.filter((m) => m !== name)
 }
 
 const persist = async (next: OpenboxUserGroup[]) => {
