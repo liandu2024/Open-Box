@@ -142,27 +142,31 @@
                   v-for="(entry, index) in rows"
                   :key="`${entry.originalTag}-${index}`"
                 >
-                  <td class="text-base-content/60 max-w-0 truncate">{{ entry.originalTag }}</td>
+                  <td class="text-base-content/70 max-w-0 truncate text-sm">{{ entry.originalTag }}</td>
                   <td class="max-w-0">
                     <!-- 过滤页签下这条根本不会导入,没有"新名"可言,也不该能改 -->
                     <span
                       v-if="listTab === 'excluded'"
-                      class="text-base-content/40"
+                      class="text-base-content/40 text-sm"
                     >
                       {{ $t('subscriptionPreviewNotImported') }}
                     </span>
                     <!-- 禁用页签:唯一有意义的操作就是把它放回来 -->
                     <span
                       v-else-if="listTab === 'disabled'"
-                      class="flex items-center gap-2"
+                      class="flex items-center gap-1"
                     >
-                      <span class="text-base-content/40">{{ $t('subscriptionPreviewNotImported') }}</span>
+                      <span class="text-base-content/40 text-sm">{{ $t('subscriptionPreviewNotImported') }}</span>
+                      <!-- ml-auto:让这颗图标落在和"有效"页那两颗图标同一条右边线上,
+                           页签之间来回切时按钮不会跳位置。 -->
                       <button
                         type="button"
-                        class="btn btn-ghost btn-xs"
+                        class="btn btn-ghost btn-square btn-sm ml-auto shrink-0 hover:text-success"
+                        :aria-label="$t('subscriptionNodeEnable')"
+                        :title="$t('subscriptionNodeEnable')"
                         @click="emit('toggleDisabled', { originalTag: entry.originalTag, disabled: false })"
                       >
-                        {{ $t('subscriptionNodeEnable') }}
+                        <CheckCircleIcon class="h-4 w-4" />
                       </button>
                     </span>
                     <span
@@ -174,7 +178,7 @@
                            把正在输入的内容顶掉,光标也会跳。 -->
                       <input
                         type="text"
-                        class="input input-sm w-full font-medium"
+                        class="input input-sm w-full text-sm font-medium"
                         :value="overrides?.[entry.originalTag] ?? entry.newTag"
                         @input="onRename(entry, ($event.target as HTMLInputElement).value)"
                       />
@@ -227,7 +231,13 @@
 <script setup lang="ts">
 import type { OpenboxLatencyResult, OpenboxRenameOptions, OpenboxSubscriptionPreview } from '@/api/openbox'
 import { testNodeLatency } from '@/api/openbox'
-import { ArrowRightIcon, BoltIcon, MagnifyingGlassIcon, NoSymbolIcon } from '@heroicons/vue/24/outline'
+import {
+  ArrowRightIcon,
+  BoltIcon,
+  CheckCircleIcon,
+  MagnifyingGlassIcon,
+  NoSymbolIcon,
+} from '@heroicons/vue/24/outline'
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
