@@ -374,6 +374,8 @@ const en = {
   groupUrltestHint: 'Periodically measures each member and switches to the fastest; it only switches when the new one is faster by at least the tolerance, to avoid flapping.',
   groupMembersLabel: 'Members',
   groupFilterAllSubscriptions: 'All subscriptions',
+  groupFilterAllGroups: 'All groups',
+  groupFilterAllNodes: 'All nodes',
   groupMoveRight: 'Add checked',
   groupMoveLeft: 'Remove checked',
   groupSelectAll: 'All',

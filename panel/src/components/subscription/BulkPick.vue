@@ -29,13 +29,21 @@
       :value="subscription"
       @change="$emit('update:subscription', ($event.target as HTMLSelectElement).value)"
     >
+      <!-- 值带前缀是为了不和订阅名撞车:订阅名是用户随便起的,直接拿名字当值的话,
+           有人把订阅命名成「全部节点」就分不出这一项到底指哪个了。 -->
       <option value="">
         {{ $t('groupFilterAllSubscriptions') }}
+      </option>
+      <option value="kind:group">
+        {{ $t('groupFilterAllGroups') }}
+      </option>
+      <option value="kind:node">
+        {{ $t('groupFilterAllNodes') }}
       </option>
       <option
         v-for="name in subscriptions"
         :key="name"
-        :value="name"
+        :value="`sub:${name}`"
       >
         {{ name }}
       </option>

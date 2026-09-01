@@ -371,6 +371,8 @@ const zh: LANG_MESSAGE = {
   groupUrltestHint: '定期测各成员的延迟并自动切到最快的一个;只有比当前快出「容差」这么多毫秒才会切,避免来回抖动。',
   groupMembersLabel: '成员',
   groupFilterAllSubscriptions: '全部',
+  groupFilterAllGroups: '全部节点组',
+  groupFilterAllNodes: '全部节点',
   groupMoveRight: '添加勾选的',
   groupMoveLeft: '移出勾选的',
   groupSelectAll: '全选',

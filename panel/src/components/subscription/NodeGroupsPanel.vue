@@ -425,14 +425,21 @@ const subscriptionOptions = computed(() => {
 })
 
 // 一栏的"作用范围" = 该栏下拉框 + 过滤框共同框定的候选集。三个批量按钮就按这个
-// 范围来:下拉框选中某条订阅、再按「全选」,加进来的正好是那条订阅的节点——这也是
-// 加这个下拉框的用处。两个都不设时,范围就是整份候选集,和以前一样。
-const scopeOf = (sub: string, keyword: string) => {
+// 范围来:下拉框选中某条订阅、再按「全选」,勾中的正好是那条订阅的节点——这也是
+// 加这个下拉框的用处。两个都不设时,范围就是整份候选集。
+// 下拉框的值:'' 全部 / 'kind:group' 全部节点组 / 'kind:node' 全部节点 /
+// 'sub:<订阅名>' 单条订阅(前缀见 BulkPick.vue 里的说明)。
+const scopeOf = (sel: string, keyword: string) => {
   const kw = keyword.trim().toLowerCase()
+  const matchKind = (item: { kind: string; subscription: string }) => {
+    if (!sel) return true
+    if (sel === 'kind:group') return item.kind === 'group'
+    if (sel === 'kind:node') return item.kind === 'node'
+    if (sel.startsWith('sub:')) return item.subscription === sel.slice(4)
+    return true
+  }
   return candidates.value.filter(
-    (item) =>
-      (!sub || item.subscription === sub) &&
-      (!kw || item.name.toLowerCase().includes(kw)),
+    (item) => matchKind(item) && (!kw || item.name.toLowerCase().includes(kw)),
   )
 }
 
