@@ -61,6 +61,8 @@ export interface OpenboxRenameOptions {
   featureKeywords?: string[]
   // 过滤关键词:原始节点名命中任一词就整条不导入(机场的公告/广告条目)。
   excludeKeywords?: string[]
+  // 逐条手工改名:原名 -> 用户指定的名字。改过名的节点不参与序号编号。
+  overrides?: Record<string, string>
   // 旧档案里的两层结构,只为兼容读取而保留(见 server/engine/rename.mjs 的 toFeatureKeywords)
   featureDict?: OpenboxRenameFeatureEntry[]
   template?: string

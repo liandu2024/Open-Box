@@ -123,6 +123,9 @@ export const renameNodes = (nodes, options = {}) => {
   const template = options.template || '{region}-{feature}-{seq}'
   const unknownLabel = options.unknownLabel || '其他'
   const seqPad = options.seqPad ?? 2
+  // 逐条手工改名:originalTag -> 用户指定的名字。改过名的节点不再消耗序号,否则同组
+  // 里会出现 香港-01 / 我的香港 / 香港-03 这种跳号。
+  const overrides = (options.overrides && typeof options.overrides === 'object') ? options.overrides : {}
   const counters = new Map()
 
   const renamed = nodes.map((node) => {
@@ -136,11 +139,16 @@ export const renameNodes = (nodes, options = {}) => {
     const featureStr = features.join('-')
     // 序号分组只看首个命中的特征(而非完整拼接串),让 "专线" 与 "专线-2x" 共用同一组序号
     const keyFeature = features[0] || ''
-    const key = `${regionName}|${keyFeature}`
-    const next = (counters.get(key) || 0) + 1
-    counters.set(key, next)
-    const seq = String(next).padStart(seqPad, '0')
-    const tag = applyTemplate(template, regionName, featureStr, seq)
+    const override = typeof overrides[node.originalTag] === 'string' ? overrides[node.originalTag].trim() : ''
+    let tag
+    if (override) {
+      tag = override
+    } else {
+      const key = `${regionName}|${keyFeature}`
+      const next = (counters.get(key) || 0) + 1
+      counters.set(key, next)
+      tag = applyTemplate(template, regionName, featureStr, String(next).padStart(seqPad, '0'))
+    }
     // regionRank 只用于排序,不进最终节点对象
     const regionRank = region ? regionDict.findIndex((r) => r.name === regionName) : -1
     return { node: { ...node, tag }, regionRank }

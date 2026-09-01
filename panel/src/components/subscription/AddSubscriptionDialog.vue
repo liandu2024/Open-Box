@@ -117,6 +117,8 @@
           :loading="previewing"
           :error="previewErrorMessage"
           :preview="preview"
+          :overrides="overrides"
+          @override="handleOverride"
         />
       </div>
     </div>
@@ -205,6 +207,20 @@ const handleRenameOptionsChange = (value: OpenboxRenameOptions) => {
   renameOptions.value = value
 }
 
+// 逐条手工改名。单独存在弹窗这一层而不是塞进 RenameRulesEditor:它不是"规则",而是
+// 对个别节点的例外,编辑入口也在预览表里。发出去时才与规则合并成一份 renameOptions。
+const overrides = ref<Record<string, string>>({ ...(props.subscription?.renameOptions?.overrides || {}) })
+const handleOverride = ({ originalTag, newTag }: { originalTag: string; newTag: string }) => {
+  const next = { ...overrides.value }
+  if (newTag.trim()) next[originalTag] = newTag
+  else delete next[originalTag]
+  overrides.value = next
+}
+const effectiveRenameOptions = computed<OpenboxRenameOptions>(() => ({
+  ...renameOptions.value,
+  overrides: overrides.value,
+}))
+
 const preview = ref<OpenboxSubscriptionPreview | null>(null)
 const previewing = ref(false)
 const previewErrorMessage = ref('')
@@ -242,7 +258,7 @@ const runPreviewNow = async () => {
   previewErrorMessage.value = ''
 
   try {
-    const result = await previewSubscription({ ...src, renameOptions: renameOptions.value })
+    const result = await previewSubscription({ ...src, renameOptions: effectiveRenameOptions.value })
     if (seq !== previewSeq) return
     preview.value = result
   } catch (error) {
@@ -282,6 +298,7 @@ const resetForm = () => {
   name.value = props.subscription?.name ?? ''
   url.value = props.subscription?.url ?? ''
   content.value = props.subscription?.content ?? ''
+  overrides.value = { ...(props.subscription?.renameOptions?.overrides || {}) }
   sourceMode.value = props.subscription && !props.subscription.url ? 'paste' : 'url'
   preview.value = null
   previewing.value = false
@@ -309,7 +326,7 @@ const handleSave = async () => {
     const payload = {
       ...(effectiveSource.value || {}),
       name: name.value.trim() || t('subscriptionDefaultName'),
-      renameOptions: renameOptions.value,
+      renameOptions: effectiveRenameOptions.value,
     }
     if (props.subscription) {
       await updateSubscription(props.subscription.id, payload)

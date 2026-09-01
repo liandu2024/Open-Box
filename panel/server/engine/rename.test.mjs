@@ -214,3 +214,27 @@ test('previewRename 用节点自带的 originalTag 配对,重排后原名与新�
     { originalTag: '美国01', newTag: '其他-01' },
   ])
 })
+
+// -------- 逐条手工改名 --------
+
+test('overrides 按原名覆盖节点名', () => {
+  const out = renameNodes(['香港01', '香港02'].map(mk), { overrides: { 香港02: '我的香港' } })
+  assert.deepEqual(out.map((n) => n.tag), ['香港-01', '我的香港'])
+})
+
+test('改过名的节点不消耗序号,同组不跳号', () => {
+  const out = renameNodes(['香港01', '香港02', '香港03'].map(mk), { overrides: { 香港02: '我的香港' } })
+  // 若改名的那条仍占号,这里会是 香港-01 / 我的香港 / 香港-03
+  assert.deepEqual(out.map((n) => n.tag), ['香港-01', '我的香港', '香港-02'])
+})
+
+test('空字符串/纯空白的 override 视为没设,回落模板名', () => {
+  const out = renameNodes(['香港01'].map(mk), { overrides: { 香港01: '   ' } })
+  assert.equal(out[0].tag, '香港-01')
+})
+
+test('override 不影响排序:仍按其原本匹配到的地区归位', () => {
+  const dict = [{ code: 'US', name: '美国', keywords: ['美国'] }, { code: 'HK', name: '香港', keywords: ['香港'] }]
+  const out = renameNodes(['香港01', '美国01'].map(mk), { regionDict: dict, overrides: { 香港01: 'ZZZ' } })
+  assert.deepEqual(out.map((n) => n.tag), ['美国-01', 'ZZZ'])
+})
