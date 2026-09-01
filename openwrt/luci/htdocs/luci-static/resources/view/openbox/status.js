@@ -767,7 +767,7 @@ var STYLE_CSS =
 	// 也按这个套路给标题上底色,同样会被这几条复位掉。
 	//
 	// 横线用 h3 自己的 border-bottom,而不是再插一个元素:它天然只有 h3 那么宽
-	// (卡片内容宽度,不含卡片左右 18px 内边距),不会像 .ob-div 那样通栏。
+	// (卡片内容宽度,不含卡片左右 18px 内边距),不会通栏顶到卡片边缘。
 	'.ob-card h3{margin:0 0 12px;padding:0 0 10px;background:none;border:0;border-bottom:1px solid rgba(127,127,127,.22);border-radius:0;box-shadow:none;font-size:1.05em;font-weight:600;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.75em}' +
 	// 标题行右侧放按钮时(升级卡片的「一键检测可用升级渠道」)必须显式给字号,
 	// 否则它会继承 h3 的 1.05em 变成一颗大按钮,把标题行撑歪。
@@ -784,21 +784,23 @@ var STYLE_CSS =
 	'.ob-pill-muted{opacity:.7;border-color:rgba(127,127,127,.4)}' +
 	'.ob-btns{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 0}' +
 	'.ob-meta{display:flex;flex-wrap:wrap;gap:.5em;align-items:baseline;margin:.4em 0;font-size:.95em}' +
-	'.ob-hint{margin:10px 0 0;font-size:.85em;opacity:.65;line-height:1.55}' +
 	// 升级卡片中段那条分隔线跟着标题线一起收进内容宽度:原来用负 margin 通栏
 	// (margin:14px -18px)顶到卡片边缘,现在同一张卡片里若一条线通栏、一条线
 	// 不通栏,会显得是没对齐的 bug。
-	'.ob-div{height:1px;background:rgba(127,127,127,.18);margin:14px 0 12px}' +
 	// max-width:升级卡片横跨两列后,渠道行若跟着撑满整屏,行首的名字和行尾的
 	// 状态/按钮之间会拉开一大片空白,读起来要来回扫视。
-	'.ob-chan{border:1px solid rgba(127,127,127,.2);border-radius:8px;overflow:hidden;margin:10px 0 12px;max-width:720px}' +
-	'.ob-chan-row{display:flex;align-items:center;gap:10px;padding:9px 12px}' +
-	'.ob-chan-row+.ob-chan-row{border-top:1px solid rgba(127,127,127,.14)}' +
+	// 4 个渠道各自成块、并排一行(升级卡片横跨整行,宽度够)。窄屏依次收成
+	// 两列、一列。旧版是一个带边框的竖直列表(.ob-chan 画框、行与行之间用
+	// border-top 分隔),4 行叠下来把卡片拉得很高,右边一大片空白却闲着。
+	'.ob-chan{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:12px 0 0}' +
+	'@media (max-width:1150px){.ob-chan{grid-template-columns:repeat(2,1fr)}}' +
+	'@media (max-width:640px){.ob-chan{grid-template-columns:1fr}}' +
+	'.ob-chan-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 12px;border:1px solid rgba(127,127,127,.2);border-radius:8px}' +
 	'.ob-chan-row:hover{background:rgba(127,127,127,.06)}' +
-	'.ob-chan-radio{display:flex;align-items:center;gap:.5em;flex:1;min-width:0;cursor:pointer}' +
+	'.ob-chan-radio{display:flex;align-items:center;gap:.5em;min-width:0;cursor:pointer}' +
 	'.ob-chan-radio input{flex:none;margin:0;cursor:pointer}' +
-	'.ob-chan-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
-	'.ob-chan-stat{font-size:.85em;opacity:.85;white-space:nowrap}' +
+	'.ob-chan-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+	'.ob-chan-stat{margin-left:auto;font-size:.85em;opacity:.85;white-space:nowrap}' +
 	'.ob-chan-ok{color:#2e9e4f}' +
 	'.ob-chan-bad{color:#d04a4a}';
 
@@ -1309,12 +1311,13 @@ return view.extend({
 					if (!installed || cmpVersion(latest, installed) > 0) {
 						versionResult.textContent = fmt('New version available: %s', latest);
 						latestAvailable = latest;
-						updateBtn.disabled = false;
 					} else {
 						versionResult.textContent = tr('Up to date.');
 					}
+					refreshUpdateControls();
 				}).catch(function () {
 					versionResult.textContent = tr('Could not check (network unreachable or blocked).');
+					refreshUpdateControls();
 				});
 			}) }, tr('Check for updates'));
 
@@ -1325,6 +1328,9 @@ return view.extend({
 		// 按钮——不管是"一键检测"链式跑完 4 个,还是单独点某一行,都不希望这期间
 		// 还能再点出一次重叠的探测请求。
 		var channelBtnEls = {};
+		// 单选框本身也要留引用:一键检测跑完会程序化改选"最快的那个渠道",
+		// 光改 selectedChannel 变量不够,界面上的圆点也得跟着动。
+		var channelRadioEls = {};
 
 		// 渠道行自己一列(.ob-chan-name)已经放了渠道名,这里只再写状态本身——不复述
 		// "名称: 结果",那是旧版行挤在窄列里出现的"渠道名+结果"重复,拆宽之后不再需要。
@@ -1341,12 +1347,21 @@ return view.extend({
 			el.textContent = channelStatusSuffix(value);
 			el.title = (r && r.ok === false && r.reason) ? r.reason : '';
 			applyChanResultClass(el, r);
-			if (value === selectedChannel) updateSelectedChannelLine();
+			refreshUpdateControls();
 		}
 
-		function updateSelectedChannelLine() {
-			selectedChannelLine.textContent = channelStatusText(selectedChannel);
-			applyChanResultClass(selectedChannelLine, channelResults[selectedChannel]);
+		// 「检查更新」/「立即更新」能不能点,取决于还有没有走得通的渠道。
+		// 只有"四个渠道全测过、且全都不可用"才拦死:一次都没测、或只测挂了一两个,
+		// 都不足以替用户断定没路可走——他完全可以不测就直接点检查更新。
+		function refreshUpdateControls() {
+			var tested = 0, reachable = 0;
+			CHANNELS.forEach(function (c) {
+				var r = channelResults[c.value];
+				if (r && r !== 'pending') { tested++; if (r.ok === true) reachable++; }
+			});
+			var noRoute = (tested === CHANNELS.length && reachable === 0);
+			checkBtn.disabled = noRoute;
+			updateBtn.disabled = noRoute || !latestAvailable;
 		}
 
 		function probeOneChannel(value) {
@@ -1366,6 +1381,25 @@ return view.extend({
 			});
 		}
 
+		function selectChannel(value) {
+			selectedChannel = value;
+			var radio = channelRadioEls[value];
+			if (radio) radio.checked = true;
+		}
+
+		// 四个都测完后自动改选延迟最低的那个可用渠道。全都不可用时不动选择——
+		// 保留用户原本选中的那个,反正此时「检查更新」「立即更新」已经被
+		// refreshUpdateControls() 一起置灰,选谁都无从下手。
+		function selectFastestChannel() {
+			var best = null;
+			CHANNELS.forEach(function (c) {
+				var r = channelResults[c.value];
+				if (!r || r === 'pending' || r.ok !== true || r.ms == null) return;
+				if (best === null || r.ms < best.ms) best = { value: c.value, ms: r.ms };
+			});
+			if (best) selectChannel(best.value);
+		}
+
 		var probeAllBtn = E('button', { 'class': 'cbi-button cbi-button-neutral',
 			'click': ui.createHandlerFn(self, function () {
 				setProbingDisabled(true);
@@ -1373,7 +1407,10 @@ return view.extend({
 				CHANNELS.forEach(function (c) {
 					chain = chain.then(function () { return probeOneChannel(c.value); });
 				});
-				return chain.then(function () { setProbingDisabled(false); });
+				return chain.then(function () {
+					selectFastestChannel();
+					setProbingDisabled(false);
+				});
 			}) }, tr('Test all update channels'));
 
 		var selectedChannel = CHANNELS[0].value;
@@ -1390,8 +1427,8 @@ return view.extend({
 				radio.checked = (c.value === selectedChannel);
 				radio.addEventListener('change', function () {
 					selectedChannel = c.value;
-					updateSelectedChannelLine();
 				});
+				channelRadioEls[c.value] = radio;
 				var nameEl = E('span', { 'class': 'ob-chan-name' }, c.label);
 				var radioLabel = E('label', { 'class': 'ob-chan-radio', 'for': 'ob-chan-radio-' + i }, [ radio, nameEl ]);
 				var statEl = E('span', { 'class': 'ob-chan-stat' }, channelStatusSuffix(c.value));
@@ -1404,10 +1441,6 @@ return view.extend({
 				channelBtnEls[c.value] = btn;
 				return E('div', { 'class': 'ob-chan-row' }, [ radioLabel, statEl, btn ]);
 			}));
-
-		// 紧挨着「立即更新」摆一份选中渠道的实时状态(.ob-hint),免得有人在某个渠道
-		// 刚探测出不可用之后,还照样点「立即更新」去开始一次注定失败的 76MB 下载。
-		var selectedChannelLine = E('p', { 'class': 'ob-hint' }, channelStatusText(selectedChannel));
 
 		return E('div', {}, [
 			// 注入的命名空间样式表必须是渲染树的第一个子节点:render() 每次都返回一棵
@@ -1484,13 +1517,13 @@ return view.extend({
 					]),
 
 					// 「Open-Box 升级」独立成一张卡片(负责人手绘草图的要求):标题行右侧是
-					// 整张卡片一行标题 + 一个渠道列表:标题行左边是标题 + 检查结果副标题,
-					// 右边是「一键检测可用升级渠道 / 检查更新 / 立即更新」三个按钮;中间一个
-					// 带边框的列表把 4 个渠道各自的探测状态、单选按钮(选中即"立即更新"要用
-					// 的渠道)、单独的「检测」按钮圈在一起(.ob-chan);最下面是选中渠道的实时
-					// 摘要——不再像旧版那样单独一个下拉框选渠道,选择直接并进渠道列表每一行
-					// 的开头(见 channelStatusList 定义处)。这张卡片内容明显比另外两张多,
-					// 横跨两列给了它整行宽度,渠道行不再像旧版 auto-fit 三列时那样被挤成窄条。
+					// 整张卡片就两部分:一行标题(左边标题 + 检查结果副标题,右边
+					// 「一键检测可用升级渠道 / 检查更新 / 立即更新」三个按钮),下面 4 个
+					// 渠道各自成块、并排一行。每块里是单选钮 + 渠道名 + 探测状态 + 单独的
+					// 「检测」按钮——选中的那个就是"立即更新"要用的渠道(取代旧版页面顶部
+					// 那个下拉框)。原先卡片底部还有一行"选中渠道的实时状态",那是渠道行
+					// 挤在窄列里、状态不好读时的补丁;渠道拆成横排大块之后每块自己就写着
+					// 状态,那一行纯属重复,连同它上面的分隔线一起撤掉。
 					E('div', { 'class': 'ob-card ob-card-wide' }, [
 						// 三个按钮必须裹进 .ob-h3-right:h3 是 justify-content:space-between,
 						// 平铺进来的多个子元素会被逐个摊开,变成"标题…按钮…按钮…按钮",而不是
@@ -1502,9 +1535,7 @@ return view.extend({
 							]),
 							E('div', { 'class': 'ob-h3-right' }, [ probeAllBtn, checkBtn, updateBtn ])
 						]),
-						channelStatusList,
-						E('div', { 'class': 'ob-div' }),
-						selectedChannelLine
+						channelStatusList
 					])
 				])
 			])
