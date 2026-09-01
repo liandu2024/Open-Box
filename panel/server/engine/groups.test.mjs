@@ -27,3 +27,14 @@ test('buildProxyGroupModel 汇总所有区域组名', () => {
 test('空输入', () => {
   assert.deepEqual(groupNodesByRegion([]).groups, [])
 })
+
+test('带订阅名前缀的节点仍按地区分组,不按订阅拆开', () => {
+  const nodes = [
+    { tag: '破晓 | 香港-01' }, { tag: '备用 | 香港-01' }, { tag: '破晓 | 美国-01' },
+  ]
+  const { groups } = groupNodesByRegion(nodes)
+  assert.deepEqual(
+    groups.map((g) => ({ name: g.name, n: g.nodeTags.length })),
+    [{ name: '香港', n: 2 }, { name: '美国', n: 1 }],
+  )
+})

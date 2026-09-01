@@ -61,6 +61,16 @@
       <p class="text-base-content/60 text-xs">
         {{ $t('subscriptionRenameTemplateExample', { example: templateExample }) }}
       </p>
+      <!-- 前缀存的是开关而不是文本:存文本的话,用户改了订阅名,前缀还留着旧名字。
+           手工改过名的节点不加前缀——那是用户指定的完整名字。 -->
+      <label class="flex cursor-pointer items-center gap-2 text-xs">
+        <input
+          v-model="usePrefix"
+          type="checkbox"
+          class="checkbox checkbox-xs"
+        />
+        {{ $t('subscriptionRenamePrefixLabel', { sep: '|' }) }}
+      </label>
     </div>
 
     <!-- Region dictionary -->
@@ -281,8 +291,12 @@ const tokenOrder = ref<string[]>(orderFromTemplate(init?.template || DEFAULT_REN
 // 分隔符一起去掉,所以三块牌子常驻不会留下 "美国--01" 这种空档。
 const template = computed(() => tokenOrder.value.join('-'))
 
+// 用订阅名做前缀(「破晓 | 香港-01」),一眼看出节点来自哪个订阅。
+const usePrefix = ref(init?.usePrefix === true)
+
 const options = computed<OpenboxRenameOptions>(() => ({
   template: template.value || DEFAULT_RENAME_TEMPLATE,
+  usePrefix: usePrefix.value,
   unknownLabel: unknownLabel.value.trim() || DEFAULT_UNKNOWN_LABEL,
   seqPad: Number.isFinite(seqPad.value) && seqPad.value > 0 ? Math.floor(seqPad.value) : DEFAULT_SEQ_PAD,
   regionDict: regionRows.value
@@ -325,6 +339,7 @@ const resetToDefaults = () => {
   unknownLabel.value = DEFAULT_UNKNOWN_LABEL
   seqPad.value = DEFAULT_SEQ_PAD
   regionRows.value = toRegionRows(DEFAULT_REGION_DICT)
+  usePrefix.value = false
   featureKeywordsText.value = DEFAULT_FEATURE_KEYWORDS.join(',')
   excludeKeywordsText.value = DEFAULT_EXCLUDE_KEYWORDS.join(',')
 }

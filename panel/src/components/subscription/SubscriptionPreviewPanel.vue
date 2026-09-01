@@ -252,7 +252,7 @@ const props = defineProps<{
   preview: OpenboxSubscriptionPreview | null
   overrides?: Record<string, string>
   // 测速要重新解析订阅,所以要把来源和当前规则一并带上
-  source?: { url?: string; content?: string } | null
+  source?: { url?: string; content?: string; name?: string } | null
   renameOptions?: OpenboxRenameOptions
 }>()
 

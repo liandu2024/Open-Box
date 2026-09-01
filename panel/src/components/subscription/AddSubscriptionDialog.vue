@@ -246,13 +246,19 @@ const saveErrorMessage = ref('')
 // 只认当前模式那一路。以前是"有 content 就优先用 content",在模式切换后会出问题:
 // 切回「订阅」模式时上一次粘贴的内容还留在 content 里,预览和保存都会继续用它,
 // 而界面上根本看不到那段文字。
-const effectiveSource = computed<{ url?: string; content?: string } | null>(() => {
+// 保存时用的名字:留空就回落到默认名。预览要用同一个值,否则「订阅名做前缀」时
+// 预览里的前缀和保存后的不一样。
+const effectiveName = computed(() => name.value.trim() || t('subscriptionDefaultName'))
+
+const effectiveSource = computed<{ url?: string; content?: string; name?: string } | null>(() => {
+  // 只有开了前缀,名字才影响解析结果;否则不带上,免得改个名字就重新拉一次订阅。
+  const withName = renameOptions.value.usePrefix ? { name: effectiveName.value } : {}
   if (sourceMode.value === 'paste') {
     const trimmedContent = content.value.trim()
-    return trimmedContent ? { content: trimmedContent } : null
+    return trimmedContent ? { content: trimmedContent, ...withName } : null
   }
   const trimmedUrl = url.value.trim()
-  return trimmedUrl ? { url: trimmedUrl } : null
+  return trimmedUrl ? { url: trimmedUrl, ...withName } : null
 })
 const hasSource = computed(() => effectiveSource.value !== null)
 
@@ -339,7 +345,7 @@ const handleSave = async () => {
     // 保存哪一路由当前模式决定,和预览用的是同一个来源
     const payload = {
       ...(effectiveSource.value || {}),
-      name: name.value.trim() || t('subscriptionDefaultName'),
+      name: effectiveName.value,
       renameOptions: effectiveRenameOptions.value,
     }
     if (props.subscription) {

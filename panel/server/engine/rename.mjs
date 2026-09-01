@@ -136,6 +136,10 @@ export const renameNodes = (nodes, options = {}) => {
   // 逐条手工改名:originalTag -> 用户指定的名字。改过名的节点不再消耗序号,否则同组
   // 里会出现 香港-01 / 我的香港 / 香港-03 这种跳号。
   const overrides = (options.overrides && typeof options.overrides === 'object') ? options.overrides : {}
+  // 名称前缀:形如「破晓 | 香港-三网-03」,用来一眼看出节点来自哪个订阅。
+  // 只加在模板算出来的名字上,不动手工改过的名字——用户手工指定的就是他要的完整名字,
+  // 再给它套一层前缀等于不认这个指定。
+  const prefix = typeof options.prefix === 'string' ? options.prefix.trim() : ''
   const counters = new Map()
 
   const renamed = nodes.map((node) => {
@@ -158,6 +162,7 @@ export const renameNodes = (nodes, options = {}) => {
       const next = (counters.get(key) || 0) + 1
       counters.set(key, next)
       tag = applyTemplate(template, regionName, featureStr, String(next).padStart(seqPad, '0'))
+      if (prefix) tag = `${prefix} | ${tag}`
     }
     // regionRank 只用于排序,不进最终节点对象
     const regionRank = region ? regionDict.findIndex((r) => r.name === regionName) : -1

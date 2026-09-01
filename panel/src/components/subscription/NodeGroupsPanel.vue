@@ -19,6 +19,17 @@
       {{ error }}
     </p>
 
+    <!-- 服务端把「按当前节点跑一遍」的结果一并返回。落地不了的组必须说出来:
+         成员是按名字引用的,节点一改名(比如打开订阅名前缀)引用就会悬空,
+         组会被静默丢掉——不提示的话,用户只会发现配置里少了个组,却不知道为什么。 -->
+    <p
+      v-for="item in dropped"
+      :key="item.name"
+      class="text-warning text-sm"
+    >
+      {{ $t(item.reason === 'cycle' ? 'groupDroppedCycle' : 'groupDroppedEmpty', { name: item.name }) }}
+    </p>
+
     <div
       v-if="loading && !groups.length"
       class="flex justify-center py-10"
@@ -265,6 +276,8 @@ const groups = ref<OpenboxUserGroup[]>([])
 const availableNodes = ref<string[]>([])
 const loading = ref(false)
 const error = ref('')
+// 保存后服务端回报的「落地不了的组」,见模板里的说明
+const dropped = ref<Array<{ name: string; reason: string }>>([])
 
 const load = async () => {
   loading.value = true
@@ -393,6 +406,7 @@ const invertSelection = () => {
 const persist = async (next: OpenboxUserGroup[]) => {
   const res = await saveNodeGroups(next)
   groups.value = res.groups
+  dropped.value = res.dropped || []
   // 组的构成会改变生成的配置,和改订阅/分流一样要提示需要重新部署
   routingPendingDeploy.value = true
   return res

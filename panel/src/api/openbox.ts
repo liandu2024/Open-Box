@@ -66,6 +66,9 @@ export interface OpenboxRenameOptions {
   // 逐条禁用:按原名记录,不导入也不占序号。与 excludeKeywords 分开——一个是规则,
   // 一个是手动例外。
   disabled?: string[]
+  // 用订阅名做节点名前缀(「破晓 | 香港-01」)。存开关而不是前缀文本:存文本的话,
+  // 改了订阅名前缀还留着旧名字。
+  usePrefix?: boolean
   // 旧档案里的两层结构,只为兼容读取而保留(见 server/engine/rename.mjs 的 toFeatureKeywords)
   featureDict?: OpenboxRenameFeatureEntry[]
   template?: string
@@ -228,6 +231,8 @@ export const fetchSubscriptions = async (): Promise<OpenboxSubscription[]> => {
 export const previewSubscription = async (payload: {
   url?: string
   content?: string
+  // 只在 renameOptions.usePrefix 打开时有意义:服务端拿它当节点名前缀。
+  name?: string
   renameOptions?: OpenboxRenameOptions
 }): Promise<OpenboxSubscriptionPreview> => {
   return requestJson<OpenboxSubscriptionPreview>('/api/openbox/subscriptions/preview', {
@@ -276,6 +281,7 @@ export interface OpenboxLatencyResult {
 export const testNodeLatency = async (payload: {
   url?: string
   content?: string
+  name?: string
   renameOptions?: OpenboxRenameOptions
   tags: string[]
   timeoutMs?: number

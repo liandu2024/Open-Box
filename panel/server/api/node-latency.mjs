@@ -67,7 +67,7 @@ export const registerNodeLatencyRoutes = (app, { ctx, paths, fetchImpl = globalT
     let nodes
     try {
       const resolved = await resolveNodes(
-        { url: body.url, content: body.content },
+        { url: body.url, content: body.content, name: body.name },
         fetchImpl,
         body.renameOptions,
         lookup,

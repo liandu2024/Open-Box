@@ -177,10 +177,21 @@ export const normalizeSource = ({ url, content }) => {
 // preview/create/refresh 共用的解析管道:优先用直传的 content,否则用 fetchImpl 拉取 url;
 // 再走 parseSubscription → renameNodes/previewRename。拉取或校验失败在这里抛出,
 // 调用方在 store 写入之前捕获,天然保证"失败不破坏已存状态"。
-export const resolveNodes = async ({ url, content }, fetchImpl, renameOptions, lookup) => {
+// name:订阅名称。renameOptions.usePrefix 打开时用它做节点名前缀(「破晓 | 香港-01」)。
+// 存的是开关而不是前缀文本本身——存文本的话,用户改了订阅名,前缀还留着旧名字。
+export const resolveNodes = async ({ url, content, name }, fetchImpl, renameOptions, lookup) => {
   // renameNodes/groupNodesByRegion 的默认参数只兜底 undefined;显式传 null(合法 JSON 值)
   // 会在其内部触发 "options.xxx of null" —— 这里统一归一化,避免因此误判 400。
-  const opts = renameOptions && typeof renameOptions === 'object' ? renameOptions : undefined
+  const raw = renameOptions && typeof renameOptions === 'object' ? renameOptions : undefined
+  // prefix 是「usePrefix 开关 + 订阅名」的派生值,不进持久化的 renameOptions:
+  // 存下前缀文本的话,订阅一改名,节点前缀还挂着旧名字。这里先把它剥掉,
+  // 免得历史记录里残留的 prefix 在开关关掉之后还继续生效。
+  const base = raw
+    ? Object.fromEntries(Object.entries(raw).filter(([k]) => k !== 'prefix'))
+    : undefined
+  const opts = base && base.usePrefix && typeof name === 'string' && name.trim()
+    ? { ...base, prefix: name.trim() }
+    : base
   // 过滤必须发生在改名之前:renameNodes / previewRename 按下标一一对应,
   // 而且被过滤掉的条目连预览表都不该出现——它们压根不算节点。
   const finish = (parsed) => {
@@ -192,7 +203,7 @@ export const resolveNodes = async ({ url, content }, fetchImpl, renameOptions, l
       disabled: disabled.map((n) => ({ name: n.originalTag })),
       format: parsed.format,
       preview: previewRename(kept, opts),
-      renameOptions: opts,
+      renameOptions: base,
     }
   }
 
@@ -248,7 +259,7 @@ export const registerSubscriptionRoutes = (app, { store, fetchImpl = globalThis.
   router.post('/preview', async (req, res) => {
     try {
       const { url, content, renameOptions } = req.body || {}
-      const resolved = await resolveNodes({ url, content }, fetchImpl, renameOptions, lookup)
+      const resolved = await resolveNodes({ url, content, name: req.body?.name }, fetchImpl, renameOptions, lookup)
       const { renamed, skipped, excluded, disabled, format, preview } = resolved
       const { groups } = groupNodesByRegion(renamed, resolved.renameOptions)
       res.json({
@@ -274,7 +285,7 @@ export const registerSubscriptionRoutes = (app, { store, fetchImpl = globalThis.
       const source = normalizeSource({ url, content })
       if (typeof name !== 'string' || !name.trim()) throw new Error('name is required')
 
-      const resolved = await resolveNodes(source, fetchImpl, renameOptions, lookup)
+      const resolved = await resolveNodes({ ...source, name }, fetchImpl, renameOptions, lookup)
       const { renamed, skipped, format } = resolved
 
       const id = randomUUID()
@@ -356,7 +367,7 @@ export const registerSubscriptionRoutes = (app, { store, fetchImpl = globalThis.
         return
       }
 
-      const resolved = await resolveNodes(source, fetchImpl, renameOptions, lookup)
+      const resolved = await resolveNodes({ ...source, name }, fetchImpl, renameOptions, lookup)
       const { renamed, skipped, format } = resolved
 
       const updated = {
@@ -396,7 +407,7 @@ export const registerSubscriptionRoutes = (app, { store, fetchImpl = globalThis.
     try {
       const existing = subs[idx]
       const requestedRenameOptions = (req.body && req.body.renameOptions) || existing.renameOptions || {}
-      const resolved = await resolveNodes(existingSource(existing), fetchImpl, requestedRenameOptions, lookup)
+      const resolved = await resolveNodes({ ...existingSource(existing), name: existing.name }, fetchImpl, requestedRenameOptions, lookup)
       const { renamed, skipped, format } = resolved
       const renameOptions = resolved.renameOptions || {}
 

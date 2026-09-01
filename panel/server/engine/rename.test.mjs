@@ -260,3 +260,28 @@ test('禁用的节点不占序号', () => {
   const { kept } = excludeNodes(nodes, { disabled: ['香港02'] })
   assert.deepEqual(renameNodes(kept).map((n) => n.tag), ['香港-01', '香港-02'])
 })
+
+// -------- 名称前缀 --------
+
+test('prefix 加在模板算出来的名字前面,格式「前缀 | 名字」', () => {
+  const out = renameNodes(['香港01', '香港02'].map(mk), { prefix: '破晓' })
+  assert.deepEqual(out.map((n) => n.tag), ['破晓 | 香港-01', '破晓 | 香港-02'])
+})
+
+test('手工改过名的不加前缀:用户指定的就是完整名字', () => {
+  const out = renameNodes(['香港01', '香港02'].map(mk), {
+    prefix: '破晓', overrides: { 香港01: '我的香港' },
+  })
+  assert.deepEqual(out.map((n) => n.tag), ['我的香港', '破晓 | 香港-01'])
+})
+
+test('前缀为空串/纯空白时不加任何东西', () => {
+  assert.deepEqual(renameNodes(['香港01'].map(mk), { prefix: '   ' }).map((n) => n.tag), ['香港-01'])
+  assert.deepEqual(renameNodes(['香港01'].map(mk), {}).map((n) => n.tag), ['香港-01'])
+})
+
+test('前缀不影响地区识别与排序:匹配看的是原名', () => {
+  const dict = [{ code: 'US', name: '美国', keywords: ['美国'] }, { code: 'HK', name: '香港', keywords: ['香港'] }]
+  const out = renameNodes(['香港01', '美国01'].map(mk), { prefix: 'P', regionDict: dict })
+  assert.deepEqual(out.map((n) => n.tag), ['P | 美国-01', 'P | 香港-01'])
+})
