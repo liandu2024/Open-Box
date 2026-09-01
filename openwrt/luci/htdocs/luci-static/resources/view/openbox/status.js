@@ -532,6 +532,21 @@ function progressDetail(status) {
 	return '';
 }
 
+// 状态文件读不到时的退路:直接把日志里最后一条 [open-box] 行当进度文案。
+// update.sh 打的本来就是给人看的中文("正在下载…""校验通过。""解包…"),不需要另做
+// 映射;而日志在真机上被证明是读得到的(失败弹窗里的"最近的更新日志"就是它)。
+// 只认带前缀的行,跳过 wget 之类子命令的输出。
+function lastProgressLine(logTail) {
+	var lines = String(logTail || '').split('\n');
+	for (var i = lines.length - 1; i >= 0; i--) {
+		var line = lines[i].replace(/^\s+|\s+$/g, '');
+		if (line.indexOf('[open-box]') === 0) {
+			return line.slice('[open-box]'.length).replace(/^\s+/, '');
+		}
+	}
+	return '';
+}
+
 // 判断"当前轮询到的状态是否应该被当成 starting 阶段卡死"的纯函数,不依赖任何
 // DOM/LuCI 全局(不摸 ui/fs/window),方便脱离页面渲染单独做单元验证——这台开发机
 // 上没有真正的 LuCI 运行环境,页面本身无法渲染,这类纯函数是能被独立验证的最小
@@ -1140,6 +1155,10 @@ return view.extend({
 			// 自己那部分结论,不会互相打架、也不会有一个提前把另一个的结论吞掉。
 			function handleStatusUnreadable() {
 				if (finished) return;
+				// 必须置 finished:否则稍后 fs.exec 的 XHR 超时会走 catch 分支,再弹一个
+				// "更新失败:XHR request timed out" 把这个更准确的结论盖掉(真机上就是
+				// 这么发生的)。
+				finished = true;
 				stopProgressPolling();
 				readUpdateLogTail().then(function (logRes) {
 					if (finished) return;
@@ -1154,6 +1173,9 @@ return view.extend({
 			var startingElapsedMs = 0;
 			var statusReadFailMs = 0;
 			var statusUnreadableShown = false;
+			// 状态文件是否至少成功读到过一次。没有的话进度就完全没法显示(真机上就是
+			// 这样:弹窗一直停在"正在启动更新…"),这时改用日志里的最后一行顶上。
+			var statusEverRead = false;
 
 			// 状态轮询(进度文案/进度条/取消按钮,以及"卡在 starting"/"读不到状态"两路
 			// 兜底)在这里立即起跑,和下面触发 fs.exec 的 runUpdate() 完全并行——不再
@@ -1175,6 +1197,7 @@ return view.extend({
 						// 是可读的,之前累积的"读取失败"计时不再成立,归零——只有连续
 						// 的读取失败才应该攒够阈值触发 handleStatusUnreadable()。
 						statusReadFailMs = 0;
+						statusEverRead = true;
 						applyStatus(res.status);
 						var stillStarting = !res.status.stage || res.status.stage === 'starting';
 						startingElapsedMs = stillStarting ? startingElapsedMs + UPDATE_STATUS_POLL_INTERVAL_MS : 0;
@@ -1202,6 +1225,11 @@ return view.extend({
 					logBox.style.display = '';
 					logBox.textContent = logTail;
 				}
+				// 状态文件一次都没读成功时的进度退路(见 lastProgressLine 的说明)。
+				// 状态文件正常时不插手——那条路径信息更全(阶段/字节数/进度条/取消按钮)。
+				if (finished || statusEverRead) return;
+				var line = lastProgressLine(logTail);
+				if (line) progressBody.textContent = line;
 			});
 
 			// fs.exec 本身的结果现在只是参考信息:resolve 时顺手把文案从"正在启动
@@ -1216,25 +1244,27 @@ return view.extend({
 				if (finished) return;
 				progressBody.textContent = tr('Update started. This may take a few minutes (about 80MB to download).');
 			}).catch(function (err) {
-				if (finished || updateObserved) {
-					if (window.console && window.console.debug) {
-						window.console.debug('[open-box] fs.exec for update settled with an error, but the ' +
-							'status file shows the update is progressing/finished — ignoring it:',
-							err && err.message || err);
-					}
-					return;
-				}
-				finished = true;
-				stopProgressPolling();
-				ui.hideModal();
+				if (finished) return;
 				var msg = String(err && err.message || err);
+				// 脚本压根不存在是明确且立即成立的失败,只有这一种情况由 exec 直接下结论。
 				if (/not found|No such file/i.test(msg)) {
+					finished = true;
+					stopProgressPolling();
+					ui.hideModal();
 					ui.addNotification(null, E('p', tr('Update script not found. Run it manually over SSH.')), 'error');
 					return;
 				}
-				readUpdateLogTail().then(function (logRes) {
-					showUpdateFailure(fmt('Update failed: %s', msg), logRes.text);
-				});
+				// 其余一律不据此宣判失败。fs.exec 是同步等待的 XHR,而 update.sh 要跑
+				// 几分钟,超时是必然会发生的正常现象;真机上就是它把一次完整成功的更新
+				// (日志里 v0.1.42 → v0.1.43 一路走完)报成了"更新失败:XHR request
+				// timed out"。是否成功的权威依据只有一个:meta.json 里的版本号有没有变,
+				// 那由 pollForUpdateCompletion() 独立判定。这里只把 XHR 的错误当噪音记
+				// 到控制台,并把文案换成"已在后台运行",继续等真正的结论。
+				if (window.console && window.console.debug) {
+					window.console.debug('[open-box] fs.exec 的 XHR 出错(通常就是超时),' +
+						'不作为更新失败的依据,继续等待版本号判定:', msg);
+				}
+				progressBody.textContent = tr('Update started. This may take a few minutes (about 80MB to download).');
 			});
 
 			return completion.then(function (result) {
