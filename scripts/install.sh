@@ -324,9 +324,20 @@ if [ "$CHANNEL" = "mirror" ] && [ -z "$MIRROR_PREFIX" ]; then
   select_builtin_mirror
 fi
 
-info "下载发布包:$ASSET"
-fetch_to_file "$(build_url "$ASSET_URL")" "$TMP_DL/$ASSET" || die "下载安装包失败:$ASSET_URL"
-fetch_to_file "$(build_url "$SHA_URL")" "$TMP_DL/$ASSET.sha256" || die "下载校验文件失败:$SHA_URL"
+# releases/latest/download/<资产> 是会动的指针:正文与 .sha256 是两次请求,中间只要
+# 发布了新版本,就会拿到"旧正文 + 新校验和",校验失败但两个文件其实都没坏(update.sh
+# 里有同一段说明,那边是真机上实际踩到的)。正文前后各取一次校验和,不一致就重下。
+_dl_round=0
+while :; do
+  _dl_round=$((_dl_round + 1))
+  fetch_to_file "$(build_url "$SHA_URL")" "$TMP_DL/$ASSET.sha256.pre" || die "下载校验文件失败:$SHA_URL"
+  info "下载发布包:$ASSET"
+  fetch_to_file "$(build_url "$ASSET_URL")" "$TMP_DL/$ASSET" || die "下载安装包失败:$ASSET_URL"
+  fetch_to_file "$(build_url "$SHA_URL")" "$TMP_DL/$ASSET.sha256" || die "下载校验文件失败:$SHA_URL"
+  cmp -s "$TMP_DL/$ASSET.sha256.pre" "$TMP_DL/$ASSET.sha256" && break
+  [ "$_dl_round" -ge 3 ] && die "连续三次在下载过程中赶上新版本发布,已放弃安装,系统未做任何改动。稍后重试即可。"
+  info "下载期间发布了更新的版本,重新下载最新的安装包..."
+done
 
 # ---------- 校验(通过之前绝不允许写 /opt) ----------
 if command -v sha256sum >/dev/null 2>&1; then

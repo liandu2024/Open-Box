@@ -875,17 +875,43 @@ if [ "$CHANNEL" = "mirror" ] && [ -z "$MIRROR_PREFIX" ]; then
   select_builtin_mirror
 fi
 
-info "下载发布包:$ASSET"
-ASSET_DL_URL=$(build_url "$ASSET_URL")
-ASSET_TOTAL=$(probe_content_length "$ASSET_DL_URL")
-case "$ASSET_TOTAL" in ''|*[!0-9]*) ASSET_TOTAL='' ;; esac
-download_with_progress "$ASSET_DL_URL" "$TMP_DL/$ASSET" "$ASSET_TOTAL" || die "下载升级包失败:$ASSET_URL。现有安装未改动。"
+# releases/latest/download/<资产> 是个**会动的指针**:78MB 正文要下几分钟,几十字节的
+# .sha256 是另一次请求。两次请求之间只要发布了新版本,拿到的就是"旧正文 + 新校验和",
+# 校验必然失败。真机 192.168.3.35 上就这么失败过一次:v0.1.49 的包配上 v0.1.50 的
+# 校验和,报"SHA256 不匹配",而两个文件各自都是完好的。
+#
+# 办法:正文前后各取一次校验和,两次不一致就说明中途发新版了,丢掉重下(最多三轮)。
+# 这样仍然是"每次都升到最新版、隔多少个版本都能直接升",只是不再把跨越发布边界的
+# 那一次误判成文件损坏。
+_dl_round=0
+while :; do
+  _dl_round=$((_dl_round + 1))
 
-check_cancel_and_abort
+  fetch_to_file "$(build_url "$SHA_URL")" "$TMP_DL/$ASSET.sha256.pre" || die "下载校验文件失败:$SHA_URL。现有安装未改动。"
+  check_cancel_and_abort
 
-fetch_to_file "$(build_url "$SHA_URL")" "$TMP_DL/$ASSET.sha256" || die "下载校验文件失败:$SHA_URL。现有安装未改动。"
+  info "下载发布包:$ASSET"
+  ASSET_DL_URL=$(build_url "$ASSET_URL")
+  ASSET_TOTAL=$(probe_content_length "$ASSET_DL_URL")
+  case "$ASSET_TOTAL" in ''|*[!0-9]*) ASSET_TOTAL='' ;; esac
+  download_with_progress "$ASSET_DL_URL" "$TMP_DL/$ASSET" "$ASSET_TOTAL" || die "下载升级包失败:$ASSET_URL。现有安装未改动。"
 
-check_cancel_and_abort
+  check_cancel_and_abort
+
+  fetch_to_file "$(build_url "$SHA_URL")" "$TMP_DL/$ASSET.sha256" || die "下载校验文件失败:$SHA_URL。现有安装未改动。"
+
+  check_cancel_and_abort
+
+  # 两次校验和一致 = 这一轮没跨过发布边界,拿到的是同一个版本的正文与校验和
+  if cmp -s "$TMP_DL/$ASSET.sha256.pre" "$TMP_DL/$ASSET.sha256"; then
+    break
+  fi
+  if [ "$_dl_round" -ge 3 ]; then
+    die "连续三次在下载过程中赶上新版本发布,已放弃升级,现有安装未做任何改动。稍后重试即可。"
+  fi
+  info "下载期间发布了更新的版本,重新下载最新的升级包..."
+done
+
 write_status verifying "" "" ""
 
 if command -v sha256sum >/dev/null 2>&1; then
