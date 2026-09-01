@@ -88,6 +88,8 @@ export interface OpenboxNodeSummary {
   originalTag: string
   type: string
   server: string
+  // 节点延迟测试要用:光有主机不知道端口
+  server_port?: number
 }
 
 export interface OpenboxRenamePreviewEntry {
@@ -257,6 +259,26 @@ export const updateSubscription = async (
     method: 'PATCH',
     body: JSON.stringify(payload),
   })
+}
+
+export interface OpenboxLatencyResult {
+  ok: boolean
+  ms?: number
+  error?: string
+}
+
+// 节点还没部署进内核,拿不到 Clash API 的 /proxies/{name}/delay,所以由服务端直接对
+// server:port 做 TCP 握手计时。测的是"到节点入口的可达性与往返时延",不是代理速度,
+// 也不校验密码/协议是否正确(见 server/api/node-latency.mjs)。
+export const testNodeLatency = async (
+  targets: Array<{ server: string; port: number }>,
+  timeoutMs?: number,
+): Promise<OpenboxLatencyResult[]> => {
+  const data = await requestJson<{ results: OpenboxLatencyResult[] }>('/api/openbox/nodes/latency', {
+    method: 'POST',
+    body: JSON.stringify(timeoutMs ? { targets, timeoutMs } : { targets }),
+  })
+  return data.results
 }
 
 export const deleteSubscription = async (id: string): Promise<{ ok: boolean }> => {

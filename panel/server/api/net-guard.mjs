@@ -146,6 +146,11 @@ export const assertPublicHost = async (hostname, { lookup = dns.lookup } = {}) =
       throw new Error(`host "${trimmed}" resolves to a non-public address (${address})`)
     }
   }
+
+  // 把解析结果返回给调用方:需要"校验过什么就连什么"的场景(节点延迟测试)必须拿到
+  // 这些地址直接建连,否则校验与建连之间会再解析一次,留下 DNS rebinding 的窗口。
+  // 原有调用方忽略返回值,不受影响。
+  return records
 }
 
 // 协议限定 http/https + 解析并校验 hostname 的每一个地址。校验通过时返回解析出的 URL

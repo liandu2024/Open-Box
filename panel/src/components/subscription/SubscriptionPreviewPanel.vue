@@ -69,24 +69,45 @@
 
         <!-- 有效 / 过滤 合并成同一张表的两个页签:它们是同一份订阅的两种去向,
              分成两个方框看要来回找,而且过滤那块原本挤在表格上面把表压得更矮。 -->
-        <div
-          role="tablist"
-          class="tabs-box tabs tabs-sm self-start"
-        >
-          <a
-            role="tab"
-            :class="['tab', listTab === 'kept' && 'tab-active']"
-            @click="listTab = 'kept'"
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div
+            role="tablist"
+            class="tabs-box tabs tabs-sm"
           >
-            {{ $t('subscriptionPreviewTabKept', { count: preview.preview.length }) }}
-          </a>
-          <a
-            role="tab"
-            :class="['tab', listTab === 'excluded' && 'tab-active']"
-            @click="listTab = 'excluded'"
+            <a
+              role="tab"
+              :class="['tab', listTab === 'kept' && 'tab-active']"
+              @click="listTab = 'kept'"
+            >
+              {{ $t('subscriptionPreviewTabKept', { count: preview.preview.length }) }}
+            </a>
+            <a
+              role="tab"
+              :class="['tab', listTab === 'excluded' && 'tab-active']"
+              @click="listTab = 'excluded'"
+            >
+              {{ $t('subscriptionPreviewTabExcluded', { count: preview.excluded?.length || 0 }) }}
+            </a>
+          </div>
+
+          <button
+            v-if="listTab === 'kept'"
+            type="button"
+            class="btn btn-sm"
+            :disabled="testingAll || !preview.nodes.length"
+            :title="$t('subscriptionLatencyHint')"
+            @click="testAll"
           >
-            {{ $t('subscriptionPreviewTabExcluded', { count: preview.excluded?.length || 0 }) }}
-          </a>
+            <span
+              v-if="testingAll"
+              class="loading loading-spinner loading-xs"
+            />
+            <BoltIcon
+              v-else
+              class="h-4 w-4"
+            />
+            {{ $t('subscriptionLatencyTestAll') }}
+          </button>
         </div>
 
         <!-- The hero: original -> renamed mapping table -->
@@ -136,6 +157,31 @@
                         :value="overrides?.[entry.originalTag] ?? entry.newTag"
                         @input="onRename(entry, ($event.target as HTMLInputElement).value)"
                       />
+                      <!-- 独立测速:结果就地显示在按钮旁,不另开一列——一列只为几个数字
+                           占掉的宽度,比把数字挤在按钮边上更浪费。 -->
+                      <span
+                        v-if="latency[entry.originalTag]"
+                        :class="['shrink-0 text-xs whitespace-nowrap', latencyClass(entry.originalTag)]"
+                      >
+                        {{ latencyText(entry.originalTag) }}
+                      </span>
+                      <button
+                        type="button"
+                        class="btn btn-ghost btn-square btn-sm shrink-0"
+                        :disabled="testingAll || testing.has(entry.originalTag)"
+                        :aria-label="$t('subscriptionLatencyTestOne')"
+                        :title="$t('subscriptionLatencyHint')"
+                        @click="testOne(entry.originalTag)"
+                      >
+                        <span
+                          v-if="testing.has(entry.originalTag)"
+                          class="loading loading-spinner loading-xs"
+                        />
+                        <BoltIcon
+                          v-else
+                          class="h-4 w-4"
+                        />
+                      </button>
                     </span>
                   </td>
                 </tr>
@@ -149,8 +195,9 @@
 </template>
 
 <script setup lang="ts">
-import type { OpenboxSubscriptionPreview } from '@/api/openbox'
-import { ArrowRightIcon, MagnifyingGlassIcon } from '@heroicons/vue/24/outline'
+import type { OpenboxLatencyResult, OpenboxSubscriptionPreview } from '@/api/openbox'
+import { testNodeLatency } from '@/api/openbox'
+import { ArrowRightIcon, BoltIcon, MagnifyingGlassIcon } from '@heroicons/vue/24/outline'
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -177,6 +224,71 @@ const rows = computed(() => {
   }
   return props.preview?.preview || []
 })
+
+// 节点延迟。按原名(originalTag)存,和改名覆盖用同一个键——预览行、节点摘要、
+// 覆盖表三者都靠它对齐。
+const latency = ref<Record<string, OpenboxLatencyResult>>({})
+const testing = ref(new Set<string>())
+const testingAll = ref(false)
+
+// 预览行只有原名和新名,连不上哪儿要去 nodes 里取 server/server_port。
+const targetOf = (originalTag: string) => {
+  const node = props.preview?.nodes.find((n) => n.originalTag === originalTag)
+  if (!node?.server || !node.server_port) return null
+  return { server: node.server, port: node.server_port }
+}
+
+const latencyText = (originalTag: string) => {
+  const r = latency.value[originalTag]
+  if (!r) return ''
+  return r.ok ? `${r.ms}ms` : t('subscriptionLatencyFailed')
+}
+const latencyClass = (originalTag: string) => {
+  const r = latency.value[originalTag]
+  if (!r) return ''
+  if (!r.ok) return 'text-error'
+  const ms = r.ms ?? 0
+  return ms < 200 ? 'text-success' : ms < 500 ? 'text-warning' : 'text-error'
+}
+
+const testOne = async (originalTag: string) => {
+  const target = targetOf(originalTag)
+  if (!target || testing.value.has(originalTag)) return
+  testing.value = new Set(testing.value).add(originalTag)
+  try {
+    const [result] = await testNodeLatency([target])
+    latency.value = { ...latency.value, [originalTag]: result }
+  } catch {
+    latency.value = { ...latency.value, [originalTag]: { ok: false, error: 'request failed' } }
+  } finally {
+    const next = new Set(testing.value)
+    next.delete(originalTag)
+    testing.value = next
+  }
+}
+
+// 一键测速:一次请求把全部目标交给服务端,由它按固定并发跑完。逐个发请求会让路由器
+// 同时扛住几十条 HTTP 连接,得不偿失。
+const testAll = async () => {
+  if (testingAll.value) return
+  const rows = props.preview?.preview || []
+  const pairs = rows
+    .map((row) => ({ originalTag: row.originalTag, target: targetOf(row.originalTag) }))
+    .filter((x): x is { originalTag: string; target: { server: string; port: number } } => x.target !== null)
+  if (!pairs.length) return
+
+  testingAll.value = true
+  try {
+    const results = await testNodeLatency(pairs.map((p) => p.target))
+    const next = { ...latency.value }
+    pairs.forEach((p, i) => { next[p.originalTag] = results[i] })
+    latency.value = next
+  } catch {
+    // 整批失败(比如面板本身不可达)不逐条标红:那会让人以为是节点全挂了
+  } finally {
+    testingAll.value = false
+  }
+}
 
 // 改回模板算出来的名字就等于取消覆盖(交由父组件按空值删除),这样用户不必知道
 // "怎么撤销"——把名字改回去就行。

@@ -237,7 +237,8 @@ const rebuildNodePool = (existingNodes, subscriptionsInOrder, subscriptionId, ne
   return dedupeNodeTags(merged)
 }
 
-const nodeSummary = (n) => ({ tag: n.tag, originalTag: n.originalTag, type: n.type, server: n.server })
+// server_port 是给节点延迟测试用的(前端要拿它去连);少了它前端只知道主机不知道端口。
+const nodeSummary = (n) => ({ tag: n.tag, originalTag: n.originalTag, type: n.type, server: n.server, server_port: n.server_port })
 
 export const registerSubscriptionRoutes = (app, { store, fetchImpl = globalThis.fetch, lookup = dns.lookup } = {}) => {
   const router = express.Router({ caseSensitive: true })

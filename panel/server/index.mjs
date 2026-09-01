@@ -7,6 +7,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { fileURLToPath } from 'node:url'
 import { WebSocket, WebSocketServer } from 'ws'
 import { registerDeployRoutes } from './api/deploy.mjs'
+import { registerNodeLatencyRoutes } from './api/node-latency.mjs'
 import { registerPenetrationRoutes } from './api/penetration.mjs'
 import { registerProfileRoutes } from './api/profile.mjs'
 import { registerServiceRoutes } from './api/service.mjs'
@@ -911,6 +912,7 @@ registerProfileRoutes(app, { store })
 registerDeployRoutes(app, { store, ctx: obCtx, paths: obPaths })
 registerServiceRoutes(app, { ctx: obCtx, paths: obPaths })
 registerPenetrationRoutes(app, { store, ctx: obCtx, paths: obPaths, fetchImpl: globalThis.fetch })
+registerNodeLatencyRoutes(app)
 
 // /api/* 专用 JSON 错误兜底:必须注册在所有路由之后、SPA fallback 之前。任何路由处理器里
 // 未被自己 try/catch 的异常(同步抛出,或调用 next(err))原本会落到 Express 默认错误处理器,
