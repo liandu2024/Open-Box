@@ -153,3 +153,57 @@ test('rollbackToDirect 不移除面板 LAN 放行规则(否则自断恢复通道
     '不得移除面板放行规则',
   )
 })
+
+// -------- 规则集补齐(部署第 2 步)--------
+// 真机 192.168.3.35 上撞到的原始故障:rulesetDir 整个不存在,内核在校验阶段 FATAL
+// "open /opt/open-box/data/rulesets/geosite-cn.srs: no such file or directory"。
+// 此前全项目没有任何地方创建这些文件,默认档案永远部署不成功。
+
+const configWithRulesets = {
+  log: { level: 'warn' },
+  outbounds: [{ type: 'direct', tag: 'direct' }],
+  route: {
+    rules: [{ rule_set: ['geosite-cn'], outbound: 'direct' }],
+    rule_set: [{
+      type: 'local', tag: 'geosite-cn', format: 'binary',
+      path: '/opt/open-box/data/rulesets/geosite-cn.srs',
+    }],
+  },
+}
+
+test('规则集缺失时会先补齐,再进入校验', async () => {
+  const ctx = okCtx()
+  const fetched = []
+  const fetchImpl = async (url) => {
+    fetched.push(url)
+    return { ok: true, status: 200, arrayBuffer: async () => Buffer.from('SRS-BINARY') }
+  }
+  const r = await deployConfig(ctx, paths, { config: configWithRulesets, profile, fetchImpl })
+  assert.equal(r.ok, true)
+  assert.equal(r.stage, 'running')
+  assert.equal(fetched.length, 1)
+  assert.ok(Buffer.isBuffer(ctx.files['/opt/open-box/data/rulesets/geosite-cn.srs']))
+})
+
+test('规则集拉不下来 → stage:rulesets,且不动系统(没落盘、没改 DNS/防火墙、没重启内核)', async () => {
+  const ctx = okCtx()
+  const fetchImpl = async () => { throw new Error('ECONNREFUSED') }
+  const r = await deployConfig(ctx, paths, { config: configWithRulesets, profile, fetchImpl })
+  assert.equal(r.ok, false)
+  assert.equal(r.stage, 'rulesets')
+  assert.match(r.message, /geosite-cn/)
+  // 这一步排在校验之前,系统状态必须完全没被碰过
+  assert.equal(ctx.writes.length, 0)
+  assert.ok(!cmds(ctx).some((c) => c.includes('restart')))
+  assert.ok(!cmds(ctx).some((c) => c.includes('uci')))
+})
+
+test('规则集已存在时不再下载(GitHub 连不上也能照常部署)', async () => {
+  const ctx = okCtx()
+  ctx.files['/opt/open-box/data/rulesets/geosite-cn.srs'] = Buffer.from('already-here')
+  let called = false
+  const fetchImpl = async () => { called = true; throw new Error('不该被调用') }
+  const r = await deployConfig(ctx, paths, { config: configWithRulesets, profile, fetchImpl })
+  assert.equal(r.ok, true)
+  assert.equal(called, false)
+})

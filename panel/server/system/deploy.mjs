@@ -3,6 +3,7 @@ import { validateConfigObject, attributeBadNodes } from './validate.mjs'
 import { restartService, stopService, serviceStatus } from './service.mjs'
 import { applyDnsTakeover, restoreDnsTakeover, dnsTakeoverBackupPath } from './dns-takeover.mjs'
 import { applyPanelLanRule, applyIpv6Block, removeProxyRules } from './firewall.mjs'
+import { ensureRulesets } from './rulesets.mjs'
 
 export const rollbackToDirect = async (ctx, paths) => {
   const actions = []
@@ -13,14 +14,23 @@ export const rollbackToDirect = async (ctx, paths) => {
   return { ok: true, actions }
 }
 
-export const deployConfig = async (ctx, paths, { config, profile }) => {
+export const deployConfig = async (ctx, paths, { config, profile, fetchImpl } = {}) => {
   // 1. 冲突检测
   const { conflicts, hasRunning } = await detectConflicts(ctx)
   if (hasRunning) {
     return { ok: false, stage: 'conflict', message: `请先停止:${conflicts.map((c) => c.label).join('、')}` }
   }
 
-  // 2. 校验(失败则归因,不动系统)
+  // 2. 补齐规则集
+  // 必须排在校验之前:sing-box check 会真的去打开每个 rule_set 的 .srs,缺文件就直接
+  // FATAL,而那条报错("open .../geosite-cn.srs: no such file or directory")对用户来说
+  // 完全不知所云。这一步不动系统:只往 rulesetDir 里写文件,失败就原地返回。
+  const rulesets = await ensureRulesets(ctx, config, fetchImpl ? { fetchImpl } : {})
+  if (!rulesets.ok) {
+    return { ok: false, stage: 'rulesets', message: rulesets.message }
+  }
+
+  // 3. 校验(失败则归因,不动系统)
   // mkdirp 必须在写 candidate 文件之前:全新安装时 paths.etc 尚不存在,
   // 之前 mkdirp 排在步骤 3 会让这里的 writeFile 在真实 fs 上 ENOENT(mock 掩盖了此问题)。
   await ctx.mkdirp(paths.etc)
@@ -32,10 +42,10 @@ export const deployConfig = async (ctx, paths, { config, profile }) => {
   }
 
   try {
-    // 3. 落盘
+    // 4. 落盘
     await ctx.writeFile(paths.configPath, JSON.stringify(config, null, 2))
 
-    // 4. DNS 接管
+    // 5. DNS 接管
     const dnsMode = (profile.dns && profile.dns.mode) || 'hijack'
     if (dnsMode !== 'dnsmasq' && (await ctx.exists(dnsTakeoverBackupPath(paths)))) {
       // 上次部署用了 dnsmasq 接管、这次切回 hijack(或其它非 dnsmasq 模式):
@@ -45,11 +55,11 @@ export const deployConfig = async (ctx, paths, { config, profile }) => {
     }
     await applyDnsTakeover(ctx, paths, { mode: dnsMode })
 
-    // 5. 防火墙
+    // 6. 防火墙
     await applyPanelLanRule(ctx, { port: 2026 })
     await applyIpv6Block(ctx, { enabled: profile.ipv6 === false })
 
-    // 6. 重启内核前预检:procd 的 rc_procd 包装(procd_open_service; "$@"; procd_close_service)
+    // 7. 重启内核前预检:procd 的 rc_procd 包装(procd_open_service; "$@"; procd_close_service)
     // 会吞掉 start_service 的返回码,二进制/配置缺失时 start 仍可能退出 0 且以零实例注册——
     // 脚本自身的 exit code 不可靠。这里主动检查一次,把"内核启动后未在运行"这类笼统错误
     // 收窄成精确的"文件缺失"归因,方便面板显示。
@@ -58,14 +68,14 @@ export const deployConfig = async (ctx, paths, { config, profile }) => {
       return { ok: false, stage: 'start', message: 'sing-box 二进制或配置文件缺失,已恢复直连' }
     }
 
-    // 7. 重启内核
+    // 8. 重启内核
     const restart = await restartService(ctx, paths.initd.core)
     if (!restart.ok) {
       await rollbackToDirect(ctx, paths)
       return { ok: false, stage: 'start', message: restart.stderr || '内核启动失败,已恢复直连' }
     }
 
-    // 8. 验证运行
+    // 9. 验证运行
     const status = await serviceStatus(ctx, paths.initd.core)
     if (!status.running) {
       await rollbackToDirect(ctx, paths)

@@ -13,6 +13,9 @@ const ROLLED_BACK_STAGES = new Set(['start', 'verify', 'error'])
 const STATUS_BY_STAGE = {
   conflict: 409,
   validate: 409,
+  // 规则集拉不下来是外部依赖(GitHub / 加速站)不可用,不是请求本身有问题,也没动
+  // 任何系统状态 —— 用 503 与"配置有毛病"的 409 区分开。
+  rulesets: 503,
   start: 500,
   verify: 500,
   error: 500,

@@ -21,6 +21,11 @@ export const createMockContext = (options = {}) => {
       files[path] = content
       writes.push({ path, content })
     },
+    async writeFileBinary(path, data) {
+      // mock 里按 Buffer 原样存,断言可以直接比对字节数
+      files[path] = data
+      writes.push({ path, content: data })
+    },
     async exists(path) {
       return path in files
     },
