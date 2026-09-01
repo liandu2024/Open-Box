@@ -32,6 +32,25 @@
       />
       <ul class="mt-1 max-h-56 overflow-y-auto">
         <!-- 可清空时给一条「无」:图标是可选的,选错了得有路退回去 -->
+        <!-- 地球图标排在国旗前面:跨地区的组(所有-自动、回国)配国旗都不对,
+             这几个才是它们该用的。 -->
+        <li
+          v-for="g in globeOptions"
+          :key="g.value"
+        >
+          <button
+            type="button"
+            class="hover:bg-base-200 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm"
+            :class="{ 'bg-base-200': g.value === modelValue }"
+            @click="choose(g.value)"
+          >
+            <CountryFlag
+              :code="g.value"
+              :size="16"
+            />
+            <span class="truncate">{{ g.label }}</span>
+          </button>
+        </li>
         <li v-if="clearable">
           <button
             type="button"
@@ -74,7 +93,7 @@
 <script setup lang="ts">
 import CountryFlag from '@/components/common/CountryFlag.vue'
 import TextInput from '@/components/common/TextInput.vue'
-import { COUNTRIES, countryName, findCountry } from '@/constant/countries'
+import { COUNTRIES, GLOBE_ICONS, countryName, findCountry, globeIconKey } from '@/constant/countries'
 import { ChevronDownIcon } from '@heroicons/vue/24/outline'
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -86,14 +105,17 @@ const props = defineProps<{
   placeholder?: string
   // 列表顶上多给一条「无」,用来清空选择
   clearable?: boolean
+  // 列出地球图标(节点组用;地区关键词那边必须选真国家)
+  globes?: boolean
 }>()
 
 const emit = defineEmits<{ 'update:modelValue': [string] }>()
 
-const { locale } = useI18n()
+const { t, locale } = useI18n()
 const keyword = ref('')
 
 const label = computed(() => {
+  if (props.modelValue && props.modelValue.startsWith('globe:')) return t(globeIconKey(props.modelValue))
   const c = findCountry(props.modelValue || '')
   return c ? countryName(c, locale.value) : ''
 })
@@ -105,6 +127,15 @@ const options = computed(() =>
 )
 
 // 代码和名字都能搜:输 "jp" 和输 "日本" 都该找到日本
+// 地球图标只在明确要的地方给(节点组图标);地区关键词那边必须是真国家,不能选地球。
+const globeOptions = computed(() => {
+  if (!props.globes) return []
+  const kw = keyword.value.trim().toLowerCase()
+  return GLOBE_ICONS.map((value) => ({ value, label: t(globeIconKey(value)) })).filter(
+    (g) => !kw || g.label.toLowerCase().includes(kw),
+  )
+})
+
 const filtered = computed(() => {
   const kw = keyword.value.trim().toLowerCase()
   if (!kw) return options.value

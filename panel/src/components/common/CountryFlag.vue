@@ -13,16 +13,26 @@
     class="ring-base-content/15 shrink-0 object-cover ring-1"
     :style="{ width: `${Math.round((size * 4) / 3)}px`, height: `${size}px` }"
   />
-  <!-- 占位也按同样的宽度,否则有旗和没旗的行文字对不齐 -->
-  <GlobeAltIcon
+  <!-- 地球图标:节点组可以选它(跨地区的组配国旗都不对)。同时也是"认不出代码"时的
+       占位——按同样的宽度渲染,否则有旗和没旗的行文字对不齐。
+       选中的地球用正常前景色,占位用淡色:一个是用户挑的图标,一个是"这里没有图标"。 -->
+  <component
+    :is="globeComponent"
     v-else
-    class="text-base-content/30 shrink-0"
+    class="shrink-0"
+    :class="isGlobe ? 'text-base-content/70' : 'text-base-content/30'"
     :style="{ width: `${Math.round((size * 4) / 3)}px`, height: `${size}px` }"
   />
 </template>
 
 <script setup lang="ts">
-import { GlobeAltIcon } from '@heroicons/vue/24/outline'
+import { isGlobeIcon } from '@/constant/countries'
+import {
+  GlobeAltIcon,
+  GlobeAmericasIcon,
+  GlobeAsiaAustraliaIcon,
+  GlobeEuropeAfricaIcon,
+} from '@heroicons/vue/24/outline'
 import { computed } from 'vue'
 
 const props = withDefaults(
@@ -44,7 +54,18 @@ const FLAG_URL = import.meta.glob<string>('../../assets/flags/*.svg', {
   import: 'default',
 })
 
+const isGlobe = computed(() => isGlobeIcon(props.code))
+
+const GLOBE_COMPONENT: Record<string, unknown> = {
+  'globe:generic': GlobeAltIcon,
+  'globe:asia': GlobeAsiaAustraliaIcon,
+  'globe:europe': GlobeEuropeAfricaIcon,
+  'globe:americas': GlobeAmericasIcon,
+}
+const globeComponent = computed(() => GLOBE_COMPONENT[props.code] || GlobeAltIcon)
+
 const src = computed(() => {
+  if (isGlobe.value) return ''
   const code = String(props.code || '').toLowerCase()
   if (!code) return ''
   return FLAG_URL[`../../assets/flags/${code}.svg`] || ''

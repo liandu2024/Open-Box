@@ -97,10 +97,12 @@
                (香港-自动、台湾-自动),给它配一面旗,列表里一眼就找得到。 -->
           <div class="flex flex-col gap-1">
             <label class="text-xs font-medium">{{ $t('groupIconLabel') }}</label>
-            <div class="w-28">
+            <!-- w-32:地球那几项的名字比国名长(「地球(亚洲)」),28 放不下会被截断 -->
+            <div class="w-32">
               <CountrySelect
                 v-model="draft.icon"
                 clearable
+                globes
                 :placeholder="$t('groupIconNone')"
               />
             </div>

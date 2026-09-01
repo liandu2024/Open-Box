@@ -155,6 +155,11 @@ test('图标存国家代码并统一成大写;不写就是空', () => {
   assert.equal(normalizeGroup({ id: 'x', name: 'n' }).icon, '')
 })
 
+test('地球图标原样保留,不能跟着转大写', () => {
+  // 转成 GLOBE:ASIA 的话界面按值查不到图标,直接变空白
+  assert.equal(normalizeGroup({ id: 'x', name: 'n', icon: 'globe:asia' }).icon, 'globe:asia')
+})
+
 test('图标不进 sing-box 出站:那边没有这个字段', () => {
   const { outbounds } = emitUserGroups(
     [{ id: 'g1', name: '香港', type: 'selector', mode: 'dynamic', keywords: [], icon: 'HK' }],

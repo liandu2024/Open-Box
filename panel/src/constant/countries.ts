@@ -72,6 +72,16 @@ export const COUNTRIES: Country[] = [
   { code: 'NZ', zh: '新西兰', tw: '紐西蘭', en: 'New Zealand', keywords: ['nz', 'new', '新西兰', '紐西蘭', 'new zealand', '奥克兰'] },
 ]
 
+// 不属于任何国家的图标:节点组常有「所有-自动」「回国」这种跨地区的组,给它们配一面
+// 国旗都不对。值统一带 globe: 前缀,和两位国家代码天然分得开(见 CountryFlag)。
+export const GLOBE_ICONS = ['globe:generic', 'globe:asia', 'globe:europe', 'globe:americas'] as const
+export type GlobeIcon = (typeof GLOBE_ICONS)[number]
+
+export const isGlobeIcon = (value: string): boolean => String(value || '').startsWith('globe:')
+
+// i18n 键:globeIcon_generic / globeIcon_asia / ...
+export const globeIconKey = (value: string): string => `globeIcon_${String(value).slice('globe:'.length)}`
+
 const BY_CODE = new Map(COUNTRIES.map((c) => [c.code, c]))
 
 export const findCountry = (code: string): Country | undefined =>

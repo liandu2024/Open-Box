@@ -56,6 +56,14 @@ export const defaultGroups = () => ([
 
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0
 
+// 图标既可能是两位国家代码,也可能是 globe:asia 这种非国家图标。只有前者该转大写
+// ——把 globe:asia 转成 GLOBE:ASIA 的话,界面按值查不到对应图标,直接变成空白。
+const normalizeIcon = (raw) => {
+  if (!isNonEmptyString(raw)) return ''
+  const v = raw.trim()
+  return /^[A-Za-z]{2}$/.test(v) ? v.toUpperCase() : v
+}
+
 // 把外部传进来的一条组定义收敛成内部形状;不合法的字段回落默认值而不是抛错——
 // 这个函数同时用于读取历史数据,老记录缺字段是正常的。
 export const normalizeGroup = (raw, index = 0) => {
@@ -70,7 +78,8 @@ export const normalizeGroup = (raw, index = 0) => {
     mode,
     // 图标:国家代码(ISO 3166-1 alpha-2),空表示不显示。纯界面用,不进 sing-box 配置
     // ——那边没有这个字段,写进去内核直接报未知字段。
-    icon: isNonEmptyString(raw?.icon) ? raw.icon.trim().toUpperCase() : '',
+    // 国家代码统一成大写(hk -> HK);地球图标是 globe:xxx 这种,原样留着不能动
+    icon: normalizeIcon(raw?.icon),
     keywords: Array.isArray(raw?.keywords) ? raw.keywords.filter(isNonEmptyString).map((k) => k.trim()) : [],
     members: Array.isArray(raw?.members) ? raw.members.filter(isNonEmptyString).map((m) => m.trim()) : [],
   }
