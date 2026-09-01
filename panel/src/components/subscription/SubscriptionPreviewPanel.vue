@@ -88,13 +88,20 @@
             >
               {{ $t('subscriptionPreviewTabExcluded', { count: preview.excluded?.length || 0 }) }}
             </a>
+            <a
+              role="tab"
+              :class="['tab', listTab === 'disabled' && 'tab-active']"
+              @click="listTab = 'disabled'"
+            >
+              {{ $t('subscriptionPreviewTabDisabled', { count: preview.disabled?.length || 0 }) }}
+            </a>
           </div>
 
           <button
             v-if="listTab === 'kept'"
             type="button"
             class="btn btn-sm"
-            :disabled="testingAll || !preview.nodes.length"
+            :disabled="testingAll || !preview.preview.length || !source"
             :title="$t('subscriptionLatencyHint')"
             @click="testAll"
           >
@@ -144,6 +151,20 @@
                     >
                       {{ $t('subscriptionPreviewNotImported') }}
                     </span>
+                    <!-- 禁用页签:唯一有意义的操作就是把它放回来 -->
+                    <span
+                      v-else-if="listTab === 'disabled'"
+                      class="flex items-center gap-2"
+                    >
+                      <span class="text-base-content/40">{{ $t('subscriptionPreviewNotImported') }}</span>
+                      <button
+                        type="button"
+                        class="btn btn-ghost btn-xs"
+                        @click="emit('toggleDisabled', { originalTag: entry.originalTag, disabled: false })"
+                      >
+                        {{ $t('subscriptionNodeEnable') }}
+                      </button>
+                    </span>
                     <span
                       v-else
                       class="flex items-center gap-1"
@@ -182,6 +203,15 @@
                           class="h-4 w-4"
                         />
                       </button>
+                      <button
+                        type="button"
+                        class="btn btn-ghost btn-square btn-sm shrink-0 hover:text-error"
+                        :aria-label="$t('subscriptionNodeDisable')"
+                        :title="$t('subscriptionNodeDisable')"
+                        @click="emit('toggleDisabled', { originalTag: entry.originalTag, disabled: true })"
+                      >
+                        <NoSymbolIcon class="h-4 w-4" />
+                      </button>
                     </span>
                   </td>
                 </tr>
@@ -195,9 +225,9 @@
 </template>
 
 <script setup lang="ts">
-import type { OpenboxLatencyResult, OpenboxSubscriptionPreview } from '@/api/openbox'
+import type { OpenboxLatencyResult, OpenboxRenameOptions, OpenboxSubscriptionPreview } from '@/api/openbox'
 import { testNodeLatency } from '@/api/openbox'
-import { ArrowRightIcon, BoltIcon, MagnifyingGlassIcon } from '@heroicons/vue/24/outline'
+import { ArrowRightIcon, BoltIcon, MagnifyingGlassIcon, NoSymbolIcon } from '@heroicons/vue/24/outline'
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -207,20 +237,27 @@ const props = defineProps<{
   error: string
   preview: OpenboxSubscriptionPreview | null
   overrides?: Record<string, string>
+  // 测速要重新解析订阅,所以要把来源和当前规则一并带上
+  source?: { url?: string; content?: string } | null
+  renameOptions?: OpenboxRenameOptions
 }>()
 
 const emit = defineEmits<{
   override: [{ originalTag: string; newTag: string }]
+  toggleDisabled: [{ originalTag: string; disabled: boolean }]
 }>()
 
 const { t } = useI18n()
 
-const listTab = ref<'kept' | 'excluded'>('kept')
+const listTab = ref<'kept' | 'excluded' | 'disabled'>('kept')
 
 // 两个页签共用同一张表:过滤那边没有"新名",originalTag 复用同一列即可。
 const rows = computed(() => {
   if (listTab.value === 'excluded') {
     return (props.preview?.excluded || []).map((item) => ({ originalTag: item.name, newTag: '' }))
+  }
+  if (listTab.value === 'disabled') {
+    return (props.preview?.disabled || []).map((item) => ({ originalTag: item.name, newTag: '' }))
   }
   return props.preview?.preview || []
 })
@@ -231,12 +268,8 @@ const latency = ref<Record<string, OpenboxLatencyResult>>({})
 const testing = ref(new Set<string>())
 const testingAll = ref(false)
 
-// 预览行只有原名和新名,连不上哪儿要去 nodes 里取 server/server_port。
-const targetOf = (originalTag: string) => {
-  const node = props.preview?.nodes.find((n) => n.originalTag === originalTag)
-  if (!node?.server || !node.server_port) return null
-  return { server: node.server, port: node.server_port }
-}
+// 测速由服务端按节点完整配置真的拨号(sing-box tools fetch),所以这里只需要把
+// 来源和要测的原名传过去——节点里含密码,没有理由为了测速让它们过一趟浏览器。
 
 const latencyText = (originalTag: string) => {
   const r = latency.value[originalTag]
@@ -252,11 +285,10 @@ const latencyClass = (originalTag: string) => {
 }
 
 const testOne = async (originalTag: string) => {
-  const target = targetOf(originalTag)
-  if (!target || testing.value.has(originalTag)) return
+  if (!props.source || testing.value.has(originalTag)) return
   testing.value = new Set(testing.value).add(originalTag)
   try {
-    const [result] = await testNodeLatency([target])
+    const [result] = await testNodeLatency({ ...props.source, renameOptions: props.renameOptions, tags: [originalTag] })
     latency.value = { ...latency.value, [originalTag]: result }
   } catch {
     latency.value = { ...latency.value, [originalTag]: { ok: false, error: 'request failed' } }
@@ -270,18 +302,15 @@ const testOne = async (originalTag: string) => {
 // 一键测速:一次请求把全部目标交给服务端,由它按固定并发跑完。逐个发请求会让路由器
 // 同时扛住几十条 HTTP 连接,得不偿失。
 const testAll = async () => {
-  if (testingAll.value) return
-  const rows = props.preview?.preview || []
-  const pairs = rows
-    .map((row) => ({ originalTag: row.originalTag, target: targetOf(row.originalTag) }))
-    .filter((x): x is { originalTag: string; target: { server: string; port: number } } => x.target !== null)
-  if (!pairs.length) return
+  if (testingAll.value || !props.source) return
+  const tags = (props.preview?.preview || []).map((row) => row.originalTag)
+  if (!tags.length) return
 
   testingAll.value = true
   try {
-    const results = await testNodeLatency(pairs.map((p) => p.target))
+    const results = await testNodeLatency({ ...props.source, renameOptions: props.renameOptions, tags })
     const next = { ...latency.value }
-    pairs.forEach((p, i) => { next[p.originalTag] = results[i] })
+    tags.forEach((tag, i) => { next[tag] = results[i] })
     latency.value = next
   } catch {
     // 整批失败(比如面板本身不可达)不逐条标红:那会让人以为是节点全挂了

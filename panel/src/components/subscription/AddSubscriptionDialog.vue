@@ -118,7 +118,10 @@
           :error="previewErrorMessage"
           :preview="preview"
           :overrides="overrides"
+          :source="effectiveSource"
+          :rename-options="effectiveRenameOptions"
           @override="handleOverride"
+          @toggle-disabled="handleToggleDisabled"
         />
       </div>
     </div>
@@ -216,9 +219,19 @@ const handleOverride = ({ originalTag, newTag }: { originalTag: string; newTag: 
   else delete next[originalTag]
   overrides.value = next
 }
+// 逐条禁用。和改名覆盖一样是"对个别节点的例外",不属于规则,所以也放在弹窗这一层。
+const disabledTags = ref<string[]>([...(props.subscription?.renameOptions?.disabled || [])])
+const handleToggleDisabled = ({ originalTag, disabled }: { originalTag: string; disabled: boolean }) => {
+  const set = new Set(disabledTags.value)
+  if (disabled) set.add(originalTag)
+  else set.delete(originalTag)
+  disabledTags.value = [...set]
+}
+
 const effectiveRenameOptions = computed<OpenboxRenameOptions>(() => ({
   ...renameOptions.value,
   overrides: overrides.value,
+  disabled: disabledTags.value,
 }))
 
 const preview = ref<OpenboxSubscriptionPreview | null>(null)
@@ -275,7 +288,7 @@ const runPreviewNow = async () => {
 const debouncedPreview = debounce(runPreviewNow, 450)
 
 watch(
-  [effectiveSource, renameOptions],
+  [effectiveSource, renameOptions, disabledTags],
   () => {
     if (!hasSource.value) {
       debouncedPreview.cancel()
@@ -299,6 +312,7 @@ const resetForm = () => {
   url.value = props.subscription?.url ?? ''
   content.value = props.subscription?.content ?? ''
   overrides.value = { ...(props.subscription?.renameOptions?.overrides || {}) }
+  disabledTags.value = [...(props.subscription?.renameOptions?.disabled || [])]
   sourceMode.value = props.subscription && !props.subscription.url ? 'paste' : 'url'
   preview.value = null
   previewing.value = false

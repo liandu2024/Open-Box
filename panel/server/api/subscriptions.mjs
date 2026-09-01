@@ -177,18 +177,19 @@ export const normalizeSource = ({ url, content }) => {
 // preview/create/refresh 共用的解析管道:优先用直传的 content,否则用 fetchImpl 拉取 url;
 // 再走 parseSubscription → renameNodes/previewRename。拉取或校验失败在这里抛出,
 // 调用方在 store 写入之前捕获,天然保证"失败不破坏已存状态"。
-const resolveNodes = async ({ url, content }, fetchImpl, renameOptions, lookup) => {
+export const resolveNodes = async ({ url, content }, fetchImpl, renameOptions, lookup) => {
   // renameNodes/groupNodesByRegion 的默认参数只兜底 undefined;显式传 null(合法 JSON 值)
   // 会在其内部触发 "options.xxx of null" —— 这里统一归一化,避免因此误判 400。
   const opts = renameOptions && typeof renameOptions === 'object' ? renameOptions : undefined
   // 过滤必须发生在改名之前:renameNodes / previewRename 按下标一一对应,
   // 而且被过滤掉的条目连预览表都不该出现——它们压根不算节点。
   const finish = (parsed) => {
-    const { kept, excluded } = excludeNodes(parsed.nodes, opts || {})
+    const { kept, excluded, disabled } = excludeNodes(parsed.nodes, opts || {})
     return {
       renamed: renameNodes(kept, opts),
       skipped: parsed.skipped,
       excluded: excluded.map((n) => ({ name: n.originalTag })),
+      disabled: disabled.map((n) => ({ name: n.originalTag })),
       format: parsed.format,
       preview: previewRename(kept, opts),
       renameOptions: opts,
@@ -237,8 +238,7 @@ const rebuildNodePool = (existingNodes, subscriptionsInOrder, subscriptionId, ne
   return dedupeNodeTags(merged)
 }
 
-// server_port 是给节点延迟测试用的(前端要拿它去连);少了它前端只知道主机不知道端口。
-const nodeSummary = (n) => ({ tag: n.tag, originalTag: n.originalTag, type: n.type, server: n.server, server_port: n.server_port })
+const nodeSummary = (n) => ({ tag: n.tag, originalTag: n.originalTag, type: n.type, server: n.server })
 
 export const registerSubscriptionRoutes = (app, { store, fetchImpl = globalThis.fetch, lookup = dns.lookup } = {}) => {
   const router = express.Router({ caseSensitive: true })
@@ -249,15 +249,16 @@ export const registerSubscriptionRoutes = (app, { store, fetchImpl = globalThis.
     try {
       const { url, content, renameOptions } = req.body || {}
       const resolved = await resolveNodes({ url, content }, fetchImpl, renameOptions, lookup)
-      const { renamed, skipped, excluded, format, preview } = resolved
+      const { renamed, skipped, excluded, disabled, format, preview } = resolved
       const { groups } = groupNodesByRegion(renamed, resolved.renameOptions)
       res.json({
         format,
         nodes: renamed.map(nodeSummary),
         skipped,
-        // 被过滤掉的条目要如实报出来:这个功能会让节点凭空消失,不给个数的话
-        // 用户既看不出过滤有没有生效,也无从发现自己写的关键词误伤了真节点。
+        // 被过滤/被禁用的条目要如实报出来:它们会让节点凭空消失,不列出来的话
+        // 用户既看不出规则有没有生效,也无从发现自己写的关键词误伤了真节点。
         excluded,
+        disabled,
         preview,
         groups,
       })

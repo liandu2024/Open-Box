@@ -2,25 +2,31 @@ import assert from 'node:assert/strict'
 import net from 'node:net'
 import test from 'node:test'
 import express from 'express'
-import { registerNodeLatencyRoutes, tcpPing } from './node-latency.mjs'
+import { registerNodeLatencyRoutes } from './node-latency.mjs'
+import { createMockContext } from '../system/context.mjs'
+import { createPaths } from '../system/paths.mjs'
 
-// 字面 IP 原样透传;域名一律解析成公网地址,除非用例另行注入。
+const paths = createPaths('/opt/open-box')
+
+// 域名默认解析到公网地址;负向用例单独注入。
 const fakeLookup = async (hostname) => {
   const trimmed = String(hostname).replace(/^\[|\]$/g, '').trim()
-  const version = net.isIP(trimmed)
-  if (version) return [{ address: trimmed, family: version }]
-  return [{ address: '127.0.0.1', family: 4 }] // 域名默认指回环,专供 SSRF 用例
+  const v = net.isIP(trimmed)
+  if (v) return [{ address: trimmed, family: v }]
+  return [{ address: '8.8.8.8', family: 4 }]
 }
 
-const startApp = async (lookup = fakeLookup) => {
+const SUB = [
+  'ss://YWVzLTI1Ni1nY206cHc=@a.example.com:8388#HK-01',
+  'trojan://pw@b.example.com:443?sni=b.example.com#JP-01',
+].join('\n')
+
+const startApp = async ({ ctx = createMockContext(), lookup = fakeLookup } = {}) => {
   const app = express()
-  registerNodeLatencyRoutes(app, { lookup })
+  registerNodeLatencyRoutes(app, { ctx, paths, fetchImpl: async () => { throw new Error('no net') }, lookup })
   const server = app.listen(0)
   await new Promise((r) => server.once('listening', r))
-  return {
-    baseUrl: `http://127.0.0.1:${server.address().port}`,
-    close: () => new Promise((r) => server.close(r)),
-  }
+  return { ctx, baseUrl: `http://127.0.0.1:${server.address().port}`, close: () => new Promise((r) => server.close(r)) }
 }
 
 const post = (baseUrl, body) =>
@@ -30,68 +36,90 @@ const post = (baseUrl, body) =>
     body: JSON.stringify(body),
   })
 
-// 起一个真实的 TCP 监听,作为"可达的公网节点"的替身
-const startEcho = async () => {
-  const srv = net.createServer((s) => s.end())
-  await new Promise((r) => srv.listen(0, '127.0.0.1', r))
-  return { port: srv.address().port, close: () => new Promise((r) => srv.close(r)) }
-}
-
-// 成功路径单独测 tcpPing:守卫会拒绝回环地址,没法在整条路由上既通过校验又真的连上。
-test('tcpPing:能连通的目标返回 ok 与毫秒数', async () => {
-  const echo = await startEcho()
-  try {
-    const r = await tcpPing('127.0.0.1', echo.port, 3000)
-    assert.equal(r.ok, true)
-    assert.equal(typeof r.ms, 'number')
-    assert.ok(r.ms >= 0 && r.ms < 3000)
-  } finally {
-    await echo.close()
-  }
-})
-
-test('tcpPing:端口没人监听时返回错误而不是抛异常', async () => {
-  const echo = await startEcho()
-  const deadPort = echo.port
-  await echo.close()
-  const r = await tcpPing('127.0.0.1', deadPort, 3000)
-  assert.equal(r.ok, false)
-  assert.ok(r.error)
-})
-
-// 超时路径没有确定性的测法:本机实测 192.0.2.1(RFC 5737 保留测试网段)会在 1ms 内
-// "连上"——网络里有东西在劫持保留网段。依赖真实网络的超时用例只会变成随机失败,
-// 故不写;失败路径由上面"端口没人监听"那条覆盖。
-
-test('目标不是数组 → 400', async () => {
+test('tags 为空 → 400', async () => {
   const { baseUrl, close } = await startApp()
   try {
-    const res = await post(baseUrl, {})
-    assert.equal(res.status, 400)
+    assert.equal((await post(baseUrl, { content: SUB, tags: [] })).status, 400)
   } finally {
     await close()
   }
 })
 
-test('目标过多 → 400,不发起任何连接', async () => {
+test('目标过多 → 400', async () => {
   const { baseUrl, close } = await startApp()
   try {
-    const targets = Array.from({ length: 201 }, () => ({ server: 'a.com', port: 443 }))
-    const res = await post(baseUrl, { targets })
+    const res = await post(baseUrl, { content: SUB, tags: Array.from({ length: 101 }, (_, i) => `t${i}`) })
     assert.equal(res.status, 400)
-    assert.match((await res.json()).error, /too many targets/)
+    assert.match((await res.json()).error, /too many/)
   } finally {
     await close()
   }
 })
 
-// SSRF:server 来自订阅内容,是攻击者可控输入。不拦的话这个接口就是内网端口扫描器。
-test('SSRF 防护:字面回环地址被拒,不会真的去连', async () => {
-  const { baseUrl, close } = await startApp()
+test('走 sing-box tools fetch 拨号(不是裸 TCP 连接)', async () => {
+  const { ctx, baseUrl, close } = await startApp()
   try {
-    const res = await post(baseUrl, { targets: [{ server: '127.0.0.1', port: 22 }] })
+    const res = await post(baseUrl, { content: SUB, tags: ['HK-01'] })
     assert.equal(res.status, 200)
     const [r] = (await res.json()).results
+    assert.equal(r.ok, true)
+    assert.ok(typeof r.ms === 'number')
+
+    const call = ctx.calls.find((c) => c.args?.[0] === 'tools')
+    assert.ok(call, '应当调用了 sing-box tools')
+    assert.equal(call.cmd, paths.singbox)
+    assert.deepEqual(call.args.slice(0, 2), ['tools', 'fetch'])
+    assert.ok(call.args.includes('-o'), '必须指定出站,否则测的是默认直连')
+  } finally {
+    await close()
+  }
+})
+
+test('探测配置只含被测节点的出站,写在 etc 下', async () => {
+  const { ctx, baseUrl, close } = await startApp()
+  try {
+    await post(baseUrl, { content: SUB, tags: ['JP-01'] })
+    const write = ctx.writes.find((w) => w.path.endsWith('config.latency.json'))
+    assert.ok(write)
+    const cfg = JSON.parse(write.content)
+    assert.equal(cfg.outbounds.length, 1)
+    assert.equal(cfg.outbounds[0].type, 'trojan')
+    // 出站 tag 用 probe-N:节点原名可能重复、含空格或特殊字符
+    assert.match(cfg.outbounds[0].tag, /^probe-\d+$/)
+  } finally {
+    await close()
+  }
+})
+
+test('内核返回非 0 时如实报错,不谎报成功', async () => {
+  const ctx = createMockContext({ defaultExec: { code: 1, stdout: '', stderr: 'FATAL connection reset' } })
+  const { baseUrl, close } = await startApp({ ctx })
+  try {
+    const [r] = (await (await post(baseUrl, { content: SUB, tags: ['HK-01'] })).json()).results
+    assert.equal(r.ok, false)
+    assert.match(r.error, /connection reset/)
+  } finally {
+    await close()
+  }
+})
+
+test('订阅里不存在的 tag 返回 not found,不影响同批其它节点', async () => {
+  const { baseUrl, close } = await startApp()
+  try {
+    const { results } = await (await post(baseUrl, { content: SUB, tags: ['HK-01', '不存在的节点'] })).json()
+    assert.equal(results[0].ok, true)
+    assert.equal(results[1].ok, false)
+    assert.equal(results[1].error, 'not found')
+  } finally {
+    await close()
+  }
+})
+
+// server 来自订阅内容,是可控输入:不挡的话这个接口能被用来探测内网。
+test('SSRF 防护:节点服务器解析到内网地址时拒绝测试', async () => {
+  const { baseUrl, close } = await startApp({ lookup: async () => [{ address: '192.168.3.1', family: 4 }] })
+  try {
+    const [r] = (await (await post(baseUrl, { content: SUB, tags: ['HK-01'] })).json()).results
     assert.equal(r.ok, false)
     assert.match(r.error, /non-public/)
   } finally {
@@ -99,53 +127,12 @@ test('SSRF 防护:字面回环地址被拒,不会真的去连', async () => {
   }
 })
 
-test('SSRF 防护:解析到内网地址的域名同样被拒', async () => {
-  const { baseUrl, close } = await startApp(async () => [{ address: '192.168.3.1', family: 4 }])
+test('结果与传入 tags 顺序一一对应', async () => {
+  const { baseUrl, close } = await startApp()
   try {
-    const res = await post(baseUrl, { targets: [{ server: 'evil.example.com', port: 80 }] })
-    const [r] = (await res.json()).results
-    assert.equal(r.ok, false)
-    assert.match(r.error, /non-public/)
-  } finally {
-    await close()
-  }
-})
-
-test('SSRF 防护:解析失败按拒绝处理(解析不出来不等于安全)', async () => {
-  const { baseUrl, close } = await startApp(async () => { throw new Error('ENOTFOUND') })
-  try {
-    const res = await post(baseUrl, { targets: [{ server: 'nope.example.com', port: 443 }] })
-    const [r] = (await res.json()).results
-    assert.equal(r.ok, false)
-  } finally {
-    await close()
-  }
-})
-
-test('非法端口/空主机各自返回错误,不影响同批其它目标', async () => {
-  const { baseUrl, close } = await startApp(async () => [{ address: '192.168.3.1', family: 4 }])
-  try {
-    const res = await post(baseUrl, {
-      targets: [{ server: '', port: 443 }, { server: 'a.com', port: 0 }, { server: 'a.com', port: 443 }],
-    })
-    const { results } = await res.json()
+    const { results } = await (await post(baseUrl, { content: SUB, tags: ['JP-01', '不存在', 'HK-01'] })).json()
     assert.equal(results.length, 3)
-    assert.equal(results[0].error, 'invalid target')
-    assert.equal(results[1].error, 'invalid target')
-    assert.equal(results[2].ok, false)
-  } finally {
-    await close()
-  }
-})
-
-test('结果与输入顺序一一对应(并发池不得打乱下标)', async () => {
-  const { baseUrl, close } = await startApp(async () => [{ address: '192.168.3.1', family: 4 }])
-  try {
-    const targets = Array.from({ length: 20 }, (_, i) => ({ server: `h${i}.example.com`, port: 443 }))
-    targets[7] = { server: '', port: 1 }
-    const { results } = await (await post(baseUrl, { targets })).json()
-    assert.equal(results.length, 20)
-    assert.equal(results[7].error, 'invalid target')
+    assert.equal(results[1].error, 'not found')
   } finally {
     await close()
   }

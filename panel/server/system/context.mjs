@@ -7,6 +7,8 @@ export const createMockContext = (options = {}) => {
 
   const ctx = {
     files, calls, writes,
+    // 第三个参数(超时等选项)接受但不记进 calls:大量断言用 deepEqual 比对 calls,
+    // 多塞一个字段会把它们全部弄挂,而这些用例关心的只是"发了什么命令"。
     async exec(cmd, args = []) {
       calls.push({ cmd, args })
       const key = [cmd, ...args].join(' ')

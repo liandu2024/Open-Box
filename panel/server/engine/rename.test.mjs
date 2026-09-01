@@ -238,3 +238,25 @@ test('override 不影响排序:仍按其原本匹配到的地区归位', () => {
   const out = renameNodes(['香港01', '美国01'].map(mk), { regionDict: dict, overrides: { 香港01: 'ZZZ' } })
   assert.deepEqual(out.map((n) => n.tag), ['美国-01', 'ZZZ'])
 })
+
+// -------- 逐条禁用 --------
+
+test('被禁用的节点不导入,且与"被过滤"分开报', () => {
+  const nodes = ['官网 通知', '香港01', '香港02'].map(mk)
+  const { kept, excluded, disabled } = excludeNodes(nodes, { disabled: ['香港02'] })
+  assert.deepEqual(kept.map((n) => n.originalTag), ['香港01'])
+  assert.deepEqual(excluded.map((n) => n.originalTag), ['官网 通知'])
+  assert.deepEqual(disabled.map((n) => n.originalTag), ['香港02'])
+})
+
+test('禁用优先于过滤:同时命中两者时算禁用,不重复出现在两个列表里', () => {
+  const { excluded, disabled } = excludeNodes(['官网 通知'].map(mk), { disabled: ['官网 通知'] })
+  assert.equal(excluded.length, 0)
+  assert.equal(disabled.length, 1)
+})
+
+test('禁用的节点不占序号', () => {
+  const nodes = ['香港01', '香港02', '香港03'].map(mk)
+  const { kept } = excludeNodes(nodes, { disabled: ['香港02'] })
+  assert.deepEqual(renameNodes(kept).map((n) => n.tag), ['香港-01', '香港-02'])
+})

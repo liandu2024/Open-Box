@@ -2,9 +2,11 @@ import { execFile } from 'node:child_process'
 import fs from 'node:fs/promises'
 
 export const createRealContext = () => ({
-  async exec(cmd, args = []) {
+  // timeoutMs 可选:默认 30 秒适合部署/服务控制这类命令,但节点测速需要更短的上限,
+  // 否则一批连不通的节点会把整轮拖成几分钟。
+  async exec(cmd, args = [], { timeoutMs = 30_000 } = {}) {
     return new Promise((resolve) => {
-      execFile(cmd, args, { timeout: 30_000 }, (error, stdout, stderr) => {
+      execFile(cmd, args, { timeout: timeoutMs }, (error, stdout, stderr) => {
         resolve({
           code: error && typeof error.code === 'number' ? error.code : error ? 1 : 0,
           stdout: String(stdout || ''),

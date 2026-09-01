@@ -104,15 +104,25 @@ export const isExcludedName = (name, keywords) => {
 
 // 在改名之前先过滤:renameNodes / previewRename 是按下标一一对应的,若在改名内部
 // 丢条目,预览表的原名与新名就会错位。
+//
+// 三种去向:
+//   kept      —— 正常导入
+//   excluded  —— 命中过滤关键词(规则驱动,批量)
+//   disabled  —— 用户逐条点掉的(手动,按原名记录)
+// 两者都不导入,但分开报:一个是"我定的规则把它划掉了",一个是"我亲手关掉的",
+// 混在一起用户就分不清某条节点为什么不见了。
 export const excludeNodes = (nodes, options = {}) => {
   const keywords = options.excludeKeywords || EXCLUDES
+  const disabledSet = new Set(Array.isArray(options.disabled) ? options.disabled : [])
   const kept = []
   const excluded = []
+  const disabled = []
   for (const node of nodes) {
-    if (isExcludedName(node.originalTag, keywords)) excluded.push(node)
+    if (disabledSet.has(node.originalTag)) disabled.push(node)
+    else if (isExcludedName(node.originalTag, keywords)) excluded.push(node)
     else kept.push(node)
   }
-  return { kept, excluded }
+  return { kept, excluded, disabled }
 }
 
 export const renameNodes = (nodes, options = {}) => {
