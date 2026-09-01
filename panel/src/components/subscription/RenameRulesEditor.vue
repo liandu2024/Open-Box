@@ -42,31 +42,25 @@
             </span>
           </template>
         </Draggable>
+
+        <!-- 序号位数收成一行、推到最右:它是给序号补零的位数(不补零时 美国-10 会
+             排在 美国-2 前面,因为节点名到处都按文本排序)。原先它和「无法识别地区
+             时的标签」并排各占半格,一个只填 1 位数字的框占那么大一块并不划算。 -->
+        <label class="ml-auto flex items-center gap-1.5 text-xs">
+          <span class="text-base-content/50">{{ $t('subscriptionRenameSeqPadLabel') }}:</span>
+          <input
+            v-model.number="seqPad"
+            type="number"
+            min="1"
+            max="4"
+            class="input input-xs w-14"
+            :title="$t('subscriptionRenameSeqPadHint')"
+          />
+        </label>
       </div>
       <p class="text-base-content/60 text-xs">
         {{ $t('subscriptionRenameTemplateExample', { example: templateExample }) }}
       </p>
-    </div>
-
-    <div class="grid grid-cols-2 gap-3">
-      <div class="flex flex-col gap-1">
-        <label class="text-xs font-medium">{{ $t('subscriptionRenameUnknownLabel') }}</label>
-        <input
-          v-model="unknownLabel"
-          type="text"
-          class="input input-sm w-full"
-        />
-      </div>
-      <div class="flex flex-col gap-1">
-        <label class="text-xs font-medium">{{ $t('subscriptionRenameSeqPadLabel') }}</label>
-        <input
-          v-model.number="seqPad"
-          type="number"
-          min="1"
-          max="4"
-          class="input input-sm w-full"
-        />
-      </div>
     </div>
 
     <!-- Region dictionary -->
@@ -117,6 +111,17 @@
           {{ $t('subscriptionRenameNoRows') }}
         </p>
       </div>
+    </div>
+
+    <!-- 「无法识别地区时的标签」紧跟在地区关键词后面:它就是这张表全都没命中时的
+         兜底值,挨着它要兜底的那份清单最好懂。原来它在最上面和序号位数并排,离得远。 -->
+    <div class="flex flex-col gap-1">
+      <label class="text-xs font-medium">{{ $t('subscriptionRenameUnknownLabel') }}</label>
+      <input
+        v-model="unknownLabel"
+        type="text"
+        class="input input-sm w-full"
+      />
     </div>
 
     <!-- Feature dictionary -->

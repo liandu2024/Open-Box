@@ -401,6 +401,7 @@ const en = {
   subscriptionRenameSampleFeature: 'IEPL',
   subscriptionRenameTokensHint: 'Drag to reorder:',
   subscriptionRenameUnknownLabel: 'Label for unrecognized region',
+  subscriptionRenameSeqPadHint: 'Zero-pads the sequence number. Names sort as text everywhere, so without padding US-10 comes before US-2.',
   subscriptionRenameSeqPadLabel: 'Sequence digits',
   subscriptionRenameRegionDictLabel: 'Region keywords',
   subscriptionRenameRegionDictHint: 'Matched against the original node name (case-insensitive).',

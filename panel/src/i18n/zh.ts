@@ -398,6 +398,7 @@ const zh: LANG_MESSAGE = {
   subscriptionRenameSampleFeature: '专线',
   subscriptionRenameTokensHint: '拖拽排序:',
   subscriptionRenameUnknownLabel: '\u65e0\u6cd5\u8bc6\u522b\u5730\u533a\u65f6\u7684\u6807\u7b7e',
+  subscriptionRenameSeqPadHint: '给序号补零的位数。节点名到处都按文本排序,不补零时「美国-10」会排到「美国-2」前面。',
   subscriptionRenameSeqPadLabel: '\u5e8f\u53f7\u4f4d\u6570',
   subscriptionRenameRegionDictLabel: '\u5730\u533a\u5173\u952e\u8bcd',
   subscriptionRenameRegionDictHint: '\u6309\u539f\u59cb\u8282\u70b9\u540d\u5339\u914d(\u4e0d\u533a\u5206\u5927\u5c0f\u5199)\u3002',

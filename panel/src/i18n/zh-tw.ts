@@ -398,6 +398,7 @@ const zhTW: LANG_MESSAGE = {
   subscriptionRenameSampleFeature: '專線',
   subscriptionRenameTokensHint: '拖曳排序:',
   subscriptionRenameUnknownLabel: '\u7121\u6cd5\u8b58\u5225\u5730\u5340\u6642\u7684\u6a19\u7c64',
+  subscriptionRenameSeqPadHint: '給序號補零的位數。節點名到處都按文字排序,不補零時「美國-10」會排到「美國-2」前面。',
   subscriptionRenameSeqPadLabel: '\u5e8f\u865f\u4f4d\u6578',
   subscriptionRenameRegionDictLabel: '\u5730\u5340\u95dc\u9375\u5b57',
   subscriptionRenameRegionDictHint: '\u4f9d\u539f\u59cb\u7bc0\u9ede\u540d\u7a31\u6bd4\u5c0d(\u4e0d\u5206\u5927\u5c0f\u5beb)\u3002',
