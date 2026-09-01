@@ -1,18 +1,23 @@
 <template>
-  <!-- 正方形国旗。给不出对应国家时(自定义地区行、没匹配上任何地区的节点)显示一个
-       中性的地球占位,而不是留空:留空的话那一格会塌掉,同一列里的名字就对不齐了。 -->
+  <!-- 标准 4:3 长方形国旗,不做圆角。给不出对应国家时(自定义地区行、没匹配上任何
+       地区的节点)显示一个中性的地球占位,而不是留空:留空那一格会塌掉,同一列里的
+       名字就对不齐了。圆角这里也用不了:main.css 里
+       `#app-content .rounded-sm` 被改写成 0.5rem !important,套在 16px 的小图上
+       就直接变成一个圆片(之前看到的"圆形国旗"就是这么来的)。
+       描一道极淡的边:日本、瑞士这种大面积白底的旗,在浅色主题下没有边就糊在背景里。 -->
   <img
     v-if="src"
     :src="src"
     :alt="code"
     :title="title || code"
-    class="shrink-0 rounded-sm object-cover"
-    :style="{ width: `${size}px`, height: `${size}px` }"
+    class="ring-base-content/15 shrink-0 object-cover ring-1"
+    :style="{ width: `${Math.round((size * 4) / 3)}px`, height: `${size}px` }"
   />
+  <!-- 占位也按同样的宽度,否则有旗和没旗的行文字对不齐 -->
   <GlobeAltIcon
     v-else
     class="text-base-content/30 shrink-0"
-    :style="{ width: `${size}px`, height: `${size}px` }"
+    :style="{ width: `${Math.round((size * 4) / 3)}px`, height: `${size}px` }"
   />
 </template>
 
