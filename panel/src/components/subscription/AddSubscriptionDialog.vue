@@ -4,8 +4,31 @@
     :title="$t(subscription ? 'subscriptionEditTitle' : 'subscriptionAddTitle')"
     box-class="w-full max-w-2xl"
   >
+    <!-- 三个页签共存于 DOM,用 v-show 而不是 v-if 切换。这一点是必须的:
+         RenameRulesEditor 把地区/特征词典存在自己内部的 reactive 数组里,并且挂载时
+         会 emit 一次初始值。用 v-if 的话每次切走再切回都会重建组件,用户刚编辑的规则
+         直接丢失、还会把 renameOptions 悄悄改回初始值——和之前编辑弹窗踩过的是同一类坑。 -->
+    <div
+      role="tablist"
+      class="tabs-box tabs tabs-sm mb-4 w-full"
+    >
+      <a
+        v-for="item in tabs"
+        :key="item.key"
+        role="tab"
+        :class="['tab flex-1', activeTab === item.key && 'tab-active']"
+        @click="activeTab = item.key"
+      >
+        {{ $t(item.label) }}<template v-if="item.key === 'nodes' && preview">
+          ({{ preview.nodes.length }})</template>
+      </a>
+    </div>
+
     <div class="flex flex-col gap-4">
-      <div class="flex flex-col gap-4">
+      <div
+        v-show="activeTab === 'source'"
+        class="flex flex-col gap-4"
+      >
         <div class="flex flex-col gap-1">
           <label class="text-xs font-medium">{{ $t('subscriptionNameLabel') }}</label>
           <input
@@ -47,10 +70,11 @@
           </template>
         </div>
 
-        <div class="divider my-0" />
+      </div>
 
-        <!-- key 绑到订阅 id:切换编辑对象时强制重建编辑器,否则它内部的 reactive 行
-             不会随 initial 变化重新初始化,会把上一个订阅的规则带过来 -->
+      <!-- key 绑到订阅 id:切换编辑对象时强制重建编辑器,否则它内部的 reactive 行
+           不会随 initial 变化重新初始化,会把上一个订阅的规则带过来 -->
+      <div v-show="activeTab === 'rules'">
         <RenameRulesEditor
           :key="subscription?.id || 'new'"
           :initial="subscription?.renameOptions"
@@ -58,10 +82,10 @@
         />
       </div>
 
-      <div class="divider my-0" />
-
-      <!-- 预览排在最后一屏:它是"填完之后看结果",不是填写过程中要来回对照的东西 -->
-      <div class="flex min-h-0 flex-col gap-3">
+      <div
+        v-show="activeTab === 'nodes'"
+        class="flex min-h-0 flex-col gap-3"
+      >
         <SubscriptionPreviewPanel
           :has-source="hasSource"
           :loading="previewing"
@@ -124,6 +148,15 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+
+type DialogTab = 'source' | 'rules' | 'nodes'
+
+const tabs: { key: DialogTab; label: string }[] = [
+  { key: 'source', label: 'subscriptionTabSource' },
+  { key: 'rules', label: 'subscriptionTabRules' },
+  { key: 'nodes', label: 'subscriptionTabNodes' },
+]
+const activeTab = ref<DialogTab>('source')
 
 // 初始值直接从 props 取,不能只靠 resetForm():编辑弹窗是 v-if 挂载的,挂载时
 // isOpen 已经是 true,而 watch(isOpen) 不是 immediate —— 它一次都不会触发,字段
@@ -213,6 +246,7 @@ watch(
 const resetForm = () => {
   debouncedPreview.cancel()
   previewSeq += 1
+  activeTab.value = 'source'
   // 编辑模式下用现存值预填;新建时清空
   name.value = props.subscription?.name ?? ''
   url.value = props.subscription?.url ?? ''
