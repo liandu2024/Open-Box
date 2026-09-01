@@ -14,8 +14,8 @@
 // ---------------------------------------------------------------------------
 var I18N = {
 	'zh-Hans': {
-		'Fallback controls. Full management lives in the Open-Box panel.':
-			'兜底控制。完整管理请到 Open-Box 面板。',
+		'Basic settings. Full management lives in the Open-Box panel:':
+			'基本设置,完整管理请到 Open-Box 面板:',
 		'sing-box core': 'sing-box 内核',
 		'Open-Box panel': 'Open-Box 面板',
 		'Open-Box upgrade': 'Open-Box 升级',
@@ -101,8 +101,8 @@ var I18N = {
 		'Uninstall script not found. Run it manually over SSH.': '未找到卸载脚本,请通过 SSH 手动执行。'
 	},
 	'zh-Hant': {
-		'Fallback controls. Full management lives in the Open-Box panel.':
-			'兜底控制。完整管理請到 Open-Box 面板。',
+		'Basic settings. Full management lives in the Open-Box panel:':
+			'基本設定,完整管理請到 Open-Box 面板:',
 		'sing-box core': 'sing-box 核心',
 		'Open-Box panel': 'Open-Box 面板',
 		'Open-Box upgrade': 'Open-Box 升級',
@@ -725,7 +725,7 @@ var STYLE_CSS =
 	// `#maincontent > .container > h2` 这类直接子元素选择器,包一层会让标题
 	// 在部分主题下丢掉样式。按钮显式给字号,否则它会继承 h2 的大字号。
 	'h2.ob-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.75em}' +
-	'h2.ob-head .cbi-button{font-size:.875rem;font-weight:600;line-height:1.4}' +
+	'h2.ob-head .cbi-button{margin-left:auto;font-size:.875rem;font-weight:600;line-height:1.4}' +
 	// 标题条和下面的网格共用同一个宽度上限,右边缘才会对齐。主题把 <h2> 画成一条
 	// 通栏白条,不限宽的话它会一直顶到窗口右侧,而内容网格停在 1400px,宽屏上右边
 	// 缘差出一大截。box-sizing 显式写成 border-box:主题给 h2 加了左右内边距,若
@@ -735,9 +735,15 @@ var STYLE_CSS =
 	// flex 容器:h2/h3 本身是 justify-content:space-between,平铺进去的话中间那项
 	// 会被摊到行正中,而不是紧跟标题。
 	'.ob-h2-left,.ob-h3-left{display:flex;flex-wrap:wrap;align-items:center;gap:.75em;min-width:0}' +
+	// 标题行右端那一组按钮(升级卡片的「一键检测可用升级渠道」+「检查更新」)。
+	// 同样得自成一个 flex 容器,否则 space-between 会把它们摊开成"标题…按钮…按钮"。
+	'.ob-h3-right{margin-left:auto;display:flex;flex-wrap:wrap;align-items:center;gap:8px}' +
 	// 说明文字显式给字号与字重:它现在长在 <h2> 里,不这么写就会被标题的大号粗体
 	// 同化,读起来像第二个标题而不是一句注解。
 	'.ob-descr{font-size:.875rem;font-weight:400;opacity:.7;line-height:1.4}' +
+	// 副标题末尾那条面板地址:靠 margin-left 和前面的文案分开,而不是在 i18n 词条
+	// 里塞一个尾随空格(不可见、编辑时极易丢),中英文冒号后的松紧也能各自合适。
+	'.ob-descr a{margin-left:.4em}' +
 	'.ob-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;margin-top:12px}' +
 	// 卸载卡片撤走后网格只剩三张:两列排布会在右下角留一个空格子。让内容最多的
 	// 「Open-Box 升级」横跨两列把这个洞填掉(渠道列表另有 max-width 兜着,不会
@@ -762,18 +768,16 @@ var STYLE_CSS =
 	// 标题行右侧放按钮时(升级卡片的「一键检测可用升级渠道」)必须显式给字号,
 	// 否则它会继承 h3 的 1.05em 变成一颗大按钮,把标题行撑歪。
 	'.ob-card h3 .cbi-button{font-size:.875rem;font-weight:600;line-height:1.4}' +
-	'.ob-ver{font-size:.85em;font-weight:600;opacity:.75;white-space:nowrap}' +
-	'.ob-pills{display:flex;flex-wrap:wrap;gap:8px;align-items:center}' +
+	// margin-left:auto 不是为了单行时靠右(space-between 已经做到了),而是为了
+	// **换行之后**仍然靠右:卡片一窄,标题 + 状态徽标就占满第一行,版本号被挤到
+	// 第二行——那一行只有它一个,没有 auto 就会贴着左边缘,看着像另起了一段。
+	'.ob-ver{margin-left:auto;font-size:.85em;font-weight:600;opacity:.75;white-space:nowrap}' +
 	// font-weight/font-size 写死:徽标现在长在 <h3> 里,不写就会继承标题的粗体、
 	// 字号也跟着 h3 放大,一行里两种粗体读起来分不出主次。
 	'.ob-pill{display:inline-flex;align-items:center;gap:.35em;padding:.15em .65em;border-radius:999px;font-size:.8rem;font-weight:400;border:1px solid currentColor;white-space:nowrap}' +
 	'.ob-pill-on{color:#2e9e4f}' +
 	'.ob-pill-off{color:#d04a4a}' +
 	'.ob-pill-muted{opacity:.7;border-color:rgba(127,127,127,.4)}' +
-	// margin-left:auto 是徽标还在这一行时用来把地址顶到最右的;徽标挪进标题行后
-	// 它成了本行唯一的内容,再右对齐就会在左边拖出一条空白。左对齐让它压在下方
-	// 「启动」按钮的左边缘上,和控制区连成一块。
-	'.ob-link{font-size:.9em;white-space:nowrap}' +
 	'.ob-btns{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 0}' +
 	'.ob-meta{display:flex;flex-wrap:wrap;gap:.5em;align-items:baseline;margin:.4em 0;font-size:.95em}' +
 	'.ob-hint{margin:10px 0 0;font-size:.85em;opacity:.65;line-height:1.55}' +
@@ -1414,8 +1418,15 @@ return view.extend({
 			E('h2', { 'class': 'ob-head' }, [
 				E('div', { 'class': 'ob-h2-left' }, [
 					E('span', {}, 'Open-Box'),
-					E('span', { 'class': 'ob-descr' },
-						tr('Fallback controls. Full management lives in the Open-Box panel.'))
+					// 面板地址跟在副标题末尾:它原本在面板卡片里单独占一行,但那是整个
+					// 页面最该被看见的一条信息(完整管理都在面板里),放在副标题里比藏在
+					// 第二张卡片中更直接。仍然是可点的链接。文案与链接之间不写空格,靠
+					// .ob-descr a 的 margin-left 撑开——中文冒号后跟一个半角空格会显得
+					// 松,交给 CSS 控制两种语言下都合适。
+					E('span', { 'class': 'ob-descr' }, [
+						tr('Basic settings. Full management lives in the Open-Box panel:'),
+						E('a', { 'href': panelUrl, 'target': '_blank', 'rel': 'noreferrer' }, panelUrl)
+					])
 				]),
 				E('button', { 'class': 'cbi-button cbi-button-negative',
 					'click': ui.createHandlerFn(self, function () { return showUninstallDialog(); }) },
@@ -1455,15 +1466,12 @@ return view.extend({
 					]),
 
 					// 「Open-Box 面板」卡片同理是一个自成一体的功能块:标题行是标题 + 状态
-					// 徽标 + 版本号,下面一行是面板地址,再下面是启停控制。渠道选择、探测与
-					// 升级操作篇幅大、也不是"这张卡片自己的版本信息",单独成一张紧跟在后面的
-					// 「Open-Box 升级」卡片(见下方),不再像旧版那样挤进面板卡片里。
-					// 面板地址留在自己那一行,左对齐(见 .ob-link 的注释)。
+					// 徽标 + 版本号,下面是启停控制。渠道选择、探测与升级操作篇幅大、也不是
+					// "这张卡片自己的版本信息",单独成一张紧跟在后面的「Open-Box 升级」卡片
+					// (见下方),不再像旧版那样挤进面板卡片里。面板地址也不在这里了——它
+					// 挪到了页面副标题(见上方 .ob-descr)。
 					E('div', { 'class': 'ob-card' }, [
 						cardTitle(tr('Open-Box panel'), panel, installed || tr('Not installed')),
-						E('div', { 'class': 'ob-pills' }, [
-							E('a', { 'class': 'ob-link', 'href': panelUrl, 'target': '_blank', 'rel': 'noreferrer' }, panelUrl)
-						]),
 						serviceButtons('openbox-panel', panel, null)
 					]),
 
@@ -1476,17 +1484,22 @@ return view.extend({
 					// 比另外两张多,横跨两列给了它整行宽度,渠道行不再像旧版 auto-fit
 					// 三列时那样被挤成窄条。
 					E('div', { 'class': 'ob-card ob-card-wide' }, [
-						// 「一键检测可用升级渠道」放进标题行右侧,和另外两张卡片版本号
-						// 的落位是同一个模式(.ob-card h3 的 justify-content:space-between)。
-						// 它原本单独占一行(.ob-sel-row),白白吃掉一行高度,而右边那一大片
-						// 空白正好没人用。
+						// 标题行右侧是「一键检测可用升级渠道」+「检查更新」两个按钮,和另外
+						// 两张卡片版本号的落位是同一个模式(.ob-card h3 的
+						// justify-content:space-between)。它们原本各自占一行,白白吃掉两行
+						// 高度,而右边那一大片空白正好没人用。两个按钮必须裹进 .ob-h3-right:
+						// space-between 会把平铺进来的多个子元素摊开,标题和两个按钮之间会
+						// 各撑出一段空隙,而不是"两个按钮挨在一起靠右"。
 						E('h3', {}, [
 							E('span', {}, tr('Open-Box upgrade')),
-							probeAllBtn
+							E('div', { 'class': 'ob-h3-right' }, [ probeAllBtn, checkBtn ])
 						]),
 						channelStatusList,
 						E('div', { 'class': 'ob-div' }),
-						E('div', { 'class': 'ob-btns' }, [ checkBtn, versionResult, updateBtn ]),
+						// versionResult 留在底部这一行、紧挨着「立即更新」:它是"要更到哪个
+						// 版本"的说明,和按下去就开始下载的那个按钮放在一起才有意义;跟着
+						// 「检查更新」挪到标题行反而离动作更远。
+						E('div', { 'class': 'ob-btns' }, [ versionResult, updateBtn ]),
 						selectedChannelLine
 					])
 				])
