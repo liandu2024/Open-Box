@@ -45,7 +45,7 @@ var I18N = {
 		'This will stop services and replace program files. The panel will be briefly unavailable. Continue?':
 			'此操作会停止服务并替换程序文件,期间面板会短暂不可用。确定继续吗?',
 		'GitHub direct': 'GitHub 直连',
-		'Test all channels': '一键检测',
+		'Test all update channels': '一键检测可用升级渠道',
 		'Test': '检测',
 		'Testing...': '检测中…',
 		'Not tested yet': '未检测',
@@ -132,7 +132,7 @@ var I18N = {
 		'This will stop services and replace program files. The panel will be briefly unavailable. Continue?':
 			'此操作會停止服務並替換程式檔案,期間面板會短暫無法使用。確定要繼續嗎?',
 		'GitHub direct': 'GitHub 直連',
-		'Test all channels': '一鍵檢測',
+		'Test all update channels': '一鍵檢測可用升級渠道',
 		'Test': '檢測',
 		'Testing...': '檢測中…',
 		'Not tested yet': '未檢測',
@@ -726,7 +726,12 @@ var STYLE_CSS =
 	// 在部分主题下丢掉样式。按钮显式给字号,否则它会继承 h2 的大字号。
 	'h2.ob-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.75em}' +
 	'h2.ob-head .cbi-button{font-size:.875rem;font-weight:600;line-height:1.4}' +
-	'.ob-wrap{max-width:1400px}' +
+	// 标题条、说明文字、下面的网格三者共用同一个宽度上限,右边缘才会对齐。
+	// 主题把 <h2> 画成一条通栏白条,不限宽的话它会一直顶到窗口右侧,而内容网格
+	// 停在 1400px,宽屏上右边缘差出一大截。box-sizing 显式写成 border-box:主题
+	// 给 h2 加了左右内边距,若继承到 content-box,这条白条会比网格宽出内边距那
+	// 么多,仍然对不齐。
+	'h2.ob-head,.ob-descr,.ob-wrap{max-width:1400px;box-sizing:border-box}' +
 	'.ob-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;margin-top:12px}' +
 	// 卸载卡片撤走后网格只剩三张:两列排布会在右下角留一个空格子。让内容最多的
 	// 「Open-Box 升级」横跨两列把这个洞填掉(渠道列表另有 max-width 兜着,不会
@@ -748,6 +753,9 @@ var STYLE_CSS =
 	// 横线用 h3 自己的 border-bottom,而不是再插一个元素:它天然只有 h3 那么宽
 	// (卡片内容宽度,不含卡片左右 18px 内边距),不会像 .ob-div 那样通栏。
 	'.ob-card h3{margin:0 0 12px;padding:0 0 10px;background:none;border:0;border-bottom:1px solid rgba(127,127,127,.22);border-radius:0;box-shadow:none;font-size:1.05em;font-weight:600;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.75em}' +
+	// 标题行右侧放按钮时(升级卡片的「一键检测可用升级渠道」)必须显式给字号,
+	// 否则它会继承 h3 的 1.05em 变成一颗大按钮,把标题行撑歪。
+	'.ob-card h3 .cbi-button{font-size:.875rem;font-weight:600;line-height:1.4}' +
 	'.ob-ver{font-size:.85em;font-weight:600;opacity:.75;white-space:nowrap}' +
 	'.ob-pills{display:flex;flex-wrap:wrap;gap:8px;align-items:center}' +
 	'.ob-pill{display:inline-flex;align-items:center;gap:.35em;padding:.15em .65em;border-radius:999px;font-size:.85em;border:1px solid currentColor;white-space:nowrap}' +
@@ -773,8 +781,7 @@ var STYLE_CSS =
 	'.ob-chan-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
 	'.ob-chan-stat{font-size:.85em;opacity:.85;white-space:nowrap}' +
 	'.ob-chan-ok{color:#2e9e4f}' +
-	'.ob-chan-bad{color:#d04a4a}' +
-	'.ob-sel-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}';
+	'.ob-chan-bad{color:#d04a4a}';
 
 return view.extend({
 	load: function () {
@@ -855,12 +862,18 @@ return view.extend({
 			return E('div', { 'class': 'ob-pills' }, pills);
 		}
 
-		function serviceButtons(name, st, stopActions) {
+		// stopHint:挂在「停止」按钮上的悬停提示。内核的「停止」顺带关掉开机自启,
+		// 这件事足够反直觉(停完重启路由器,内核不会自己回来),原本用一段说明文字
+		// 摆在卡片里,但那段文字太长、占掉半张卡片,已按要求撤掉。信息本身不能跟着
+		// 丢,所以改挂 title:不占版面,想知道的人一悬停就有。
+		function serviceButtons(name, st, stopActions, stopHint) {
+			var stopAttrs = { 'class': 'cbi-button cbi-button-reset',
+				'click': ui.createHandlerFn(self, function () { return act(name, stopActions || 'stop'); }) };
+			if (stopHint) stopAttrs.title = stopHint;
 			return E('div', { 'class': 'ob-btns' }, [
 				E('button', { 'class': 'cbi-button cbi-button-apply',
 					'click': ui.createHandlerFn(self, function () { return act(name, 'start'); }) }, tr('Start')),
-				E('button', { 'class': 'cbi-button cbi-button-reset',
-					'click': ui.createHandlerFn(self, function () { return act(name, stopActions || 'stop'); }) }, tr('Stop')),
+				E('button', stopAttrs, tr('Stop')),
 				E('button', { 'class': 'cbi-button cbi-button-neutral',
 					'click': ui.createHandlerFn(self, function () { return act(name, 'restart'); }) }, tr('Restart')),
 				E('button', { 'class': 'cbi-button cbi-button-neutral',
@@ -1330,7 +1343,7 @@ return view.extend({
 					chain = chain.then(function () { return probeOneChannel(c.value); });
 				});
 				return chain.then(function () { setProbingDisabled(false); });
-			}) }, tr('Test all channels'));
+			}) }, tr('Test all update channels'));
 
 		var selectedChannel = CHANNELS[0].value;
 
@@ -1382,7 +1395,7 @@ return view.extend({
 					'click': ui.createHandlerFn(self, function () { return showUninstallDialog(); }) },
 					tr('Uninstall Open-Box'))
 			]),
-			E('p', { 'class': 'cbi-section-descr' },
+			E('p', { 'class': 'cbi-section-descr ob-descr' },
 				tr('Fallback controls. Full management lives in the Open-Box panel.')),
 
 			// .ob-wrap > .ob-grid 是固定两列、900px 断点收缩成单列的网格(定义见
@@ -1417,8 +1430,7 @@ return view.extend({
 							E('span', { 'class': 'ob-ver' }, singboxVersion || tr('Not installed'))
 						]),
 						statusPills(core, null),
-						serviceButtons('openbox', core, [ 'stop', 'disable' ]),
-						E('p', { 'class': 'ob-hint' },
+						serviceButtons('openbox', core, [ 'stop', 'disable' ],
 							tr('Stopping also turns off autostart (so it stays stopped after a reboot) and restores plain internet access: the IPv6 leak block and the Open-Box DNS upstream are removed. The panel stays reachable.'))
 					]),
 
@@ -1437,17 +1449,23 @@ return view.extend({
 						serviceButtons('openbox-panel', panel, null)
 					]),
 
-					// 「Open-Box 升级」独立成一张卡片(负责人手绘草图的要求):最上面一行是
-					// 一键检测(.ob-sel-row),中间一个带边框的列表把 4 个渠道各自的探测
+					// 「Open-Box 升级」独立成一张卡片(负责人手绘草图的要求):标题行右侧是
+					// 「一键检测可用升级渠道」,中间一个带边框的列表把 4 个渠道各自的探测
 					// 状态、单选按钮(选中即"立即更新"要用的渠道)、单独的「检测」按钮圈
 					// 在一起(.ob-chan),最下面是检查更新/立即更新那组控制 + 选中渠道的
 					// 实时摘要——不再像旧版那样单独一个下拉框选渠道,选择直接并进渠道
 					// 列表每一行的开头(见 channelStatusList 定义处)。这张卡片内容明显
-					// 比其它三张多,固定两列的网格给了它和面板卡片一样的整栏宽度,渠道行
-					// 不再像旧版 auto-fit 三列时那样被挤成窄条。
+					// 比另外两张多,横跨两列给了它整行宽度,渠道行不再像旧版 auto-fit
+					// 三列时那样被挤成窄条。
 					E('div', { 'class': 'ob-card ob-card-wide' }, [
-						E('h3', {}, tr('Open-Box upgrade')),
-						E('div', { 'class': 'ob-sel-row' }, [ probeAllBtn ]),
+						// 「一键检测可用升级渠道」放进标题行右侧,和另外两张卡片版本号
+						// 的落位是同一个模式(.ob-card h3 的 justify-content:space-between)。
+						// 它原本单独占一行(.ob-sel-row),白白吃掉一行高度,而右边那一大片
+						// 空白正好没人用。
+						E('h3', {}, [
+							E('span', {}, tr('Open-Box upgrade')),
+							probeAllBtn
+						]),
 						channelStatusList,
 						E('div', { 'class': 'ob-div' }),
 						E('div', { 'class': 'ob-btns' }, [ checkBtn, versionResult, updateBtn ]),
