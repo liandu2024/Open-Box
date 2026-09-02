@@ -1,84 +1,86 @@
 <template>
-  <div class="card bg-base-100 border-base-300/60 border">
-    <div class="card-body gap-3 p-4">
-      <!-- 「添加站点集」按钮在顶部页签栏右上角(RoutingPage 里 Teleport 过去),这里只留标题 -->
-      <div>
-        <h2 class="text-base font-semibold">{{ $t('routingPoliciesTitle') }}</h2>
-        <p class="text-base-content/60 text-xs">{{ $t('routingPoliciesDescription') }}</p>
-      </div>
+  <!-- 和节点管理同一种排版:没有外层大卡片和标题,每个站点集一张独立卡片。
+       「添加站点集」按钮在顶部页签栏右上角(RoutingPage 里 Teleport 过去)。 -->
+  <div class="flex flex-col gap-2">
+    <p
+      v-if="!rows.length"
+      class="text-base-content/50 px-1 text-xs"
+    >
+      {{ $t('routingPoliciesEmpty') }}
+    </p>
 
-      <p
-        v-if="!rows.length"
-        class="text-base-content/50 text-xs"
-      >
-        {{ $t('routingPoliciesEmpty') }}
-      </p>
-
-      <!-- 顺序即优先级:sing-box 按首条命中生效,拖拽排序改的就是这个。拖完立刻存,
+    <!-- 顺序即优先级:sing-box 按首条命中生效,拖拽排序改的就是这个。拖完立刻存,
            不然刷新一下就白拖了(和节点组那边一致)。 -->
-      <!-- force-fallback:用鼠标事件模拟拖拽,不走浏览器原生拖放(原生的半透明快照在各浏览器
+    <!-- force-fallback:用鼠标事件模拟拖拽,不走浏览器原生拖放(原生的半透明快照在各浏览器
            表现不一)。fallback-on-body 必须一起开:跟着指针走的那份克隆是 position: fixed,
            默认挂在列表父节点下;而卡片开了 backdrop-filter(面板的背景模糊),这类属性会让
            fixed 改以卡片为参照,克隆就跑到离指针老远的地方去。挂到 body 上就没有这层干扰。 -->
-      <Draggable
-        v-model="rows"
-        :animation="150"
-        :force-fallback="true"
-        :fallback-on-body="true"
-        handle=".drag-handle"
-        ghost-class="opacity-40"
-        item-key="id"
-        class="flex flex-col gap-2"
-        @end="persist(rows)"
-      >
-        <template #item="{ element: policy }">
-          <div class="border-base-300/60 flex items-center gap-2 rounded-lg border p-2.5">
-            <Bars3Icon class="drag-handle text-base-content/40 h-4 w-4 shrink-0 cursor-move" />
-            <CountryFlag
-              v-if="policy.icon"
-              :code="policy.icon"
-              :size="18"
-            />
-            <div class="min-w-0 flex-1">
-              <div class="truncate text-sm font-medium">{{ policy.name }}</div>
-              <div class="text-base-content/60 mt-0.5 truncate text-xs">{{ conditionSummary(policy) }}</div>
+    <Draggable
+      v-model="rows"
+      :animation="150"
+      :force-fallback="true"
+      :fallback-on-body="true"
+      handle=".drag-handle"
+      ghost-class="opacity-40"
+      item-key="id"
+      class="flex flex-col gap-2"
+      @end="persist(rows)"
+    >
+      <template #item="{ element: policy }">
+        <div
+          class="card bg-base-100 border-base-content/10 flex flex-row items-center gap-2 border p-3"
+        >
+          <Bars3Icon class="drag-handle text-base-content/40 h-4 w-4 shrink-0 cursor-move" />
+          <CountryFlag
+            v-if="policy.icon"
+            :code="policy.icon"
+            :size="18"
+          />
+          <div class="min-w-0 flex-1">
+            <div class="truncate text-base font-medium">{{ policy.name }}</div>
+            <div class="text-base-content/60 mt-0.5 truncate text-xs">
+              {{ conditionSummary(policy) }}
             </div>
-            <button
-              type="button"
-              class="btn btn-ghost btn-square btn-sm"
-              v-tip="$t('edit')"
-              :aria-label="$t('edit')"
-              @click="openEditor(policy)"
-            >
-              <PencilSquareIcon class="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              class="btn btn-ghost btn-square btn-sm hover:text-error"
-              v-tip="$t('delete')"
-              :aria-label="$t('delete')"
-              @click="askDelete(policy)"
-            >
-              <TrashIcon class="h-4 w-4" />
-            </button>
           </div>
-        </template>
-      </Draggable>
-
-      <!-- 兜底:上面都没命中的流量走它。系统生成、删不掉、拖不动——内核的 route.final
-           必须指向某个出站,少了它整份配置就不成立。走哪条线路在「代理」页点选。 -->
-      <div class="border-base-300/60 bg-base-200/40 flex items-center gap-2 rounded-lg border border-dashed p-2.5">
-        <span class="w-4 shrink-0" />
-        <CountryFlag
-          :code="FALLBACK_ICON"
-          :size="18"
-        />
-        <div class="min-w-0 flex-1">
-          <div class="truncate text-sm font-medium">{{ FALLBACK_NAME }}</div>
-          <div class="text-base-content/60 mt-0.5 truncate text-xs">{{ $t('routingFallbackHint') }}</div>
+          <button
+            type="button"
+            class="btn btn-ghost btn-square btn-sm"
+            v-tip="$t('edit')"
+            :aria-label="$t('edit')"
+            @click="openEditor(policy)"
+          >
+            <PencilSquareIcon class="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            class="btn btn-ghost btn-square btn-sm hover:text-error"
+            v-tip="$t('delete')"
+            :aria-label="$t('delete')"
+            @click="askDelete(policy)"
+          >
+            <TrashIcon class="h-4 w-4" />
+          </button>
         </div>
-        <span class="badge badge-ghost badge-sm shrink-0">{{ $t('routingFallbackBadge') }}</span>
+      </template>
+    </Draggable>
+
+    <!-- 兜底:上面都没命中的流量走它。系统生成、删不掉、拖不动——内核的 route.final
+           必须指向某个出站,少了它整份配置就不成立。走哪条线路在「代理」页点选。 -->
+    <div
+      class="card bg-base-100 border-base-content/10 flex flex-row items-center gap-2 border border-dashed p-3"
+    >
+      <span class="w-4 shrink-0" />
+      <CountryFlag
+        :code="FALLBACK_ICON"
+        :size="18"
+      />
+      <div class="min-w-0 flex-1">
+        <div class="truncate text-base font-medium">{{ FALLBACK_NAME }}</div>
+        <div class="text-base-content/60 mt-0.5 truncate text-xs">
+          {{ $t('routingFallbackHint') }}
+        </div>
       </div>
+      <span class="badge badge-ghost badge-sm shrink-0">{{ $t('routingFallbackBadge') }}</span>
     </div>
 
     <!-- 删掉一个站点集会连带删掉内核里那个同名 selector(代理页上就没了),先确认一次 -->
@@ -87,7 +89,9 @@
       :title="$t('routingPolicyDeleteTitle')"
     >
       <div class="flex flex-col gap-4 p-2">
-        <p class="text-sm">{{ $t('routingPolicyDeleteConfirm', { name: pendingDelete?.name || '' }) }}</p>
+        <p class="text-sm">
+          {{ $t('routingPolicyDeleteConfirm', { name: pendingDelete?.name || '' }) }}
+        </p>
         <div class="flex justify-end gap-2">
           <button
             type="button"
@@ -265,25 +269,80 @@ const { t } = useI18n()
 
 type ConditionKey = 'rulesets' | 'domain' | 'domainSuffix' | 'domainKeyword' | 'ipCidr'
 const CONDITION_FIELDS: { key: ConditionKey; labelKey: string; placeholderKey: string }[] = [
-  { key: 'rulesets', labelKey: 'routingPolicyRulesets', placeholderKey: 'routingPolicyRulesetsPlaceholder' },
-  { key: 'domainSuffix', labelKey: 'routingPolicyDomainSuffix', placeholderKey: 'routingPolicyDomainSuffixPlaceholder' },
-  { key: 'domain', labelKey: 'routingPolicyDomain', placeholderKey: 'routingPolicyDomainPlaceholder' },
-  { key: 'domainKeyword', labelKey: 'routingPolicyDomainKeyword', placeholderKey: 'routingPolicyDomainKeywordPlaceholder' },
-  { key: 'ipCidr', labelKey: 'routingPolicyIpCidr', placeholderKey: 'routingPolicyIpCidrPlaceholder' },
+  {
+    key: 'rulesets',
+    labelKey: 'routingPolicyRulesets',
+    placeholderKey: 'routingPolicyRulesetsPlaceholder',
+  },
+  {
+    key: 'domainSuffix',
+    labelKey: 'routingPolicyDomainSuffix',
+    placeholderKey: 'routingPolicyDomainSuffixPlaceholder',
+  },
+  {
+    key: 'domain',
+    labelKey: 'routingPolicyDomain',
+    placeholderKey: 'routingPolicyDomainPlaceholder',
+  },
+  {
+    key: 'domainKeyword',
+    labelKey: 'routingPolicyDomainKeyword',
+    placeholderKey: 'routingPolicyDomainKeywordPlaceholder',
+  },
+  {
+    key: 'ipCidr',
+    labelKey: 'routingPolicyIpCidr',
+    placeholderKey: 'routingPolicyIpCidrPlaceholder',
+  },
 ]
 
 // 编辑弹窗里的一行 = 一条规则。geosite/geoip 只是规则集的糖:写 cn 存下去就是
 // geosite-cn —— 官方规则集全是这两个前缀,让人每次手打前缀没有意义。前缀之外的
 // 规则集(老档案里可能有)走 ruleset 这一档,原样存。
-type RuleType = 'domainSuffix' | 'domain' | 'domainKeyword' | 'ipCidr' | 'geosite' | 'geoip' | 'ruleset'
+type RuleType =
+  | 'domainSuffix'
+  | 'domain'
+  | 'domainKeyword'
+  | 'ipCidr'
+  | 'geosite'
+  | 'geoip'
+  | 'ruleset'
 const RULE_TYPES: { type: RuleType; labelKey: string; placeholderKey: string }[] = [
-  { type: 'domainSuffix', labelKey: 'routingPolicyDomainSuffix', placeholderKey: 'routingPolicyRuleDomainSuffixPlaceholder' },
-  { type: 'domain', labelKey: 'routingPolicyDomain', placeholderKey: 'routingPolicyRuleDomainPlaceholder' },
-  { type: 'domainKeyword', labelKey: 'routingPolicyDomainKeyword', placeholderKey: 'routingPolicyRuleDomainKeywordPlaceholder' },
-  { type: 'ipCidr', labelKey: 'routingPolicyIpCidr', placeholderKey: 'routingPolicyRuleIpCidrPlaceholder' },
-  { type: 'geosite', labelKey: 'routingPolicyGeosite', placeholderKey: 'routingPolicyRuleGeoPlaceholder' },
-  { type: 'geoip', labelKey: 'routingPolicyGeoip', placeholderKey: 'routingPolicyRuleGeoPlaceholder' },
-  { type: 'ruleset', labelKey: 'routingPolicyRulesets', placeholderKey: 'routingPolicyRulesetsPlaceholder' },
+  {
+    type: 'domainSuffix',
+    labelKey: 'routingPolicyDomainSuffix',
+    placeholderKey: 'routingPolicyRuleDomainSuffixPlaceholder',
+  },
+  {
+    type: 'domain',
+    labelKey: 'routingPolicyDomain',
+    placeholderKey: 'routingPolicyRuleDomainPlaceholder',
+  },
+  {
+    type: 'domainKeyword',
+    labelKey: 'routingPolicyDomainKeyword',
+    placeholderKey: 'routingPolicyRuleDomainKeywordPlaceholder',
+  },
+  {
+    type: 'ipCidr',
+    labelKey: 'routingPolicyIpCidr',
+    placeholderKey: 'routingPolicyRuleIpCidrPlaceholder',
+  },
+  {
+    type: 'geosite',
+    labelKey: 'routingPolicyGeosite',
+    placeholderKey: 'routingPolicyRuleGeoPlaceholder',
+  },
+  {
+    type: 'geoip',
+    labelKey: 'routingPolicyGeoip',
+    placeholderKey: 'routingPolicyRuleGeoPlaceholder',
+  },
+  {
+    type: 'ruleset',
+    labelKey: 'routingPolicyRulesets',
+    placeholderKey: 'routingPolicyRulesetsPlaceholder',
+  },
 ]
 const placeholderKey = (type: RuleType) =>
   RULE_TYPES.find((r) => r.type === type)?.placeholderKey || 'routingPolicyRuleDomainPlaceholder'
@@ -299,7 +358,13 @@ let ruleKeySeed = 0
 const policies = computed<OpenboxRoutingPolicy[]>(() => props.profile.routing.policies || [])
 // 拖拽要求 v-model 绑一个 ref(vuedraggable 会整个替换数组),所以列表在本地存一份
 const rows = ref<OpenboxRoutingPolicy[]>([])
-watch(policies, (value) => { rows.value = [...value] }, { immediate: true, deep: true })
+watch(
+  policies,
+  (value) => {
+    rows.value = [...value]
+  },
+  { immediate: true, deep: true },
+)
 
 const conditionSummary = (policy: OpenboxRoutingPolicy) => {
   const parts: string[] = []
@@ -324,7 +389,8 @@ const addRule = (type: RuleType = 'domainSuffix', value = '') => {
 // 其余前缀原样落到 ruleset 那一档。
 const rulesetToRow = (tag: string): RuleRow => {
   for (const type of ['geosite', 'geoip'] as const) {
-    if (tag.startsWith(`${type}-`)) return { key: ++ruleKeySeed, type, value: tag.slice(type.length + 1) }
+    if (tag.startsWith(`${type}-`))
+      return { key: ++ruleKeySeed, type, value: tag.slice(type.length + 1) }
   }
   return { key: ++ruleKeySeed, type: 'ruleset', value: tag }
 }
@@ -365,12 +431,17 @@ const saveDraft = async () => {
   }
   // 规则行 → 存储用的那五个数组。空值的行直接忽略(加了一行没填就是没填)
   const collected: Record<ConditionKey, string[]> = {
-    rulesets: [], domain: [], domainSuffix: [], domainKeyword: [], ipCidr: [],
+    rulesets: [],
+    domain: [],
+    domainSuffix: [],
+    domainKeyword: [],
+    ipCidr: [],
   }
   for (const row of rules.value) {
     const value = row.value.trim()
     if (!value) continue
-    if (row.type === 'geosite' || row.type === 'geoip') collected.rulesets.push(`${row.type}-${value}`)
+    if (row.type === 'geosite' || row.type === 'geoip')
+      collected.rulesets.push(`${row.type}-${value}`)
     else if (row.type === 'ruleset') collected.rulesets.push(value)
     else collected[row.type].push(value)
   }

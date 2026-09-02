@@ -536,8 +536,6 @@ const zh: LANG_MESSAGE = {
   routing: '\u5206\u6d41',
   routingDeployValidateFailedGeneric: '\u914d\u7f6e\u6ca1\u6709\u901a\u8fc7\u6821\u9a8c\u3002',
   routingLoadFailed: '\u6ca1\u52a0\u8f7d\u51fa\u5206\u6d41\u8bbe\u7f6e:{message}',
-  routingPoliciesTitle: '站点集',
-  routingPoliciesDescription: '一个站点集 = 一组匹配规则。命中的流量走这个站点集选中的线路(在「代理」页选)。按顺序匹配,可以拖拽调整;都没命中的走最下面的兜底。改动保存后要重启内核才生效。',
   routingPolicySaved: '已保存;重启内核后生效。',
   routingPoliciesEmpty: '还没有站点集。全部流量都按下面的兜底走。',
   routingFallbackBadge: '系统兜底',

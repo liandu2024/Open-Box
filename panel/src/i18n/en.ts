@@ -539,8 +539,6 @@ const en = {
   routing: 'Routing',
   routingDeployValidateFailedGeneric: "The configuration didn't pass validation.",
   routingLoadFailed: "Couldn't load routing settings: {message}",
-  routingPoliciesTitle: 'Site sets',
-  routingPoliciesDescription: 'A site set is a group of matching rules. Traffic it claims takes the line you pick for it on the Proxies page. Matched in order — drag to reorder; whatever nothing claims goes to the fallback at the bottom. Changes take effect after a kernel restart.',
   routingPolicySaved: 'Saved. Takes effect after a kernel restart.',
   routingPoliciesEmpty: 'No site sets yet — everything follows the fallback below.',
   routingFallbackBadge: 'Built-in',
