@@ -25,10 +25,15 @@
 
       <!-- 顺序即优先级:sing-box 按首条命中生效,拖拽排序改的就是这个。拖完立刻存,
            不然刷新一下就白拖了(和节点组那边一致)。 -->
+      <!-- force-fallback:用鼠标事件模拟拖拽,不走浏览器原生拖放(原生的半透明快照在各浏览器
+           表现不一)。fallback-on-body 必须一起开:跟着指针走的那份克隆是 position: fixed,
+           默认挂在列表父节点下;而卡片开了 backdrop-filter(面板的背景模糊),这类属性会让
+           fixed 改以卡片为参照,克隆就跑到离指针老远的地方去。挂到 body 上就没有这层干扰。 -->
       <Draggable
         v-model="rows"
         :animation="150"
         :force-fallback="true"
+        :fallback-on-body="true"
         handle=".drag-handle"
         ghost-class="opacity-40"
         item-key="id"
