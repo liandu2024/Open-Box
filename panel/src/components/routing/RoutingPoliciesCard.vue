@@ -45,10 +45,7 @@
               :size="18"
             />
             <div class="min-w-0 flex-1">
-              <div class="flex items-center gap-2">
-                <span class="truncate text-sm font-medium">{{ policy.name }}</span>
-                <span class="badge badge-outline badge-xs shrink-0">{{ targetLabel(policy) }}</span>
-              </div>
+              <div class="truncate text-sm font-medium">{{ policy.name }}</div>
               <div class="text-base-content/60 mt-0.5 truncate text-xs">{{ conditionSummary(policy) }}</div>
             </div>
             <button
@@ -136,39 +133,62 @@
           </div>
         </div>
 
-        <div class="flex flex-col gap-1">
-          <label class="text-xs font-medium">{{ $t('routingPolicyDefaultLabel') }}</label>
-          <select
-            v-model="draft.default"
-            class="select select-sm w-full"
-          >
-            <option
-              v-for="opt in outboundOptions"
-              :key="opt.value"
-              :value="opt.value"
-            >
-              {{ opt.label }}
-            </option>
-          </select>
-          <p class="text-base-content/50 text-xs">{{ $t('routingPolicyDefaultHint') }}</p>
-        </div>
-
-        <!-- 五类条件各一行。同一条策略里多类条件是「或」的关系,和内核一致。 -->
+        <!-- 一条规则一行:类型 + 值。同一条策略里各行是「或」的关系(和内核一致),
+             所以行与行之间没有先后可言——不给拖拽柄,免得暗示一个并不存在的顺序。
+             策略走哪条线路不在这儿定:在「代理」页点选。 -->
         <div class="flex flex-col gap-2">
-          <div
-            v-for="field in CONDITION_FIELDS"
-            :key="field.key"
-            class="flex flex-col gap-1"
-          >
-            <label class="text-xs font-medium">{{ $t(field.labelKey) }}</label>
-            <input
-              v-model="draftText[field.key]"
-              type="text"
-              class="input input-sm w-full font-mono text-xs"
-              :placeholder="$t(field.placeholderKey)"
-            />
+          <div class="flex items-center justify-between gap-2">
+            <label class="text-xs font-medium">{{ $t('routingPolicyRulesLabel') }}</label>
+            <button
+              type="button"
+              class="btn btn-ghost btn-xs"
+              @click="addRule()"
+            >
+              <PlusIcon class="h-3.5 w-3.5" />
+              {{ $t('routingPolicyRuleAdd') }}
+            </button>
           </div>
-          <p class="text-base-content/50 text-xs">{{ $t('routingPolicyConditionHint') }}</p>
+
+          <p
+            v-if="!rules.length"
+            class="text-base-content/50 text-xs"
+          >
+            {{ $t('routingPolicyNoRuleYet') }}
+          </p>
+
+          <div
+            v-for="(rule, index) in rules"
+            :key="rule.key"
+            class="flex items-center gap-2"
+          >
+            <select
+              v-model="rule.type"
+              class="select select-sm w-36 shrink-0"
+            >
+              <option
+                v-for="opt in RULE_TYPES"
+                :key="opt.type"
+                :value="opt.type"
+              >
+                {{ $t(opt.labelKey) }}
+              </option>
+            </select>
+            <input
+              v-model="rule.value"
+              type="text"
+              class="input input-sm min-w-0 flex-1 font-mono text-xs"
+              :placeholder="$t(placeholderKey(rule.type))"
+            />
+            <button
+              type="button"
+              class="btn btn-ghost btn-square btn-sm hover:text-error"
+              :aria-label="$t('delete')"
+              @click="rules.splice(index, 1)"
+            >
+              <TrashIcon class="h-4 w-4" />
+            </button>
+          </div>
+
           <div class="flex flex-wrap items-center gap-1.5">
             <span class="text-base-content/60 text-xs">{{ $t('routingCategoryPresetsLabel') }}</span>
             <button
@@ -217,13 +237,12 @@ import CountrySelect from '@/components/common/CountrySelect.vue'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import { showNotification } from '@/helper/notification'
 import { Bars3Icon, PencilSquareIcon, PlusIcon, TrashIcon } from '@heroicons/vue/24/outline'
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Draggable from 'vuedraggable'
 
 const props = defineProps<{
   profile: OpenboxProfile
-  groupNames: string[]
   patchProfile: (patch: Record<string, unknown>) => Promise<OpenboxProfile>
 }>()
 
@@ -237,6 +256,30 @@ const CONDITION_FIELDS: { key: ConditionKey; labelKey: string; placeholderKey: s
   { key: 'domainKeyword', labelKey: 'routingPolicyDomainKeyword', placeholderKey: 'routingPolicyDomainKeywordPlaceholder' },
   { key: 'ipCidr', labelKey: 'routingPolicyIpCidr', placeholderKey: 'routingPolicyIpCidrPlaceholder' },
 ]
+
+// 编辑弹窗里的一行 = 一条规则。geosite/geoip 只是规则集的糖:写 cn 存下去就是
+// geosite-cn —— 官方规则集全是这两个前缀,让人每次手打前缀没有意义。前缀之外的
+// 规则集(老档案里可能有)走 ruleset 这一档,原样存。
+type RuleType = 'domainSuffix' | 'domain' | 'domainKeyword' | 'ipCidr' | 'geosite' | 'geoip' | 'ruleset'
+const RULE_TYPES: { type: RuleType; labelKey: string; placeholderKey: string }[] = [
+  { type: 'domainSuffix', labelKey: 'routingPolicyDomainSuffix', placeholderKey: 'routingPolicyRuleDomainSuffixPlaceholder' },
+  { type: 'domain', labelKey: 'routingPolicyDomain', placeholderKey: 'routingPolicyRuleDomainPlaceholder' },
+  { type: 'domainKeyword', labelKey: 'routingPolicyDomainKeyword', placeholderKey: 'routingPolicyRuleDomainKeywordPlaceholder' },
+  { type: 'ipCidr', labelKey: 'routingPolicyIpCidr', placeholderKey: 'routingPolicyRuleIpCidrPlaceholder' },
+  { type: 'geosite', labelKey: 'routingPolicyGeosite', placeholderKey: 'routingPolicyRuleGeoPlaceholder' },
+  { type: 'geoip', labelKey: 'routingPolicyGeoip', placeholderKey: 'routingPolicyRuleGeoPlaceholder' },
+  { type: 'ruleset', labelKey: 'routingPolicyRulesets', placeholderKey: 'routingPolicyRulesetsPlaceholder' },
+]
+const placeholderKey = (type: RuleType) =>
+  RULE_TYPES.find((r) => r.type === type)?.placeholderKey || 'routingPolicyRuleDomainPlaceholder'
+
+interface RuleRow {
+  // 列表渲染要一个稳定的 key:类型和值都会被改,不能拿它们当 key
+  key: number
+  type: RuleType
+  value: string
+}
+let ruleKeySeed = 0
 
 // 沿用改版前那几个「快速填入」:点一下把规则集填进去,不直接保存。
 const CATEGORY_PRESETS = [
@@ -252,23 +295,6 @@ const policies = computed<OpenboxRoutingPolicy[]>(() => props.profile.routing.po
 const rows = ref<OpenboxRoutingPolicy[]>([])
 watch(policies, (value) => { rows.value = [...value] }, { immediate: true, deep: true })
 
-const enabled = (key: 'direct' | 'reject' | 'groups') =>
-  props.profile.routing.outboundOptions?.[key] !== false
-
-// 默认出站的候选:和内核里 selector 的成员表一致(见 engine/routing-model.mjs)
-const outboundOptions = computed(() => {
-  const list: { value: string; label: string }[] = []
-  if (enabled('direct')) list.push({ value: 'direct', label: t('direct') })
-  if (enabled('groups')) list.push(...props.groupNames.map((name) => ({ value: name, label: name })))
-  if (enabled('reject')) list.push({ value: 'block', label: t('routingOutboundReject') })
-  return list.length ? list : [{ value: 'direct', label: t('direct') }]
-})
-
-const targetLabel = (policy: OpenboxRoutingPolicy) => {
-  const hit = outboundOptions.value.find((o) => o.value === policy.default)
-  return hit ? hit.label : t('routingPolicyDefaultUnset')
-}
-
 const conditionSummary = (policy: OpenboxRoutingPolicy) => {
   const parts: string[] = []
   for (const field of CONDITION_FIELDS) {
@@ -281,28 +307,41 @@ const conditionSummary = (policy: OpenboxRoutingPolicy) => {
 const showEditor = ref(false)
 const editing = ref<OpenboxRoutingPolicy | null>(null)
 const draft = ref<OpenboxRoutingPolicy | null>(null)
-const draftText = reactive<Record<ConditionKey, string>>({
-  rulesets: '', domain: '', domainSuffix: '', domainKeyword: '', ipCidr: '',
-})
+const rules = ref<RuleRow[]>([])
 const saving = ref(false)
 
-const splitList = (text: string) => text.split(',').map((s) => s.trim()).filter(Boolean)
+const addRule = (type: RuleType = 'domainSuffix', value = '') => {
+  rules.value.push({ key: ++ruleKeySeed, type, value })
+}
+
+// 存下来的规则集 tag → 界面上的一行。geosite-cn 显示成 geosite + cn,
+// 其余前缀原样落到 ruleset 那一档。
+const rulesetToRow = (tag: string): RuleRow => {
+  for (const type of ['geosite', 'geoip'] as const) {
+    if (tag.startsWith(`${type}-`)) return { key: ++ruleKeySeed, type, value: tag.slice(type.length + 1) }
+  }
+  return { key: ++ruleKeySeed, type: 'ruleset', value: tag }
+}
 
 const openEditor = (policy: OpenboxRoutingPolicy | null) => {
   editing.value = policy
-  draft.value = policy
-    ? JSON.parse(JSON.stringify(policy))
-    : { id: '', name: '', icon: '', default: outboundOptions.value[0].value }
-  for (const field of CONDITION_FIELDS) {
-    draftText[field.key] = (policy?.[field.key] || []).join(',')
+  draft.value = policy ? JSON.parse(JSON.stringify(policy)) : { id: '', name: '', icon: '' }
+  rules.value = []
+  if (policy) {
+    for (const tag of policy.rulesets || []) rules.value.push(rulesetToRow(tag))
+    for (const type of ['domainSuffix', 'domain', 'domainKeyword', 'ipCidr'] as const) {
+      for (const value of policy[type] || []) addRule(type, value)
+    }
   }
+  if (!rules.value.length) addRule()
   showEditor.value = true
 }
 
+// 快速填入:补一行 geosite,已经有了就不重复加
 const fillPreset = (preset: { ruleset: string }) => {
-  const existing = splitList(draftText.rulesets)
-  if (!existing.includes(preset.ruleset)) existing.push(preset.ruleset)
-  draftText.rulesets = existing.join(',')
+  const row = rulesetToRow(preset.ruleset)
+  const exists = rules.value.some((r) => r.type === row.type && r.value === row.value)
+  if (!exists) rules.value.push(row)
 }
 
 const persist = async (next: OpenboxRoutingPolicy[]) => {
@@ -321,10 +360,19 @@ const saveDraft = async () => {
     showNotification({ content: 'routingPolicyNameDuplicate', type: 'alert-error' })
     return
   }
-  const rulesets = splitList(draftText.rulesets)
+  // 规则行 → 存储用的那五个数组。空值的行直接忽略(加了一行没填就是没填)
+  const collected: Record<ConditionKey, string[]> = {
+    rulesets: [], domain: [], domainSuffix: [], domainKeyword: [], ipCidr: [],
+  }
+  for (const row of rules.value) {
+    const value = row.value.trim()
+    if (!value) continue
+    if (row.type === 'geosite' || row.type === 'geoip') collected.rulesets.push(`${row.type}-${value}`)
+    else if (row.type === 'ruleset') collected.rulesets.push(value)
+    else collected[row.type].push(value)
+  }
   // 规则集 tag 会被拼进 .srs 路径,和服务端同一道校验(路径穿越防线,不是排版讲究)
-  const badTag = rulesets.find((tag) => !RULESET_TAG_PATTERN.test(tag))
-  if (badTag) {
+  if (collected.rulesets.some((tag) => !RULESET_TAG_PATTERN.test(tag))) {
     showNotification({ content: 'routingRulesetInvalidChars', type: 'alert-error' })
     return
   }
@@ -333,11 +381,7 @@ const saveDraft = async () => {
     ...draft.value,
     id: draft.value.id || `policy-${Date.now()}`,
     name,
-    rulesets,
-    domain: splitList(draftText.domain),
-    domainSuffix: splitList(draftText.domainSuffix),
-    domainKeyword: splitList(draftText.domainKeyword),
-    ipCidr: splitList(draftText.ipCidr),
+    ...collected,
   }
   if (!CONDITION_FIELDS.some((f) => (item[f.key] || []).length)) {
     showNotification({ content: 'routingPolicyConditionRequired', type: 'alert-error' })

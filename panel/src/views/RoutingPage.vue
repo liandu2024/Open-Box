@@ -44,7 +44,6 @@
           <RoutingPoliciesCard
             v-else-if="pageTab === 'policies'"
             :profile="profile"
-            :group-names="groupNames"
             :patch-profile="patchProfile"
           />
           <RoutingOutboundsCard
