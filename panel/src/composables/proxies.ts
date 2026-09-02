@@ -2,6 +2,7 @@ import { isSingBox } from '@/api'
 import { GLOBAL, PROXY_TAB_TYPE } from '@/constant'
 import { isHiddenGroup, isProxyGroup } from '@/helper'
 import { configs } from '@/store/config'
+import { siteSetNames } from '@/store/openboxSiteSets'
 import { proxiesTabShow, proxyGroupList, proxyMap, proxyProviederList } from '@/store/proxies'
 import { customGlobalNode, displayGlobalByMode, manageHiddenGroup } from '@/store/settings'
 import { isEmpty } from 'lodash'
@@ -104,7 +105,10 @@ const nodeGroupNames = computed(() => {
   return new Set(getCurrentProxyGroups().filter((name) => isSemanticNodeGroup(name)))
 })
 
+// 站点集 = 策略,其余带成员的组 = 节点组。名单从 Open-Box 自己的档案来(见
+// store/openboxSiteSets.ts);没拉到时退回 zashboard 原来按成员形状猜的那套。
 const isPolicyGroup = (name: string) => {
+  if (siteSetNames.value.size) return siteSetNames.value.has(name)
   return !nodeGroupNames.value.has(name)
 }
 
