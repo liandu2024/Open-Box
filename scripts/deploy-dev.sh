@@ -91,6 +91,12 @@ info "同步 init 脚本..."
 push "" "$ROOT/openwrt/initd/openbox" "/etc/init.d/openbox"
 remote "chmod +x /etc/init.d/openbox" >/dev/null
 
+# 升级脚本也同步:面板「后端设置 → Open-Box 更新」调的是 /opt/open-box/update.sh,
+# 只从 deploy-dev 部署过的机器上没有它(它随发布包一起铺装),按下去就是"找不到升级脚本"。
+info "同步升级脚本..."
+push "" "$ROOT/scripts/update.sh" "$INSTALL_ROOT/update.sh"
+remote "chmod +x $INSTALL_ROOT/update.sh" >/dev/null
+
 info "同步 LuCI 视图..."
 push "" "$ROOT/openwrt/luci/htdocs/luci-static/resources/view/openbox/" "/www/luci-static/resources/view/openbox/"
 
