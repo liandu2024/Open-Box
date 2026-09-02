@@ -164,7 +164,7 @@ test('生成的配置通过 sing-box check(dns.mode=dnsmasq;仅 dns-in 入站被
   }
 })
 
-test('一个节点都没命中的用户组也能过 sing-box check(挂 PROXY 占位)', { skip: hasBin ? false : 'sing-box 二进制缺失(panel/.tools/sing-box);运行 pnpm run check:config 前先放置二进制' }, () => {
+test('一个节点都没命中的用户组也能过 sing-box check(挂 direct 占位)', { skip: hasBin ? false : 'sing-box 二进制缺失(panel/.tools/sing-box);运行 pnpm run check:config 前先放置二进制' }, () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'openbox-check-empty-'))
   try {
     const { nodes } = parseSubscription('trojan://pw@hk.example.com:443?sni=hk.example.com#HK-01')
@@ -194,7 +194,7 @@ test('一个节点都没命中的用户组也能过 sing-box check(挂 PROXY 占
 
     const ie = config.outbounds.find((o) => o.tag === '爱尔兰-自动')
     assert.ok(ie, '空组必须仍然出现在配置里')
-    assert.deepEqual(ie.outbounds, ['PROXY'], '空组挂 PROXY 占位')
+    assert.deepEqual(ie.outbounds, ['direct'], '空组挂 direct 占位')
     const sel = config.outbounds.find((o) => o.tag === '爱尔兰站点')
     assert.equal(sel.default, '爱尔兰-自动', '策略的默认选中项就是那个空组')
     const rule = config.route.rules.find((r) => r.outbound === '爱尔兰站点')
@@ -267,10 +267,11 @@ for (const fallbackDefault of ['direct', 'proxy']) {
       // 兜底永远是那个同名 selector;"其余流量走哪"是它的 default,不是 final
       assert.equal(config.route.final, '其他')
       const fb = config.outbounds.find((o) => o.tag === '其他')
-      assert.equal(fb.default, fallbackDefault === 'direct' ? 'direct' : '美国')
+      assert.equal(fb.default, fallbackDefault === 'direct' ? 'direct' : '所有-自动')
       const sel = config.outbounds.find((o) => o.tag === '谷歌')
       // 顺序:直连 → 地区组(按节点顺序)→ 用户组 → 拒绝
-      assert.deepEqual(sel.outbounds, ['direct', '美国', '香港', '其他地区', '所有-自动', 'block'])
+      // 成员只剩用户自己建的节点组:按国家自动分的组和 PROXY 聚合已退役
+      assert.deepEqual(sel.outbounds, ['direct', '所有-自动', 'block'])
       assert.ok(config.outbounds.some((o) => o.type === 'block'), '有策略选了拒绝,block 出站必须在')
       // dnsmasq 模式下直连侧不能是 local(会绕回 dnsmasq),要用读到的系统上游
       // 不带 detour:显式 detour:'direct' 会在启动时被内核拒绝(check 查不出来,真机死循环过)

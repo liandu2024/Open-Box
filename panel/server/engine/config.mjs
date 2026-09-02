@@ -1,6 +1,5 @@
 import { emitOutbound } from './emit-outbound.mjs'
 import { emitEndpoint } from './emit-endpoint.mjs'
-import { emitGroupOutbounds } from './emit-groups.mjs'
 import { emitUserGroups } from './user-groups.mjs'
 import { REJECT_TAG, effectiveOutbound, normalizeRouting, policyOutboundOptions } from './routing-model.mjs'
 import { buildRoute } from './routing.mjs'
@@ -12,23 +11,22 @@ const TUN_V6 = 'fdfe:dcba:9876::1/126'
 // systemDns:路由器 WAN 下发的 DNS 上游(部署时从 resolv.conf.auto 读,见
 // system/resolv.mjs)。只有 dnsmasq 接管模式用得上——那时不能让 sing-box 去问
 // 系统解析器,会绕回 dnsmasq 形成死循环。预览/测试不传就回落到档案里填的那台。
-export const buildConfig = ({ nodes, regionGroups, profile, userGroups, systemDns }) => {
-  const proxyTag = profile.routing.proxyTag || 'PROXY'
+// regionGroups 参数已经退役(以前按国家自动分的 urltest 组 + 一个 PROXY 聚合 selector,
+// 那是节点组功能出现之前的东西);留着这个参数名只是让老调用方不报错。
+export const buildConfig = ({ nodes, profile, userGroups, systemDns }) => {
   const wireguardNodes = nodes.filter((n) => n.type === 'wireguard')
   const outboundNodes = nodes.filter((n) => n.type !== 'wireguard')
 
-  // 用户自定义节点组排在自动生成的地区组之后:emitUserGroups 已经保证了成员非空、
-  // 无悬空引用、无环(sing-box check 只能挡住第一条,见 user-groups.mjs 的说明)。
-  // proxyTag 传下去是给"一个节点都没命中"的组当占位成员用的:那种组照样写进配置,
-  // 等订阅刷出节点自动接管(理由见 user-groups.mjs)。
-  const { outbounds: userGroupOutbounds } = emitUserGroups(userGroups || [], nodes, { proxyTag })
+  // 节点组只有用户自己建的这一种:emitUserGroups 已经保证了成员非空、无悬空引用、
+  // 无环(sing-box check 只能挡住第一条,见 user-groups.mjs 的说明)。
+  const { outbounds: userGroupOutbounds } = emitUserGroups(userGroups || [], nodes)
 
   // 每个站点集在内核里就是一个同名 selector,成员是「出站」页签里选中的那几类
   // (直连 / 各节点组 / 拒绝)。用户在代理页点选,和 Clash 的策略组用法一致——
   // 所以站点集本身不记节点,只记"能选哪些"。最后固定跟一个兜底的「其他」:
   // route.final 指向它,上面都没命中的流量走它。
   const routingConf = normalizeRouting(profile.routing)
-  const groupTags = [...regionGroups.map((g) => g.name), ...userGroupOutbounds.map((g) => g.tag)]
+  const groupTags = userGroupOutbounds.map((g) => g.tag)
   const policyMemberTags = policyOutboundOptions(routingConf.outboundOptions, groupTags)
   // default 必须是成员之一,否则内核启动时找不到。effectiveOutbound 负责把"不在成员
   // 表里"的情况(空值、已删掉的组、迁移留下的 'proxy' 占位)算成一个真实存在的成员。
@@ -48,7 +46,6 @@ export const buildConfig = ({ nodes, regionGroups, profile, userGroups, systemDn
   const outbounds = [
     { type: 'direct', tag: 'direct' },
     ...(needsReject ? [{ type: 'block', tag: REJECT_TAG }] : []),
-    ...emitGroupOutbounds(regionGroups, { proxyTag }),
     ...userGroupOutbounds,
     ...policyOutbounds,
     ...outboundNodes.map(emitOutbound),

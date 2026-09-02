@@ -1,6 +1,5 @@
 import { readSystemDns } from '../system/resolv.mjs'
 import { buildConfig } from '../engine/config.mjs'
-import { groupNodesByRegion } from '../engine/groups.mjs'
 import { deployConfig } from '../system/deploy.mjs'
 import { enableService, disableService } from '../system/service.mjs'
 
@@ -30,11 +29,9 @@ export const STATUS_BY_STAGE = {
 export const buildCurrentConfig = (store, systemDns) => {
   const profile = store.getProfile()
   const nodes = store.getNodes()
-  const { groups } = groupNodesByRegion(nodes)
   const clashApiSecret = store.getClashSecret()
   const config = buildConfig({
     nodes,
-    regionGroups: groups,
     userGroups: store.getGroups(),
     profile: { ...profile, clashApiSecret },
     systemDns,

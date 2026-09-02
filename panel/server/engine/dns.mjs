@@ -52,7 +52,9 @@ export const buildDns = (profile, options = {}) => {
 
   const conf = normalizeRouting(profile.routing)
   const proxyHost = extractHost(profile.dns.proxy)
-  const servers = [directServer, { type: 'https', tag: 'dns-proxy', server: proxyHost, detour: conf.proxyTag }]
+  // 代理侧的解析 detour 到兜底站点集「其他」:上面没被任何站点集挑走的域名,走哪条线路
+  // 就用哪条线路解析,和各站点集各自 detour 到自己的 selector 是同一个道理。
+  const servers = [directServer, { type: 'https', tag: 'dns-proxy', server: proxyHost, detour: conf.fallback.name }]
 
   const rules = []
   if (conf.adBlock) {

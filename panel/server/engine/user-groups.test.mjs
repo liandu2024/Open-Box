@@ -31,27 +31,13 @@ test('allNodes 是动态的:节点变了,组的成员跟着变', () => {
 })
 
 // 以下三条是 sing-box check 挡不住、必须由生成器自己保证的(见模块头注释)
-test('成员为空的组挂 PROXY 占位:照样写进配置,但不能是空 outbounds(内核会 FATAL)', () => {
+test('成员为空的组挂 direct 占位:照样写进配置,但不能是空 outbounds(内核会 FATAL)', () => {
   const { outbounds, dropped, placeholders } = emitUserGroups(
     [{ id: 'g', name: '空组', type: 'selector', members: [] }], nodes,
   )
-  assert.deepEqual(outbounds, [{ type: 'selector', tag: '空组', outbounds: ['PROXY'] }])
+  assert.deepEqual(outbounds, [{ type: 'selector', tag: '空组', outbounds: ['direct'] }])
   assert.deepEqual(dropped, [])
   assert.deepEqual(placeholders, ['空组'])
-})
-
-test('占位用的 tag 跟着 proxyTag 走', () => {
-  const { outbounds } = emitUserGroups(
-    [{ id: 'g', name: '空组', type: 'selector', members: [] }], nodes, { proxyTag: '出口' },
-  )
-  assert.deepEqual(outbounds[0].outbounds, ['出口'])
-})
-
-test('组名正好等于 proxyTag 时占位退回 direct,不能自己引用自己', () => {
-  const { outbounds } = emitUserGroups(
-    [{ id: 'g', name: 'PROXY', type: 'selector', members: [] }], nodes,
-  )
-  assert.deepEqual(outbounds[0].outbounds, ['direct'])
 })
 
 test('悬空成员被剔除,但不连累整个组', () => {
@@ -141,14 +127,14 @@ test('关键词匹配与地区词典同一套规则:国旗 emoji 能被 hk 命�
   assert.deepEqual(outbounds[0].outbounds, ['🇭🇰香港 01'])
 })
 
-test('动态组一个都没命中也照样写进配置,挂 PROXY 占位等以后的节点', () => {
+test('动态组一个都没命中也照样写进配置,挂 direct 占位等以后的节点', () => {
   // 用户建「爱尔兰-自动」就是在等以后有爱尔兰节点;组要是被丢掉,指向它的分流
   // 规则还得回去重挑目标
   const { outbounds, dropped, placeholders } = emitUserGroups(
     [{ id: 'g1', name: '火星', type: 'selector', mode: 'dynamic', keywords: ['火星'] }],
     nodesOf('香港-01'),
   )
-  assert.deepEqual(outbounds, [{ type: 'selector', tag: '火星', outbounds: ['PROXY'] }])
+  assert.deepEqual(outbounds, [{ type: 'selector', tag: '火星', outbounds: ['direct'] }])
   assert.deepEqual(dropped, [])
   assert.deepEqual(placeholders, ['火星'])
 })

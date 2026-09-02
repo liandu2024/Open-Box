@@ -165,8 +165,6 @@ const dropCycles = (groups) => {
 // 而一个空组对用户也没有任何意义。返回同时给出被丢弃的组,供调用方如实告知。
 export const emitUserGroups = (groups, nodes, options = {}) => {
   const testUrl = options.testUrl || DEFAULT_TEST_URL
-  // 空组的占位目标,由 buildConfig 传进来(默认与 emit-groups.mjs 的默认值一致)
-  const proxyTag = options.proxyTag || 'PROXY'
   const normalized = normalizeGroups(groups)
   // 保持节点原有顺序:节点已经按地区词典排过序了(见 rename.mjs),组里的成员顺序
   // 跟着它走,策略组列表看起来才和节点列表一致。
@@ -179,9 +177,8 @@ export const emitUserGroups = (groups, nodes, options = {}) => {
   const outbounds = []
   const dropped = droppedByCycle.map((g) => ({ name: g.name, reason: 'cycle' }))
 
-  // 一个都没命中的组挂什么占位:优先 PROXY(那个 selector 恒被生成,见
-  // emit-groups.mjs),组名正好叫 PROXY 时退回 direct,免得自己引用自己。
-  const placeholderTag = proxyTag && proxyTag !== '' ? proxyTag : 'direct'
+  // 一个都没命中的组挂 direct 占位:配置里一定有 direct,而且它不会反过来引用任何组
+  const placeholderTag = 'direct'
   const placeholders = []
 
   for (const g of withoutCycles) {
@@ -191,10 +188,9 @@ export const emitUserGroups = (groups, nodes, options = {}) => {
       // "initialize outbound[N]: missing tags")。但也不该把整个组丢掉:用户建
       // 「爱尔兰-自动」就是在等以后有爱尔兰节点,组没了的话,指向它的分流规则
       // 还得回去重挑一次目标。
-      // 折中是挂一个 PROXY 占位。行为和以前一模一样——以前组被丢掉之后,指向它
-      // 的分流规则会被 buildConfig 重映射到 PROXY——但组本身在配置里、在代理页
-      // 里都还在,等订阅刷出匹配的节点,下次部署自动换成真成员。
-      members = [g.name === placeholderTag ? 'direct' : placeholderTag]
+      // 折中是挂一个 direct 占位:组本身在配置里、在代理页里都还在,等订阅刷出
+      // 匹配的节点,下次启动自动换成真成员。
+      members = [placeholderTag]
       placeholders.push(g.name)
     }
     if (g.type === 'urltest') {

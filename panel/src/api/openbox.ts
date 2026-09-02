@@ -438,10 +438,6 @@ export const fetchConfigPreview = async (): Promise<OpenboxConfigPreview> => {
   return data.config
 }
 
-// Region policy groups are every 'selector'/'urltest' outbound except the top-level proxy
-// selector itself — see server/engine/emit-groups.mjs: emitGroupOutbounds always emits
-// `[proxySelector, ...regionGroups]`, and each region group's `outbounds` is its member node
-// tags (so its length is the node count). Filtering by tag instead of position is robust to
 
 // --- Kernel/service management, emergency rollback & penetration query (P4b Task 7) ---
 

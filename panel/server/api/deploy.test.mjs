@@ -64,7 +64,8 @@ test('GET /api/openbox/config/preview 返回组装好的配置,不落盘', async
     const body = await res.json()
     assert.ok(body.config)
     assert.ok(Array.isArray(body.config.outbounds))
-    assert.ok(body.config.outbounds.some((o) => o.tag === 'PROXY'))
+    // 兜底站点集「其他」是配置里恒有的 selector(以前是自动生成的 PROXY,已退役)
+    assert.ok(body.config.outbounds.some((o) => o.tag === '其他' && o.type === 'selector'))
     assert.equal(ctx.writes.length, 0) // 仅返回,不落盘
     assert.equal(ctx.calls.length, 0) // 不触碰系统(不调 exec)
   } finally {
@@ -81,7 +82,8 @@ test('GET /api/openbox/config/preview 用 store 中现存节点组装分组', as
     const res = await fetch(`${baseUrl}/api/openbox/config/preview`)
     const body = await res.json()
     assert.ok(body.config.outbounds.some((o) => o.tag === 'HK-01'))
-    assert.ok(body.config.outbounds.some((o) => o.tag === 'HK' && o.type === 'urltest'))
+    // 按国家自动分的 urltest 组已退役:节点组只有用户自己建的那些
+    assert.ok(!body.config.outbounds.some((o) => o.tag === 'HK'))
   } finally {
     await close()
   }

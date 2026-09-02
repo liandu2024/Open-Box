@@ -26,9 +26,10 @@ test('buildConfig 顶层结构', () => {
   // wireguard 进 endpoints,不进 outbounds
   assert.ok(c.endpoints.some((e) => e.tag === 'WG-01'))
   assert.ok(!c.outbounds.some((o) => o.tag === 'WG-01'))
-  // direct + PROXY selector + 美国 urltest + ss 节点
+  // direct + 兜底「其他」selector + ss 节点(按国家自动分的组和 PROXY 已退役)
   assert.ok(c.outbounds.some((o) => o.tag === 'direct' && o.type === 'direct'))
-  assert.ok(c.outbounds.some((o) => o.tag === 'PROXY' && o.type === 'selector'))
+  assert.ok(c.outbounds.some((o) => o.tag === '其他' && o.type === 'selector'))
+  assert.ok(!c.outbounds.some((o) => o.tag === 'PROXY' || o.tag === '美国'))
   assert.ok(c.outbounds.some((o) => o.tag === '美国-01' && o.type === 'shadowsocks'))
 })
 
@@ -57,7 +58,7 @@ test('每条策略生成一个同名 selector,成员是「出站」页签选中�
     type: 'selector',
     tag: '谷歌',
     // 直连 → 各节点组(地区组 + 用户组)→ 拒绝
-    outbounds: ['direct', '美国', '香港-自动', 'block'],
+    outbounds: ['direct', '香港-自动', 'block'],
     default: '香港-自动',
   })
   assert.ok(c.outbounds.some((o) => o.type === 'block' && o.tag === 'block'), '拒绝出站要在')
@@ -95,7 +96,7 @@ test('「出站」页签关掉拒绝时,配置里不生成 block 出站', () => 
     },
   })
   assert.ok(!c.outbounds.some((o) => o.tag === 'block'))
-  assert.deepEqual(c.outbounds.find((o) => o.tag === '谷歌').outbounds, ['direct', '美国'])
+  assert.deepEqual(c.outbounds.find((o) => o.tag === '谷歌').outbounds, ['direct'])
 })
 
 test('tun.autoRedirect 默认关闭,可开启', () => {

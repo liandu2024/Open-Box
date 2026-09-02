@@ -31,7 +31,8 @@ const GROUPS = { groupTags: ['所有-自动'] }
 
 test('兜底走代理时,没被站点集挑走的域名用代理侧解析', () => {
   const dns = buildDns(base, GROUPS)
-  assert.deepEqual(dns.servers[1], { type: 'https', tag: 'dns-proxy', server: '1.1.1.1', detour: 'PROXY' })
+  // 代理侧解析跟着兜底站点集「其他」走(它选哪条线路就用哪条解析)
+  assert.deepEqual(dns.servers[1], { type: 'https', tag: 'dns-proxy', server: '1.1.1.1', detour: '其他' })
   assert.equal(dns.final, 'dns-proxy')
 })
 

@@ -93,7 +93,7 @@ test('启动内核 = 用当前设置重新生成配置并落盘', async () => {
     const written = ctx.writes.find((w) => w.path === paths.configPath)
     assert.ok(written, '应当写入 config.json')
     const config = JSON.parse(written.content)
-    assert.ok(config.outbounds.some((o) => o.tag === 'PROXY'))
+    assert.ok(config.outbounds.some((o) => o.tag === '其他' && o.type === 'selector'))
     // 结果落进部署态,内核页那张卡片显示的就是它
     assert.equal(store.getDeployState().stage, 'running')
   } finally {

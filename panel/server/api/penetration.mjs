@@ -1,7 +1,6 @@
 import express from 'express'
 import { buildRoute } from '../engine/routing.mjs'
 import { normalizeRouting } from '../engine/routing-model.mjs'
-import { groupNodesByRegion } from '../engine/groups.mjs'
 import { isPrivateOrLoopbackIp } from './net-guard.mjs'
 
 // Open-Box 只管理本机唯一的 sing-box,clash_api 固定监听 127.0.0.1:9095(见 engine/config.mjs)。
@@ -175,7 +174,6 @@ export const registerPenetrationRoutes = (app, { store, ctx, paths, fetchImpl = 
     }
 
     const profile = store.getProfile()
-    const nodes = store.getNodes()
     const { route } = buildRoute(profile.routing, profile.rulesetDir)
 
     // tag → 本地 .srs 路径:直接复用 buildRoute 已经算好的 rule_set 映射,
@@ -184,15 +182,11 @@ export const registerPenetrationRoutes = (app, { store, ctx, paths, fetchImpl = 
 
     // 策略组 tag 集合:proxyTag(主 selector)+ 各区域分组名。用来判定
     // 一个 outbound 是"策略组"(需要经 clash_api 下钻)还是叶子节点/direct(无需下钻)。
-    const { groups } = groupNodesByRegion(nodes)
-    const proxyTag = profile.routing.proxyTag || 'PROXY'
     // 用户自建的节点组、每个站点集的 selector、以及兜底的「其他」也都是"策略组",
     // 一样要能往下钻:只列地区组的话,命中一个站点集之后就断在那儿,看不到它当前
     // 选的是哪个节点;而"一条都没命中"落到的正是兜底那个 selector。
     const routingConf = normalizeRouting(profile.routing)
     const groupTags = new Set([
-      proxyTag,
-      ...groups.map((g) => g.name),
       ...(store.getGroups() || []).map((g) => g.name).filter(Boolean),
       ...routingConf.policies.map((p) => p.name),
       routingConf.fallback.name,
