@@ -143,7 +143,7 @@ if (missingCards.length > 0) {
 
 // proxies
 export const collapseGroupMap = useStorage<Record<string, boolean>>('config/collapse-group-map', {})
-export const displayFinalOutbound = useStorage('config/show-seleted-for-now-node', false)
+export const displayFinalOutbound = useStorage('config/show-seleted-for-now-node', true)
 export const twoColumnProxyGroup = useStorage('config/two-columns', true)
 export const speedtestUrl = useStorage<string>('config/speedtest-url', TEST_URL)
 // 内置直连出站用的测速地址(见 constant/index.ts 的说明)

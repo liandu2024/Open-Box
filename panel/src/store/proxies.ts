@@ -10,7 +10,7 @@ import {
   selectProxyAPI,
 } from '@/api'
 import { iconUrlFor } from '@/helper/iconUrl'
-import { managedOutbounds } from '@/store/openboxSiteSets'
+import { managedOutbounds, siteSetIcons } from '@/store/openboxSiteSets'
 import {
   GLOBAL,
   IPV6_TEST_URL,
@@ -306,6 +306,14 @@ export const fetchProxies = async () => {
   // 那个。用户在面板设置里另配过图标(iconReflect)的优先,不覆盖。
   // 内核的 clash_api 未必把 direct/block 出站列出来;没列的话补一条,站点集/组的成员
   // 列表里它才显示得出来(否则只剩一个光秃秃的名字)。
+  // 站点集在「分流与策略」里挑的图标:策略卡片标题左边那个大图标就是它
+  for (const [name, code] of siteSetIcons.value) {
+    const entry = proxyMap.value[name]
+    if (!entry || entry.icon) continue
+    const url = iconUrlFor(code)
+    if (url) entry.icon = url
+  }
+
   for (const item of managedOutbounds.value) {
     if (item.enabled === false) continue
     if (!proxyMap.value[item.name]) {
