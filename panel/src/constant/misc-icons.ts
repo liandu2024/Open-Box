@@ -360,6 +360,10 @@ export const MISC_ICONS: MiscIcon[] = [
   { id: 'magnifier', zh: '放大镜', en: 'Magnifier', keywords: ['search', '搜索', '放大镜', '查找'] },
   { id: 'magnifier-tile', zh: '放大镜(白底)', en: 'Magnifier (tile)', keywords: ['search', '搜索', '放大镜', '查找', '白底', 'tile'] },
   { id: 'magnifier-soft', zh: '放大镜(浅色)', en: 'Magnifier (light)', keywords: ['search', '搜索', '放大镜', '查找', '浅色', 'light'] },
+  // 中国地图剪影:轮廓来自 johan/world.geo.json(Natural Earth 数据,公有领域),含台湾、海南
+  { id: 'china-map', zh: '中国地图', en: 'China map', keywords: ['china', 'cn', '中国', '地图', 'map', '国内'] },
+  { id: 'china-map-tile', zh: '中国地图(白底)', en: 'China map (tile)', keywords: ['china', 'cn', '中国', '地图', 'map', '国内', '白底', 'tile'] },
+  { id: 'china-map-soft', zh: '中国地图(浅色)', en: 'China map (light)', keywords: ['china', 'cn', '中国', '地图', 'map', '国内', '浅色', 'light'] },
 ]
 
 // 图标值统一带前缀存,和国旗(HK)、地球(globe:asia)、公司(brand:google)区分开
