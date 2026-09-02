@@ -123,12 +123,14 @@ export const normalizeGroup = (raw, index = 0) => {
 // 多出一个 direct 出站。
 // 内置出站的默认图标换过一次(公路/禁止 → 靶心/叉):档案里还是旧默认的一并换掉,
 // 用户自己挑过别的图标就不动。
-const RETIRED_DEFAULT_ICON = { direct: 'misc:direct', block: 'misc:reject' }
+// 用户存了什么图标就用什么;只有空的才补默认。以前这里会把 misc:direct / misc:reject
+// 当「退役的旧默认值」改写成新默认——但这两个现在是图标库里可选的变体,再改写的话用户
+// 选中它们保存后会被悄悄换回去,看起来就是"换不掉"。
 const withKind = (g) => {
   const kind = Object.entries(BUILTIN_IDS).find(([, id]) => id === g.id)?.[0]
   if (!kind) return g
   const fresh = builtinDefaults().find((b) => b.kind === kind)
-  const icon = !g.icon || g.icon === RETIRED_DEFAULT_ICON[kind] ? fresh.icon : g.icon
+  const icon = g.icon || fresh.icon
   return { ...g, kind, icon, type: 'selector', mode: 'static', keywords: [], members: [] }
 }
 

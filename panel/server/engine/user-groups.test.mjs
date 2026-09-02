@@ -233,11 +233,15 @@ test('停用的组不进配置;停用的拒绝也不进;停用的直连仍然要
   assert.deepEqual(builtinTags([]), { direct: '直连', block: '拒绝', directEnabled: true, blockEnabled: true })
 })
 
-test('内置出站的旧默认图标自动换成新默认;用户自己挑的不动', () => {
+test('内置出站的图标:用户存了什么就用什么(含 misc:direct / misc:reject 这两个变体),只有空的才补默认', () => {
   const [direct] = normalizeGroups([{ id: BUILTIN_IDS.direct, name: '直连', icon: 'misc:direct' }])
-  assert.equal(direct.icon, 'misc:dart')
+  assert.equal(direct.icon, 'misc:direct')
+  const list = normalizeGroups([{ id: BUILTIN_IDS.block, name: '拒绝', icon: 'misc:reject' }])
+  assert.equal(list.find((g) => g.kind === 'block').icon, 'misc:reject')
   const [custom] = normalizeGroups([{ id: BUILTIN_IDS.direct, name: '直连', icon: 'brand:google' }])
   assert.equal(custom.icon, 'brand:google')
+  const [empty] = normalizeGroups([{ id: BUILTIN_IDS.direct, name: '直连', icon: '' }])
+  assert.equal(empty.icon, 'misc:dart')
 })
 
 test('url-test 组的测速地址:组里填了用组的,没填用档案里的全局地址,都没有才用默认', () => {
