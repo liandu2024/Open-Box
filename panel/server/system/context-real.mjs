@@ -15,6 +15,7 @@ export const createRealContext = () => ({
       })
     })
   },
+  async sleep(ms) { await new Promise((resolve) => setTimeout(resolve, ms)) },
   async readFile(path) { return fs.readFile(path, 'utf8') },
   async writeFile(path, content) { await fs.writeFile(path, content, 'utf8') },
   // 规则集 .srs 是二进制,不能走上面那个 utf8 的写入——utf8 编码会把非法字节替换成

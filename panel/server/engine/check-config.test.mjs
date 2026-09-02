@@ -273,7 +273,8 @@ for (const fallbackDefault of ['direct', 'proxy']) {
       assert.deepEqual(sel.outbounds, ['direct', '美国', '香港', '其他地区', '所有-自动', 'block'])
       assert.ok(config.outbounds.some((o) => o.type === 'block'), '有策略选了拒绝,block 出站必须在')
       // dnsmasq 模式下直连侧不能是 local(会绕回 dnsmasq),要用读到的系统上游
-      assert.deepEqual(config.dns.servers[0], { type: 'udp', tag: 'dns-direct', server: '192.168.1.1', detour: 'direct' })
+      // 不带 detour:显式 detour:'direct' 会在启动时被内核拒绝(check 查不出来,真机死循环过)
+      assert.deepEqual(config.dns.servers[0], { type: 'udp', tag: 'dns-direct', server: '192.168.1.1' })
 
       const file = path.join(dir, 'config.json')
       fs.writeFileSync(file, JSON.stringify(config, null, 2))

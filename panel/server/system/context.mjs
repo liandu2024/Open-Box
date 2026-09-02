@@ -7,12 +7,16 @@ export const createMockContext = (options = {}) => {
 
   const ctx = {
     files, calls, writes,
+    // 测试里不真等:部署流程里"起来之后等几秒再看一眼"那步靠它,mock 直接返回
+    async sleep() {},
     // 第三个参数(超时等选项)接受但不记进 calls:大量断言用 deepEqual 比对 calls,
     // 多塞一个字段会把它们全部弄挂,而这些用例关心的只是"发了什么命令"。
     async exec(cmd, args = []) {
       calls.push({ cmd, args })
       const key = [cmd, ...args].join(' ')
-      const result = execResults[key] || defaultExec
+      // 值可以是函数:同一条命令连续几次要给不同结果时用(比如 status 先 running 后 not)
+      const configured = execResults[key]
+      const result = (typeof configured === 'function' ? configured() : configured) || defaultExec
       return { code: result.code ?? 0, stdout: result.stdout ?? '', stderr: result.stderr ?? '' }
     },
     async readFile(path) {

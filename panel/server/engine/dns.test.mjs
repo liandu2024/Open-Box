@@ -17,7 +17,8 @@ test('直连侧走系统解析器:hijack 模式下用 local,不指定任何服�
 
 test('dnsmasq 模式不能用 local(会绕回 dnsmasq 死循环),改用 WAN 下发的上游', () => {
   const dns = buildDns({ ...base, dns: { ...base.dns, mode: 'dnsmasq' } }, { systemDns: ['192.168.1.1', '8.8.8.8'] })
-  assert.deepEqual(dns.servers[0], { type: 'udp', tag: 'dns-direct', server: '192.168.1.1', detour: 'direct' })
+  // 不带 detour:显式 detour:'direct' 会在启动时被内核拒绝(check 查不出来)
+  assert.deepEqual(dns.servers[0], { type: 'udp', tag: 'dns-direct', server: '192.168.1.1' })
 })
 
 test('dnsmasq 模式读不到系统上游时,回落到档案里填的那台', () => {

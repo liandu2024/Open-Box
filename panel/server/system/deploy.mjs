@@ -15,6 +15,25 @@ export const rollbackToDirect = async (ctx, paths) => {
   return { ok: true, actions }
 }
 
+const VERIFY_SETTLE_MS = 3000
+
+// 内核起来又死了的时候,把它最后一句 FATAL 带回界面——"内核启动后未在运行"这句话
+// 本身什么都说明不了,用户还得自己去翻 logread。
+const lastKernelFatal = async (ctx) => {
+  const fallback = '内核启动后未在运行,已恢复直连'
+  try {
+    const { code, stdout } = await ctx.exec('logread', ['-e', 'sing-box'])
+    if (code !== 0 || !stdout) return fallback
+    const fatal = stdout.split('\n').filter((line) => /FATAL/.test(line)).pop()
+    if (!fatal) return fallback
+    // 去掉 syslog 前缀和终端色码,只留 sing-box 自己那句话
+    const text = fatal.replace(/\x1b\[[0-9;]*m/g, '').replace(/^.*?sing-box\[\d+\]:\s*/, '')
+    return `内核启动后崩溃,已恢复直连:${text}`
+  } catch {
+    return fallback
+  }
+}
+
 export const deployConfig = async (ctx, paths, { config, profile, fetchImpl } = {}) => {
   // 1. 冲突检测
   const { conflicts, hasRunning } = await detectConflicts(ctx)
@@ -83,11 +102,17 @@ export const deployConfig = async (ctx, paths, { config, profile, fetchImpl } = 
       return { ok: false, stage: 'start', message: restart.stderr || '内核启动失败,已恢复直连' }
     }
 
-    // 9. 验证运行
-    const status = await serviceStatus(ctx, paths.initd.core)
-    if (!status.running) {
-      await rollbackToDirect(ctx, paths)
-      return { ok: false, stage: 'verify', message: '内核启动后未在运行,已恢复直连' }
+    // 9. 验证运行。看两眼而不是一眼:有一类错误 `sing-box check` 查不出来、进程起来
+    // 之后才 FATAL(比如 DNS 服务器的 detour 写法),procd 会立刻重启它形成死循环——
+    // 只看第一眼正好撞上"刚起来还没死"的那个瞬间,面板就会报"启动成功",刷新一看
+    // 又是停止。等几秒再看一次,死循环里的进程这时多半正处在两次崩溃之间。
+    for (const wait of [0, VERIFY_SETTLE_MS]) {
+      if (wait) await ctx.sleep(wait)
+      const status = await serviceStatus(ctx, paths.initd.core)
+      if (!status.running) {
+        await rollbackToDirect(ctx, paths)
+        return { ok: false, stage: 'verify', message: await lastKernelFatal(ctx) }
+      }
     }
 
     return { ok: true, stage: 'running', message: '' }

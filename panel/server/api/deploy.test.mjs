@@ -321,3 +321,37 @@ test('POST /api/openbox/rollback 即使命令全失败也不抛(尽力而为),�
     await close()
   }
 })
+
+// 有一类错误 `sing-box check` 查不出来、进程起来之后才 FATAL,procd 随即把它拉起来
+// 形成死循环。只看第一眼正好撞上"刚起来还没死"的瞬间,会报成"启动成功"。
+test('POST /api/openbox/deploy 起来之后又死了(死循环)→ verify 失败,带上内核最后那句 FATAL', async () => {
+  const statuses = [
+    { code: 0, stdout: 'running' }, // 第一眼:刚起来
+    { code: 1, stdout: 'not running' }, // 等几秒再看:已经崩了
+  ]
+  const ctx = okCtx({
+    '/etc/init.d/openbox status': () => statuses.shift() || { code: 1, stdout: 'not running' },
+    'logread -e sing-box': {
+      code: 0,
+      stdout: [
+        'Wed Sep  2 20:28:50 2026 daemon.err sing-box[18171]: \u001b[31mFATAL\u001b[0m[0000] start service: start dns/udp[dns-direct]: detour to an empty direct outbound makes no sense',
+        'Wed Sep  2 20:29:29 2026 daemon.info procd: Instance openbox::openbox s in a crash loop',
+      ].join('\n'),
+    },
+  })
+  const { baseUrl, store, close } = await startApp(ctx)
+  try {
+    const res = await fetch(`${baseUrl}/api/openbox/deploy`, { method: 'POST' })
+    assert.equal(res.status, 500)
+    const body = await res.json()
+    assert.equal(body.ok, false)
+    assert.equal(body.stage, 'verify')
+    // 界面上看到的是内核自己那句话,不是笼统的"未在运行"
+    assert.match(body.message, /detour to an empty direct outbound/)
+    assert.ok(!body.message.includes('\u001b'), '终端色码要去掉')
+    assert.equal(store.getDeployState().stage, 'verify')
+    assert.ok(cmds(ctx).includes('/etc/init.d/openbox disable'))
+  } finally {
+    await close()
+  }
+})

@@ -22,7 +22,10 @@ const directServerFor = (profile, options) => {
 
   const systemDns = Array.isArray(options.systemDns) ? options.systemDns.filter(Boolean) : []
   const server = systemDns[0] || profile.dns.direct
-  return { type: 'udp', tag: 'dns-direct', server, detour: 'direct' }
+  // 不写 detour:不写就是走默认出站,而默认出站正是 direct。显式写 detour:'direct'
+  // 会被内核在**启动时**拒绝——"detour to an empty direct outbound makes no sense",
+  // 而 `sing-box check` 不查这一条,所以校验过了、一跑就 FATAL(真机上就是这样死循环的)。
+  return { type: 'udp', tag: 'dns-direct', server }
 }
 
 // 策略的域名类条件 → 一条 DNS 规则。ip_cidr 不进来:DNS 查询阶段还没有 IP,
