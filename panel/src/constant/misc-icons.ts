@@ -13,8 +13,20 @@ export interface MiscIcon {
 }
 
 export const MISC_ICONS: MiscIcon[] = [
-  { id: 'direct', zh: '直连', en: 'Direct', keywords: ['direct', '直连', '直通', '高速公路'] },
-  { id: 'reject', zh: '拒绝', en: 'Reject', keywords: ['reject', 'block', '拒绝', '拦截', '禁止'] },
+  // 直连的几种画法:靶心、箭头、绿灯、对勾、公路
+  { id: 'dart', zh: '靶心', en: 'Bullseye', keywords: ['direct', '直连', '靶心', '飞镖', '目标', 'target'] },
+  { id: 'arrow-right', zh: '直连(箭头)', en: 'Direct (arrow)', keywords: ['direct', '直连', '箭头', 'arrow'] },
+  { id: 'arrow-up-right', zh: '直连(斜箭头)', en: 'Direct (up-right)', keywords: ['direct', '直连', '箭头', 'arrow'] },
+  { id: 'green-circle', zh: '直连(绿灯)', en: 'Direct (green)', keywords: ['direct', '直连', '绿灯', '通行', 'green'] },
+  { id: 'check', zh: '直连(对勾)', en: 'Direct (check)', keywords: ['direct', '直连', '对勾', '允许', 'check', 'allow'] },
+  { id: 'direct', zh: '直连(公路)', en: 'Direct (road)', keywords: ['direct', '直连', '直通', '高速公路'] },
+  // 拒绝的几种画法:叉、禁行、红灯、停止牌、禁止
+  { id: 'cross', zh: '拒绝(叉)', en: 'Reject (cross)', keywords: ['reject', 'block', '拒绝', '拦截', '叉', 'cross'] },
+  { id: 'cross-box', zh: '拒绝(方叉)', en: 'Reject (boxed cross)', keywords: ['reject', 'block', '拒绝', '拦截', '叉'] },
+  { id: 'no-entry', zh: '拒绝(禁行)', en: 'Reject (no entry)', keywords: ['reject', 'block', '拒绝', '拦截', '禁行', '禁止'] },
+  { id: 'red-circle', zh: '拒绝(红灯)', en: 'Reject (red)', keywords: ['reject', 'block', '拒绝', '拦截', '红灯', 'red'] },
+  { id: 'stop-sign', zh: '拒绝(停止)', en: 'Reject (stop)', keywords: ['reject', 'block', '拒绝', '拦截', '停止', 'stop'] },
+  { id: 'reject', zh: '拒绝(禁止)', en: 'Reject (no)', keywords: ['reject', 'block', '拒绝', '拦截', '禁止'] },
   { id: 'car', zh: '汽车', en: 'Car', keywords: ['car', '汽车', '轿车', '车'] },
   { id: 'taxi', zh: '出租车', en: 'Taxi', keywords: ['taxi', '出租车', '打车'] },
   { id: 'bus', zh: '公交车', en: 'Bus', keywords: ['bus', '公交', '巴士'] },
@@ -33,7 +45,6 @@ export const MISC_ICONS: MiscIcon[] = [
   { id: 'gym', zh: '健身', en: 'Weightlifting', keywords: ['gym', '健身', '举重', '运动'] },
   { id: 'trophy', zh: '奖杯', en: 'Trophy', keywords: ['trophy', '奖杯', '冠军', '比赛'] },
   { id: 'game', zh: '游戏', en: 'Game', keywords: ['game', '游戏', '手柄'] },
-  { id: 'dart', zh: '飞镖', en: 'Dart', keywords: ['dart', '飞镖', '目标', '精准'] },
   { id: 'chess', zh: '棋', en: 'Chess', keywords: ['chess', '棋', '国际象棋'] },
   { id: 'flower', zh: '花', en: 'Flower', keywords: ['flower', '花', '樱花', '植物'] },
   { id: 'rose', zh: '玫瑰', en: 'Rose', keywords: ['rose', '玫瑰', '花'] },

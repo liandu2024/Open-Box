@@ -186,7 +186,7 @@ test('图标不进 sing-box 出站:那边没有这个字段', () => {
 test('默认列表:直连、拒绝两个内置出站在前,两个默认组自带地球图标', () => {
   assert.deepEqual(
     defaultGroups().map((g) => [g.name, g.icon]),
-    [['直连', 'misc:direct'], ['所有-自动', 'globe:earth-asia'], ['所有-手动', 'globe:earth-meridians'], ['拒绝', 'misc:reject']],
+    [['直连', 'misc:dart'], ['所有-自动', 'globe:earth-asia'], ['所有-手动', 'globe:earth-meridians'], ['拒绝', 'misc:cross']],
   )
 })
 
@@ -231,4 +231,11 @@ test('停用的组不进配置;停用的拒绝也不进;停用的直连仍然要
   assert.equal(builtin.directEnabled, false)
   assert.equal(builtin.blockEnabled, false)
   assert.deepEqual(builtinTags([]), { direct: '直连', block: '拒绝', directEnabled: true, blockEnabled: true })
+})
+
+test('内置出站的旧默认图标自动换成新默认;用户自己挑的不动', () => {
+  const [direct] = normalizeGroups([{ id: BUILTIN_IDS.direct, name: '直连', icon: 'misc:direct' }])
+  assert.equal(direct.icon, 'misc:dart')
+  const [custom] = normalizeGroups([{ id: BUILTIN_IDS.direct, name: '直连', icon: 'brand:google' }])
+  assert.equal(custom.icon, 'brand:google')
 })

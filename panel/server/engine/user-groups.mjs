@@ -36,8 +36,8 @@ export const BUILTIN_IDS = Object.freeze({ direct: 'builtin-direct', block: 'bui
 export const BUILTIN_KINDS = Object.freeze(['direct', 'block'])
 
 export const builtinDefaults = () => ([
-  { id: BUILTIN_IDS.direct, kind: 'direct', name: '直连', type: 'selector', mode: 'static', icon: 'misc:direct', keywords: [], members: [], enabled: true },
-  { id: BUILTIN_IDS.block, kind: 'block', name: '拒绝', type: 'selector', mode: 'static', icon: 'misc:reject', keywords: [], members: [], enabled: true },
+  { id: BUILTIN_IDS.direct, kind: 'direct', name: '直连', type: 'selector', mode: 'static', icon: 'misc:dart', keywords: [], members: [], enabled: true },
+  { id: BUILTIN_IDS.block, kind: 'block', name: '拒绝', type: 'selector', mode: 'static', icon: 'misc:cross', keywords: [], members: [], enabled: true },
 ])
 
 export const DEFAULT_TEST_URL = 'https://www.gstatic.com/generate_204'
@@ -119,10 +119,15 @@ export const normalizeGroup = (raw, index = 0) => {
 
 // kind 只由固定 id 决定,不信任传进来的值:普通组写个 kind:'direct' 混进来,内核里就会
 // 多出一个 direct 出站。
+// 内置出站的默认图标换过一次(公路/禁止 → 靶心/叉):档案里还是旧默认的一并换掉,
+// 用户自己挑过别的图标就不动。
+const RETIRED_DEFAULT_ICON = { direct: 'misc:direct', block: 'misc:reject' }
 const withKind = (g) => {
   const kind = Object.entries(BUILTIN_IDS).find(([, id]) => id === g.id)?.[0]
   if (!kind) return g
-  return { ...g, kind, type: 'selector', mode: 'static', keywords: [], members: [] }
+  const fresh = builtinDefaults().find((b) => b.kind === kind)
+  const icon = !g.icon || g.icon === RETIRED_DEFAULT_ICON[kind] ? fresh.icon : g.icon
+  return { ...g, kind, icon, type: 'selector', mode: 'static', keywords: [], members: [] }
 }
 
 // 两个内置出站永远在列表里:老档案没有就补上——直连放最前、拒绝放最后(和以前站点集
