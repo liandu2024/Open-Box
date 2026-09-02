@@ -55,17 +55,19 @@ html.apple-mobile-ui {
   @apply bg-transparent! shadow-none! backdrop-blur-none!;
 }
 
-/* 页面级滚动容器一律预留滚动条的位置。没有它的话,内容多到出现滚动条的那一页会比
-   不出现的那一页窄十二像素,页签之间来回切整块内容就横向跳一下(订阅/节点组两个
-   页签之间最明显)。stable 只在末端留一条,而那条正是滚动条待的位置——不会在滚动条
-   右边多出空白。
+/* 页面级滚动容器一律常驻滚动条。没有它的话,内容多到出现滚动条的那一页会比不出现
+   的那一页窄十二像素,页签之间来回切整块内容就横向跳一下(订阅/节点组两个页签之间
+   最明显)。
+   用 overflow-y: scroll 而不是 scrollbar-gutter:「代理」页(ProxiesPage)一直就是
+   这么写的,那一页的观感正是要对齐的目标——轨道背景是透明的,不滚动时看不见东西,
+   内容也一直贴到滚动条边上,不会像 gutter 那样在内容和滚动条之间多留一条。
    选择器挑的是「页面骨架」那一层:所有视图的滚动容器都是
    `min-h-0 flex-1 overflow-x-hidden overflow-y-auto`(见 src/views/*.vue),以后
    新加的页面照这个骨架写就自动有了。卡片里 max-h-* 的小列表不带 flex-1,不受影响。 */
 #app-content .flex-1.overflow-y-auto,
 /* 首页那层是 absolute + h-full,不走上面的骨架,单独点名 */
 #app-content .scrollable-parent {
-  scrollbar-gutter: stable;
+  overflow-y: scroll;
 }
 
 #app-content .card,
