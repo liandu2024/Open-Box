@@ -54,7 +54,9 @@ export const rulesetUrls = (tag) => {
   return RULESET_MIRRORS.map((mirror) => (mirror ? `${mirror}${path}` : path))
 }
 
-const downloadOne = async (fetchImpl, tag) => {
+// 单个规则集的下载(多来源依次重试)。除了部署时补齐,「详情」也要用它:用户可能
+// 想看一个还没部署过、本地根本没有的分类里有什么。
+export const downloadRuleset = async (fetchImpl, tag) => {
   const urls = rulesetUrls(tag)
   if (!urls.length) {
     throw new Error(`未知或不合法的规则集名 ${tag}:只认得 geoip-/geosite- 开头的官方规则集`)
@@ -103,7 +105,7 @@ export const ensureRulesets = async (ctx, config, { fetchImpl = globalThis.fetch
   for (const entry of missing) {
     let data
     try {
-      data = await downloadOne(fetchImpl, entry.tag)
+      data = await downloadRuleset(fetchImpl, entry.tag)
     } catch (err) {
       return { ok: false, downloaded, message: (err && err.message) || String(err) }
     }

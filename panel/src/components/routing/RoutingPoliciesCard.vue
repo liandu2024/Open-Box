@@ -173,13 +173,13 @@
                 {{ $t(opt.labelKey) }}
               </option>
             </select>
-            <!-- geosite/geoip 的值来自上游真有的那份名单,给带搜索的下拉框 -->
-            <GeoCategorySelect
+            <!-- geosite/geoip 的值来自上游真有的那份名单,给带搜索的下拉框,
+                 外加一个「详情」看它到底包含哪些域名/IP -->
+            <GeoRuleValue
               v-if="rule.type === 'geosite' || rule.type === 'geoip'"
               v-model="rule.value"
               :kind="rule.type"
               :placeholder="$t(placeholderKey(rule.type))"
-              class="min-w-0 flex-1"
             />
             <input
               v-else
@@ -231,7 +231,7 @@ import { RULESET_TAG_PATTERN } from '@/api/openbox'
 import CountryFlag from '@/components/common/CountryFlag.vue'
 import CountrySelect from '@/components/common/CountrySelect.vue'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
-import GeoCategorySelect from '@/components/common/GeoCategorySelect.vue'
+import GeoRuleValue from '@/components/routing/GeoRuleValue.vue'
 import { showNotification } from '@/helper/notification'
 import { Bars3Icon, PencilSquareIcon, PlusIcon, TrashIcon } from '@heroicons/vue/24/outline'
 import { computed, ref, watch } from 'vue'

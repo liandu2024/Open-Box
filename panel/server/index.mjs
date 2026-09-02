@@ -12,6 +12,7 @@ import { registerNodeLatencyRoutes } from './api/node-latency.mjs'
 import { registerPenetrationRoutes } from './api/penetration.mjs'
 import { registerProfileRoutes } from './api/profile.mjs'
 import { registerServiceRoutes } from './api/service.mjs'
+import { registerRulesetRoutes } from './api/rulesets.mjs'
 import { registerSubscriptionRoutes } from './api/subscriptions.mjs'
 import { createStore } from './store/openbox-store.mjs'
 import { createRealContext } from './system/context-real.mjs'
@@ -912,6 +913,7 @@ registerSubscriptionRoutes(app, { store, fetchImpl: globalThis.fetch })
 registerProfileRoutes(app, { store })
 registerDeployRoutes(app, { store, ctx: obCtx, paths: obPaths })
 registerServiceRoutes(app, { store, ctx: obCtx, paths: obPaths })
+registerRulesetRoutes(app, { ctx: obCtx, paths: obPaths, fetchImpl: globalThis.fetch })
 registerPenetrationRoutes(app, { store, ctx: obCtx, paths: obPaths, fetchImpl: globalThis.fetch })
 registerNodeLatencyRoutes(app, { ctx: obCtx, paths: obPaths, fetchImpl: globalThis.fetch })
 registerGroupRoutes(app, { store })

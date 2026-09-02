@@ -8,9 +8,17 @@
     :style="{ width: `${boxWidth}px`, height: `${size}px` }"
     :title="title || code"
   >
-    <!-- 公司图标是单色路径,直接内联出来才好上色(<img> 里没法跟着主题变) -->
+    <!-- 彩色标识:整段 svg 当 data: URI 塞进 <img>。不用 v-html——<img> 里的 svg
+         不执行脚本,而且这些标记是编译进来的常量,走 <img> 一劳永逸。 -->
+    <img
+      v-if="brandSvg"
+      :src="brandSvg"
+      :alt="code"
+      :style="{ width: `${glyph}px`, height: `${glyph}px`, objectFit: 'contain' }"
+    />
+    <!-- 单色标识:内联出来才好上色(<img> 里没法跟着主题变) -->
     <svg
-      v-if="brand"
+      v-else-if="brand"
       viewBox="0 0 24 24"
       :style="{ width: `${glyph}px`, height: `${glyph}px` }"
       :fill="brandFill"
@@ -73,8 +81,14 @@ const FLAG_URL = import.meta.glob<string>('../../assets/flags/*.svg', {
 const isGlobe = computed(() => isGlobeIcon(props.code))
 const brand = computed(() => findBrand(props.code))
 
-// 品牌色照搬各家的 hex,但近黑的那几个(GitHub #181717、Apple #000)在深色主题下
-// 会糊进背景里,那种情况下改用 currentColor 跟着主题走——认得出形状比色号准确重要。
+const brandSvg = computed(() => {
+  const svg = brand.value?.svg
+  return svg ? `data:image/svg+xml;utf8,${encodeURIComponent(svg)}` : ''
+})
+
+// 单色标识的填充。品牌色照搬各家的 hex,但近黑的那几个(GitHub #181717、Apple #000)
+// 在深色主题下会糊进背景里,那种情况下改用 currentColor 跟着主题走——认得出形状比
+// 色号准确重要。
 const brandFill = computed(() => {
   const hex = brand.value?.hex || ''
   const m = /^#([0-9a-f]{6})$/i.exec(hex)

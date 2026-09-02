@@ -381,6 +381,27 @@ export interface OpenboxGroupsPayload {
 export const fetchNodeGroups = async (): Promise<OpenboxGroupsPayload> =>
   requestJson<OpenboxGroupsPayload>('/api/openbox/groups')
 
+// 规则集「详情」:一个 geosite/geoip 分类里到底有哪些域名/IP。
+// 服务端把 .srs 交给内核自己解码(sing-box rule-set decompile),所以看到的就是
+// 内核会匹配的那份;本地没有的分类会现下一份。
+export interface OpenboxRulesetEntries {
+  tag: string
+  total: number
+  matched: number
+  offset: number
+  limit: number
+  entries: { type: string; value: string }[]
+}
+
+export const fetchRulesetEntries = async (
+  tag: string,
+  { q = '', offset = 0, limit = 50 }: { q?: string; offset?: number; limit?: number } = {},
+): Promise<OpenboxRulesetEntries> => {
+  const params = new URLSearchParams({ tag, offset: String(offset), limit: String(limit) })
+  if (q) params.set('q', q)
+  return requestJson<OpenboxRulesetEntries>(`/api/openbox/rulesets/entries?${params.toString()}`)
+}
+
 // 整份覆盖而不是逐条改:组之间可以互相引用,逐条改会让中间状态出现悬空引用或环。
 export const saveNodeGroups = async (
   groups: OpenboxUserGroup[],
