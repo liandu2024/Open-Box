@@ -46,7 +46,10 @@
           </div>
           <div class="text-base-content/80 flex w-full items-center pt-0.5 pb-1.5">
             <div class="min-w-0 flex-1 pr-3 text-sm">
-              <ProxyGroupNow :name="name" />
+              <ProxyGroupNow
+                :name="name"
+                force-full-route
+              />
             </div>
           </div>
         </div>
@@ -110,7 +113,10 @@
         class="text-base-content/80 mt-1.5 mb-1 flex items-start gap-2"
       >
         <div class="min-w-0 flex-1 text-sm">
-          <ProxyGroupNow :name="name" />
+          <ProxyGroupNow
+            :name="name"
+            force-full-route
+          />
         </div>
         <div class="min-w-12 shrink-0 text-right text-xs">
           {{ prettyBytesHelper(downloadTotal) }}/s

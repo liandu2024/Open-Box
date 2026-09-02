@@ -13,40 +13,6 @@
           :class="isExpanded && 'rotate-180'"
         />
       </button>
-      <div class="flex-1" />
-      <div
-        class="proxy-penetration-mode bg-base-200/80 inline-flex items-center gap-1 rounded-md p-1"
-        :class="!canPenetrate || !canSwitchMode ? 'opacity-60' : ''"
-      >
-        <button
-          class="proxy-penetration-mode-btn rounded-md px-3 py-1.5 text-sm leading-5 font-medium transition-colors"
-          :class="
-            !canPenetrate || !canSwitchMode
-              ? 'text-base-content/35 cursor-not-allowed'
-              : penetrationMode === 'stepwise'
-                ? 'bg-base-100 text-base-content shadow-sm'
-                : 'text-base-content/45 hover:text-base-content/70 cursor-pointer'
-          "
-          :disabled="!canPenetrate || !canSwitchMode"
-          @click="penetrationMode = 'stepwise'"
-        >
-          {{ $t('stepwisePenetration') }}
-        </button>
-        <button
-          class="proxy-penetration-mode-btn rounded-md px-3 py-1.5 text-sm leading-5 font-medium transition-colors"
-          :class="
-            !canPenetrate || !canSwitchMode
-              ? 'text-base-content/35 cursor-not-allowed'
-              : penetrationMode === 'full'
-                ? 'bg-base-100 text-base-content shadow-sm'
-                : 'text-base-content/45 hover:text-base-content/70 cursor-pointer'
-          "
-          :disabled="!canPenetrate || !canSwitchMode"
-          @click="penetrationMode = 'full'"
-        >
-          {{ $t('fullExpansion') }}
-        </button>
-      </div>
     </div>
 
     <div

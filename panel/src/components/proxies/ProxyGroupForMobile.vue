@@ -48,6 +48,7 @@
             <ProxyGroupNow
               :name="proxyGroup.name"
               :mobile="true"
+              force-full-route
             />
           </div>
           <LatencyTag
@@ -69,7 +70,7 @@
 
       <div
         v-if="displayContent"
-        class="will-change-opacity max-h-108 overflow-y-auto overscroll-contain px-0 sm:px-3 py-2.5 transition-opacity duration-200 ease-out"
+        class="will-change-opacity max-h-108 overflow-y-auto overscroll-contain px-0 py-2.5 transition-opacity duration-200 ease-out sm:px-3"
         :class="[SCROLLABLE_PARENT_CLASS]"
         :style="{
           width: 'calc(100vw - 1rem)',
