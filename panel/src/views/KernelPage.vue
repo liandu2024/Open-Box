@@ -18,15 +18,29 @@
           :kernel-version="kernelVersion"
           @refresh="loadStatus"
         />
+
+        <!-- 内核参数:测速地址、IPv6。改动写进档案,重启内核后生效。 -->
+        <template v-if="profile">
+          <TestUrlCard
+            :profile="profile"
+            :patch-profile="patchProfile"
+          />
+          <Ipv6Card
+            :profile="profile"
+            :patch-profile="patchProfile"
+          />
+        </template>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import type { OpenboxKernelVersion, OpenboxServiceStatus } from '@/api/openbox'
-import { fetchKernelVersion, fetchServiceStatus } from '@/api/openbox'
+import type { OpenboxKernelVersion, OpenboxProfile, OpenboxServiceStatus } from '@/api/openbox'
+import { fetchKernelVersion, fetchProfile, fetchServiceStatus, saveProfile } from '@/api/openbox'
 import KernelServiceCard from '@/components/kernel/KernelServiceCard.vue'
+import Ipv6Card from '@/components/routing/Ipv6Card.vue'
+import TestUrlCard from '@/components/routing/TestUrlCard.vue'
 import { usePaddingForViews } from '@/composables/paddingViews'
 import { showNotification } from '@/helper/notification'
 import { onMounted, ref } from 'vue'
@@ -38,6 +52,7 @@ const { padding } = usePaddingForViews({
 
 const status = ref<OpenboxServiceStatus | null>(null)
 const kernelVersion = ref<OpenboxKernelVersion | null>(null)
+const profile = ref<OpenboxProfile | null>(null)
 const loading = ref(true)
 
 // 首次加载和每个动作(启动/停止/重启/自启开关)之后的刷新都走这里
@@ -55,9 +70,28 @@ const loadStatus = async () => {
   }
 }
 
+const loadProfile = async () => {
+  try {
+    profile.value = await fetchProfile()
+  } catch (error) {
+    showNotification({
+      content: 'routingLoadFailed',
+      params: { message: error instanceof Error ? error.message : String(error) },
+      type: 'alert-error',
+    })
+  }
+}
+
+// 两张参数卡片的改动都经这里写档案,成功后用服务端返回的新档案刷新
+const patchProfile = async (patch: Record<string, unknown>): Promise<OpenboxProfile> => {
+  const updated = await saveProfile(patch)
+  profile.value = updated
+  return updated
+}
+
 onMounted(async () => {
   loading.value = true
-  await loadStatus()
+  await Promise.all([loadStatus(), loadProfile()])
   loading.value = false
 })
 </script>
