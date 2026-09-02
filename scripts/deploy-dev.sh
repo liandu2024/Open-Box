@@ -3,7 +3,7 @@
 # → 用户点升级 这一整套。用途只有一个:自己那台开发机上的路由器,改完立刻看效果。
 #
 # 它**不是**升级脚本,和 update.sh 有两点根本区别:
-#   1. 只同步会变的那几样(panel/dist、panel/server、LuCI 视图与菜单),不碰 node/
+#   1. 只同步会变的那几样(panel/dist、panel/server、init 脚本、LuCI 视图与菜单),不碰 node/
 #      bin/sing-box——那些几乎不变,78MB 传一遍纯属浪费。
 #   2. 不动 data/ 与 etc/(订阅、节点组、配置都在里面),所以来回推不会把数据洗掉。
 #
@@ -84,6 +84,12 @@ push "" "$ROOT/panel/dist/" "$INSTALL_ROOT/panel/dist/"
 # 一样)与 test(线上不需要,还会白占空间)。
 info "同步 panel/server..."
 push "--exclude node_modules --exclude '*.test.mjs' --exclude test" "$ROOT/panel/server/" "$INSTALL_ROOT/panel/server/"
+
+# init 脚本也会跟着改(停止时清理 dnsmasq/防火墙的逻辑就在里面)。不同步的话,
+# 面板是新的、停止内核时跑的却是旧脚本,而且从界面上完全看不出来。
+info "同步 init 脚本..."
+push "" "$ROOT/openwrt/initd/openbox" "/etc/init.d/openbox"
+remote "chmod +x /etc/init.d/openbox" >/dev/null
 
 info "同步 LuCI 视图..."
 push "" "$ROOT/openwrt/luci/htdocs/luci-static/resources/view/openbox/" "/www/luci-static/resources/view/openbox/"
