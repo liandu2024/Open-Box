@@ -39,7 +39,11 @@
           :placeholder="$t('geoCategorySearch')"
           clearable
         />
-        <ul class="mt-1 min-h-0 flex-1 overflow-y-auto">
+        <ul
+        ref="listRef"
+        class="mt-1 min-h-0 flex-1 overflow-y-auto"
+        @scroll.passive="onScroll"
+      >
           <li
             v-if="loading"
             class="text-base-content/50 px-2 py-3 text-center text-xs"
@@ -68,6 +72,7 @@
           >
             {{ $t('geoCategoryNoMatch') }}
           </li>
+          <!-- 滚到底自动续下一批;这行本身就是"还没到底"的记号 -->
           <li
             v-else-if="hiddenCount > 0"
             class="text-base-content/50 px-2 py-2 text-center text-xs"
@@ -96,11 +101,11 @@ const props = defineProps<{
 
 const emit = defineEmits<{ 'update:modelValue': [string] }>()
 
-const { locale } = useI18n()
+const { locale, t } = useI18n()
 
-// 一次最多渲染这么多条:geosite 有 1800+ 条,全渲染出来光 DOM 就够卡一下的。
-// 剩下的靠搜索缩范围,列表底下会写还剩多少条。
-const MAX_VISIBLE = 60
+// 一批渲染这么多条:geosite 有 1800+ 条,一次性全画出来光 DOM 就够卡一下的。
+// 往下滚到底就自动续一批,所以不是"只能看 60 条",只是不一次性画完。
+const PAGE_SIZE = 60
 
 // 目录 176KB,按需加载:不打开这个下拉框的人不该为它付流量。
 // 模块级缓存,同一页里几十行规则只会加载一次。
@@ -133,10 +138,33 @@ watch(
 const keyword = ref('')
 
 // [名称, 中文, 英文, 繁体?];繁体缺省时用中文
-const note = (row: GeoCategoryRow) => {
+const rawNote = (row: GeoCategoryRow) => {
   if (locale.value === 'zh-TW') return row[3] || row[1] || ''
   if (locale.value.startsWith('zh')) return row[1] || ''
   return row[2] || row[1] || ''
+}
+
+// 上游有 337 个 `<基名>@<属性>` 的子集(google@ads、ccb@!cn、chinamobile@cn……),
+// 它们在分类注释库里没有独立条目——注释库是按 v2ray 的分类整理的,不含属性切片。
+// 与其让这三百多条空着,不如就地拼出来:基名的说明 + 属性是什么。
+const ATTR_KEY: Record<string, string> = {
+  ads: 'geoCategoryAttrAds',
+  cn: 'geoCategoryAttrCn',
+  '!cn': 'geoCategoryAttrNotCn',
+}
+
+const noteByName = computed(() => new Map(rows.value.map((r) => [r[0], r])))
+
+const note = (row: GeoCategoryRow): string => {
+  const own = rawNote(row)
+  if (own) return own
+  const at = row[0].indexOf('@')
+  if (at < 0) return ''
+  const attrKey = ATTR_KEY[row[0].slice(at + 1)]
+  if (!attrKey) return ''
+  const base = noteByName.value.get(row[0].slice(0, at))
+  const baseNote = base ? rawNote(base) : ''
+  return baseNote ? `${baseNote} · ${t(attrKey)}` : t(attrKey)
 }
 
 const currentNote = computed(() => {
@@ -150,8 +178,24 @@ const filtered = computed(() => {
   if (!kw) return rows.value
   return rows.value.filter((r) => r.some((cell) => (cell || '').toLowerCase().includes(kw)))
 })
-const visible = computed(() => filtered.value.slice(0, MAX_VISIBLE))
-const hiddenCount = computed(() => Math.max(0, filtered.value.length - MAX_VISIBLE))
+const shown = ref(PAGE_SIZE)
+const listRef = ref<HTMLElement | null>(null)
+
+const visible = computed(() => filtered.value.slice(0, shown.value))
+const hiddenCount = computed(() => Math.max(0, filtered.value.length - shown.value))
+
+// 快到底了就再放一批出来。阈值给 80px:等真滚到底再加载,手感上会顿一下。
+const onScroll = () => {
+  const el = listRef.value
+  if (!el || hiddenCount.value <= 0) return
+  if (el.scrollTop + el.clientHeight >= el.scrollHeight - 80) shown.value += PAGE_SIZE
+}
+
+// 换关键词/换类型就从头来:上一次滚到第 600 条,不该影响新结果
+watch([keyword, () => props.kind], () => {
+  shown.value = PAGE_SIZE
+  if (listRef.value) listRef.value.scrollTop = 0
+})
 
 // 这里刻意不给「直接使用手打的值」那条路:名单就是上游真有的那些,打一个不存在的
 // 名字面板这边一点反应都没有,直到部署时卡在"拉规则集"——错误离犯错的地方太远了。
