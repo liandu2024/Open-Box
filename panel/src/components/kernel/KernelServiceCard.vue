@@ -1,6 +1,7 @@
 <template>
-  <div class="card">
-    <div class="app-card-padding flex flex-col gap-3 text-sm">
+  <!-- 外观和下面的测速地址 / IPv6 卡片同一套:同样的描边、同样的 p-4 内边距 -->
+  <div class="card bg-base-100 border-base-300/60 border">
+    <div class="card-body gap-3 p-4 text-sm">
       <h2 class="text-base font-semibold">{{ $t('kernelServiceTitle') }}</h2>
 
       <div
