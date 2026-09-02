@@ -12,7 +12,10 @@ const DNS_MODES = new Set(['hijack', 'dnsmasq'])
 // rule_set.path,并作为参数传给 `sing-box rule-set match`(见 engine/routing.mjs、
 // api/penetration.mjs)。execFile 不经 shell,所以不是命令注入,但放过 "../../../etc/passwd"
 // 这类值意味着任意路径读取尝试 + 生成配置本身被写坏,必须在写入 store 之前拦截。
-const RULESET_TAG_PATTERN = /^[A-Za-z0-9._-]+$/
+// 上游的规则集名里有 @ 和 !(geosite-36kr@ads、geosite-geolocation-!cn 这类,
+// 1876 个里占 348 个),两者都能原样出现在 URL 路径和文件名里。挡住的是 / 和 ..
+// ——那才是路径穿越。
+const RULESET_TAG_PATTERN = /^[A-Za-z0-9._!@-]+$/
 const isValidRulesetTag = (v) => isString(v) && RULESET_TAG_PATTERN.test(v)
 
 // rulesetDir 同理会被拼进每个规则集的 .srs 文件路径——必须是绝对路径,且不含 ".." 路径段

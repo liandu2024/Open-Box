@@ -409,6 +409,11 @@ test('PUT 校验:地区列表要有 id/name,规则类型要认得、geo 名不�
     assert.equal((await putJson(baseUrl, '/api/openbox/profile', { routing: { regions: [{ name: '没有 id' }] } })).status, 400)
     // geosite/geoip 的值会拼成 .srs 文件名,不能带路径
     assert.equal((await putJson(baseUrl, '/api/openbox/profile', region([{ type: 'geosite', value: '../../etc/passwd', action: 'direct' }]))).status, 400)
+    // 上游真有的那些带 @ / ! 的名字要能存下去(geosite-36kr@ads、geosite-geolocation-!cn)
+    assert.equal((await putJson(baseUrl, '/api/openbox/profile', region([
+      { type: 'geosite', value: 'geolocation-!cn', action: 'proxy' },
+      { type: 'geosite', value: '36kr@ads', action: 'direct' },
+    ]))).status, 200)
     assert.equal((await putJson(baseUrl, '/api/openbox/profile', region([{ type: '乱写的', value: 'x', action: 'direct' }]))).status, 400)
     assert.equal((await putJson(baseUrl, '/api/openbox/profile', region([{ type: 'domain', value: '', action: 'direct' }]))).status, 400)
     assert.equal((await putJson(baseUrl, '/api/openbox/profile', region([{ type: 'domain', value: 'a.com', action: '走哪儿' }]))).status, 400)

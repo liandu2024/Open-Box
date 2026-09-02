@@ -203,7 +203,7 @@ export interface OpenboxDeployState {
 // Mirrors server/api/profile.mjs's RULESET_TAG_PATTERN — used client-side purely so the UI can
 // reject obviously-bad input before it round-trips to the server; the server's own check is
 // still the actual authority (see validateProfilePatch).
-export const RULESET_TAG_PATTERN = /^[A-Za-z0-9._-]+$/
+export const RULESET_TAG_PATTERN = /^[A-Za-z0-9._!@-]+$/
 
 // config/preview is raw sing-box config JSON straight out of buildConfig — only the shape this
 // UI actually reads (outbounds) is typed; everything else passes through untouched.

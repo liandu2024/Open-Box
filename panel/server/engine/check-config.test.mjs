@@ -238,6 +238,8 @@ for (const [regionId, expectedFinal] of [['cn', 'PROXY'], ['hkmo', 'direct'], ['
               catchAll: 'proxy',
               rules: [
                 { type: 'geosite', value: 'geolocation-!cn', action: 'proxy' },
+                // 上游有 348 个名字带 @/!,文件名和路径都得原样过内核
+                { type: 'geosite', value: '36kr@ads', action: 'direct' },
                 { type: 'domainSuffix', value: 'nhk.or.jp', action: 'direct' },
                 { type: 'ipcidr', value: '133.0.0.0/8', action: 'direct' },
               ],

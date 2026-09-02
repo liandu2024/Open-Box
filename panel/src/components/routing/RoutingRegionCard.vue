@@ -130,7 +130,17 @@
                     {{ type }}
                   </option>
                 </select>
+                <!-- geosite/geoip 的值来自上游真有的那份名单,给带搜索的下拉框;
+                     域名/IP 那几类是用户自己写的,给普通输入框 -->
+                <GeoCategorySelect
+                  v-if="rule.type === 'geosite' || rule.type === 'geoip'"
+                  v-model="rule.value"
+                  :kind="rule.type"
+                  :placeholder="RULE_PLACEHOLDER[rule.type]"
+                  class="min-w-0 flex-1"
+                />
                 <input
+                  v-else
                   v-model="rule.value"
                   type="text"
                   class="input input-sm min-w-0 flex-1 font-mono text-xs"
@@ -230,6 +240,7 @@
 import type { OpenboxProfile, OpenboxRegion, OpenboxRegionRule, OpenboxRegionRuleType, OpenboxRuleAction } from '@/api/openbox'
 import { REGION_RULE_TYPES, RULESET_TAG_PATTERN } from '@/api/openbox'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
+import GeoCategorySelect from '@/components/common/GeoCategorySelect.vue'
 import { showNotification } from '@/helper/notification'
 import { Bars3Icon, PlusIcon, TrashIcon } from '@heroicons/vue/24/outline'
 import { computed, ref, watch } from 'vue'

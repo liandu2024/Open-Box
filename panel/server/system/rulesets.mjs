@@ -35,7 +35,7 @@ const MAX_RULESET_BYTES = 16 * 1024 * 1024
 // 路径穿越,但这里的性质变了:这个模块会**按 tag 拼出的路径写文件**,一个形如
 // `geosite-../../etc/xxx` 的 tag 就是任意文件写入。写盘这件事的安全性不该依赖调用方
 // 上游某处校验过——就地再判一次,几乎不要钱。
-const SAFE_TAG = /^[A-Za-z0-9._!-]+$/
+const SAFE_TAG = /^[A-Za-z0-9._!@-]+$/
 export const isSafeRulesetTag = (tag) =>
   typeof tag === 'string' && SAFE_TAG.test(tag) && !tag.includes('..')
 
