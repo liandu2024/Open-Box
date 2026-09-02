@@ -63,10 +63,11 @@ html.apple-mobile-ui {
    内容也一直贴到滚动条边上,不会像 gutter 那样在内容和滚动条之间多留一条。
    选择器挑的是「页面骨架」那一层:所有视图的滚动容器都是
    `min-h-0 flex-1 overflow-x-hidden overflow-y-auto`(见 src/views/*.vue),以后
-   新加的页面照这个骨架写就自动有了。卡片里 max-h-* 的小列表不带 flex-1,不受影响。 */
-#app-content .flex-1.overflow-y-auto,
-/* 首页那层是 absolute + h-full,不走上面的骨架,单独点名 */
-#app-content .scrollable-parent {
+   新加的页面照这个骨架写就自动有了。卡片里 max-h-* 的小列表不带 flex-1,不受影响。
+   只挑页面那一层:HomePage 外面还套着一个 .scrollable-parent(同样是 overflow-y-auto),
+   桌面端它根本不滚。之前把它也算进来,结果两层各占一条滚动条的宽度——外层那条是空的、
+   看不见,却把里层的滚动条往左顶了十几像素,右边就露出一条白边。就是那条白边。 */
+#app-content .flex-1.overflow-y-auto {
   overflow-y: scroll;
 }
 
