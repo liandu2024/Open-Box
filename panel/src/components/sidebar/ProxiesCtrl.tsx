@@ -15,6 +15,7 @@ import {
 } from '@/store/openboxSubscriptions'
 import { activeConnections } from '@/store/connections'
 import {
+  proxyMap,
   allProxiesLatencyTest,
   fetchProxies,
   hasSmartGroup,
@@ -47,6 +48,7 @@ import {
   WrenchScrewdriverIcon,
 } from '@heroicons/vue/24/outline'
 import { every } from 'lodash'
+import { isEmpty } from 'lodash'
 import { computed, defineComponent, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
@@ -212,12 +214,16 @@ export default defineComponent({
       return Object.values(PROXY_TAB_TYPE).map((type) => {
         return {
           type,
+          // 内核没数据时策略/节点都是 0:全局模式下 getCurrentProxyGroups 会凭空给一个
+          // GLOBAL,内核根本没跑也会数出"策略 (1)",让人以为有东西只是没显示出来
           count:
-            type === PROXY_TAB_TYPE.POLICY
-              ? policyGroups.value.length
-              : type === PROXY_TAB_TYPE.NODE
-                ? nodeGroups.value.length
-                : openboxSubscriptions.value.length,
+            type === PROXY_TAB_TYPE.PROVIDER
+              ? openboxSubscriptions.value.length
+              : isEmpty(proxyMap.value)
+                ? 0
+                : type === PROXY_TAB_TYPE.POLICY
+                  ? policyGroups.value.length
+                  : nodeGroups.value.length,
         }
       })
     })

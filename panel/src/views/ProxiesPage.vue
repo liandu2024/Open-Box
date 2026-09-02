@@ -8,7 +8,24 @@
       :style="padding"
       @scroll.passive="handleScroll"
     >
-      <template v-if="displayTwoColumns && proxiesTabShow !== PROXY_TAB_TYPE.PROVIDER">
+      <!-- 这一页的一切都来自内核的 clash_api:内核没在跑,这里就是空的。与其留一片
+           空白让人以为"配置没生效",不如直说,并把去启动的路放在这儿。 -->
+      <div
+        v-if="kernelEmpty && proxiesTabShow !== PROXY_TAB_TYPE.PROVIDER"
+        class="flex flex-col items-center gap-3 py-16 text-center"
+      >
+        <CpuChipIcon class="text-base-content/30 h-10 w-10" />
+        <p class="text-base-content/70 text-sm">
+          {{ $t(coreRunning === false ? 'proxiesKernelStopped' : 'proxiesKernelNoData') }}
+        </p>
+        <RouterLink
+          :to="{ name: ROUTE_NAME.settings, query: { tab: SETTINGS_TAB.kernel } }"
+          class="btn btn-primary btn-sm"
+        >
+          {{ $t('proxiesGoToKernel') }}
+        </RouterLink>
+      </div>
+      <template v-else-if="displayTwoColumns && proxiesTabShow !== PROXY_TAB_TYPE.PROVIDER">
         <div class="grid grid-cols-2 gap-2 p-2">
           <div
             v-for="idx in [0, 1]"
@@ -84,6 +101,10 @@ import ProxyGroupForMobile from '@/components/proxies/ProxyGroupForMobile.vue'
 import ProxyGroupUnit from '@/components/proxies/ProxyGroupUnit.vue'
 import ProxyProvider from '@/components/proxies/ProxyProvider.vue'
 import ProxiesCtrl from '@/components/sidebar/ProxiesCtrl.tsx'
+import { fetchServiceStatus } from '@/api/openbox'
+import { CpuChipIcon } from '@heroicons/vue/24/outline'
+import { RouterLink } from 'vue-router'
+import { isEmpty } from 'lodash'
 import SubscriptionCard from '@/components/subscription/SubscriptionCard.vue'
 import { usePaddingForViews } from '@/composables/paddingViews'
 import {
@@ -101,6 +122,7 @@ import {
 import { useRouter } from 'vue-router'
 import { isMiddleScreen } from '@/helper/utils'
 import {
+  proxyMap,
   fetchProxies,
   getDescendantProxyNames,
   getProxyAutoRefreshSchedule,
@@ -119,6 +141,23 @@ const router = useRouter()
 
 // 订阅标签用的是 Open-Box 自己的订阅列表(不是 Clash provider),进页面就拉一次。
 onMounted(loadOpenboxSubscriptions)
+
+// 内核没在跑时 proxyMap 是空的。空的时候问一次内核状态,把"没在跑"和"在跑但没数据"
+// 分开说——前者去启动,后者是配置问题。
+const kernelEmpty = computed(() => isEmpty(proxyMap.value))
+const coreRunning = ref<boolean | null>(null)
+watch(
+  kernelEmpty,
+  async (empty) => {
+    if (!empty) return
+    try {
+      coreRunning.value = (await fetchServiceStatus()).core.running
+    } catch {
+      coreRunning.value = null
+    }
+  },
+  { immediate: true },
+)
 
 const refreshingSubId = ref<string | null>(null)
 const handleSubscriptionRefresh = async (id: string) => {
