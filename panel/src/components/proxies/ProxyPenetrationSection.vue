@@ -39,33 +39,21 @@
 import { getDescendantProxyGroups, getProxyGroupChains, proxyMap } from '@/store/proxies'
 import { collapseGroupMap } from '@/store/settings'
 import { ChevronDownIcon } from '@heroicons/vue/24/outline'
-import { useStorage } from '@vueuse/core'
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import ProxyEmbeddedGroup from './ProxyEmbeddedGroup.vue'
 
+// 穿透:一打开代理页就把整条链(站点集 → 组 → … → 节点)全部展开摆出来,每一层的
+// 节点列表也是展开的,不用点「展开穿透」,也没有「逐层 / 到底」的模式可选——
+// 原来那套逐层展开只是多点几次鼠标。「收起穿透」按钮留着,想清爽时可以收起来。
 const props = defineProps<{
   groupName: string
 }>()
 
-type PenetrationMode = 'stepwise' | 'full'
-
 const { t } = useI18n()
-const isExpanded = ref(false)
-const penetrationModeMap = useStorage<Record<string, PenetrationMode>>(
-  'cache/proxy-penetration-mode-map',
-  {},
-)
+const isExpanded = ref(true)
 const groupNameRoot = props.groupName
-const penetrationMode = computed<PenetrationMode>({
-  get: () => penetrationModeMap.value[groupNameRoot] ?? 'stepwise',
-  set: (value) => {
-    penetrationModeMap.value[groupNameRoot] = value
-  },
-})
-const lastSelectedGroupName = ref('')
 const selectedPenetrationGroupMap = ref<Record<string, string>>({})
-const stepwiseVisibleCount = ref(1)
 
 const getActualNextGroupName = (groupName: string) => {
   return getProxyGroupChains(groupName)[1] ?? ''
@@ -112,36 +100,13 @@ const buildPenetratedGroupNames = () => {
 
 const penetratedGroupNames = computed(() => buildPenetratedGroupNames())
 const canPenetrate = computed(() => penetratedGroupNames.value.length > 0)
-const canSwitchMode = computed(() => penetratedGroupNames.value.length > 1)
-
-const renderedGroups = computed(() => {
-  if (!canPenetrate.value) {
-    return []
-  }
-
-  if (penetrationMode.value === 'stepwise') {
-    return penetratedGroupNames.value.slice(0, stepwiseVisibleCount.value)
-  }
-
-  return penetratedGroupNames.value
-})
+const renderedGroups = computed(() => (canPenetrate.value ? penetratedGroupNames.value : []))
 
 const buttonLabel = computed(() =>
   isExpanded.value ? t('collapsePenetration') : t('strategyPenetration'),
 )
 
-const syncStepwiseVisibleCount = (groupNames: string[]) => {
-  const selectedIndex = lastSelectedGroupName.value
-    ? groupNames.indexOf(lastSelectedGroupName.value)
-    : -1
-
-  stepwiseVisibleCount.value =
-    selectedIndex === -1 ? 1 : Math.min(groupNames.length, selectedIndex + 2)
-}
-
 const handleSelectionChange = (groupName: string, nodeName: string) => {
-  lastSelectedGroupName.value = groupName
-
   const nextSelectedPenetrationGroupMap = { ...selectedPenetrationGroupMap.value }
 
   getDescendantProxyGroups(groupName).forEach((descendantGroupName) => {
@@ -158,58 +123,32 @@ const handleSelectionChange = (groupName: string, nodeName: string) => {
   }
 
   selectedPenetrationGroupMap.value = nextSelectedPenetrationGroupMap
-
-  if (penetrationMode.value === 'stepwise') {
-    syncStepwiseVisibleCount(buildPenetratedGroupNames())
-  }
 }
 
-const resetStepwiseVisibleCount = () => {
-  stepwiseVisibleCount.value = 1
-}
-
-const resetRenderedGroupCollapseState = (groupNames: string[]) => {
+// 每一层的节点列表都展开(ProxyEmbeddedGroup 按这个 key 决定显示圆点预览还是节点卡片)
+const openRenderedGroups = (groupNames: string[]) => {
   groupNames.forEach((_groupName, index) => {
-    collapseGroupMap.value[`penetration:${groupNameRoot}:level-${index + 1}`] = false
+    collapseGroupMap.value[`penetration:${groupNameRoot}:level-${index + 1}`] = true
   })
 }
 
 watch(canPenetrate, (value) => {
+  isExpanded.value = value
   if (!value) {
-    isExpanded.value = false
-    lastSelectedGroupName.value = ''
     selectedPenetrationGroupMap.value = {}
-    resetStepwiseVisibleCount()
   }
 })
 
-watch(canSwitchMode, (value) => {
-  if (!value) {
-    penetrationMode.value = 'stepwise'
-  }
-})
-
+// 链条变了(比如在某一层换选了别的组)就把新出现的层也展开
 watch(
-  penetratedGroupNames,
+  renderedGroups,
   (groupNames) => {
-    if (penetrationMode.value === 'stepwise') {
-      syncStepwiseVisibleCount(groupNames)
-    }
-
-    if (!isExpanded.value) {
-      return
+    if (isExpanded.value) {
+      openRenderedGroups(groupNames)
     }
   },
-  { deep: true },
+  { immediate: true },
 )
-
-watch(penetrationMode, (mode) => {
-  lastSelectedGroupName.value = ''
-
-  if (mode === 'stepwise') {
-    resetStepwiseVisibleCount()
-  }
-})
 
 const togglePenetration = () => {
   if (!canPenetrate.value) {
@@ -219,13 +158,7 @@ const togglePenetration = () => {
   const nextExpanded = !isExpanded.value
 
   if (nextExpanded) {
-    if (penetrationMode.value === 'stepwise') {
-      resetStepwiseVisibleCount()
-    }
-
-    resetRenderedGroupCollapseState(renderedGroups.value)
-  } else {
-    lastSelectedGroupName.value = ''
+    openRenderedGroups(renderedGroups.value)
   }
 
   isExpanded.value = nextExpanded
