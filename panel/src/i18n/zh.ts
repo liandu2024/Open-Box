@@ -487,7 +487,6 @@ const zh: LANG_MESSAGE = {
   geoCategorySearch: '搜索分类,支持中英文',
   geoCategoryNoMatch: '没有匹配的分类',
   geoCategoryMore: '还有 {count} 条,继续输入以缩小范围',
-  geoCategoryUseCustom: '直接使用',
   iconCategoryAll: '全部',
   iconCategoryRegions: '地区',
   iconCategoryBrands: '公司',

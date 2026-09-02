@@ -490,7 +490,6 @@ const en = {
   geoCategorySearch: 'Search categories',
   geoCategoryNoMatch: 'No matching category',
   geoCategoryMore: '{count} more — keep typing to narrow',
-  geoCategoryUseCustom: 'Use as typed',
   iconCategoryAll: 'All',
   iconCategoryRegions: 'Regions',
   iconCategoryBrands: 'Brands',

@@ -46,19 +46,6 @@
           >
             <span class="loading loading-spinner loading-xs" />
           </li>
-          <!-- 目录是一份快照;上游新加的分类先用手打的值顶上,不至于卡住 -->
-          <li v-if="!loading && customValue">
-            <button
-              type="button"
-              class="hover:bg-base-200 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm"
-              @click="choose(customValue)"
-            >
-              <span class="truncate font-mono text-xs">{{ customValue }}</span>
-              <span class="text-base-content/50 ml-auto shrink-0 text-xs">{{
-                $t('geoCategoryUseCustom')
-              }}</span>
-            </button>
-          </li>
           <li
             v-for="row in visible"
             :key="row[0]"
@@ -76,7 +63,7 @@
             </button>
           </li>
           <li
-            v-if="!loading && !visible.length && !customValue"
+            v-if="!loading && !visible.length"
             class="text-base-content/50 px-2 py-3 text-center text-xs"
           >
             {{ $t('geoCategoryNoMatch') }}
@@ -166,12 +153,9 @@ const filtered = computed(() => {
 const visible = computed(() => filtered.value.slice(0, MAX_VISIBLE))
 const hiddenCount = computed(() => Math.max(0, filtered.value.length - MAX_VISIBLE))
 
-// 搜的词本身不在目录里时,允许直接用它——目录是快照,上游随时会加新分类
-const customValue = computed(() => {
-  const kw = keyword.value.trim()
-  if (!kw || !/^[A-Za-z0-9._!-]+$/.test(kw)) return ''
-  return rows.value.some((r) => r[0] === kw) ? '' : kw
-})
+// 这里刻意不给「直接使用手打的值」那条路:名单就是上游真有的那些,打一个不存在的
+// 名字面板这边一点反应都没有,直到部署时卡在"拉规则集"——错误离犯错的地方太远了。
+// 上游加了新分类,重跑 scripts/gen-geo-catalog.mjs 刷新名单即可。
 
 const onTriggerClick = () => {
   toggle()

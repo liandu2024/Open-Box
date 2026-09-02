@@ -487,7 +487,6 @@ const zhTW: LANG_MESSAGE = {
   geoCategorySearch: '搜尋分類,支援中英文',
   geoCategoryNoMatch: '沒有符合的分類',
   geoCategoryMore: '還有 {count} 條,繼續輸入以縮小範圍',
-  geoCategoryUseCustom: '直接使用',
   iconCategoryAll: '全部',
   iconCategoryRegions: '地區',
   iconCategoryBrands: '公司',
