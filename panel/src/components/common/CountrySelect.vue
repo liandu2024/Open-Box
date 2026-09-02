@@ -1,11 +1,15 @@
 <template>
-  <!-- 带搜索的国家选择器。用 daisyUI 的 dropdown(靠 :focus-within 展开),不是原生
-       <select>:原生 select 既放不下国旗,也没法在几十个国家里打字筛选。 -->
-  <div class="dropdown w-full">
+  <!-- 带搜索的图标/国家选择器。不用原生 <select>:它既放不下国旗,也没法打字筛选。
+       面板 Teleport 到 #app-content 并用 fixed 定位(见 composables/anchoredDropdown.ts)
+       ——留在原地会被弹窗的 overflow 裁掉,只露出上面一小截。 -->
+  <div class="w-full">
     <div
+      ref="triggerRef"
       tabindex="0"
       role="button"
       class="input input-sm hover:border-base-content/30 flex w-full cursor-pointer items-center gap-1.5"
+      @click="toggle"
+      @keydown.enter.prevent="toggle"
     >
       <CountryFlag
         :code="modelValue"
@@ -20,116 +24,127 @@
       </span>
       <ChevronDownIcon class="text-base-content/40 h-3.5 w-3.5 shrink-0" />
     </div>
-    <div
-      tabindex="0"
-      class="dropdown-content bg-base-100 border-base-content/10 z-10 mt-1 w-64 rounded-lg border p-2 shadow-lg"
-    >
-      <!-- 搜索框用全局那个 TextInput(带清除按钮),和别处的搜索长一样 -->
-      <TextInput
-        v-model="keyword"
-        :placeholder="$t('subscriptionRenameCountrySearch')"
-        clearable
-      />
-      <!-- 分类:图标一多就得分,不然找个公司要在几十面国旗里翻。
-           只有真给了公司图标的地方才显示这一行(比如地区关键词那边就只能选国家)。 -->
+    <Teleport to="#app-content">
       <div
-        v-if="brands"
-        role="tablist"
-        class="tabs-box tabs tabs-xs mt-1 w-full"
+        v-if="open"
+        ref="panelRef"
+        class="bg-base-100 border-base-content/10 z-[1000] flex flex-col rounded-lg border p-2 shadow-lg"
+        :style="style"
       >
-        <a
-          v-for="tab in CATEGORY_TABS"
-          :key="tab.key"
-          role="tab"
-          :class="['tab flex-1', category === tab.key && 'tab-active']"
-          @click.stop="category = tab.key"
+        <!-- 搜索框用全局那个 TextInput(带清除按钮),和别处的搜索长一样 -->
+        <TextInput
+          v-model="keyword"
+          :placeholder="$t('subscriptionRenameCountrySearch')"
+          clearable
+        />
+        <!-- 分类:图标一多就得分,不然找个公司要在几十面国旗里翻。
+           只有真给了公司图标的地方才显示这一行(比如地区关键词那边就只能选国家)。 -->
+        <div
+          v-if="brands"
+          role="tablist"
+          class="tabs-box tabs tabs-xs mt-1 w-full"
         >
-          {{ $t(tab.labelKey) }}
-        </a>
-      </div>
+          <a
+            v-for="tab in CATEGORY_TABS"
+            :key="tab.key"
+            role="tab"
+            :class="['tab flex-1', category === tab.key && 'tab-active']"
+            @click.stop="category = tab.key"
+          >
+            {{ $t(tab.labelKey) }}
+          </a>
+        </div>
 
-      <ul class="mt-1 max-h-56 overflow-y-auto">
-        <li
-          v-for="b in brandOptions"
-          :key="b.value"
-        >
-          <button
-            type="button"
-            class="hover:bg-base-200 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm"
-            :class="{ 'bg-base-200': b.value === modelValue }"
-            @click="choose(b.value)"
+        <ul class="mt-1 min-h-0 flex-1 overflow-y-auto">
+          <li
+            v-for="b in brandOptions"
+            :key="b.value"
           >
-            <CountryFlag
-              :code="b.value"
-              :size="16"
-            />
-            <span class="truncate">{{ b.label }}</span>
-          </button>
-        </li>
-        <!-- 可清空时给一条「无」:图标是可选的,选错了得有路退回去 -->
-        <!-- 地球图标排在国旗前面:跨地区的组(所有-自动、回国)配国旗都不对,
+            <button
+              type="button"
+              class="hover:bg-base-200 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm"
+              :class="{ 'bg-base-200': b.value === modelValue }"
+              @click="choose(b.value)"
+            >
+              <CountryFlag
+                :code="b.value"
+                :size="16"
+              />
+              <span class="truncate">{{ b.label }}</span>
+            </button>
+          </li>
+          <!-- 可清空时给一条「无」:图标是可选的,选错了得有路退回去 -->
+          <!-- 地球图标排在国旗前面:跨地区的组(所有-自动、回国)配国旗都不对,
              这几个才是它们该用的。 -->
-        <li
-          v-for="g in globeOptions"
-          :key="g.value"
-        >
-          <button
-            type="button"
-            class="hover:bg-base-200 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm"
-            :class="{ 'bg-base-200': g.value === modelValue }"
-            @click="choose(g.value)"
+          <li
+            v-for="g in globeOptions"
+            :key="g.value"
           >
-            <CountryFlag
-              :code="g.value"
-              :size="16"
-            />
-            <span class="truncate">{{ g.label }}</span>
-          </button>
-        </li>
-        <li v-if="clearable">
-          <button
-            type="button"
-            class="hover:bg-base-200 text-base-content/60 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm"
-            :class="{ 'bg-base-200': !modelValue }"
-            @click="choose('')"
+            <button
+              type="button"
+              class="hover:bg-base-200 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm"
+              :class="{ 'bg-base-200': g.value === modelValue }"
+              @click="choose(g.value)"
+            >
+              <CountryFlag
+                :code="g.value"
+                :size="16"
+              />
+              <span class="truncate">{{ g.label }}</span>
+            </button>
+          </li>
+          <li v-if="clearable">
+            <button
+              type="button"
+              class="hover:bg-base-200 text-base-content/60 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm"
+              :class="{ 'bg-base-200': !modelValue }"
+              @click="choose('')"
+            >
+              {{ placeholder || $t('subscriptionRenameCountrySearch') }}
+            </button>
+          </li>
+          <li
+            v-for="c in filtered"
+            :key="c.code"
           >
-            {{ placeholder || $t('subscriptionRenameCountrySearch') }}
-          </button>
-        </li>
-        <li
-          v-for="c in filtered"
-          :key="c.code"
-        >
-          <button
-            type="button"
-            class="hover:bg-base-200 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm"
-            :class="{ 'bg-base-200': c.code === modelValue }"
-            @click="choose(c.code)"
+            <button
+              type="button"
+              class="hover:bg-base-200 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm"
+              :class="{ 'bg-base-200': c.code === modelValue }"
+              @click="choose(c.code)"
+            >
+              <CountryFlag
+                :code="c.code"
+                :size="16"
+              />
+              <span class="truncate">{{ c.label }}</span>
+              <span class="text-base-content/40 ml-auto text-xs">{{ c.code }}</span>
+            </button>
+          </li>
+          <li
+            v-if="!filtered.length && !brandOptions.length && !globeOptions.length"
+            class="text-base-content/50 px-2 py-3 text-center text-xs"
           >
-            <CountryFlag
-              :code="c.code"
-              :size="16"
-            />
-            <span class="truncate">{{ c.label }}</span>
-            <span class="text-base-content/40 ml-auto text-xs">{{ c.code }}</span>
-          </button>
-        </li>
-        <li
-          v-if="!filtered.length && !brandOptions.length && !globeOptions.length"
-          class="text-base-content/50 px-2 py-3 text-center text-xs"
-        >
-          {{ $t('subscriptionRenameCountryNoMatch') }}
-        </li>
-      </ul>
-    </div>
+            {{ $t('subscriptionRenameCountryNoMatch') }}
+          </li>
+        </ul>
+      </div>
+    </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
 import CountryFlag from '@/components/common/CountryFlag.vue'
 import TextInput from '@/components/common/TextInput.vue'
+import { useAnchoredDropdown } from '@/composables/anchoredDropdown'
 import { BRANDS, BRAND_PREFIX, brandName, findBrand } from '@/constant/brands'
-import { COUNTRIES, GLOBE_ICONS, countryName, findCountry, globeIconKey } from '@/constant/countries'
+import {
+  COUNTRIES,
+  GLOBE_ICONS,
+  countryName,
+  findCountry,
+  globeIconKey,
+} from '@/constant/countries'
 import { ChevronDownIcon } from '@heroicons/vue/24/outline'
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -155,6 +170,8 @@ const emit = defineEmits<{ 'update:modelValue': [string] }>()
 const { t, locale } = useI18n()
 const keyword = ref('')
 
+const { open, triggerRef, panelRef, style, toggle, close } = useAnchoredDropdown({ minWidth: 256 })
+
 type Category = 'all' | 'regions' | 'brands'
 const CATEGORY_TABS: { key: Category; labelKey: string }[] = [
   { key: 'all', labelKey: 'iconCategoryAll' },
@@ -164,7 +181,8 @@ const CATEGORY_TABS: { key: Category; labelKey: string }[] = [
 const category = ref<Category>('all')
 
 const label = computed(() => {
-  if (props.modelValue && props.modelValue.startsWith('globe:')) return t(globeIconKey(props.modelValue))
+  if (props.modelValue && props.modelValue.startsWith('globe:'))
+    return t(globeIconKey(props.modelValue))
   const brand = findBrand(props.modelValue)
   if (brand) return brandName(brand, locale.value)
   const c = findCountry(props.modelValue || '')
@@ -182,8 +200,8 @@ const options = computed(() => {
       .filter((c): c is NonNullable<typeof c> => Boolean(c))
       .map((c) => ({ code: c.code, label: countryName(c, locale.value) }))
   }
-  return COUNTRIES.map((c) => ({ code: c.code, label: countryName(c, locale.value) })).sort((a, b) =>
-    a.label.localeCompare(b.label, locale.value),
+  return COUNTRIES.map((c) => ({ code: c.code, label: countryName(c, locale.value) })).sort(
+    (a, b) => a.label.localeCompare(b.label, locale.value),
   )
 })
 
@@ -211,14 +229,15 @@ const filtered = computed(() => {
   if (category.value === 'brands') return []
   const kw = keyword.value.trim().toLowerCase()
   if (!kw) return options.value
-  return options.value.filter((c) => matches(kw, c.label, c.code, ...(findCountry(c.code)?.keywords || [])))
+  return options.value.filter((c) =>
+    matches(kw, c.label, c.code, ...(findCountry(c.code)?.keywords || [])),
+  )
 })
 
 const choose = (code: string) => {
   emit('update:modelValue', code)
   keyword.value = ''
   category.value = 'all'
-  // dropdown 是靠 focus-within 展开的,挑完要主动失焦才收起来
-  ;(document.activeElement as HTMLElement | null)?.blur()
+  close()
 }
 </script>
