@@ -43,7 +43,7 @@
             type="button"
             class="btn btn-ghost btn-xs btn-square"
             :aria-label="$t('delete')"
-            @click="removeCategory(idx)"
+            @click="askRemoveCategory(idx)"
           >
             <TrashIcon class="h-4 w-4" />
           </button>
@@ -243,12 +243,50 @@
         </p>
       </div>
     </div>
+
+    <!-- 删一条分流规则会立刻落库,先确认一次;样式和删订阅/删分组的那个一致 -->
+    <DialogWrapper
+      v-model="showCategoryDelete"
+      :title="$t('routingCategoryDeleteTitle')"
+    >
+      <div class="flex flex-col gap-4 p-2">
+        <p class="text-sm">
+          {{
+            $t('routingCategoryDeleteConfirm', {
+              name: pendingCategory === null ? '' : categories[pendingCategory]?.ruleset || '',
+            })
+          }}
+        </p>
+        <div class="flex justify-end gap-2">
+          <button
+            type="button"
+            class="btn btn-sm"
+            @click="showCategoryDelete = false"
+          >
+            {{ $t('cancel') }}
+          </button>
+          <button
+            type="button"
+            class="btn btn-error btn-sm"
+            :disabled="categorySaving"
+            @click="confirmRemoveCategory"
+          >
+            <span
+              v-if="categorySaving"
+              class="loading loading-spinner loading-xs"
+            />
+            {{ $t('confirm') }}
+          </button>
+        </div>
+      </div>
+    </DialogWrapper>
   </div>
 </template>
 
 <script setup lang="ts">
 import type { OpenboxPolicyGroup, OpenboxProfile, OpenboxProfileRoutingCategory } from '@/api/openbox'
 import { RULESET_TAG_PATTERN } from '@/api/openbox'
+import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import { ArrowRightIcon, PlusIcon, TrashIcon, XMarkIcon } from '@heroicons/vue/24/outline'
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -307,8 +345,24 @@ const runCategoryPatch = async (next: OpenboxProfileRoutingCategory[]) => {
   }
 }
 
-const removeCategory = (idx: number) => {
-  void runCategoryPatch(categories.value.filter((_, i) => i !== idx))
+// 删一条分流规则是直接落库的(runCategoryPatch 会立刻 PATCH),不是编辑到一半的
+// 草稿,所以先确认一次——和删订阅、删分组同一个弹窗样式。
+const showCategoryDelete = ref(false)
+const pendingCategory = ref<number | null>(null)
+
+const askRemoveCategory = (idx: number) => {
+  pendingCategory.value = idx
+  showCategoryDelete.value = true
+}
+
+const confirmRemoveCategory = async () => {
+  const idx = pendingCategory.value
+  if (idx === null || categorySaving.value) return
+  const ok = await runCategoryPatch(categories.value.filter((_, i) => i !== idx))
+  if (ok) {
+    showCategoryDelete.value = false
+    pendingCategory.value = null
+  }
 }
 
 const changeCategoryTarget = (idx: number, target: string) => {

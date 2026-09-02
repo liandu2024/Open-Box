@@ -56,7 +56,7 @@
           type="button"
           class="btn btn-ghost btn-square btn-sm hover:text-error"
           :aria-label="$t('delete')"
-          @click="removeGroup(group)"
+          @click="askDelete(group)"
         >
           <TrashIcon class="h-4 w-4" />
         </button>
@@ -357,6 +357,40 @@
               class="loading loading-spinner loading-xs"
             />
             {{ $t('subscriptionSave') }}
+          </button>
+        </div>
+      </div>
+    </DialogWrapper>
+
+    <!-- 删掉一个组是不可撤销的(而且组名可能已经被分流规则指着),和删订阅一样
+         先确认一次,样式沿用同一个 DialogWrapper。 -->
+    <DialogWrapper
+      v-model="showDeleteDialog"
+      :title="$t('groupDeleteTitle')"
+    >
+      <div class="flex flex-col gap-4 p-2">
+        <p class="text-sm">
+          {{ $t('groupDeleteConfirm', { name: pendingDelete?.name || '' }) }}
+        </p>
+        <div class="flex justify-end gap-2">
+          <button
+            type="button"
+            class="btn btn-sm"
+            @click="showDeleteDialog = false"
+          >
+            {{ $t('cancel') }}
+          </button>
+          <button
+            type="button"
+            class="btn btn-error btn-sm"
+            :disabled="deleting"
+            @click="confirmDelete"
+          >
+            <span
+              v-if="deleting"
+              class="loading loading-spinner loading-xs"
+            />
+            {{ $t('confirm') }}
           </button>
         </div>
       </div>
@@ -913,11 +947,27 @@ const saveDraft = async () => {
   }
 }
 
-const removeGroup = async (group: OpenboxUserGroup) => {
+const showDeleteDialog = ref(false)
+const pendingDelete = ref<OpenboxUserGroup | null>(null)
+const deleting = ref(false)
+
+const askDelete = (group: OpenboxUserGroup) => {
+  pendingDelete.value = group
+  showDeleteDialog.value = true
+}
+
+const confirmDelete = async () => {
+  const group = pendingDelete.value
+  if (!group || deleting.value) return
+  deleting.value = true
   try {
     await persist(groups.value.filter((g) => g.id !== group.id))
+    showDeleteDialog.value = false
+    pendingDelete.value = null
   } catch (err) {
     notifyError(err)
+  } finally {
+    deleting.value = false
   }
 }
 </script>
