@@ -7,7 +7,8 @@
 //
 // 中文/英文说明取自 Wan.Family.OS 的 geo 分类注释库(vpn_geo_category_notes,1500+ 条
 // AI 生成后人工校对过的分类说明);geoip 在 sing-box 侧只有国家代码,说明就用国名。
-// 三种文案一起参与搜索:输 openai、输"人工智能"、输 ai 都该找到 geosite:openai。
+// 三种文案一起参与搜索。它们是一句"这是什么"的描述,不是别名表:搜 netflix 或
+// 「流媒体」找得到 geosite:netflix,搜「奈飞」找不到——说明里没这两个字。
 //
 // 这个文件按需加载(components/common/GeoCategorySelect.vue 里 import() 进来),
 // 不进主包——它比整个面板的其余部分加起来还大。

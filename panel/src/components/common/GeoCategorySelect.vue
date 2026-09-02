@@ -172,11 +172,33 @@ const currentNote = computed(() => {
   return hit ? note(hit) : ''
 })
 
-// 名称、中文、英文、繁体一起参与检索:输 openai、输「人工智能」、输 ai 都该找到它
+// 按匹配度排:同名的排最前。搜 cn 时,clearasil@cn、cloudflare-cn 这些也含 "cn",
+// 按字母序排的话真正想要的那条 `cn` 会被埋在中间——名字完全相同的必须第一个。
+//   0 完全同名        cn
+//   1 同名的属性变体   cn@ads
+//   2 名字以它开头     cnbc
+//   3 名字里含它       cloudflare-cn
+//   4 只有说明命中     搜「奈飞」命中 netflix 的中文说明
+const scoreOf = (row: GeoCategoryRow, kw: string) => {
+  const name = row[0].toLowerCase()
+  if (name === kw) return 0
+  if (name.startsWith(`${kw}@`)) return 1
+  if (name.startsWith(kw)) return 2
+  if (name.includes(kw)) return 3
+  return 4
+}
+
+// 名称、中文、英文、繁体一起参与检索。注意说明是一句描述、不是别名表:搜 netflix 或
+// 「流媒体」能找到 geosite:netflix,搜「奈飞」找不到——它的说明里没这两个字。
 const filtered = computed(() => {
   const kw = keyword.value.trim().toLowerCase()
   if (!kw) return rows.value
-  return rows.value.filter((r) => r.some((cell) => (cell || '').toLowerCase().includes(kw)))
+  const hits = rows.value.filter((r) => r.some((cell) => (cell || '').toLowerCase().includes(kw)))
+  // 同档之内短的排前面(cn@ads 先于 cnbeta@ads),再按原顺序稳定收尾
+  return hits
+    .map((row, index) => ({ row, index, score: scoreOf(row, kw) }))
+    .sort((a, b) => a.score - b.score || a.row[0].length - b.row[0].length || a.index - b.index)
+    .map((x) => x.row)
 })
 const shown = ref(PAGE_SIZE)
 const listRef = ref<HTMLElement | null>(null)
