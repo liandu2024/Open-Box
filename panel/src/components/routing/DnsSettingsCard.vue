@@ -16,14 +16,12 @@
         />
       </div>
 
+      <!-- 直连侧不再让用户填服务器:改成交回系统/路由器自己解析(hijack 模式用内核的
+           local 类型,dnsmasq 模式用 WAN 下发的上游)。留着输入框只会让人以为直连域名
+           还归 Open-Box 管。 -->
       <div class="flex flex-col gap-1">
         <label class="text-xs font-medium">{{ $t('dnsDirectLabel') }}</label>
-        <input
-          type="text"
-          class="input input-sm w-full max-w-xs font-mono"
-          :value="profile.dns.direct"
-          @change="onDirectChange"
-        />
+        <p class="text-base-content/60 text-xs">{{ $t('dnsDirectSystemNote') }}</p>
       </div>
 
       <div class="flex flex-col gap-1">
@@ -92,16 +90,6 @@ const onModeChange = (event: Event) => save({ dns: { mode: (event.target as HTML
 // Blanking the field silently and doing nothing would leave the input showing "" while the
 // bound :value prop hasn't actually changed (no re-render to correct it) — reset it to the
 // last-known-good value directly instead of just no-op'ing.
-const onDirectChange = (event: Event) => {
-  const input = event.target as HTMLInputElement
-  const value = input.value.trim()
-  if (!value) {
-    input.value = props.profile.dns.direct || ''
-    return
-  }
-  save({ dns: { direct: value } })
-}
-
 const onProxyChange = (event: Event) => {
   const input = event.target as HTMLInputElement
   const value = input.value.trim()

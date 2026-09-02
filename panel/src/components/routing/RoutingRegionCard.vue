@@ -6,182 +6,69 @@
         <p class="text-base-content/60 text-xs">{{ $t('routingRegionDescription') }}</p>
       </div>
 
-      <div class="flex flex-wrap items-center gap-2">
-        <label class="text-xs font-medium">{{ $t('routingRegionLabel') }}</label>
-        <select
-          v-model="selectedRegion"
-          class="select select-sm min-w-0 flex-1 sm:max-w-56"
+      <!-- 三选一,选中即写档案。原来是"十个地区下拉 + 预览 + 应用"三步,而那三步做的
+           事其实只是往档案里塞一组 directRulesets——现在规则由地区在生成配置时决定,
+           档案里只存"人在哪",所以不再需要预览与二次确认。 -->
+      <div class="flex flex-col gap-2">
+        <label
+          v-for="opt in REGION_MODES"
+          :key="opt.value"
+          class="border-base-300/60 hover:bg-base-200/40 flex cursor-pointer items-start gap-3 rounded-lg border p-3"
+          :class="current === opt.value && 'border-primary bg-primary/5'"
         >
-          <option
-            v-for="opt in REGION_OPTIONS"
-            :key="opt.code"
-            :value="opt.code"
-          >
-            {{ $t(opt.labelKey) }}
-          </option>
-        </select>
-        <button
-          type="button"
-          class="btn btn-sm"
-          :disabled="loadingDefaults"
-          @click="handlePreview"
-        >
-          <span
-            v-if="loadingDefaults"
-            class="loading loading-spinner loading-xs"
+          <input
+            type="radio"
+            class="radio radio-sm mt-0.5"
+            :value="opt.value"
+            :checked="current === opt.value"
+            :disabled="saving"
+            @change="choose(opt.value)"
           />
-          {{ $t('routingRegionPreview') }}
-        </button>
+          <div class="min-w-0">
+            <div class="text-sm font-medium">{{ $t(opt.labelKey) }}</div>
+            <div class="text-base-content/60 mt-0.5 text-xs">{{ $t(opt.hintKey) }}</div>
+          </div>
+        </label>
       </div>
 
-      <!-- Preview fetched but not yet applied: the actual overwrite only happens once the user
-           hits Apply below, so this block is where the "this replaces your current DNS/routing
-           settings" consequence has to be visible — this card is reached from a box that may
-           already be configured, so it can never assume there's nothing to lose. -->
-      <div
-        v-if="defaults"
-        class="border-warning/30 bg-warning/10 flex flex-col gap-2 rounded-lg border p-3 text-sm"
-      >
-        <p class="text-warning font-medium">{{ $t('routingRegionApplyWarning') }}</p>
-        <ul class="text-base-content/80 flex flex-col gap-1 text-xs">
-          <li>{{ directSummary }}</li>
-          <li>{{ otherSummary }}</li>
-        </ul>
-        <p
-          v-if="applyError"
-          class="text-error text-xs"
-        >
-          {{ applyError }}
-        </p>
-        <div class="flex items-center gap-2">
-          <button
-            type="button"
-            class="btn btn-ghost btn-xs"
-            :disabled="applying"
-            @click="defaults = null"
-          >
-            {{ $t('cancel') }}
-          </button>
-          <button
-            type="button"
-            class="btn btn-warning btn-xs"
-            :disabled="applying"
-            @click="handleApply"
-          >
-            <span
-              v-if="applying"
-              class="loading loading-spinner loading-xs"
-            />
-            {{ $t('routingRegionApplyConfirm') }}
-          </button>
-        </div>
-      </div>
-
-      <p
-        v-if="loadError"
-        class="text-error text-xs"
-      >
-        {{ loadError }}
-      </p>
-      <p
-        v-if="successMessage"
-        class="text-success text-xs"
-      >
-        {{ successMessage }}
-      </p>
+      <p class="text-base-content/50 text-xs">{{ $t('routingRegionDirectNote') }}</p>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { fetchProfileDefaults, type OpenboxProfile, type OpenboxProfileDefaults } from '@/api/openbox'
-import { computed, ref, watch } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { findRegionOption, OTHER_REGION_CODE, REGION_OPTIONS } from './regions'
+import type { OpenboxProfile, OpenboxRegionMode } from '@/api/openbox'
+import { showNotification } from '@/helper/notification'
+import { computed, ref } from 'vue'
 
 const props = defineProps<{
   profile: OpenboxProfile
   patchProfile: (patch: Record<string, unknown>) => Promise<OpenboxProfile>
 }>()
 
-const { t } = useI18n()
+// 顺序即界面顺序;每一项都带一句"它到底生成什么规则",不然三个名字看不出区别。
+const REGION_MODES: { value: OpenboxRegionMode; labelKey: string; hintKey: string }[] = [
+  { value: 'CN', labelKey: 'routingRegionCn', hintKey: 'routingRegionCnHint' },
+  { value: 'HKMO', labelKey: 'routingRegionHkmo', hintKey: 'routingRegionHkmoHint' },
+  { value: 'OTHER', labelKey: 'routingRegionOther', hintKey: 'routingRegionOtherHint' },
+]
 
-const selectedRegion = ref(props.profile.region || 'CN')
-const loadingDefaults = ref(false)
-const applying = ref(false)
-const loadError = ref('')
-const applyError = ref('')
-const successMessage = ref('')
-const defaults = ref<OpenboxProfileDefaults | null>(null)
+const saving = ref(false)
+const current = computed(() => props.profile.routing.regionMode || 'CN')
 
-// A stale preview applying to the wrong region would be worse than no preview at all — clear it
-// the moment the selection changes so Apply can never fire for a region the user has since moved
-// away from.
-watch(selectedRegion, () => {
-  defaults.value = null
-  applyError.value = ''
-})
-
-const regionLabel = computed(() => {
-  const option = findRegionOption(selectedRegion.value)
-  return option ? t(option.labelKey) : selectedRegion.value
-})
-
-const isProxyFallback = computed(() => (defaults.value?.routing.fallback || '').toUpperCase() === 'PROXY')
-
-const directSummary = computed(() => t('routingRegionDirectSummary', { region: regionLabel.value }))
-const otherSummary = computed(() =>
-  t(isProxyFallback.value ? 'routingRegionOtherSummaryProxy' : 'routingRegionOtherSummaryDirect'),
-)
-
-const handlePreview = async () => {
-  if (loadingDefaults.value) return
-
-  loadingDefaults.value = true
-  loadError.value = ''
-  successMessage.value = ''
+const choose = async (value: OpenboxRegionMode) => {
+  if (saving.value || current.value === value) return
+  saving.value = true
   try {
-    defaults.value = await fetchProfileDefaults(selectedRegion.value)
+    await props.patchProfile({ region: value, routing: { regionMode: value } })
   } catch (error) {
-    defaults.value = null
-    loadError.value = t('routingRegionLoadFailed', {
-      message: error instanceof Error ? error.message : String(error),
+    showNotification({
+      content: 'routingSaveFailed',
+      type: 'alert-error',
+      params: { message: error instanceof Error ? error.message : String(error) },
     })
   } finally {
-    loadingDefaults.value = false
-  }
-}
-
-const handleApply = async () => {
-  if (applying.value || !defaults.value) return
-
-  applying.value = true
-  applyError.value = ''
-
-  try {
-    // `geosite-other`/`geoip-other` aren't real ruleset files — see regions.ts. For the
-    // catch-all region, keep the DNS/fallback shape the backend recommends but don't send a
-    // direct-ruleset tag that could never resolve to anything at deploy time.
-    const directRulesets =
-      selectedRegion.value === OTHER_REGION_CODE ? [] : defaults.value.routing.directRulesets
-
-    await props.patchProfile({
-      region: selectedRegion.value,
-      dns: defaults.value.dns,
-      routing: {
-        ...defaults.value.routing,
-        directRulesets,
-      },
-    })
-
-    successMessage.value = t('routingRegionApplySuccess', { region: regionLabel.value })
-    defaults.value = null
-  } catch (error) {
-    applyError.value = t('routingRegionApplyFailed', {
-      message: error instanceof Error ? error.message : String(error),
-    })
-  } finally {
-    applying.value = false
+    saving.value = false
   }
 }
 </script>

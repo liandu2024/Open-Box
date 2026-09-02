@@ -13,7 +13,27 @@
         class="flex flex-col gap-3 p-3"
         :style="padding"
       >
-        <h1 class="text-lg font-semibold">{{ $t('routing') }}</h1>
+        <!-- 两个页签:出站是"策略能选到哪些目标",分流是"什么流量走哪条策略"。
+             分成两层是因为它们的改动频率完全不同——出站基本设一次,分流常改。 -->
+        <div
+          role="tablist"
+          class="tabs-box tabs tabs-sm w-fit"
+        >
+          <a
+            role="tab"
+            :class="['tab', pageTab === 'rules' && 'tab-active']"
+            @click="pageTab = 'rules'"
+          >
+            {{ $t('routing') }}
+          </a>
+          <a
+            role="tab"
+            :class="['tab', pageTab === 'outbounds' && 'tab-active']"
+            @click="pageTab = 'outbounds'"
+          >
+            {{ $t('routingOutboundsTab') }}
+          </a>
+        </div>
 
         <div
           v-if="loading"
@@ -30,21 +50,24 @@
         </p>
 
         <template v-else-if="profile">
-          <RoutingRegionCard
-            :profile="profile"
-            :patch-profile="patchProfile"
-          />
-          <RoutingRulesCard
-            :profile="profile"
-            :policy-groups="policyGroups"
-            :patch-profile="patchProfile"
-          />
-          <PolicyGroupsCard
-            :policy-groups="policyGroups"
-            :loading="groupsLoading"
-            :error="groupsError"
-            @retry="loadPolicyGroups"
-          />
+          <template v-if="pageTab === 'rules'">
+            <RoutingRegionCard
+              :profile="profile"
+              :patch-profile="patchProfile"
+            />
+            <RoutingPoliciesCard
+              :profile="profile"
+              :group-names="groupNames"
+              :patch-profile="patchProfile"
+            />
+          </template>
+          <template v-else>
+            <RoutingOutboundsCard
+              :profile="profile"
+              :group-names="groupNames"
+              :patch-profile="patchProfile"
+            />
+          </template>
           <DnsSettingsCard
             :profile="profile"
             :patch-profile="patchProfile"
@@ -60,21 +83,20 @@
 </template>
 
 <script setup lang="ts">
-import type { OpenboxDeployResult, OpenboxDeployState, OpenboxPolicyGroup, OpenboxProfile } from '@/api/openbox'
+import type { OpenboxDeployResult, OpenboxDeployState, OpenboxProfile } from '@/api/openbox'
 import {
   deployNow,
-  extractPolicyGroups,
-  fetchConfigPreview,
   fetchDeployState,
+  fetchNodeGroups,
   fetchProfile,
   saveProfile,
 } from '@/api/openbox'
 import DnsSettingsCard from '@/components/routing/DnsSettingsCard.vue'
 import Ipv6Card from '@/components/routing/Ipv6Card.vue'
-import PolicyGroupsCard from '@/components/routing/PolicyGroupsCard.vue'
 import RoutingDeployBanner from '@/components/routing/RoutingDeployBanner.vue'
+import RoutingOutboundsCard from '@/components/routing/RoutingOutboundsCard.vue'
+import RoutingPoliciesCard from '@/components/routing/RoutingPoliciesCard.vue'
 import RoutingRegionCard from '@/components/routing/RoutingRegionCard.vue'
-import RoutingRulesCard from '@/components/routing/RoutingRulesCard.vue'
 import { usePaddingForViews } from '@/composables/paddingViews'
 import { routingPendingDeploy } from '@/store/routing'
 import { computed, onMounted, ref } from 'vue'
@@ -90,7 +112,10 @@ const profile = ref<OpenboxProfile | null>(null)
 const loading = ref(true)
 const loadError = ref('')
 
-const policyGroups = ref<OpenboxPolicyGroup[]>([])
+const pageTab = ref<'rules' | 'outbounds'>('rules')
+
+// 「节点组」页里建的组名。策略的可选出站与「出站」页签的预览都用它。
+const groupNames = ref<string[]>([])
 const groupsLoading = ref(false)
 const groupsError = ref('')
 
@@ -104,12 +129,14 @@ const lastDeployResult = ref<OpenboxDeployResult | null>(null)
 // be tracked client-side.
 const hasUndeployedChanges = computed(() => deployState.value.stage !== 'running' || routingPendingDeploy.value)
 
+// 策略能选的节点组直接问「节点组」接口:那是权威来源。原来是从配置预览的 outbounds
+// 里反推,策略自己生成的 selector 混进去之后就不准了(策略会把自己也列成可选项)。
 const loadPolicyGroups = async () => {
   groupsLoading.value = true
   groupsError.value = ''
   try {
-    const config = await fetchConfigPreview()
-    policyGroups.value = extractPolicyGroups(config, profile.value?.routing.proxyTag || 'PROXY')
+    const payload = await fetchNodeGroups()
+    groupNames.value = payload.groups.map((g) => g.name)
   } catch (error) {
     groupsError.value = t('routingPolicyGroupsLoadFailed', {
       message: error instanceof Error ? error.message : String(error),

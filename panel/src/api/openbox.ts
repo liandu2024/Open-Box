@@ -8,12 +8,41 @@ export interface OpenboxProfileRoutingCategory {
   target: string
 }
 
+// 地区分流:路由器本身在哪。它决定"没被策略挑走的流量"往哪走。
+export type OpenboxRegionMode = 'CN' | 'HKMO' | 'OTHER'
+
+// 一条策略 = 一组匹配条件 + 内核里一个同名 selector。策略不记具体节点:
+// selector 的成员由 outboundOptions 决定,用户在代理页点选。
+export interface OpenboxRoutingPolicy {
+  id: string
+  name: string
+  icon?: string
+  // selector 的默认选中项(direct / 某个节点组 / block)
+  default?: string
+  rulesets?: string[]
+  domain?: string[]
+  domainSuffix?: string[]
+  domainKeyword?: string[]
+  ipCidr?: string[]
+}
+
+// 「出站」页签:每条策略的 selector 里能选到哪几类东西
+export interface OpenboxOutboundOptions {
+  direct?: boolean
+  reject?: boolean
+  groups?: boolean
+}
+
 export interface OpenboxProfileRouting {
   proxyTag?: string
-  categories?: OpenboxProfileRoutingCategory[]
-  directRulesets?: string[]
+  regionMode?: OpenboxRegionMode
+  outboundOptions?: OpenboxOutboundOptions
+  policies?: OpenboxRoutingPolicy[]
   adBlock?: boolean
   adRuleset?: string
+  // 改版前的老字段,界面不再写;服务端读出来时会翻译成上面的新模型
+  categories?: OpenboxProfileRoutingCategory[]
+  directRulesets?: string[]
   fallback?: string
 }
 
