@@ -14,17 +14,9 @@
         />
       </div>
 
-      <p
-        v-if="!profile.ipv6"
-        class="border-warning/30 bg-warning/10 text-warning rounded-lg border px-3 py-2 text-xs"
-      >
-        {{ $t('ipv6OffWarning') }}
-      </p>
-      <p
-        v-else
-        class="text-base-content/50 text-xs"
-      >
-        {{ $t('ipv6OnNote') }}
+      <!-- 关闭是默认状态,不该用告警色渲染:两种状态都是普通说明 -->
+      <p class="text-base-content/50 text-xs">
+        {{ profile.ipv6 ? $t('ipv6OnNote') : $t('ipv6OffWarning') }}
       </p>
 
       <p

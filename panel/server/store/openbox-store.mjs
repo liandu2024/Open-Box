@@ -13,7 +13,10 @@ export const KEYS = {
 
 export const DEFAULT_PROFILE = {
   region: 'CN',
-  ipv6: true,
+  // 默认关掉 IPv6:关掉的含义是 DNS 只解析 A 记录(strategy=ipv4_only)、tun 不给
+  // v6 地址、并在防火墙上 REJECT 掉 lan→wan 的 v6——也就是干脆不走 IPv6,免得它绕开
+  // 隧道直连出去。要用 v6 的人在「其他」页签里自己打开。
+  ipv6: false,
   tun: { autoRedirect: true },
   dns: { split: true, mode: 'hijack', direct: '223.5.5.5', proxy: 'https://1.1.1.1/dns-query' },
   routing: {

@@ -48,12 +48,13 @@
             :patch-profile="patchProfile"
           />
           <RoutingOutboundsCard
-            v-else
+            v-else-if="pageTab === 'outbounds'"
             :profile="profile"
             :group-names="groupNames"
             :patch-profile="patchProfile"
           />
           <Ipv6Card
+            v-else
             :profile="profile"
             :patch-profile="patchProfile"
           />
@@ -84,11 +85,12 @@ const profile = ref<OpenboxProfile | null>(null)
 const loading = ref(true)
 const loadError = ref('')
 
-type PageTab = 'rules' | 'policies' | 'outbounds'
+type PageTab = 'rules' | 'policies' | 'outbounds' | 'other'
 const PAGE_TABS: { key: PageTab; labelKey: string }[] = [
   { key: 'rules', labelKey: 'routing' },
   { key: 'policies', labelKey: 'routingPoliciesTab' },
   { key: 'outbounds', labelKey: 'routingOutboundsTab' },
+  { key: 'other', labelKey: 'routingOtherTab' },
 ]
 const pageTab = ref<PageTab>('rules')
 

@@ -505,6 +505,7 @@ const en = {
   routingLoadFailed: "Couldn't load routing settings: {message}",
   routingPoliciesTab: 'Policies',
   routingOutboundsTab: 'Outbounds',
+  routingOtherTab: 'Other',
   routingOutboundsTitle: 'What a policy can point at',
   routingOutboundsDescription: 'Each policy is a selector in the kernel; this decides what it can choose from. Pick the actual line on the Proxies page.',
   routingOutboundsPreview: 'Policies will offer:',
@@ -575,9 +576,9 @@ const en = {
   kernelApplyHint: 'Start/restart regenerates the config from the current settings and applies it; on failure it rolls back to direct.',
   routingRegionDescription: 'Where this router is. The selected one decides where traffic goes when no policy below claims it — rename, edit, add and drag to reorder.',
   ipv6Title: 'IPv6',
-  ipv6Description: 'Let IPv6 traffic use the same tunnel and routing rules as IPv4.',
-  ipv6OffWarning: "Off: IPv6 traffic is blocked outright so it can't slip out around the tunnel.",
-  ipv6OnNote: 'On: your devices can use IPv6 alongside IPv4, both following the rules above.',
+  ipv6Description: 'Off by default: IPv6 names are not resolved and IPv6 addresses are not reached.',
+  ipv6OffWarning: 'Off: DNS resolves IPv4 only and outbound IPv6 is blocked — it cannot slip around the tunnel.',
+  ipv6OnNote: 'On: your devices can use IPv6 alongside IPv4, both following the routing rules.',
 
   // --- Kernel management, emergency rollback & penetration query (P4b Task 7) ---
   kernel: 'Kernel',

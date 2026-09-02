@@ -502,6 +502,7 @@ const zhTW: LANG_MESSAGE = {
   routingLoadFailed: '\u6c92\u8f09\u5165\u51fa\u5206\u6d41\u8a2d\u5b9a:{message}',
   routingPoliciesTab: '策略',
   routingOutboundsTab: '出站',
+  routingOtherTab: '其他',
   routingOutboundsTitle: '策略可以選的出站',
   routingOutboundsDescription: '每條策略在核心裡是一個選擇器,這裡決定它能選到哪幾類東西;具體走哪條線路在「代理」頁點選。',
   routingOutboundsPreview: '策略裡會看到:',
@@ -572,9 +573,9 @@ const zhTW: LANG_MESSAGE = {
   kernelApplyHint: '啟動/重新啟動會用目前設定重新產生設定檔並套用;失敗會自動回復成直連。',
   routingRegionDescription: '路由器本身在哪。選中的那一條決定沒被下面的策略挑走的流量往哪走;可以改名、改規則、新增和拖曳排序。',
   ipv6Title: 'IPv6',
-  ipv6Description: '\u8b93 IPv6 \u6d41\u91cf\u4e5f\u8d70\u540c\u4e00\u689d\u901a\u9053\u548c\u9019\u88e1\u7684\u5206\u6d41\u898f\u5247\u3002',
-  ipv6OffWarning: '\u95dc\u9589\u5f8c\u5c07\u76f4\u63a5\u5c01\u9396 IPv6 \u5c0d\u5916\u6d41\u91cf,\u907f\u514d\u5b83\u7e5e\u904e\u901a\u9053\u5916\u6d29\u3002',
-  ipv6OnNote: '\u958b\u555f\u5f8c,\u4f60\u7684\u88dd\u7f6e\u53ef\u4ee5\u548c IPv4 \u4e00\u6a23\u4f7f\u7528 IPv6,\u540c\u6a23\u9075\u5faa\u4e0a\u9762\u7684\u898f\u5247\u3002',
+  ipv6Description: '預設關閉。關著時不解析 IPv6 網域,也不存取 IPv6 位址。',
+  ipv6OffWarning: '關閉中:DNS 只解析 IPv4,IPv6 對外流量直接封鎖——它繞不過通道。',
+  ipv6OnNote: '開啟後,你的裝置可以和 IPv4 一樣使用 IPv6,同樣遵循分流頁的規則。',
 
   // --- \u5167\u6838\u7ba1\u7406\u3001\u7dca\u6025\u6062\u5fa9\u76f4\u9023\u8207\u7a7f\u900f\u67e5\u8a62(P4b Task 7) ---
   kernel: '\u5167\u6838',

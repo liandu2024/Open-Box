@@ -19,6 +19,11 @@ test('getProfile 无值返回默认', () => {
   assert.deepEqual(store.getProfile(), DEFAULT_PROFILE)
 })
 
+test('IPv6 默认关闭:不解析也不访问 v6,除非用户自己打开', () => {
+  const { store } = memStore()
+  assert.equal(store.getProfile().ipv6, false)
+})
+
 test('setProfile 深合并,不丢未提及字段', () => {
   const { store } = memStore()
   store.setProfile({ ipv6: false, dns: { mode: 'dnsmasq' } })
