@@ -39,7 +39,8 @@ start_service() {
 }
 
 # 停止后让系统回到"能正常上网"的状态:
-# - 摘掉指向已死内核的 dnsmasq 上游(否则全 LAN DNS 中断)
+# - 摘掉指向已死内核的 dnsmasq 上游(否则全 LAN DNS 中断);整体接管与按域名转发
+#   两种形态都要摘
 # - 删掉 noresolv=1(不删的话是"既不许用 resolv.conf 也没有上游",比接管前更坏,
 #   全 LAN DNS 彻底无解析;删掉后 dnsmasq 回退到 WAN 下发的 resolv.conf)
 # - 移除 IPv6 拦截(内核已停,再拦只会断掉用户的 v6)
@@ -52,7 +53,14 @@ openbox_cleanup() {
 	# noresolv(AdGuard Home / Pi-hole 之类会自行设置)、或者仅因用户自己配置了
 	# server 列表就触发一次无谓的 uci commit + dnsmasq 重启。
 	if [ -f "$DNSMASQ_BACKUP" ]; then
-		uci -q del_list dhcp.@dnsmasq[0].server="$OPENBOX_DNS_UPSTREAM"
+		# 两种形态都要摘:整体接管写的是 `127.0.0.1#7853`,按域名转发写的是
+		# `/example.com/127.0.0.1#7853`(一个域名一条)。只删前者的话,停掉内核后
+		# 那些域名会继续被转给一个已经死掉的解析器,单独解析不了——比全断更难查。
+		for _ob_server in $(uci -q get dhcp.@dnsmasq[0].server); do
+			case "$_ob_server" in
+				*"$OPENBOX_DNS_UPSTREAM") uci -q del_list dhcp.@dnsmasq[0].server="$_ob_server" ;;
+			esac
+		done
 		uci -q delete dhcp.@dnsmasq[0].noresolv
 		if [ -n "$(uci -q changes dhcp)" ]; then
 			uci -q commit dhcp

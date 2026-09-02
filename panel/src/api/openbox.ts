@@ -480,11 +480,6 @@ export interface OpenboxKernelVersion {
   ok: boolean
 }
 
-export interface OpenboxRollbackResult {
-  ok: boolean
-  actions: string[]
-}
-
 export const fetchServiceStatus = async (): Promise<OpenboxServiceStatus> => {
   return requestJson<OpenboxServiceStatus>('/api/openbox/service/status')
 }
@@ -499,15 +494,6 @@ export const runServiceAction = async (action: OpenboxServiceAction): Promise<Op
 
 export const fetchKernelVersion = async (): Promise<OpenboxKernelVersion> => {
   return requestJson<OpenboxKernelVersion>('/api/openbox/kernel/version')
-}
-
-// The "get my internet back" button: stops the core, restores dnsmasq, removes firewall rules,
-// and disables autostart (server/api/deploy.mjs's rollback route). rollbackToDirect itself is
-// best-effort per-step and never throws — only the trailing disableService call can, which the
-// server catches and answers 500 {ok:false,message}; requestJson turns that into a thrown Error
-// the caller can render.
-export const emergencyRollback = async (): Promise<OpenboxRollbackResult> => {
-  return requestJson<OpenboxRollbackResult>('/api/openbox/rollback', { method: 'POST' })
 }
 
 // Mirrors server/api/penetration.mjs's PENETRATION_TARGET_PATTERN — used client-side purely so

@@ -9,7 +9,6 @@
 
         <!-- Always rendered, independent of the status/version fetch below: the panic button
              has to work (and be visible) even if the status card itself failed to load. -->
-        <EmergencyRollbackCard @refresh="loadStatus" />
 
         <p
           v-if="loadError"
@@ -46,7 +45,6 @@
 <script setup lang="ts">
 import type { OpenboxDeployState, OpenboxKernelVersion, OpenboxServiceStatus } from '@/api/openbox'
 import { fetchDeployState, fetchKernelVersion, fetchServiceStatus } from '@/api/openbox'
-import EmergencyRollbackCard from '@/components/kernel/EmergencyRollbackCard.vue'
 import KernelDeployStateCard from '@/components/kernel/KernelDeployStateCard.vue'
 import KernelServiceCard from '@/components/kernel/KernelServiceCard.vue'
 import PenetrationQueryCard from '@/components/penetration/PenetrationQueryCard.vue'
