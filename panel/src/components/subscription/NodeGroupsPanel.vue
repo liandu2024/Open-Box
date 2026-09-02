@@ -32,15 +32,25 @@
       <span class="loading loading-spinner loading-md" />
     </div>
 
-    <div
+    <!-- 顺序有意义:生成配置时按这个顺序出策略组,内核和代理页里的排列跟着它走。
+         handle 限定在那个图标上——不限定的话,按住卡片任意处都会开始拖,连"编辑"
+         按钮都不好点了。 -->
+    <Draggable
       v-else
+      v-model="groups"
+      :animation="150"
+      :force-fallback="true"
+      handle=".drag-handle"
+      ghost-class="opacity-40"
+      item-key="id"
       class="flex flex-col gap-2"
+      @end="persistOrder"
     >
+      <template #item="{ element: group }">
       <div
-        v-for="group in groups"
-        :key="group.id"
         class="card bg-base-100 border-base-content/10 flex flex-row items-center gap-2 border p-3"
       >
+        <Bars3Icon class="drag-handle text-base-content/40 h-4 w-4 shrink-0 cursor-move" />
         <CountryFlag
           v-if="group.icon"
           :code="group.icon"
@@ -76,7 +86,8 @@
           <TrashIcon class="h-4 w-4" />
         </button>
       </div>
-    </div>
+      </template>
+    </Draggable>
 
     <DialogWrapper
       v-model="showEditor"
@@ -437,34 +448,45 @@
           </div>
           <div class="border-base-content/10 max-h-64 overflow-y-auto rounded-lg border">
             <p
-              v-if="!autoRows.length"
+              v-if="!autoCountries.length"
               class="text-base-content/50 p-4 text-center text-xs"
             >
               {{ $t('groupAutoEmpty') }}
             </p>
-            <div
-              v-for="c in autoRows"
-              :key="c.code"
-              class="flex items-center gap-2 px-3 py-1.5 text-sm"
+            <Draggable
+              v-model="autoCountries"
+              :animation="150"
+              :force-fallback="true"
+              handle=".drag-handle"
+              ghost-class="opacity-40"
+              item-key="self"
             >
-              <CountryFlag
-                :code="c.code"
-                :size="16"
-              />
-              <span class="truncate">{{ c.label }}</span>
-              <!-- 当前节点数只是参考:0 也照样能建,动态组等的就是以后会有的节点 -->
-              <span class="text-base-content/50 ml-auto text-xs whitespace-nowrap">
-                {{ $t('groupAutoNodeCount', { count: c.count }) }}
-              </span>
-              <button
-                type="button"
-                class="btn btn-ghost btn-circle btn-xs shrink-0"
-                :aria-label="$t('subscriptionRenameRemoveRow')"
-                @click="autoCountries = autoCountries.filter((x) => x !== c.code)"
+              <template #item="{ element: code }">
+              <div
+                v-if="autoRow(code)"
+                class="flex items-center gap-2 px-3 py-1.5 text-sm"
               >
-                <XMarkIcon class="h-3.5 w-3.5" />
-              </button>
-            </div>
+                <Bars3Icon class="drag-handle text-base-content/40 h-4 w-4 shrink-0 cursor-move" />
+                <CountryFlag
+                  :code="code"
+                  :size="16"
+                />
+                <span class="truncate">{{ autoRow(code)?.label }}</span>
+                <!-- 当前节点数只是参考:0 也照样能建,动态组等的就是以后会有的节点 -->
+                <span class="text-base-content/50 ml-auto text-xs whitespace-nowrap">
+                  {{ $t('groupAutoNodeCount', { count: autoRow(code)?.count ?? 0 }) }}
+                </span>
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-circle btn-xs shrink-0"
+                  :aria-label="$t('subscriptionRenameRemoveRow')"
+                  @click="autoCountries = autoCountries.filter((x) => x !== code)"
+                >
+                  <XMarkIcon class="h-3.5 w-3.5" />
+                </button>
+              </div>
+              </template>
+            </Draggable>
           </div>
         </div>
 
@@ -508,11 +530,12 @@ import { fetchNodeGroups, saveNodeGroups } from '@/api/openbox'
 import BulkPick from '@/components/subscription/BulkPick.vue'
 import CountryFlag from '@/components/common/CountryFlag.vue'
 import CountrySelect from '@/components/common/CountrySelect.vue'
-import { AUTO_GROUP_DEFAULT_COUNTRIES, countryName, findCountry } from '@/constant/countries'
+import { AUTO_GROUP_DEFAULT_COUNTRIES, COUNTRIES, countryName, findCountry } from '@/constant/countries'
 import { keywordMatches, normalizeForMatch } from '@/helper/keywordMatch'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import { routingPendingDeploy } from '@/store/routing'
 import {
+  Bars3Icon,
   ChevronLeftIcon,
   ChevronRightIcon,
   PencilSquareIcon,
@@ -520,6 +543,7 @@ import {
   XMarkIcon,
 } from '@heroicons/vue/24/outline'
 import { computed, onMounted, ref } from 'vue'
+import Draggable from 'vuedraggable'
 import { useI18n } from 'vue-i18n'
 
 const { t, locale } = useI18n()
@@ -761,19 +785,22 @@ const autoError = ref('')
 // 生成完之后的提示(比如"跳过了几个同名的"),和 error 分开:它不是错误
 const notice = ref('')
 
-// 已选国家 + 各自当前命中的节点数(只是参考,0 也能建)
-const autoRows = computed(() => {
+// 每个已选国家当前命中几个节点(只是参考,0 也能建)。列表顺序由 autoCountries
+// 本身决定——它就是拖拽排序的那个数组,所以不能再套一层 computed 去重排。
+const autoNodeCount = computed(() => {
   const names = availableNodes.value.map((n) => normalizeForMatch(n.name))
-  return autoCountries.value.flatMap((code) => {
-    const c = findCountry(code)
-    if (!c) return []
-    return [{
-      code: c.code,
-      label: countryName(c, locale.value),
-      count: names.filter((n) => c.keywords.some((kw) => keywordMatches(n, kw))).length,
-    }]
-  })
+  const out: Record<string, number> = {}
+  for (const c of COUNTRIES) {
+    out[c.code] = names.filter((n) => c.keywords.some((kw) => keywordMatches(n, kw))).length
+  }
+  return out
 })
+
+const autoRow = (code: string) => {
+  const c = findCountry(code)
+  if (!c) return null
+  return { code: c.code, label: countryName(c, locale.value), count: autoNodeCount.value[c.code] ?? 0 }
+}
 
 const addAutoCountry = (code: string) => {
   if (!code || autoCountries.value.includes(code)) return
@@ -842,6 +869,15 @@ const createAutoGroups = async () => {
 
 // 两个入口都在父组件的页签行上,弹窗在这里,所以要把它们暴露出去
 defineExpose({ openEditor, openAutoDialog })
+
+// 拖完就存:顺序也是配置的一部分(策略组在内核里的排列),不存下来刷新就白拖了
+const persistOrder = async () => {
+  try {
+    await persist([...groups.value])
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err)
+  }
+}
 
 const persist = async (next: OpenboxUserGroup[]) => {
   const res = await saveNodeGroups(next)
