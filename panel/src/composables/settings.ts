@@ -1,32 +1,26 @@
 import { fetchIsUIUpdateAvailable, upgradeUIAPI } from '@/api'
-import { autoUpgrade, hiddenSettingsItems } from '@/store/settings'
+import { autoUpgrade } from '@/store/settings'
 import type { MaybeRef } from 'vue'
-import { computed, ref, unref } from 'vue'
+import { computed, ref } from 'vue'
 
 const isUIUpdateAvailable = ref(false)
 
-/**
- * Returns true when the setting item with the given key is visible.
- * Use inside computed() for reactivity. For templates, use useIsSettingVisible(key) instead.
- */
-export function isSettingVisible(key: string): boolean {
-  return !hiddenSettingsItems.value[key]
+// 「设置项显示控制」(隐藏/排序某些设置项)已经退役:所有面板设置一律显示。
+// 三个判断函数保留签名,方便各卡片继续调用,但永远返回可见——浏览器里残留的
+// config/hidden-settings-items 也就不再起作用。
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function isSettingVisible(_key: string): boolean {
+  return true
 }
 
-/**
- * Returns a computed that is true when the setting item with the given key is visible.
- * Use in templates for reactive visibility checks.
- */
-export function useIsSettingVisible(key: MaybeRef<string>) {
-  return computed(() => !hiddenSettingsItems.value[unref(key)])
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function useIsSettingVisible(_key: MaybeRef<string>) {
+  return computed(() => true)
 }
 
-/**
- * Returns a computed that is true when at least one of the given setting keys is visible.
- * Use for "has any visible item" in a settings section.
- */
-export function useHasAnyVisibleSetting(keys: MaybeRef<string[]>) {
-  return computed(() => unref(keys).some((k) => !hiddenSettingsItems.value[k]))
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function useHasAnyVisibleSetting(_keys: MaybeRef<string[]>) {
+  return computed(() => true)
 }
 
 export const useSettings = () => {
