@@ -114,7 +114,7 @@ import {
   renderGroups,
 } from '@/composables/proxies'
 import { refreshSubscription } from '@/api/openbox'
-import { loadOpenboxSiteSets } from '@/store/openboxSiteSets'
+import { loadOpenboxNodeGroups, loadOpenboxSiteSets } from '@/store/openboxSiteSets'
 import { PROXY_TAB_TYPE, ROUTE_NAME, SETTINGS_TAB } from '@/constant'
 import {
   loadOpenboxSubscriptions,
@@ -141,9 +141,11 @@ const { padding } = usePaddingForViews({
 const router = useRouter()
 
 // 订阅标签用的是 Open-Box 自己的订阅列表(不是 Clash provider),进页面就拉一次。
-onMounted(() => {
+onMounted(async () => {
   void loadOpenboxSubscriptions()
-  void loadOpenboxSiteSets()
+  // 节点管理的数据要先到,fetchProxies 才能给条目配上图标;顺序反了图标就等下一次刷新
+  await Promise.all([loadOpenboxSiteSets(), loadOpenboxNodeGroups()])
+  void fetchProxies()
 })
 
 // 内核没在跑时 proxyMap 是空的。空的时候问一次内核状态,把"没在跑"和"在跑但没数据"

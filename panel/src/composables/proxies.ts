@@ -2,7 +2,7 @@ import { isSingBox } from '@/api'
 import { GLOBAL, PROXY_TAB_TYPE } from '@/constant'
 import { isHiddenGroup, isProxyGroup } from '@/helper'
 import { configs } from '@/store/config'
-import { siteSetNames, siteSetOrder } from '@/store/openboxSiteSets'
+import { managedOutbounds, siteSetNames, siteSetOrder } from '@/store/openboxSiteSets'
 import { proxiesTabShow, proxyGroupList, proxyMap, proxyProviederList } from '@/store/proxies'
 import { customGlobalNode, displayGlobalByMode, manageHiddenGroup } from '@/store/settings'
 import { isEmpty } from 'lodash'
@@ -129,8 +129,19 @@ export const isProxiesPageMounted = ref(false)
 export const policyGroups = computed(() =>
   sortByPolicyOrder(getCurrentProxyGroups().filter((name) => isPolicyGroup(name))),
 )
+// 「节点」页签按「节点管理」里的顺序排(用户拖出来的那个);名单里没有的排后面
+const sortByManagedOrder = (names: string[]) => {
+  const order = managedOutbounds.value.map((g) => g.name)
+  if (!order.length) return names
+  const index = (name: string) => {
+    const i = order.indexOf(name)
+    return i === -1 ? order.length : i
+  }
+  return [...names].sort((a, b) => index(a) - index(b))
+}
+
 export const nodeGroups = computed(() =>
-  getCurrentProxyGroups().filter((name) => !isPolicyGroup(name)),
+  sortByManagedOrder(getCurrentProxyGroups().filter((name) => !isPolicyGroup(name))),
 )
 export const nodeGroupBlocks = computed(() => {
   const groups = nodeGroups.value

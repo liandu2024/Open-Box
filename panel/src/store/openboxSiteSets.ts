@@ -1,4 +1,5 @@
-import { fetchProfile } from '@/api/openbox'
+import type { OpenboxUserGroup } from '@/api/openbox'
+import { fetchNodeGroups, fetchProfile } from '@/api/openbox'
 import { ref } from 'vue'
 
 // 代理页「策略 / 节点」两个页签怎么分:zashboard 原来是猜的——一个组的成员如果全是
@@ -16,6 +17,17 @@ export const siteSetOrder = ref<string[]>([])
 
 // 兜底站点集的名字,和服务端 engine/routing-model.mjs 的 FALLBACK_TAG 同一个值
 const FALLBACK_NAME = '其他'
+
+// 「节点管理」里的条目:代理页的「节点」页签按它排、按它给图标;内置的直连/拒绝也在其中。
+export const managedOutbounds = ref<OpenboxUserGroup[]>([])
+
+export const loadOpenboxNodeGroups = async () => {
+  try {
+    managedOutbounds.value = (await fetchNodeGroups()).groups
+  } catch {
+    // 拉不到就保持原样:代理页照内核给的顺序显示,只是没有图标
+  }
+}
 
 export const loadOpenboxSiteSets = async () => {
   try {

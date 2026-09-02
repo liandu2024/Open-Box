@@ -9,6 +9,8 @@ import {
   isSingBox,
   selectProxyAPI,
 } from '@/api'
+import { iconUrlFor } from '@/helper/iconUrl'
+import { managedOutbounds } from '@/store/openboxSiteSets'
 import {
   GLOBAL,
   IPV6_TEST_URL,
@@ -297,6 +299,27 @@ export const fetchProxies = async () => {
       smartGroups.push(name)
     }
   })
+
+  // 「节点管理」里的条目(节点组 + 内置的直连/拒绝)带上自己的图标——用户在那边挑的
+  // 那个。用户在面板设置里另配过图标(iconReflect)的优先,不覆盖。
+  // 内核的 clash_api 未必把 direct/block 出站列出来;没列的话补一条,站点集/组的成员
+  // 列表里它才显示得出来(否则只剩一个光秃秃的名字)。
+  for (const item of managedOutbounds.value) {
+    if (item.enabled === false) continue
+    if (!proxyMap.value[item.name]) {
+      if (!item.kind) continue
+      proxyMap.value[item.name] = {
+        name: item.name,
+        type: item.kind === 'direct' ? 'Direct' : 'Block',
+        udp: true,
+        history: [],
+      } as unknown as Proxy
+    }
+    if (!proxyMap.value[item.name].icon && item.icon) {
+      const url = iconUrlFor(item.icon)
+      if (url) proxyMap.value[item.name].icon = url
+    }
+  }
 
   if (smartGroups.length > 0) {
     initSmartWeights(smartGroups)
