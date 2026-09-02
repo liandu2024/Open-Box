@@ -83,7 +83,7 @@
           type="button"
           class="btn btn-sm"
           :disabled="isStopDisabled"
-          :title="$t('kernelActionStopHint')"
+          v-tip="$t('kernelActionStopHint')"
           @click="runAction('stop')"
         >
           <span

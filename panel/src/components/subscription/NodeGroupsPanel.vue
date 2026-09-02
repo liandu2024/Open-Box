@@ -70,7 +70,7 @@
           class="btn btn-ghost btn-square btn-sm"
           :class="group.enabled === false ? 'text-base-content/40' : 'text-success'"
           :aria-label="$t(group.enabled === false ? 'groupEnable' : 'groupDisable')"
-          :title="$t(group.enabled === false ? 'groupEnable' : 'groupDisable')"
+          v-tip="$t(group.enabled === false ? 'groupEnable' : 'groupDisable')"
           :disabled="toggling === group.id"
           @click="toggleEnabled(group)"
         >
@@ -92,7 +92,7 @@
           :class="group.kind ? 'opacity-30' : 'hover:text-error'"
           :disabled="Boolean(group.kind)"
           :aria-label="$t('delete')"
-          :title="group.kind ? $t('groupBuiltinNoDelete') : $t('delete')"
+          v-tip="group.kind ? $t('groupBuiltinNoDelete') : $t('delete')"
           @click="askDelete(group)"
         >
           <TrashIcon class="h-4 w-4" />
@@ -317,7 +317,7 @@
                   <button
                     type="button"
                     class="btn btn-ghost btn-xs ml-auto shrink-0 px-1"
-                    :title="$t('groupMoveRight')"
+                    v-tip="$t('groupMoveRight')"
                     @click.prevent="addMember(item.name)"
                   >
                     <ChevronRightIcon class="text-base-content/30 h-4 w-4" />
@@ -333,7 +333,7 @@
                 type="button"
                 class="btn btn-sm btn-square"
                 :disabled="!checkedAvailable.length"
-                :title="$t('groupMoveRight')"
+                v-tip="$t('groupMoveRight')"
                 @click="moveRight"
               >
                 <ChevronRightIcon class="h-4 w-4" />
@@ -342,7 +342,7 @@
                 type="button"
                 class="btn btn-sm btn-square"
                 :disabled="!checkedSelected.length"
-                :title="$t('groupMoveLeft')"
+                v-tip="$t('groupMoveLeft')"
                 @click="moveLeft"
               >
                 <ChevronLeftIcon class="h-4 w-4" />
@@ -391,7 +391,7 @@
                   <button
                     type="button"
                     class="btn btn-ghost btn-xs shrink-0 px-1"
-                    :title="$t('groupMoveLeft')"
+                    v-tip="$t('groupMoveLeft')"
                     @click.prevent="removeMember(name)"
                   >
                     <ChevronLeftIcon class="text-base-content/30 h-4 w-4" />

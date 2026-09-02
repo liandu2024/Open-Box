@@ -1,19 +1,10 @@
 <template>
   <div class="card bg-base-100 border-base-300/60 border">
     <div class="card-body gap-3 p-4">
-      <div class="flex items-start justify-between gap-2">
-        <div>
-          <h2 class="text-base font-semibold">{{ $t('routingPoliciesTitle') }}</h2>
-          <p class="text-base-content/60 text-xs">{{ $t('routingPoliciesDescription') }}</p>
-        </div>
-        <button
-          type="button"
-          class="btn btn-primary btn-sm shrink-0"
-          @click="openEditor(null)"
-        >
-          <PlusIcon class="h-4 w-4" />
-          {{ $t('routingPolicyAdd') }}
-        </button>
+      <!-- 「添加站点集」按钮在顶部页签栏右上角(RoutingPage 里 Teleport 过去),这里只留标题 -->
+      <div>
+        <h2 class="text-base font-semibold">{{ $t('routingPoliciesTitle') }}</h2>
+        <p class="text-base-content/60 text-xs">{{ $t('routingPoliciesDescription') }}</p>
       </div>
 
       <p
@@ -55,6 +46,7 @@
             <button
               type="button"
               class="btn btn-ghost btn-square btn-sm"
+              v-tip="$t('edit')"
               :aria-label="$t('edit')"
               @click="openEditor(policy)"
             >
@@ -63,6 +55,7 @@
             <button
               type="button"
               class="btn btn-ghost btn-square btn-sm hover:text-error"
+              v-tip="$t('delete')"
               :aria-label="$t('delete')"
               @click="askDelete(policy)"
             >
@@ -210,6 +203,7 @@
             <button
               type="button"
               class="btn btn-ghost btn-square btn-sm hover:text-error"
+              v-tip="$t('delete')"
               :aria-label="$t('delete')"
               @click="rules.splice(index, 1)"
             >
@@ -348,6 +342,7 @@ const openEditor = (policy: OpenboxRoutingPolicy | null) => {
   if (!rules.value.length) addRule()
   showEditor.value = true
 }
+defineExpose({ openEditor })
 
 // 新增 / 修改 / 删除 / 拖拽排序都走这里。保存只是写档案,内核还在跑旧配置,所以每次都
 // 用右上角的标准提示告诉一声"重启内核后生效",由用户自己去内核页重启。

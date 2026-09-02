@@ -33,6 +33,7 @@
         <template v-else-if="profile">
           <RoutingPoliciesCard
             v-if="pageTab === 'policies'"
+            ref="policiesCard"
             :profile="profile"
             :patch-profile="patchProfile"
           />
@@ -49,6 +50,23 @@
         </template>
       </div>
     </div>
+
+    <!-- 「添加站点集」放顶部页签栏右上角,和订阅管理/节点管理的新增按钮同一个位置、同一种样式 -->
+    <Teleport
+      defer
+      to="#settings-header-actions"
+    >
+      <button
+        v-if="pageTab === 'policies' && profile"
+        type="button"
+        class="btn btn-primary btn-sm btn-square"
+        v-tip="$t('routingPolicyAdd')"
+        :aria-label="$t('routingPolicyAdd')"
+        @click="policiesCard?.openEditor(null)"
+      >
+        <PlusIcon class="h-4 w-4" />
+      </button>
+    </Teleport>
   </div>
 </template>
 
@@ -56,11 +74,12 @@
 import { showNotification } from '@/helper/notification'
 import type { OpenboxProfile } from '@/api/openbox'
 import { fetchProfile, saveProfile } from '@/api/openbox'
+import { PlusIcon } from '@heroicons/vue/24/outline'
 import Ipv6Card from '@/components/routing/Ipv6Card.vue'
 import TestUrlCard from '@/components/routing/TestUrlCard.vue'
 import RoutingPoliciesCard from '@/components/routing/RoutingPoliciesCard.vue'
 import { usePaddingForViews } from '@/composables/paddingViews'
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, useTemplateRef } from 'vue'
 
 const { padding } = usePaddingForViews({
   offsetTop: 0,
@@ -76,6 +95,7 @@ const PAGE_TABS: { key: PageTab; labelKey: string }[] = [
   { key: 'other', labelKey: 'routingOtherTab' },
 ]
 const pageTab = ref<PageTab>('policies')
+const policiesCard = useTemplateRef('policiesCard')
 
 
 

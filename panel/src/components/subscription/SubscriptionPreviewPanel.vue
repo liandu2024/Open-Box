@@ -105,7 +105,7 @@
             type="button"
             class="btn btn-sm"
             :disabled="!overrideCount"
-            :title="$t('subscriptionResetNamesHint', { count: overrideCount })"
+            v-tip="$t('subscriptionResetNamesHint', { count: overrideCount })"
             @click="emit('resetOverrides')"
           >
             <ArrowUturnLeftIcon class="h-4 w-4" />
@@ -117,7 +117,7 @@
             type="button"
             class="btn btn-sm"
             :disabled="testingAll || !preview.preview.length || !source"
-            :title="$t('subscriptionLatencyHint')"
+            v-tip="$t('subscriptionLatencyHint')"
             @click="testAll"
           >
             <span
@@ -180,7 +180,7 @@
                         type="button"
                         class="btn btn-ghost btn-square btn-sm ml-auto shrink-0 hover:text-success"
                         :aria-label="$t('subscriptionNodeEnable')"
-                        :title="$t('subscriptionNodeEnable')"
+                        v-tip="$t('subscriptionNodeEnable')"
                         @click="emit('toggleDisabled', { originalTag: entry.originalTag, disabled: false })"
                       >
                         <CheckCircleIcon class="h-4 w-4" />
@@ -229,7 +229,7 @@
                         class="btn btn-ghost btn-square btn-sm shrink-0"
                         :disabled="testingAll || testing.has(entry.originalTag)"
                         :aria-label="$t('subscriptionLatencyTestOne')"
-                        :title="$t('subscriptionLatencyHint')"
+                        v-tip="$t('subscriptionLatencyHint')"
                         @click="testOne(entry.originalTag)"
                       >
                         <span
@@ -245,7 +245,7 @@
                         type="button"
                         class="btn btn-ghost btn-square btn-sm shrink-0 hover:text-error"
                         :aria-label="$t('subscriptionNodeDisable')"
-                        :title="$t('subscriptionNodeDisable')"
+                        v-tip="$t('subscriptionNodeDisable')"
                         @click="emit('toggleDisabled', { originalTag: entry.originalTag, disabled: true })"
                       >
                         <NoSymbolIcon class="h-4 w-4" />

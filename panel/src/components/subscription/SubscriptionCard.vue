@@ -22,6 +22,7 @@
           <button
             type="button"
             class="btn btn-circle btn-sm z-30"
+            v-tip="$t('proxiesSubscriptionLatencyTest')"
             :aria-label="$t('proxiesSubscriptionLatencyTest')"
             :disabled="!allProxies.length"
             @click.stop="handleLatencyTest"
@@ -38,6 +39,7 @@
           <button
             type="button"
             class="btn btn-circle btn-sm z-30"
+            v-tip="$t('refresh')"
             :aria-label="$t('refresh')"
             :disabled="refreshing"
             @click.stop="$emit('refresh')"
@@ -47,10 +49,22 @@
           <button
             type="button"
             class="btn btn-circle btn-sm z-30"
+            v-tip="$t('subscriptionEditTitle')"
             :aria-label="$t('subscriptionEditTitle')"
             @click.stop="$emit('edit')"
           >
             <PencilSquareIcon class="h-4 w-4" />
+          </button>
+          <!-- 删除只在订阅管理页给;代理页的卡片是只读入口 -->
+          <button
+            v-if="deletable"
+            type="button"
+            class="btn btn-circle btn-sm z-30 hover:text-error"
+            v-tip="$t('delete')"
+            :aria-label="$t('delete')"
+            @click.stop="$emit('delete')"
+          >
+            <TrashIcon class="h-4 w-4" />
           </button>
         </div>
       </div>
@@ -96,18 +110,20 @@ import ProxyPreview from '@/components/proxies/ProxyPreview.vue'
 import { useRenderProxies } from '@/composables/renderProxies'
 import { nodeProviders } from '@/store/openboxSiteSets'
 import { proxyMap, proxyNodesLatencyTest } from '@/store/proxies'
-import { ArrowPathIcon, BoltIcon, PencilSquareIcon } from '@heroicons/vue/24/outline'
+import { ArrowPathIcon, BoltIcon, PencilSquareIcon, TrashIcon } from '@heroicons/vue/24/outline'
 import dayjs from 'dayjs'
 import { computed, ref } from 'vue'
 
 const props = defineProps<{
   subscription: OpenboxSubscription
   refreshing?: boolean
+  deletable?: boolean
 }>()
 
 defineEmits<{
   refresh: []
   edit: []
+  delete: []
 }>()
 
 // 这条订阅的节点 = 内核里正在跑的、归属于它的出站。内核没跑就是空的,卡片上只剩订阅

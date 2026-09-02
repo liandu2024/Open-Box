@@ -4,6 +4,7 @@ import './assets/main.css'
 import './assets/theme.css'
 import { initializePersistentStorage } from './helper/persistentStorage'
 import { initializeServerAuthState } from './store/auth'
+import tip from './directives/tip'
 
 const cleanupLegacyServiceWorkers = async () => {
   if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
@@ -49,6 +50,7 @@ const bootstrap = async () => {
 
   app.use(router.default)
   app.use(i18n)
+  app.directive('tip', tip)
   app.mount('#app')
 }
 

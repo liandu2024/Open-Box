@@ -15,18 +15,19 @@
           <button
             v-if="pageTab === 'subs'"
             type="button"
-            class="btn btn-primary btn-sm"
+            class="btn btn-primary btn-sm btn-square"
+            v-tip="$t('subscriptionAdd')"
+            :aria-label="$t('subscriptionAdd')"
             @click="showAddDialog = true"
           >
             <PlusIcon class="h-4 w-4" />
-            {{ $t('subscriptionAdd') }}
           </button>
           <!-- 节点管理:两个图标按钮,悬停显示说明 -->
           <template v-else>
             <button
               type="button"
               class="btn btn-sm btn-square"
-              :title="$t('groupAutoAdd')"
+              v-tip="$t('groupAutoAdd')"
               :aria-label="$t('groupAutoAdd')"
               @click="groupsPanel?.openAutoDialog()"
             >
@@ -35,7 +36,7 @@
             <button
               type="button"
               class="btn btn-primary btn-sm btn-square"
-              :title="$t('groupAdd')"
+              v-tip="$t('groupAdd')"
               :aria-label="$t('groupAdd')"
               @click="groupsPanel?.openEditor(null)"
             >
@@ -82,6 +83,7 @@
             :key="sub.id"
             :subscription="sub"
             :refreshing="refreshingId === sub.id"
+            deletable
             @refresh="handleRefresh(sub.id)"
             @delete="requestDelete(sub)"
             @edit="requestEdit(sub)"
