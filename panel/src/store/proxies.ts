@@ -307,10 +307,12 @@ export const fetchProxies = async () => {
   // 内核的 clash_api 未必把 direct/block 出站列出来;没列的话补一条,站点集/组的成员
   // 列表里它才显示得出来(否则只剩一个光秃秃的名字)。
   // 站点集在「分流与策略」里挑的图标:策略卡片标题左边那个大图标就是它
+  // 站点集图标覆盖 zashboard 残留的 iconReflect 映射:「自定义图标」那套设置已从面板去掉,
+  // 浏览器里留着的旧映射不该再把站点集自己挑的图标顶掉。解析不出来的码退回彩色地球。
   for (const [name, code] of siteSetIcons.value) {
     const entry = proxyMap.value[name]
-    if (!entry || entry.icon) continue
-    const url = iconUrlFor(code)
+    if (!entry) continue
+    const url = iconUrlFor(code) || iconUrlFor('globe:earth-meridians')
     if (url) entry.icon = url
   }
 
@@ -325,7 +327,7 @@ export const fetchProxies = async () => {
         history: [],
       } as unknown as Proxy
     }
-    if (!proxyMap.value[item.name].icon && item.icon) {
+    if (item.icon) {
       const url = iconUrlFor(item.icon)
       if (url) proxyMap.value[item.name].icon = url
     }
