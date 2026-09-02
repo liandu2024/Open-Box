@@ -296,7 +296,6 @@ const en = {
   proxyChainExit: 'Proxy chain exit',
   nodeType: 'Node type',
   connectionCount: 'Connection count',
-  subscriptionSettings: 'Subscriptions & Nodes',
   routingSettings: 'Routing & Policies',
   kernelSettings: 'Kernel Settings',
   zashboardSettings: 'Dashboard Settings',

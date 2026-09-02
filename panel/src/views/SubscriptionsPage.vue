@@ -5,29 +5,9 @@
       :style="padding"
     >
       <div class="flex flex-col gap-3 p-3">
-        <!-- 订阅管理 / 节点管理 两个页签。两边的操作按钮不放在这一行,统一 Teleport 到
-             顶部页签栏右上角(SettingsMenu 里的 #settings-header-actions),切页签时按钮
-             位置不变。 -->
-        <div
-          role="tablist"
-          class="tabs-box tabs tabs-sm self-start"
-        >
-          <a
-            role="tab"
-            :class="['tab', pageTab === 'subs' && 'tab-active']"
-            @click="pageTab = 'subs'"
-          >
-            {{ $t('subscriptionsManageTab') }}
-          </a>
-          <a
-            role="tab"
-            :class="['tab', pageTab === 'groups' && 'tab-active']"
-            @click="pageTab = 'groups'"
-          >
-            {{ $t('groupsTab') }}
-          </a>
-        </div>
-
+        <!-- 订阅管理 / 节点管理 是设置页的两个一级页签(由父组件通过 tab 属性告诉这里显示
+             哪一半);操作按钮 Teleport 到顶部页签栏右上角(SettingsMenu 的
+             #settings-header-actions),位置固定。 -->
         <Teleport
           defer
           to="#settings-header-actions"
@@ -174,14 +154,17 @@ import {
   SparklesIcon,
 } from '@heroicons/vue/24/outline'
 import { showNotification } from '@/helper/notification'
-import { onMounted, ref, useTemplateRef } from 'vue'
+import { computed, onMounted, ref, useTemplateRef } from 'vue'
 
 const { padding } = usePaddingForViews({
   offsetTop: 0,
   offsetBottom: 0,
 })
 
-const pageTab = ref<'subs' | 'groups'>('subs')
+const props = defineProps<{
+  tab?: 'subs' | 'groups'
+}>()
+const pageTab = computed(() => props.tab ?? 'subs')
 
 const subscriptions = ref<OpenboxSubscription[]>([])
 const loading = ref(false)

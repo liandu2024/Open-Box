@@ -293,7 +293,6 @@ const zh: LANG_MESSAGE = {
   proxyChainExit: '代理链出口',
   nodeType: '节点类型',
   connectionCount: '连接数',
-  subscriptionSettings: '订阅与节点',
   routingSettings: '分流与策略',
   kernelSettings: '内核设置',
   zashboardSettings: '面板设置',

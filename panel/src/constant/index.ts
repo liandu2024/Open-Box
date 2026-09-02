@@ -295,6 +295,7 @@ export enum IP_INFO_API {
 export enum SETTINGS_TAB {
   panel = 'panel',
   subscriptions = 'subscriptions',
+  groups = 'groups',
   routing = 'routing',
   kernel = 'kernel',
 }

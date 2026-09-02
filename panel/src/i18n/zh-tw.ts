@@ -293,7 +293,6 @@ const zhTW: LANG_MESSAGE = {
   proxyChainExit: '代理鏈出口',
   nodeType: '節點類型',
   connectionCount: '連接數',
-  subscriptionSettings: '訂閱與節點',
   routingSettings: '分流與策略',
   kernelSettings: '內核設置',
   zashboardSettings: '面板設置',
