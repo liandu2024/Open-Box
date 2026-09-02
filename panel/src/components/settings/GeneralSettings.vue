@@ -137,29 +137,11 @@
           class="toggle"
         />
       </div>
-      <div
-        v-if="isSingBox && isVisibleDisplayAllFeatures"
-        class="setting-item"
-      >
-        <div class="setting-item-label">
-          {{ $t('displayAllFeatures') }}
-          <QuestionMarkCircleIcon
-            class="h-4 w-4 cursor-pointer"
-            @mouseenter="showTip($event, $t('displayAllFeaturesTip'))"
-          />
-        </div>
-        <input
-          type="checkbox"
-          v-model="displayAllFeatures"
-          class="toggle"
-        />
-      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { isSingBox } from '@/api'
 import { useIsSettingVisible } from '@/composables/settings'
 import { GENERAL_ITEM_KEYS } from '@/config/settingsItems'
 import { IP_INFO_API } from '@/constant'
@@ -168,7 +150,6 @@ import {
   autoDisconnectIdleUDP,
   autoDisconnectIdleUDPTime,
   disablePullToRefresh,
-  displayAllFeatures,
   IPInfoAPI,
   scrollAnimationEffect,
   swipeInPages,
@@ -190,7 +171,6 @@ const isVisibleScrollAnimationEffect = useIsSettingVisible(k.scrollAnimationEffe
 const isVisibleSwipeInPages = useIsSettingVisible(k.swipeInPages)
 const isVisibleSwipeInTabs = useIsSettingVisible(k.swipeInTabs)
 const isVisibleDisablePullToRefresh = useIsSettingVisible(k.disablePullToRefresh)
-const isVisibleDisplayAllFeatures = useIsSettingVisible(k.displayAllFeatures)
 const isChangePasswordDialogOpen = ref(false)
 
 const hasVisibleGeneralItems = computed(() => {
@@ -202,8 +182,7 @@ const hasVisibleGeneralItems = computed(() => {
     isVisibleScrollAnimationEffect.value ||
     isVisibleSwipeInPages.value ||
     (swipeInPages.value && isVisibleSwipeInTabs.value) ||
-    isVisibleDisablePullToRefresh.value ||
-    (isSingBox.value && isVisibleDisplayAllFeatures.value)
+    isVisibleDisablePullToRefresh.value
   )
 })
 </script>

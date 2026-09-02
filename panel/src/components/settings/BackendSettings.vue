@@ -117,92 +117,28 @@
       class="grid max-w-6xl gap-2 gap-y-3"
       :style="`grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));`"
     >
-      <template v-if="!isSingBox || displayAllFeatures">
-        <button
-          class="btn btn-primary btn-sm"
-          @click="showUpgradeCoreModal = true"
-        >
-          {{ $t('upgradeCore') }}
-        </button>
-        <button
-          class="btn btn-sm"
-          @click="handlerClickRestartCore"
-        >
-          <span
-            v-if="isCoreRestarting"
-            class="loading loading-spinner loading-md"
-          ></span>
-          {{ $t('restartCore') }}
-        </button>
-        <button
-          class="btn btn-sm"
-          @click="handlerClickReloadConfigs"
-        >
-          <span
-            v-if="isConfigReloading"
-            class="loading loading-spinner loading-md"
-          ></span>
-          {{ $t('reloadConfigs') }}
-        </button>
-        <button
-          class="btn btn-sm"
-          @click="handlerClickUpdateGeo"
-        >
-          <span
-            v-if="isGeoUpdating"
-            class="loading loading-spinner loading-md"
-          ></span>
-          {{ $t('updateGeoDatabase') }}
-        </button>
-      </template>
       <button
         class="btn btn-sm"
         @click="handleFlushDNSCache"
       >
         {{ $t('flushDNSCache') }}
       </button>
-      <button
-        class="btn btn-sm"
-        @click="handleFlushFakeIP"
-      >
-        {{ $t('flushFakeIP') }}
-      </button>
-      <button
-        v-if="hasSmartGroup"
-        class="btn btn-sm"
-        @click="flushSmartGroupWeightsAPI"
-      >
-        {{ $t('flushSmartWeights') }}
-      </button>
     </div>
     <DnsQuery v-if="isVisibleDnsQuery" />
-    <UpgradeCoreModal v-model="showUpgradeCoreModal" />
   </div>
 </template>
 
 <script setup lang="ts">
-import {
-  flushDNSCacheAPI,
-  flushFakeIPAPI,
-  flushSmartGroupWeightsAPI,
-  isCoreUpdateAvailable,
-  isSingBox,
-  reloadConfigsAPI,
-  restartCoreAPI,
-  updateGeoDataAPI,
-} from '@/api'
+import { flushDNSCacheAPI, isCoreUpdateAvailable, isSingBox } from '@/api'
 import BackendVersion from '@/components/common/BackendVersion.vue'
 import DnsQuery from '@/components/settings/DnsQuery.vue'
 import { useIsSettingVisible } from '@/composables/settings'
 import { BACKEND_ITEM_KEYS } from '@/config/settingsItems'
 import { showNotification } from '@/helper/notification'
-import { configs, fetchConfigs, updateConfigs } from '@/store/config'
-import { fetchProxies, hasSmartGroup } from '@/store/proxies'
-import { fetchRules } from '@/store/rules'
-import { autoUpgradeCore, checkUpgradeCore, displayAllFeatures } from '@/store/settings'
+import { configs, updateConfigs } from '@/store/config'
+import { autoUpgradeCore, checkUpgradeCore } from '@/store/settings'
 import type { Config } from '@/types'
-import { computed, ref } from 'vue'
-import UpgradeCoreModal from './UpgradeCoreModal.vue'
+import { computed } from 'vue'
 
 const k = BACKEND_ITEM_KEYS
 const isVisiblePorts = useIsSettingVisible(k.ports)
@@ -248,67 +184,6 @@ const portList = [
   },
 ]
 
-const reloadAll = () => {
-  fetchConfigs()
-  fetchRules()
-  fetchProxies()
-}
-
-const showUpgradeCoreModal = ref(false)
-
-const isCoreRestarting = ref(false)
-const handlerClickRestartCore = async () => {
-  if (isCoreRestarting.value) return
-  isCoreRestarting.value = true
-  try {
-    await restartCoreAPI()
-    setTimeout(() => {
-      reloadAll()
-    }, 500)
-    isCoreRestarting.value = false
-    showNotification({
-      content: 'restartCoreSuccess',
-      type: 'alert-success',
-    })
-  } catch {
-    isCoreRestarting.value = false
-  }
-}
-
-const isConfigReloading = ref(false)
-const handlerClickReloadConfigs = async () => {
-  if (isConfigReloading.value) return
-  isConfigReloading.value = true
-  try {
-    await reloadConfigsAPI()
-    reloadAll()
-    isConfigReloading.value = false
-    showNotification({
-      content: 'reloadConfigsSuccess',
-      type: 'alert-success',
-    })
-  } catch {
-    isConfigReloading.value = false
-  }
-}
-
-const isGeoUpdating = ref(false)
-const handlerClickUpdateGeo = async () => {
-  if (isGeoUpdating.value) return
-  isGeoUpdating.value = true
-  try {
-    await updateGeoDataAPI()
-    reloadAll()
-    isGeoUpdating.value = false
-    showNotification({
-      content: 'updateGeoSuccess',
-      type: 'alert-success',
-    })
-  } catch {
-    isGeoUpdating.value = false
-  }
-}
-
 const handlerCheckUpgradeCoreChange = () => {
   if (!checkUpgradeCore.value) {
     autoUpgradeCore.value = false
@@ -331,11 +206,4 @@ const handleFlushDNSCache = async () => {
   })
 }
 
-const handleFlushFakeIP = async () => {
-  await flushFakeIPAPI()
-  showNotification({
-    content: 'flushFakeIPSuccess',
-    type: 'alert-success',
-  })
-}
 </script>

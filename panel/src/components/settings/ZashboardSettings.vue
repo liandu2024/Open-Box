@@ -6,13 +6,6 @@
   >
     <div class="settings-title">
       <div class="indicator">
-        <span
-          v-if="isUIUpdateAvailable"
-          class="indicator-item top-1 -right-1 flex"
-        >
-          <span class="bg-secondary absolute h-2 w-2 animate-ping rounded-full"></span>
-          <span class="bg-secondary h-2 w-2 rounded-full"></span>
-        </span>
         <span class="flex flex-wrap items-center gap-x-3 gap-y-1 sm:flex-nowrap">
           <span>Open-Box</span>
           <span class="text-sm font-normal">{{ displayVersion }}</span>
@@ -217,36 +210,12 @@
           class="toggle"
         />
       </div>
-      <div
-        v-if="isVisibleAutoUpgrade"
-        class="setting-item"
-      >
-        <div class="setting-item-label">
-          {{ $t('autoUpgrade') }}
-        </div>
-        <input
-          class="toggle"
-          type="checkbox"
-          v-model="autoUpgrade"
-        />
-      </div>
     </div>
+    <!-- 「更新面板 / 自动更新」已去掉:面板由 Open-Box 自己发布,sing-box 也没有 /upgrade/ui 接口 -->
     <div
-      v-if="isVisibleUpgradeUI || isVisibleExportSettings || isVisibleImportSettings"
+      v-if="isVisibleExportSettings || isVisibleImportSettings"
       class="mt-4 grid max-w-3xl grid-cols-2 gap-2 gap-y-3 md:grid-cols-4"
     >
-      <button
-        v-if="isVisibleUpgradeUI"
-        :class="twMerge('btn btn-primary btn-sm', isUIUpgrading ? 'animate-pulse' : '')"
-        @click="handlerClickUpgradeUI"
-      >
-        {{ $t('upgradeUI') }}
-      </button>
-      <div
-        v-if="isVisibleUpgradeUI"
-        class="sm:hidden"
-      ></div>
-
       <button
         v-if="isVisibleExportSettings"
         class="btn btn-sm"
@@ -295,20 +264,18 @@
 </template>
 
 <script setup lang="ts">
-import { getDisplayAppVersion, upgradeUIAPI, zashboardVersion } from '@/api'
+import { getDisplayAppVersion, zashboardVersion } from '@/api'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import LanguageSelect from '@/components/settings/LanguageSelect.vue'
-import { useIsSettingVisible, useSettings } from '@/composables/settings'
+import { useIsSettingVisible } from '@/composables/settings'
 import { GENERAL_ITEM_KEYS } from '@/config/settingsItems'
 import { EMOJIS, FONTS } from '@/constant'
-import { handlerUpgradeSuccess } from '@/helper'
 import { deleteBase64FromIndexedDB, LOCAL_IMAGE, saveBase64ToIndexedDB } from '@/helper/indexeddb'
 import { exportSettings, isPWA } from '@/helper/utils'
 import {
   defaultTheme,
   darkTheme,
   autoTheme,
-  autoUpgrade,
   blurIntensity,
   customBackgroundURL,
   dashboardTransparent,
@@ -317,7 +284,6 @@ import {
   globalRadius,
 } from '@/store/settings'
 import { AdjustmentsHorizontalIcon, ArrowPathIcon, ArrowUpTrayIcon, PlusIcon } from '@heroicons/vue/24/outline'
-import { twMerge } from 'tailwind-merge'
 import { computed, ref, watch } from 'vue'
 import ImportSettings from '../common/ImportSettings.vue'
 import TextInput from '../common/TextInput.vue'
@@ -336,8 +302,6 @@ const isVisibleDefaultTheme = useIsSettingVisible(k.defaultTheme)
 const isVisibleDarkTheme = useIsSettingVisible(k.darkTheme)
 const isVisibleAutoSwitchTheme = useIsSettingVisible(k.autoSwitchTheme)
 const customThemeModal = ref(false)
-const isVisibleAutoUpgrade = useIsSettingVisible(k.autoUpgrade)
-const isVisibleUpgradeUI = useIsSettingVisible(k.upgradeUI)
 const isVisibleExportSettings = useIsSettingVisible(k.exportSettings)
 const isVisibleImportSettings = useIsSettingVisible(k.importSettings)
 
@@ -358,8 +322,6 @@ const hasVisibleItems = computed(() => {
     isVisibleDefaultTheme.value ||
     isVisibleDarkTheme.value ||
     isVisibleAutoSwitchTheme.value ||
-    isVisibleAutoUpgrade.value ||
-    isVisibleUpgradeUI.value ||
     isVisibleExportSettings.value ||
     isVisibleImportSettings.value
   )
@@ -449,24 +411,6 @@ const fontOptions = computed(() => {
 
   return Object.values(FONTS)
 })
-
-const { isUIUpdateAvailable } = useSettings()
-
-const isUIUpgrading = ref(false)
-const handlerClickUpgradeUI = async () => {
-  if (isUIUpgrading.value) return
-  isUIUpgrading.value = true
-  try {
-    await upgradeUIAPI()
-    isUIUpgrading.value = false
-    handlerUpgradeSuccess()
-    setTimeout(() => {
-      window.location.reload()
-    }, 1000)
-  } catch {
-    isUIUpgrading.value = false
-  }
-}
 
 const refreshPages = async () => {
   const registrations = await navigator.serviceWorker.getRegistrations()

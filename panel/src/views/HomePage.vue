@@ -58,7 +58,6 @@
 import { fetchBackendVersion } from '@/api'
 import SideBar from '@/components/sidebar/SideBar.vue'
 import { dockTop } from '@/composables/paddingViews'
-import { useSettings } from '@/composables/settings'
 import { useSwipeRouter } from '@/composables/swipe'
 import { ROUTE_ICON_MAP } from '@/constant'
 import { renderRoutes } from '@/helper'
@@ -103,7 +102,5 @@ watch(documentVisible, () => {
   fetchProxies()
 })
 
-const { checkUIUpdate } = useSettings()
 
-checkUIUpdate()
 </script>
