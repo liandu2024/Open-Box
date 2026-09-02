@@ -17,7 +17,7 @@
       </div>
 
       <p
-        v-if="!policies.length"
+        v-if="!rows.length"
         class="text-base-content/50 text-xs"
       >
         {{ $t('routingPoliciesEmpty') }}
@@ -26,7 +26,6 @@
       <!-- 顺序即优先级:sing-box 按首条命中生效,拖拽排序改的就是这个。拖完立刻存,
            不然刷新一下就白拖了(和节点组那边一致)。 -->
       <Draggable
-        v-else
         v-model="rows"
         :animation="150"
         :force-fallback="true"
@@ -67,6 +66,21 @@
           </div>
         </template>
       </Draggable>
+
+      <!-- 兜底:上面都没命中的流量走它。系统生成、删不掉、拖不动——内核的 route.final
+           必须指向某个出站,少了它整份配置就不成立。走哪条线路在「代理」页点选。 -->
+      <div class="border-base-300/60 bg-base-200/40 flex items-center gap-2 rounded-lg border border-dashed p-2.5">
+        <span class="w-4 shrink-0" />
+        <CountryFlag
+          :code="FALLBACK_ICON"
+          :size="18"
+        />
+        <div class="min-w-0 flex-1">
+          <div class="truncate text-sm font-medium">{{ FALLBACK_NAME }}</div>
+          <div class="text-base-content/60 mt-0.5 truncate text-xs">{{ $t('routingFallbackHint') }}</div>
+        </div>
+        <span class="badge badge-ghost badge-sm shrink-0">{{ $t('routingFallbackBadge') }}</span>
+      </div>
     </div>
 
     <!-- 删掉一个站点集会连带删掉内核里那个同名 selector(代理页上就没了),先确认一次 -->
@@ -242,6 +256,11 @@ const props = defineProps<{
   profile: OpenboxProfile
   patchProfile: (patch: Record<string, unknown>) => Promise<OpenboxProfile>
 }>()
+
+// 兜底站点集的名字和图标是数据不是文案:名字直接当内核里的出站 tag 用,改了名
+// 代理页上原来的选择就对不上号了(服务端同一份定义在 engine/routing-model.mjs)。
+const FALLBACK_NAME = '其他'
+const FALLBACK_ICON = 'globe:earth-meridians'
 
 const { t } = useI18n()
 

@@ -1,4 +1,4 @@
-import { normalizeRouting, regionRuleTag } from './routing-model.mjs'
+import { normalizeRouting } from './routing-model.mjs'
 
 // 一条策略的匹配条件 → 一条 sing-box 路由规则。
 // 同一条规则里的多个字段是「或」的关系(sing-box 规则内部各字段取并集),所以一条策略
@@ -16,7 +16,6 @@ const policyRule = (policy) => {
 
 export const buildRoute = (routing, rulesetDir, options = {}) => {
   const conf = normalizeRouting(routing)
-  const proxyTag = conf.proxyTag
   const rulesetTags = new Set()
   const addTag = (tag) => { if (tag) rulesetTags.add(tag) }
 
@@ -37,32 +36,14 @@ export const buildRoute = (routing, rulesetDir, options = {}) => {
     rules.push({ rule_set: conf.adRuleset, action: 'reject' })
   }
 
-  // 策略排在地区规则之前:策略是用户对某一类流量的显式指定,应当盖过"这个地区默认
-  // 怎么走"。比如人在国内(CN)但想让某个国内站点走代理,建一条策略就能压过 geosite-cn。
+  // 站点集按用户排的顺序逐条匹配,首条命中生效。
   for (const policy of conf.policies) {
     for (const tag of policy.rulesets) addTag(tag)
     rules.push(policyRule(policy))
   }
 
-  // 地区分流:选中的那条地区,按它自己的规则表逐条来。表里的顺序就是匹配顺序
-  // (内核首条命中生效),每条自己带动作,所以"中国站点直连、其余走代理"和
-  // "中国站点走代理(回国)、其余直连"是同一套机制、不同的数据。
-  const region = conf.region
-  for (const rule of (region ? region.rules : [])) {
-    const outbound = rule.action === 'proxy' ? proxyTag : 'direct'
-    const tag = regionRuleTag(rule)
-    if (tag) {
-      addTag(tag)
-      rules.push({ rule_set: tag, outbound })
-    } else if (rule.type === 'ipcidr') {
-      rules.push({ ip_cidr: [rule.value], outbound })
-    } else if (rule.type === 'domainSuffix') {
-      rules.push({ domain_suffix: [rule.value], outbound })
-    } else {
-      rules.push({ domain: [rule.value], outbound })
-    }
-  }
-
+  // 上面都没命中的流量交给兜底站点集(它也是一个 selector,见 config.mjs);
+  // 内核的 final 必须指向某个存在的出站,所以这条永远有。
   const rule_set = [...rulesetTags].map((tag) => ({
     type: 'local', tag, format: 'binary', path: `${rulesetDir}/${tag}.srs`,
   }))
@@ -72,7 +53,7 @@ export const buildRoute = (routing, rulesetDir, options = {}) => {
     default_domain_resolver: 'dns-direct',
     rule_set,
     rules,
-    final: region && region.catchAll === 'proxy' ? proxyTag : 'direct',
+    final: conf.fallback.name,
   }
   return { route, rulesetTags }
 }

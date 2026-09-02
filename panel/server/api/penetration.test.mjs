@@ -256,7 +256,7 @@ test('POST /api/openbox/penetration 合法域名/IPv4/IPv6 target 仍然通过(�
     for (const target of ['good.example.com', '8.8.8.8', '2001:4860:4860::8888']) {
       const { res, body } = await post(baseUrl, target)
       assert.equal(res.status, 200, `target=${target} 应通过校验`)
-      assert.equal(body.finalOutbound, 'PROXY')
+      assert.equal(body.finalOutbound, '其他')
     }
   } finally {
     await close()
@@ -269,7 +269,7 @@ test('按序首个命中生效:前一条 rule_set 命中时,后一条同样会�
     routing: {
       proxyTag: 'PROXY',
       // 香港澳门那一档:除策略之外全部直连,所以这里只会有这两条策略规则
-      regionMode: 'HKMO',
+      fallbackDefault: 'direct',
       policies: [
         { id: 'a', name: '策略A', rulesets: ['geosite-a'], default: 'NodeA' },
         { id: 'b', name: '策略B', rulesets: ['geosite-b'], default: 'NodeB' },
@@ -313,7 +313,7 @@ test('无命中 → 落到 route.final,matched 为 null', async () => {
     routing: {
       proxyTag: 'PROXY',
       // 中国大陆那一档:中国站点直连、其余走代理(所以兜底是 PROXY)
-      regionMode: 'CN',
+      fallbackDefault: 'proxy',
       policies: [],
     },
   })
@@ -326,9 +326,13 @@ test('无命中 → 落到 route.final,matched 为 null', async () => {
     defaultExec: { code: 0, stdout: '' }, // 所有 rule-set match 都不命中
   })
   const fetchImpl = async (url) => {
-    const u = new URL(url)
-    if (u.pathname === '/proxies/PROXY') {
-      return { ok: true, status: 200, json: async () => ({ name: 'PROXY', type: 'Selector', now: 'direct' }) }
+    const name = decodeURIComponent(new URL(url).pathname.replace('/proxies/', ''))
+    // 兜底的「其他」当前选中 PROXY,PROXY 又选中 direct
+    if (name === '其他') {
+      return { ok: true, status: 200, json: async () => ({ name, type: 'Selector', now: 'PROXY' }) }
+    }
+    if (name === 'PROXY') {
+      return { ok: true, status: 200, json: async () => ({ name, type: 'Selector', now: 'direct' }) }
     }
     return { ok: true, status: 200, json: async () => ({ name: 'direct', type: 'Direct' }) }
   }
@@ -337,8 +341,8 @@ test('无命中 → 落到 route.final,matched 为 null', async () => {
     const { res, body } = await post(baseUrl, target)
     assert.equal(res.status, 200)
     assert.equal(body.matched, null)
-    assert.equal(body.finalOutbound, 'PROXY')
-    assert.deepEqual(body.chain, ['PROXY', 'direct'])
+    assert.equal(body.finalOutbound, '其他')
+    assert.deepEqual(body.chain, ['其他', 'PROXY', 'direct'])
     assert.equal(body.chainError, undefined)
   } finally {
     await close()
@@ -374,7 +378,7 @@ test('公网 IP 不命中 ip_is_private,继续走后续规则(落到 final)', as
     routing: {
       // 用香港澳门那一档:它不生成任何地区规则,这条用例只想看 ip_is_private 之后
       // 没有别的规则可命中时会不会老实落到 final
-      proxyTag: 'PROXY', regionMode: 'HKMO', policies: [],
+      proxyTag: 'PROXY', fallbackDefault: 'direct', policies: [],
     },
   })
   const ctx = createMockContext({ defaultExec: { code: 0, stdout: '' } })
@@ -384,7 +388,8 @@ test('公网 IP 不命中 ip_is_private,继续走后续规则(落到 final)', as
     const { res, body } = await post(baseUrl, '8.8.8.8')
     assert.equal(res.status, 200)
     assert.equal(body.matched, null)
-    assert.equal(body.finalOutbound, 'direct')
+    // 一条都没命中 → 落到兜底站点集「其他」(它当前选中什么由代理页决定)
+    assert.equal(body.finalOutbound, '其他')
   } finally {
     await close()
   }
@@ -396,7 +401,7 @@ test('策略组下钻:outbound 为策略组时经 clash_api 沿 now 字段逐层
   store.setProfile({
     routing: {
       proxyTag: 'PROXY',
-      regionMode: 'HKMO',
+      fallbackDefault: 'direct',
       policies: [{ id: 'hk', name: 'HK', rulesets: ['geosite-hk'] }],
     },
   })
@@ -445,7 +450,7 @@ test('clash_api 不可达时降级:只返回组名 + chainError,不整体失败'
   store.setProfile({
     routing: {
       proxyTag: 'PROXY',
-      regionMode: 'HKMO',
+      fallbackDefault: 'direct',
       policies: [{ id: 'hk', name: 'HK', rulesets: ['geosite-hk'] }],
     },
   })
@@ -477,7 +482,7 @@ test('clash_api 返回非 2xx 时同样降级为 chainError', async () => {
   store.setProfile({
     routing: {
       proxyTag: 'PROXY',
-      regionMode: 'HKMO',
+      fallbackDefault: 'direct',
       policies: [{ id: 'hk', name: 'HK', rulesets: ['geosite-hk'] }],
     },
   })
@@ -543,7 +548,10 @@ test('POST /penetration:.srs 文件缺失 → 200 + matchError,matched 为 null,
   const store = memStore()
   store.setProfile({
     routing: {
-      proxyTag: 'PROXY', regionMode: 'CN', policies: [],
+      proxyTag: 'PROXY',
+      fallbackDefault: 'proxy',
+      // 需要一条引用 .srs 的规则,下面故意不放那个文件
+      policies: [{ id: 'cn', name: '中国', default: 'direct', rulesets: ['geosite-cn'] }],
     },
   })
   const target = 'missing-srs.example.com'
@@ -572,7 +580,10 @@ test('POST /penetration:sing-box 异常退出且无输出 → 200 + matchError,�
   const store = memStore()
   store.setProfile({
     routing: {
-      proxyTag: 'PROXY', regionMode: 'CN', policies: [],
+      proxyTag: 'PROXY',
+      fallbackDefault: 'proxy',
+      // 需要一条引用 .srs 的规则,下面故意不放那个文件
+      policies: [{ id: 'cn', name: '中国', default: 'direct', rulesets: ['geosite-cn'] }],
     },
   })
   const target = 'crash.example.com'
@@ -603,7 +614,7 @@ test('POST /penetration:could-not-check 命中后立刻停止求值——后面�
   store.setProfile({
     routing: {
       proxyTag: 'PROXY',
-      regionMode: 'HKMO',
+      fallbackDefault: 'direct',
       policies: [
         { id: 'a', name: '策略A', rulesets: ['geosite-a'] }, // .srs 缺失 → could-not-check
         { id: 'b', name: '策略B', rulesets: ['geosite-b'] }, // 若被求值也会命中——用来证明循环已经停了
@@ -638,7 +649,10 @@ test('POST /penetration:更早的确定命中(ip_is_private)优先于后面失�
   const store = memStore()
   store.setProfile({
     routing: {
-      proxyTag: 'PROXY', regionMode: 'CN', policies: [],
+      proxyTag: 'PROXY',
+      fallbackDefault: 'proxy',
+      // 需要一条引用 .srs 的规则,下面故意不放那个文件
+      policies: [{ id: 'cn', name: '中国', default: 'direct', rulesets: ['geosite-cn'] }],
     },
   })
   // geosite-cn.srs 故意缺失,但 target 是私网 IP,ip_is_private 规则排在 rule_set 规则之前
@@ -696,7 +710,7 @@ test('POST /penetration:策略的域名条件本地就能判定,不去 exec 内�
   store.setProfile({
     routing: {
       proxyTag: 'PROXY',
-      regionMode: 'HKMO',
+      fallbackDefault: 'direct',
       policies: [{ id: 'g', name: '谷歌', domainSuffix: ['google.com'] }],
     },
   })

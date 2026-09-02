@@ -6,7 +6,6 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { buildConfig } from './config.mjs'
-import { BUILTIN_REGIONS } from './routing-model.mjs'
 import { parseSubscription } from './subscription.mjs'
 import { renameNodes } from './rename.mjs'
 import { groupNodesByRegion } from './groups.mjs'
@@ -209,12 +208,12 @@ test('一个节点都没命中的用户组也能过 sing-box check(挂 PROXY 占
   }
 })
 
-// 三档地区各生成一份完整配置,交给真内核 check。这一组是整个改造的兜底:
-// 规则顺序、策略 selector、block 出站、DNS 的 local/detour 写法,任何一处写错
-// sing-box 都会在这里报出来,而不是等部署到路由器上才 FATAL。
-for (const [regionId, expectedFinal] of [['cn', 'PROXY'], ['hkmo', 'direct'], ['other', 'direct'], ['jp', 'PROXY']]) {
-  test(`地区分流 ${regionId}:整份配置过 sing-box check`, { skip: hasBin ? false : 'sing-box 二进制缺失(panel/.tools/sing-box);运行 pnpm run check:config 前先放置二进制' }, () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), `openbox-check-${regionId}-`))
+// 两种兜底各生成一份完整配置,交给真内核 check。这一组是整个改造的兜底:
+// 规则顺序、站点集 selector、兜底 selector、block 出站、DNS 的 local/detour 写法,
+// 任何一处写错 sing-box 都会在这里报出来,而不是等部署到路由器上才 FATAL。
+for (const fallbackDefault of ['direct', 'proxy']) {
+  test(`兜底=${fallbackDefault}:整份配置过 sing-box check`, { skip: hasBin ? false : 'sing-box 二进制缺失(panel/.tools/sing-box);运行 pnpm run check:config 前先放置二进制' }, () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), `openbox-check-${fallbackDefault}-`))
     try {
       const { nodes } = parseSubscription(
         [
@@ -229,23 +228,7 @@ for (const [regionId, expectedFinal] of [['cn', 'PROXY'], ['hkmo', 'direct'], ['
         dns: { split: true, mode: 'dnsmasq', direct: '223.5.5.5', proxy: 'https://1.1.1.1/dns-query' },
         routing: {
           proxyTag: 'PROXY',
-          // 前三条是内置的;jp 是"用户自己加的一条地区",走的是同一条代码路径
-          regions: [
-            ...BUILTIN_REGIONS,
-            {
-              id: 'jp',
-              name: '日本',
-              catchAll: 'proxy',
-              rules: [
-                { type: 'geosite', value: 'geolocation-!cn', action: 'proxy' },
-                // 上游有 348 个名字带 @/!,文件名和路径都得原样过内核
-                { type: 'geosite', value: '36kr@ads', action: 'direct' },
-                { type: 'domainSuffix', value: 'nhk.or.jp', action: 'direct' },
-                { type: 'ipcidr', value: '133.0.0.0/8', action: 'direct' },
-              ],
-            },
-          ],
-          regionId,
+          fallbackDefault,
           adBlock: true,
           policies: [
             {
@@ -257,6 +240,13 @@ for (const [regionId, expectedFinal] of [['cn', 'PROXY'], ['hkmo', 'direct'], ['
               ipCidr: ['8.8.8.8/32'],
             },
             { id: 'block-ad', name: '广告拦截', default: 'block', domainSuffix: ['ads.example.com'] },
+            {
+              id: 'cn', name: '中国', default: 'direct',
+              // 上游有 348 个名字带 @/!,文件名和路径都得原样过内核
+              rulesets: ['geosite-cn', 'geosite-36kr@ads', 'geosite-geolocation-!cn'],
+              domainSuffix: ['nhk.or.jp'],
+              ipCidr: ['133.0.0.0/8'],
+            },
           ],
         },
         rulesetDir: dir,
@@ -270,7 +260,10 @@ for (const [regionId, expectedFinal] of [['cn', 'PROXY'], ['hkmo', 'direct'], ['
       })
       for (const entry of config.route.rule_set) compileSrs(dir, entry.tag)
 
-      assert.equal(config.route.final, expectedFinal)
+      // 兜底永远是那个同名 selector;"其余流量走哪"是它的 default,不是 final
+      assert.equal(config.route.final, '其他')
+      const fb = config.outbounds.find((o) => o.tag === '其他')
+      assert.equal(fb.default, fallbackDefault === 'direct' ? 'direct' : '美国')
       const sel = config.outbounds.find((o) => o.tag === '谷歌')
       // 顺序:直连 → 地区组(按节点顺序)→ 用户组 → 拒绝
       assert.deepEqual(sel.outbounds, ['direct', '美国', '香港', '所有-自动', 'block'])

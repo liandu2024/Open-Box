@@ -1,6 +1,14 @@
 // 分流模型的归一化与老档案迁移。
 //
-// 分流现在是两层:
+// 现在只有一层:**站点集**。一个站点集 = 一组匹配规则 + 内核里一个同名 selector,
+// 走哪条线路由用户在代理页点选(成员由「出站」页签决定:直连/节点组/拒绝)。
+// 站点集按顺序匹配,首条命中生效。
+//
+// 最后固定跟一个系统生成的兜底站点集「其他」:上面都没命中的流量走它。它必须存在
+// ——内核的 route.final 得指向某个出站——所以它不在 policies 里,由这里合成,
+// 界面上也删不掉、拖不动。
+//
+// 改版前是两层:
 //   地区分流(regionMode) —— 路由器本身在哪。它决定"没被策略挑走的流量"往哪走:
 //     CN    中国大陆:geosite-cn/geoip-cn 直连,其余走代理
 //     HKMO  香港澳门:只有策略挑走的走代理,其余全部直连
@@ -51,6 +59,11 @@ export const DEFAULT_OUTBOUND_OPTIONS = Object.freeze({ direct: true, reject: tr
 // 「拒绝」在内核里是一个 block 出站。sing-box 1.13.14 实测:block 出站能过 check,
 // 而 selector 的成员必须非空(空 outbounds 直接 FATAL: missing tags)。
 export const REJECT_TAG = 'block'
+
+// 兜底站点集:上面都没命中的流量。名字直接当内核里的出站 tag 用,所以它是数据
+// 不是文案(改名会让代理页上原来的选择对不上号)。图标是彩色地球。
+export const FALLBACK_TAG = '其他'
+export const FALLBACK_ICON = 'globe:earth-meridians'
 
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0
 const strList = (v) => (Array.isArray(v) ? v.filter(isNonEmptyString).map((s) => s.trim()) : [])
@@ -158,28 +171,67 @@ const migrateLegacy = (routing) => {
   return { regionId, policies }
 }
 
-export const normalizeRouting = (routing) => {
-  const raw = routing && typeof routing === 'object' ? routing : {}
-  const migrated = Array.isArray(raw.policies) ? null : migrateLegacy(raw)
+// 地区层退役了:选中的那条地区,按动作拆成一到两个站点集接在用户的站点集后面
+// (地区规则本来就排在策略之后),兜底则变成兜底站点集的默认选中项。行为不变。
+const migrateRegion = (raw) => {
+  // 档案里压根没有地区数据(全新安装的种子在 store 的 DEFAULT_PROFILE 里)就不迁移,
+  // 免得凭空长出两个站点集
+  const hasRegionData =
+    (Array.isArray(raw.regions) && raw.regions.length > 0) ||
+    isNonEmptyString(raw.regionId) ||
+    isNonEmptyString(raw.regionMode)
+  if (!hasRegionData) return { policies: [], fallbackDefault: '' }
 
-  // 地区列表:用户没自定义过就用内置的三条
   const regions = Array.isArray(raw.regions) && raw.regions.length
     ? raw.regions.map(normalizeRegion)
     : BUILTIN_REGIONS.map(normalizeRegion)
-
-  // 选中哪一条。regionMode 是改版初期的写法,一并认下来。
   const wanted = isNonEmptyString(raw.regionId)
     ? raw.regionId.trim()
     : isNonEmptyString(raw.regionMode)
       ? REGION_MODE_TO_ID[raw.regionMode] || ''
-      : migrated
-        ? migrated.regionId
-        : ''
+      : ''
   const region = regions.find((r) => r.id === wanted) || regions[0]
+  if (!region) return { policies: [], fallbackDefault: '' }
 
-  const policies = (migrated ? migrated.policies : raw.policies.map(normalizePolicy)).filter(
-    policyHasCondition,
-  )
+  const policies = []
+  for (const action of ['direct', 'proxy']) {
+    const rules = region.rules.filter((r) => r.action === action)
+    if (!rules.length) continue
+    policies.push(
+      normalizePolicy({
+        id: `region-${region.id}-${action}`,
+        name: `${region.name}·${action === 'direct' ? '直连' : '代理'}`,
+        icon: FALLBACK_ICON,
+        default: action,
+        rulesets: rules.filter((r) => r.type === 'geosite' || r.type === 'geoip').map(regionRuleTag),
+        domain: rules.filter((r) => r.type === 'domain').map((r) => r.value),
+        domainSuffix: rules.filter((r) => r.type === 'domainSuffix').map((r) => r.value),
+        ipCidr: rules.filter((r) => r.type === 'ipcidr').map((r) => r.value),
+      }, policies.length),
+    )
+  }
+  return { policies, fallbackDefault: region.catchAll === 'proxy' ? 'proxy' : 'direct' }
+}
+
+export const normalizeRouting = (routing) => {
+  const raw = routing && typeof routing === 'object' ? routing : {}
+  // store 的 deepMerge 会把 DEFAULT_PROFILE 里的 `policies: []` 补给老档案,所以
+  // 不能只看"有没有 policies 字段":空数组 + 有老字段,同样是一份没迁过的老档案。
+  const hasLegacy =
+    (Array.isArray(raw.categories) && raw.categories.length > 0) ||
+    (Array.isArray(raw.directRulesets) && raw.directRulesets.some((t) => !CN_RULESETS.includes(t)))
+  const migrated = !Array.isArray(raw.policies) || (raw.policies.length === 0 && hasLegacy)
+    ? migrateLegacy(raw)
+    : null
+
+  // 地区层已经退役:档案里还留着 regions/regionId 就把它翻译成站点集接在后面。
+  // fallbackDefault 一旦写进档案,就说明这份档案已经迁过了,不再重复翻译。
+  const migratedRegion = isNonEmptyString(raw.fallbackDefault) ? null : migrateRegion(raw)
+
+  const policies = [
+    ...(migrated ? migrated.policies : raw.policies.map(normalizePolicy)),
+    ...(migratedRegion ? migratedRegion.policies : []),
+  ].filter(policyHasCondition).filter((p) => p.name !== FALLBACK_TAG)
 
   const opts = raw.outboundOptions && typeof raw.outboundOptions === 'object' ? raw.outboundOptions : {}
   const outboundOptions = {
@@ -188,13 +240,22 @@ export const normalizeRouting = (routing) => {
     groups: opts.groups !== false,
   }
 
+  // 兜底站点集:名字/图标固定,只有"默认走哪"是用户能改的
+  const fallback = {
+    name: FALLBACK_TAG,
+    icon: FALLBACK_ICON,
+    default: isNonEmptyString(raw.fallbackDefault)
+      ? raw.fallbackDefault.trim()
+      : migratedRegion
+        ? migratedRegion.fallbackDefault
+        : 'direct',
+  }
+
   return {
     proxyTag: isNonEmptyString(raw.proxyTag) ? raw.proxyTag.trim() : 'PROXY',
-    regions,
-    regionId: region ? region.id : '',
-    region,
     outboundOptions,
     policies,
+    fallback,
     adBlock: raw.adBlock === true,
     adRuleset: isNonEmptyString(raw.adRuleset) ? raw.adRuleset.trim() : 'geosite-category-ads-all',
   }
@@ -210,25 +271,46 @@ export const policyOutboundOptions = (outboundOptions, groupTags) => {
   return list.length ? list : ['direct']
 }
 
+// 迁移用的占位:老档案里地区的兜底只有"直连/代理"两种说法,而 selector 的成员是
+// 具体的出站名。'proxy' 存进去表示"第一个节点组",真正是哪个组由生成配置时按成员表
+// 定——用户在代理页点一下就变成具体的名字了。
+export const PROXY_SENTINEL = 'proxy'
+
+// 一个站点集实际会走哪个出站。default 空着(或指向一个已经不存在的组)时,内核会
+// 落到成员表里的第一项——这里跟着算同一个结果,不然界面/DNS 的判断会和内核对不上。
+export const effectiveOutbound = (policyDefault, members) => {
+  if (members.includes(policyDefault)) return policyDefault
+  if (policyDefault === PROXY_SENTINEL) {
+    const group = members.find((m) => m !== 'direct' && m !== REJECT_TAG)
+    if (group) return group
+  }
+  return members[0]
+}
+
 // dnsmasq 接管模式下该怎么转发查询。
 //
-// 现在的做法是把 dnsmasq 的上游整个换成 sing-box(noresolv + 唯一上游),所有查询都进
-// Open-Box。要做到"直连的 DNS 根本不经过 Open-Box",只能反过来:只把代理侧的域名按
-// `server=/域名/127.0.0.1#7853` 逐条转给它,其余的 dnsmasq 自己解析。
+// 默认做法是把 dnsmasq 的上游整个换成 sing-box(noresolv + 唯一上游),所有查询都进
+// Open-Box。要做到"直连的 DNS 根本不经过 Open-Box",只能反过来:只把要走代理的域名按
+// `server=/域名/127.0.0.1#7853` 逐条转给它,其余的 dnsmasq 自己解析、自己出网。
 //
-// 但这只在"代理面能被逐条列出来"时成立:
-//   CN    —— 代理面是"除中国以外的一切",没法枚举
-//   OTHER —— 中国站点要回国,而 geosite-cn 是个二进制规则集,喂不进 dnsmasq
-//   HKMO  —— 代理面就是那几条策略;只要策略只用了域名/后缀(没有规则集、没有关键词,
-//            dnsmasq 两者都不支持),就能逐条列出来
-// 列不出来就返回空数组,调用方回落到现在的全局转发。
-export const dnsmasqForwardDomains = (routing) => {
+// 只在"代理面能被逐条列出来"时成立:
+//   · 兜底走代理 —— 代理面是"除了列出来的一切",没法枚举
+//   · 某个走代理的站点集用了 geosite/geoip 或域名关键词 —— dnsmasq 展开不了二进制
+//     规则集,也不支持关键词匹配
+// 列不出来就返回空数组,调用方回落到全局转发。
+//
+// 注意这份名单是**生成配置时**按各站点集的默认出站算的。用户在代理页把某个站点集
+// 从直连切到代理,转发表不会跟着变,要重启内核重新生成——切换本身仍然生效(流量照样
+// 走代理),只是那些域名这一轮还是本地解析的。
+// members 是内核里那些 selector 的成员表(生成配置时算出来的那一份,直接传进来,
+// 不在这里重算一遍——两处各算一次迟早会算歪)。
+export const dnsmasqForwardDomains = (routing, members = ['direct']) => {
   const conf = normalizeRouting(routing)
-  // 只有"其余流量直连、且这个地区自己没有任何走代理的规则"时,代理面才等于那几条策略
-  if (!conf.region || conf.region.catchAll !== 'direct') return []
-  if (conf.region.rules.some((r) => r.action === 'proxy')) return []
+  if (effectiveOutbound(conf.fallback.default, members) !== 'direct') return []
   const domains = []
   for (const p of conf.policies) {
+    if (effectiveOutbound(p.default, members) === 'direct') continue
+    // 这个集合要走代理,但它的规则 dnsmasq 展不开 → 只能全局转发
     if (p.rulesets.length || p.domainKeyword.length) return []
     domains.push(...p.domain, ...p.domainSuffix)
   }

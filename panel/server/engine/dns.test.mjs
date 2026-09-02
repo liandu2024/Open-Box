@@ -5,7 +5,8 @@ import { buildDns } from './dns.mjs'
 const base = {
   ipv6: true,
   dns: { split: true, mode: 'hijack', direct: '223.5.5.5', proxy: 'https://1.1.1.1/dns-query' },
-  routing: { proxyTag: 'PROXY', regionId: 'cn', policies: [] },
+  // fallbackDefault 写着就说明这份档案已经迁过地区了(见 engine/routing-model.mjs)
+  routing: { proxyTag: 'PROXY', policies: [], fallbackDefault: 'proxy' },
 }
 const withRouting = (routing, over = {}) => ({ ...base, ...over, routing: { ...base.routing, ...routing } })
 
@@ -24,31 +25,24 @@ test('dnsmasq 模式读不到系统上游时,回落到档案里填的那台', ()
   assert.equal(dns.servers[0].server, '223.5.5.5')
 })
 
-test('中国大陆:中国域名直连解析,其余走代理 DNS', () => {
-  const dns = buildDns(base)
+// 迁移留下的 'proxy' 占位要落到第一个节点组上,所以这组用例都得给出节点组
+const GROUPS = { groupTags: ['所有-自动'] }
+
+test('兜底走代理时,没被站点集挑走的域名用代理侧解析', () => {
+  const dns = buildDns(base, GROUPS)
   assert.deepEqual(dns.servers[1], { type: 'https', tag: 'dns-proxy', server: '1.1.1.1', detour: 'PROXY' })
-  // geoip 那条不进 DNS 规则:解析阶段还没有 IP,拿它当条件永远不会命中
-  assert.deepEqual(dns.rules, [{ rule_set: 'geosite-cn', server: 'dns-direct' }])
   assert.equal(dns.final, 'dns-proxy')
 })
 
-test('香港澳门:没有地区规则,兜底就是直连解析', () => {
-  const dns = buildDns(withRouting({ regionId: 'hkmo' }))
-  assert.deepEqual(dns.rules, [])
+test('兜底直连时,兜底的解析也回到本地', () => {
+  const dns = buildDns(withRouting({ fallbackDefault: 'direct' }), GROUPS)
   assert.equal(dns.final, 'dns-direct')
 })
 
-test('其他地区:中国域名走代理 DNS(回国),兜底直连', () => {
-  const dns = buildDns(withRouting({ regionId: 'other' }))
-  assert.deepEqual(dns.rules, [{ rule_set: 'geosite-cn', server: 'dns-proxy' }])
-  assert.equal(dns.final, 'dns-direct')
-})
-
-test('每条策略一台自己的 DNS,detour 指向同名 selector——代理的 DNS 跟着策略选的线路走', () => {
+test('走代理的站点集各有一台自己的 DNS,detour 指向同名 selector', () => {
   const dns = buildDns(
     withRouting({
-      regionId: 'hkmo',
-      policies: [{ id: 'p1', name: '谷歌', rulesets: ['geosite-google'], domainSuffix: ['google.com'] }],
+      policies: [{ id: 'p1', name: '谷歌', default: 'block', rulesets: ['geosite-google'], domainSuffix: ['google.com'] }],
     }),
   )
   assert.deepEqual(dns.servers[2], { type: 'https', tag: 'dns-policy-0', server: '1.1.1.1', detour: '谷歌' })
@@ -59,17 +53,32 @@ test('每条策略一台自己的 DNS,detour 指向同名 selector——代理�
   })
 })
 
-test('只有 IP 条件的策略不进 DNS 规则:解析阶段还没有 IP,写进去只会让人以为生效了', () => {
+test('默认就选直连的站点集用本地解析——直连的东西绕一圈代理没有意义', () => {
   const dns = buildDns(
-    withRouting({ regionId: 'hkmo', policies: [{ id: 'p1', name: '内网', ipCidr: ['10.0.0.0/8'] }] }),
+    withRouting({
+      policies: [{ id: 'p1', name: '中国', default: 'direct', rulesets: ['geosite-cn'] }],
+    }),
   )
+  assert.deepEqual(dns.rules[0], { server: 'dns-direct', rule_set: ['geosite-cn'] })
+  // 没给它专属服务器
+  assert.equal(dns.servers.length, 2)
+})
+
+test('default 空着时按成员表第一项算——和内核的行为一致', () => {
+  const dns = buildDns(withRouting({ policies: [{ id: 'p1', name: 'x', rulesets: ['geosite-x'] }] }))
+  // 「出站」默认三类全开,第一项是直连
+  assert.deepEqual(dns.rules[0], { server: 'dns-direct', rule_set: ['geosite-x'] })
+})
+
+test('只有 IP 条件的站点集不进 DNS 规则:解析阶段还没有 IP,写进去只会让人以为生效了', () => {
+  const dns = buildDns(withRouting({ policies: [{ id: 'p1', name: '内网', ipCidr: ['10.0.0.0/8'] }] }))
   assert.deepEqual(dns.rules, [])
   assert.equal(dns.servers.length, 2)
 })
 
-test('广告拦截排在所有策略之前', () => {
+test('广告拦截排在所有站点集之前', () => {
   const dns = buildDns(
-    withRouting({ regionId: 'hkmo', adBlock: true, policies: [{ id: 'p1', name: '谷歌', rulesets: ['geosite-google'] }] }),
+    withRouting({ adBlock: true, policies: [{ id: 'p1', name: '谷歌', default: 'block', rulesets: ['geosite-google'] }] }),
   )
   assert.deepEqual(dns.rules[0], { rule_set: 'geosite-category-ads-all', action: 'reject' })
 })
@@ -85,22 +94,8 @@ test('ipv6 关:strategy=ipv4_only', () => {
   assert.equal(buildDns({ ...base, ipv6: false }).strategy, 'ipv4_only')
 })
 
-test('地区规则里的域名/后缀也各自决定用哪边解析', () => {
-  const dns = buildDns(
-    withRouting({
-      regions: [{
-        id: 'jp', name: '日本', catchAll: 'direct',
-        rules: [
-          { type: 'domainSuffix', value: 'google.com', action: 'proxy' },
-          { type: 'domain', value: 'example.com', action: 'direct' },
-          { type: 'ipcidr', value: '8.8.8.8/32', action: 'proxy' },
-        ],
-      }],
-      regionId: 'jp',
-    }),
-  )
-  assert.deepEqual(dns.rules, [
-    { domain_suffix: ['google.com'], server: 'dns-proxy' },
-    { domain: ['example.com'], server: 'dns-direct' },
-  ])
+
+test('一个节点组都没有时,兜底的「走代理」只能落回直连:不能指向内核里不存在的出站', () => {
+  const dns = buildDns(base)
+  assert.equal(dns.final, 'dns-direct')
 })

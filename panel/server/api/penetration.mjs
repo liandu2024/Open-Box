@@ -186,14 +186,16 @@ export const registerPenetrationRoutes = (app, { store, ctx, paths, fetchImpl = 
     // 一个 outbound 是"策略组"(需要经 clash_api 下钻)还是叶子节点/direct(无需下钻)。
     const { groups } = groupNodesByRegion(nodes)
     const proxyTag = profile.routing.proxyTag || 'PROXY'
-    // 用户自建的节点组和每条策略的 selector 也是"策略组",一样要能往下钻:
-    // 只列地区组的话,规则命中一条策略之后就断在那儿,看不到它当前选的是哪个节点。
+    // 用户自建的节点组、每个站点集的 selector、以及兜底的「其他」也都是"策略组",
+    // 一样要能往下钻:只列地区组的话,命中一个站点集之后就断在那儿,看不到它当前
+    // 选的是哪个节点;而"一条都没命中"落到的正是兜底那个 selector。
     const routingConf = normalizeRouting(profile.routing)
     const groupTags = new Set([
       proxyTag,
       ...groups.map((g) => g.name),
       ...(store.getGroups() || []).map((g) => g.name).filter(Boolean),
       ...routingConf.policies.map((p) => p.name),
+      routingConf.fallback.name,
     ])
 
     let matched = null

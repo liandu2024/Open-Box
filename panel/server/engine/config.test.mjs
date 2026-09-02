@@ -65,7 +65,7 @@ test('每条策略生成一个同名 selector,成员是「出站」页签选中�
   assert.deepEqual(rule.rule_set, ['geosite-google'])
 })
 
-test('策略的 default 不在成员表里就不写 default,免得内核启动时找不到', () => {
+test('站点集的 default 不在成员表里时落到第一个成员,而不是写一个内核找不到的名字', () => {
   const c = buildConfig({
     nodes,
     regionGroups,
@@ -78,7 +78,7 @@ test('策略的 default 不在成员表里就不写 default,免得内核启动�
     },
   })
   const sel = c.outbounds.find((o) => o.tag === '谷歌')
-  assert.ok(!('default' in sel))
+  assert.equal(sel.default, sel.outbounds[0])
 })
 
 test('「出站」页签关掉拒绝时,配置里不生成 block 出站', () => {

@@ -2,7 +2,7 @@ import { detectConflicts } from './conflicts.mjs'
 import { validateConfigObject, attributeBadNodes } from './validate.mjs'
 import { restartService, stopService, serviceStatus } from './service.mjs'
 import { applyDnsTakeover, restoreDnsTakeover, dnsTakeoverBackupPath } from './dns-takeover.mjs'
-import { dnsmasqForwardDomains } from '../engine/routing-model.mjs'
+import { FALLBACK_TAG, dnsmasqForwardDomains } from '../engine/routing-model.mjs'
 import { applyPanelLanRule, applyIpv6Block, removeProxyRules } from './firewall.mjs'
 import { ensureRulesets } from './rulesets.mjs'
 
@@ -54,11 +54,13 @@ export const deployConfig = async (ctx, paths, { config, profile, fetchImpl } = 
       // LAN DNS 全断却仍报部署成功。备份是否存在的判断与 Critical 2 的回滚修复共用。
       await restoreDnsTakeover(ctx, paths)
     }
-    // 代理面能被逐条列出来时(香港澳门那一档),只转发那几个域名,其余交回路由器
-    // 自己解析——直连的 DNS 就真的不经过 Open-Box 了。列不出来就照旧全局转发。
+    // 代理面能被逐条列出来时,只把那几个域名转给内核,其余交回路由器自己解析——
+    // 直连的 DNS 就真的不经过 Open-Box 了。列不出来就照旧全局转发。
+    // 成员表从刚生成的配置里取(兜底 selector 的成员就是那一份),不另算一遍。
+    const fallbackSelector = (config.outbounds || []).find((o) => o.tag === FALLBACK_TAG)
     await applyDnsTakeover(ctx, paths, {
       mode: dnsMode,
-      forwardDomains: dnsmasqForwardDomains(profile.routing),
+      forwardDomains: dnsmasqForwardDomains(profile.routing, fallbackSelector ? fallbackSelector.outbounds : []),
     })
 
     // 6. 防火墙

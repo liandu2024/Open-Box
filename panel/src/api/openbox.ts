@@ -8,32 +8,11 @@ export interface OpenboxProfileRoutingCategory {
   target: string
 }
 
-// 地区分流:路由器本身在哪。它决定"没被策略挑走的流量"往哪走。
-// 预置中国大陆/香港澳门/其他地区三条,用户可以改名、改规则、增删和拖拽排序。
+// 兜底站点集的默认选中项。'proxy' 是迁移留下的占位(表示"第一个节点组"),
+// 其余就是一个出站名(direct / 某个节点组 / block)。
 export type OpenboxRuleAction = 'direct' | 'proxy'
-export const REGION_RULE_TYPES = ['geosite', 'geoip', 'domain', 'domainSuffix', 'ipcidr'] as const
-export type OpenboxRegionRuleType = (typeof REGION_RULE_TYPES)[number]
 
-// 一条地区规则:类型 + 值 + 动作。数组顺序就是匹配顺序(内核首条命中生效)。
-export interface OpenboxRegionRule {
-  type: OpenboxRegionRuleType
-  value: string
-  action: OpenboxRuleAction
-}
-
-export interface OpenboxRegion {
-  id: string
-  name: string
-  rules?: OpenboxRegionRule[]
-  // 一条都没命中的流量走哪
-  catchAll?: OpenboxRuleAction
-  // 改版前的形状(规则集 + 它们走哪 + 其余走哪),服务端读出来时会翻译成上面的 rules
-  rulesets?: string[]
-  target?: OpenboxRuleAction
-  fallback?: OpenboxRuleAction
-}
-
-// 一条策略 = 一组匹配条件 + 内核里一个同名 selector。策略不记具体节点:
+// 一个站点集 = 一组匹配规则 + 内核里一个同名 selector。它不记具体节点:
 // selector 的成员由 outboundOptions 决定,用户在代理页点选。
 export interface OpenboxRoutingPolicy {
   id: string
@@ -48,7 +27,7 @@ export interface OpenboxRoutingPolicy {
   ipCidr?: string[]
 }
 
-// 「出站」页签:每条策略的 selector 里能选到哪几类东西
+// 「出站」页签:每个站点集的 selector 里能选到哪几类东西
 export interface OpenboxOutboundOptions {
   direct?: boolean
   reject?: boolean
@@ -57,8 +36,9 @@ export interface OpenboxOutboundOptions {
 
 export interface OpenboxProfileRouting {
   proxyTag?: string
-  regions?: OpenboxRegion[]
-  // 当前选中的地区;老档案里可能只有 regionMode('CN'/'HKMO'/'OTHER'),服务端会认
+  fallbackDefault?: string
+  // 改版前的地区层;服务端读出来时会翻译成站点集,并把结果写回档案
+  regions?: unknown[]
   regionId?: string
   regionMode?: string
   outboundOptions?: OpenboxOutboundOptions

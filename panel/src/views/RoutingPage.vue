@@ -5,7 +5,8 @@
         class="flex flex-col gap-3 p-3"
         :style="padding"
       >
-        <!-- 四个页签,按改动频率从高到低排:站点集最常改,地区设一次,出站基本不动。 -->
+        <!-- 站点集就是全部分流规则(含系统兜底的「其他」),所以没有单独的"分流"页签:
+             一条流量走哪,只由站点集的顺序 + 它在代理页选中的线路决定。 -->
         <div
           role="tablist"
           class="tabs-box tabs tabs-sm w-fit"
@@ -36,13 +37,8 @@
         </p>
 
         <template v-else-if="profile">
-          <RoutingRegionCard
-            v-if="pageTab === 'rules'"
-            :profile="profile"
-            :patch-profile="patchProfile"
-          />
           <RoutingPoliciesCard
-            v-else-if="pageTab === 'policies'"
+            v-if="pageTab === 'policies'"
             :profile="profile"
             :patch-profile="patchProfile"
           />
@@ -69,7 +65,6 @@ import { fetchNodeGroups, fetchProfile, saveProfile } from '@/api/openbox'
 import Ipv6Card from '@/components/routing/Ipv6Card.vue'
 import RoutingOutboundsCard from '@/components/routing/RoutingOutboundsCard.vue'
 import RoutingPoliciesCard from '@/components/routing/RoutingPoliciesCard.vue'
-import RoutingRegionCard from '@/components/routing/RoutingRegionCard.vue'
 import { usePaddingForViews } from '@/composables/paddingViews'
 import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -84,10 +79,9 @@ const profile = ref<OpenboxProfile | null>(null)
 const loading = ref(true)
 const loadError = ref('')
 
-type PageTab = 'rules' | 'policies' | 'outbounds' | 'other'
+type PageTab = 'policies' | 'outbounds' | 'other'
 const PAGE_TABS: { key: PageTab; labelKey: string }[] = [
   { key: 'policies', labelKey: 'routingPoliciesTab' },
-  { key: 'rules', labelKey: 'routing' },
   { key: 'outbounds', labelKey: 'routingOutboundsTab' },
   { key: 'other', labelKey: 'routingOtherTab' },
 ]

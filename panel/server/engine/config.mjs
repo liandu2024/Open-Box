@@ -2,7 +2,7 @@ import { emitOutbound } from './emit-outbound.mjs'
 import { emitEndpoint } from './emit-endpoint.mjs'
 import { emitGroupOutbounds } from './emit-groups.mjs'
 import { emitUserGroups } from './user-groups.mjs'
-import { REJECT_TAG, normalizeRouting, policyOutboundOptions } from './routing-model.mjs'
+import { REJECT_TAG, effectiveOutbound, normalizeRouting, policyOutboundOptions } from './routing-model.mjs'
 import { buildRoute } from './routing.mjs'
 import { buildDns } from './dns.mjs'
 
@@ -23,18 +23,25 @@ export const buildConfig = ({ nodes, regionGroups, profile, userGroups, systemDn
   // 等订阅刷出节点自动接管(理由见 user-groups.mjs)。
   const { outbounds: userGroupOutbounds } = emitUserGroups(userGroups || [], nodes, { proxyTag })
 
-  // 每条策略在内核里就是一个同名 selector,成员是「出站」页签里选中的那几类
+  // 每个站点集在内核里就是一个同名 selector,成员是「出站」页签里选中的那几类
   // (直连 / 各节点组 / 拒绝)。用户在代理页点选,和 Clash 的策略组用法一致——
-  // 所以策略本身不记节点,只记"能选哪些"。
+  // 所以站点集本身不记节点,只记"能选哪些"。最后固定跟一个兜底的「其他」:
+  // route.final 指向它,上面都没命中的流量走它。
   const routingConf = normalizeRouting(profile.routing)
   const groupTags = [...regionGroups.map((g) => g.name), ...userGroupOutbounds.map((g) => g.tag)]
   const policyMemberTags = policyOutboundOptions(routingConf.outboundOptions, groupTags)
-  const policyOutbounds = routingConf.policies.map((policy) => {
-    const out = { type: 'selector', tag: policy.name, outbounds: policyMemberTags }
-    // default 必须是成员之一,否则内核启动时找不到;不合法就让它自然落到第一个成员
-    if (policy.default && policyMemberTags.includes(policy.default)) out.default = policy.default
-    return out
+  // default 必须是成员之一,否则内核启动时找不到。effectiveOutbound 负责把"不在成员
+  // 表里"的情况(空值、已删掉的组、迁移留下的 'proxy' 占位)算成一个真实存在的成员。
+  const asSelector = (tag, preferred) => ({
+    type: 'selector',
+    tag,
+    outbounds: policyMemberTags,
+    default: effectiveOutbound(preferred, policyMemberTags),
   })
+  const policyOutbounds = [
+    ...routingConf.policies.map((p) => asSelector(p.name, p.default)),
+    asSelector(routingConf.fallback.name, routingConf.fallback.default),
+  ]
   // 「拒绝」只在真被用到时才生成:没有策略能选它的话,配置里多一个用不上的出站
   const needsReject = policyMemberTags.includes(REJECT_TAG)
 
@@ -54,7 +61,9 @@ export const buildConfig = ({ nodes, regionGroups, profile, userGroups, systemDn
 
   const dnsMode = (profile.dns && profile.dns.mode) || 'hijack'
   const { route } = buildRoute(sanitizedRouting, profile.rulesetDir, { dnsMode })
-  const dns = buildDns(profile, { systemDns })
+  // groupTags 传给 DNS:它要按"这个站点集默认走哪"决定用直连还是代理侧解析,
+  // 而"默认走哪"在 default 为空时取决于成员表的第一项(见 effectiveOutbound)。
+  const dns = buildDns(profile, { systemDns, groupTags })
 
   const tunAddress = profile.ipv6 ? [TUN_V4, TUN_V6] : [TUN_V4]
 

@@ -15,8 +15,8 @@ const memStore = () => {
 
 // 起一个绑定临时端口的最小 express app,注册待测路由,返回 baseUrl 供 fetch 打真实 HTTP 请求;
 // close() 必须在 finally 里调用,防止测试遗留监听中的 server。
-const startApp = async () => {
-  const store = memStore()
+const startApp = async (storeOverride) => {
+  const store = storeOverride || memStore()
   const app = express()
   registerProfileRoutes(app, { store })
   const server = app.listen(0)
@@ -154,13 +154,22 @@ test('validateProfilePatch routing.directRulesets 合法 tag(字母数字点下�
 
 // -------- HTTP 路由集成测试 --------
 
-test('GET /api/openbox/profile 返回默认 profile', async () => {
+test('GET /api/openbox/profile 返回默认 profile(地区种子已翻译成站点集)', async () => {
   const { baseUrl, close } = await startApp()
   try {
     const res = await fetch(`${baseUrl}/api/openbox/profile`)
     assert.equal(res.status, 200)
     const body = await res.json()
-    assert.deepEqual(body.profile, DEFAULT_PROFILE)
+    // 除了 routing.policies / fallbackDefault,其余和默认档案一致
+    const { routing, ...rest } = body.profile
+    const { routing: defRouting, ...defRest } = DEFAULT_PROFILE
+    assert.deepEqual(rest, defRest)
+    assert.deepEqual({ ...routing, policies: undefined, fallbackDefault: undefined },
+                     { ...defRouting, policies: undefined, fallbackDefault: undefined })
+    // 全新安装的默认:中国站点直连,其余走代理
+    assert.deepEqual(routing.policies.map((p) => [p.name, p.default, p.rulesets]),
+                     [['中国大陆·直连', 'direct', ['geosite-cn', 'geoip-cn']]])
+    assert.equal(routing.fallbackDefault, 'proxy')
   } finally {
     await close()
   }
@@ -306,9 +315,9 @@ test('GET /defaults?region=CN → 中国大陆那一档', async () => {
     const res = await fetch(`${baseUrl}/api/openbox/profile/defaults?region=CN`)
     assert.equal(res.status, 200)
     const body = await res.json()
-    assert.equal(body.defaults.regionId, 'cn')
-    assert.equal(body.defaults.routing.regionId, 'cn')
-    // 规则不再写进档案:由选中的那条地区自己带着(engine/routing.mjs)
+    assert.equal(body.defaults.fallbackDefault, 'proxy')
+    assert.equal(body.defaults.routing.fallbackDefault, 'proxy')
+    // 规则不再写进档案:内置的站点集种子在 store 的 DEFAULT_PROFILE 里
     assert.ok(!('directRulesets' in body.defaults.routing))
     assert.ok(!('fallback' in body.defaults.routing))
   } finally {
@@ -321,7 +330,7 @@ test('GET /defaults?region=HKMO → 香港澳门那一档', async () => {
   try {
     const res = await fetch(`${baseUrl}/api/openbox/profile/defaults?region=HKMO`)
     const body = await res.json()
-    assert.equal(body.defaults.regionId, 'hkmo')
+    assert.equal(body.defaults.fallbackDefault, 'direct')
   } finally {
     await close()
   }
@@ -332,7 +341,7 @@ test('GET /defaults?region=不认识的 → 回落到中国大陆', async () => 
   try {
     const res = await fetch(`${baseUrl}/api/openbox/profile/defaults?region=US`)
     const body = await res.json()
-    assert.equal(body.defaults.regionId, 'cn')
+    assert.equal(body.defaults.fallbackDefault, 'proxy')
   } finally {
     await close()
   }
@@ -344,7 +353,7 @@ test('GET /defaults 缺 region → 按 CN 兜底', async () => {
     const res = await fetch(`${baseUrl}/api/openbox/profile/defaults`)
     assert.equal(res.status, 200)
     const body = await res.json()
-    assert.equal(body.defaults.regionId, 'cn')
+    assert.equal(body.defaults.fallbackDefault, 'proxy')
   } finally {
     await close()
   }
@@ -356,7 +365,7 @@ test('GET /defaults?region=hkmo → 大小写归一化', async () => {
     const res = await fetch(`${baseUrl}/api/openbox/profile/defaults?region=hkmo`)
     assert.equal(res.status, 200)
     const body = await res.json()
-    assert.equal(body.defaults.regionId, 'hkmo')
+    assert.equal(body.defaults.fallbackDefault, 'direct')
   } finally {
     await close()
   }
@@ -398,26 +407,39 @@ test('PUT 校验:域名条件不限制字符(带下划线、斜杠的 CIDR 都�
   }
 })
 
-test('PUT 校验:地区列表要有 id/name,规则类型要认得、geo 名不能带路径', async () => {
+test('PUT 校验:兜底只收字符串;「其他」是兜底占着的名字,站点集不能重名', async () => {
   const { baseUrl, close } = await startApp()
   try {
-    const region = (rules, over = {}) => ({ routing: { regions: [{ id: 'jp', name: '日本', catchAll: 'proxy', rules, ...over }], regionId: 'jp' } })
-    assert.equal((await putJson(baseUrl, '/api/openbox/profile', region([
-      { type: 'geosite', value: 'jp', action: 'direct' },
-      { type: 'domainSuffix', value: 'nhk.or.jp', action: 'proxy' },
-    ]))).status, 200)
-    assert.equal((await putJson(baseUrl, '/api/openbox/profile', { routing: { regions: [{ name: '没有 id' }] } })).status, 400)
-    // geosite/geoip 的值会拼成 .srs 文件名,不能带路径
-    assert.equal((await putJson(baseUrl, '/api/openbox/profile', region([{ type: 'geosite', value: '../../etc/passwd', action: 'direct' }]))).status, 400)
-    // 上游真有的那些带 @ / ! 的名字要能存下去(geosite-36kr@ads、geosite-geolocation-!cn)
-    assert.equal((await putJson(baseUrl, '/api/openbox/profile', region([
-      { type: 'geosite', value: 'geolocation-!cn', action: 'proxy' },
-      { type: 'geosite', value: '36kr@ads', action: 'direct' },
-    ]))).status, 200)
-    assert.equal((await putJson(baseUrl, '/api/openbox/profile', region([{ type: '乱写的', value: 'x', action: 'direct' }]))).status, 400)
-    assert.equal((await putJson(baseUrl, '/api/openbox/profile', region([{ type: 'domain', value: '', action: 'direct' }]))).status, 400)
-    assert.equal((await putJson(baseUrl, '/api/openbox/profile', region([{ type: 'domain', value: 'a.com', action: '走哪儿' }]))).status, 400)
-    assert.equal((await putJson(baseUrl, '/api/openbox/profile', region([], { catchAll: '走哪儿' }))).status, 400)
+    assert.equal((await putJson(baseUrl, '/api/openbox/profile', { routing: { fallbackDefault: 'direct' } })).status, 200)
+    assert.equal((await putJson(baseUrl, '/api/openbox/profile', { routing: { fallbackDefault: 3 } })).status, 400)
+    assert.equal(
+      (await putJson(baseUrl, '/api/openbox/profile', {
+        routing: { policies: [{ id: 'x', name: '其他', rulesets: ['geosite-cn'] }] },
+      })).status,
+      400,
+    )
+  } finally {
+    await close()
+  }
+})
+
+test('GET 时把地区翻译成站点集写回档案:界面看到的和内核跑的必须是同一份', async () => {
+  const store = memStore()
+  store.setProfile({
+    routing: {
+      policies: [{ id: 'g', name: '谷歌', rulesets: ['geosite-google'] }],
+      regionId: 'cn',
+      regions: [{ id: 'cn', name: '中国大陆', catchAll: 'proxy', rules: [{ type: 'geosite', value: 'cn', action: 'direct' }] }],
+    },
+  })
+  const { baseUrl, close } = await startApp(store)
+  try {
+    const body = await (await fetch(`${baseUrl}/api/openbox/profile`)).json()
+    assert.deepEqual(body.profile.routing.policies.map((p) => p.name), ['谷歌', '中国大陆·直连'])
+    assert.equal(body.profile.routing.fallbackDefault, 'proxy')
+    // 已经落库,再读一次不会再长出一个
+    const again = await (await fetch(`${baseUrl}/api/openbox/profile`)).json()
+    assert.deepEqual(again.profile.routing.policies.map((p) => p.name), ['谷歌', '中国大陆·直连'])
   } finally {
     await close()
   }

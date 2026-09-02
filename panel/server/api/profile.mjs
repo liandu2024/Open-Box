@@ -1,5 +1,5 @@
 import express from 'express'
-import { BUILTIN_REGIONS, REGION_RULE_ACTIONS, REGION_RULE_TYPES } from '../engine/routing-model.mjs'
+import { FALLBACK_TAG, normalizeRouting } from '../engine/routing-model.mjs'
 
 const isPlainObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v)
 const isString = (v) => typeof v === 'string'
@@ -64,13 +64,10 @@ export const validateProfilePatch = (patch) => {
       return 'routing.adRuleset must match /^[A-Za-z0-9._-]+$/'
     }
 
-    if ('regionId' in routing && !isString(routing.regionId)) {
-      return 'routing.regionId must be a string'
-    }
-
-    if ('regions' in routing) {
-      const error = validateRegions(routing.regions)
-      if (error) return error
+    // 兜底站点集的默认选中项。'proxy' 是迁移留下的占位(第一个节点组),
+    // 其余就是一个出站名(direct / 某个节点组 / block),叫什么由用户的组名决定。
+    if ('fallbackDefault' in routing && !isString(routing.fallbackDefault)) {
+      return 'routing.fallbackDefault must be a string'
     }
 
     if ('outboundOptions' in routing) {
@@ -111,6 +108,10 @@ const validatePolicies = (policies) => {
   for (const p of policies) {
     if (!isPlainObject(p)) return 'routing.policies entries must be objects'
     if (!isString(p.name) || !p.name.trim()) return 'routing.policies[].name is required'
+    // 「其他」是兜底站点集占着的名字:重名会在内核里生成两个同名出站
+    if (p.name.trim() === FALLBACK_TAG) {
+      return `routing.policies[].name "${FALLBACK_TAG}" is reserved for the built-in fallback`
+    }
     if ('default' in p && !isString(p.default)) return 'routing.policies[].default must be a string'
     if ('icon' in p && !isString(p.icon)) return 'routing.policies[].icon must be a string'
     if ('rulesets' in p) {
@@ -128,58 +129,23 @@ const validatePolicies = (policies) => {
   return null
 }
 
-const REGION_TARGETS = new Set(REGION_RULE_ACTIONS)
-
-// 一条地区规则:类型 + 值 + 动作。geosite/geoip 的值会被拼成 <type>-<value>.srs 的
-// 文件名,所以那两类要过和规则集同一道字符校验(路径穿越防线,不是排版讲究)。
-const validateRegionRule = (rule) => {
-  if (!isPlainObject(rule)) return 'routing.regions[].rules entries must be objects'
-  if (!REGION_RULE_TYPES.includes(rule.type)) {
-    return `routing.regions[].rules[].type must be one of ${REGION_RULE_TYPES.join(', ')}`
-  }
-  if (!isString(rule.value) || !rule.value.trim()) {
-    return 'routing.regions[].rules[].value must be a non-empty string'
-  }
-  if ((rule.type === 'geosite' || rule.type === 'geoip') && !isValidRulesetTag(rule.value)) {
-    return 'routing.regions[].rules[].value must match /^[A-Za-z0-9._-]+$/ for geosite/geoip'
-  }
-  if ('action' in rule && !REGION_TARGETS.has(rule.action)) {
-    return 'routing.regions[].rules[].action must be one of direct, proxy'
-  }
-  return null
-}
-
-// 地区条目校验。名字直接当界面上的标签用,不能是空的。
-const validateRegions = (regions) => {
-  if (!Array.isArray(regions)) return 'routing.regions must be an array'
-  for (const r of regions) {
-    if (!isPlainObject(r)) return 'routing.regions entries must be objects'
-    if (!isString(r.id) || !r.id.trim()) return 'routing.regions[].id must be a non-empty string'
-    if (!isString(r.name) || !r.name.trim()) return 'routing.regions[].name must be a non-empty string'
-    if ('rules' in r) {
-      if (!Array.isArray(r.rules)) return 'routing.regions[].rules must be an array'
-      for (const rule of r.rules) {
-        const error = validateRegionRule(rule)
-        if (error) return error
-      }
-    }
-    if ('catchAll' in r && !REGION_TARGETS.has(r.catchAll)) {
-      return 'routing.regions[].catchAll must be one of direct, proxy'
-    }
-  }
-  return null
-}
-
 // 首次引导用的区域推荐默认值。CN 走境内直连(direct DNS + geosite/geoip-cn + PROXY 兜底);
 // 其它区域默认更保守——不启用 DNS 分流,失败时直接落回直连,直连规则集按区域代号派生。
+// 首次引导只回答一件事:"其余流量走哪"。中国大陆那些具体规则由内置的站点集种子
+// 提供(见 store/openbox-store.mjs),这里不替用户改写规则。
 const buildRegionDefaults = (regionParam) => {
   const raw = isString(regionParam) && regionParam.trim() ? regionParam.trim().toUpperCase() : 'CN'
-  const byMode = { CN: 'cn', HKMO: 'hkmo', OTHER: 'other' }
-  const regionId = byMode[raw] || 'cn'
-  // 只挑中内置的哪一条地区,不替用户改写规则:规则由地区条目自己带着
-  // (见 engine/routing.mjs),不需要再往档案里塞一堆 directRulesets。
-  const region = BUILTIN_REGIONS.find((r) => r.id === regionId)
-  return { region: region.name, regionId, dns: { split: true }, routing: { regionId } }
+  const names = { CN: '中国大陆', HKMO: '香港澳门', OTHER: '其他地区' }
+  // 不认识的地区按中国大陆算(引导页只有这三个选项,别的值只可能是手输/老链接)
+  const region = names[raw] ? raw : 'CN'
+  // 人在国内:没被站点集挑走的走代理;境外反过来
+  const fallbackDefault = region === 'CN' ? 'proxy' : 'direct'
+  return {
+    region: names[region],
+    fallbackDefault,
+    dns: { split: true },
+    routing: { fallbackDefault },
+  }
 }
 
 export const registerProfileRoutes = (app, { store } = {}) => {
@@ -192,8 +158,21 @@ export const registerProfileRoutes = (app, { store } = {}) => {
     res.json({ defaults: buildRegionDefaults(req.query.region) })
   })
 
+  // 地区层退役的一次性升级:老档案里的地区被翻译成站点集(engine/routing-model.mjs),
+  // 这里把翻译结果写回档案。不写回的话,界面看到的是老的 policies 数组、内核跑的却是
+  // 翻译后的那一份——用户会在代理页看到一个界面上根本不存在的 selector。
+  // fallbackDefault 一旦落库就说明迁过了,之后这段不再动任何东西(幂等)。
+  const migrateOnce = () => {
+    const profile = store.getProfile()
+    if (isString(profile.routing?.fallbackDefault) && profile.routing.fallbackDefault) return profile
+    const conf = normalizeRouting(profile.routing)
+    return store.setProfile({
+      routing: { policies: conf.policies, fallbackDefault: conf.fallback.default },
+    })
+  }
+
   router.get('/', (_req, res) => {
-    res.json({ profile: store.getProfile() })
+    res.json({ profile: migrateOnce() })
   })
 
   router.put('/', (req, res) => {

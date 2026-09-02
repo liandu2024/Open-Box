@@ -1,4 +1,4 @@
-import { normalizeRouting, regionRuleTag } from './routing-model.mjs'
+import { effectiveOutbound, normalizeRouting, policyOutboundOptions } from './routing-model.mjs'
 
 const extractHost = (url) => {
   // "https://1.1.1.1/dns-query" -> "1.1.1.1";裸 host 原样返回
@@ -56,29 +56,26 @@ export const buildDns = (profile, options = {}) => {
     rules.push({ rule_set: conf.adRuleset, action: 'reject' })
   }
 
-  // 每条策略一台自己的 DNS 服务器,detour 指向同名 selector——「代理的 DNS 要到具体
-  // 指定的节点」就是靠这个:用户在代理页把策略切到哪条线路,它的域名解析也跟着走那条。
+  // 每个站点集一台自己的 DNS 服务器,detour 指向同名 selector——「代理的 DNS 要到具体
+  // 指定的节点」就是靠这个:用户在代理页把它切到哪条线路,域名解析也跟着走那条。
+  // 默认就选直连的集合不给专属服务器:直连的东西该用本地解析,绕一圈代理没有意义。
+  const members = policyOutboundOptions(conf.outboundOptions, options.groupTags || [])
   conf.policies.forEach((policy, index) => {
     if (!hasDomainCondition(policy)) return
+    if (effectiveOutbound(policy.default, members) === 'direct') {
+      rules.push(policyDnsRule(policy, 'dns-direct'))
+      return
+    }
     const tag = `dns-policy-${index}`
     servers.push({ type: 'https', tag, server: proxyHost, detour: policy.name })
     rules.push(policyDnsRule(policy, tag))
   })
 
-  // 地区层,和路由规则一一对应:一条规则走哪个出站,它的域名就用哪边的 DNS。
-  // ip_cidr/geoip 不进 DNS 规则:解析阶段还没有 IP,拿它当条件永远不会命中。
-  const region = conf.region
-  for (const rule of (region ? region.rules : [])) {
-    const server = rule.action === 'proxy' ? 'dns-proxy' : 'dns-direct'
-    if (rule.type === 'geosite') rules.push({ rule_set: regionRuleTag(rule), server })
-    else if (rule.type === 'domainSuffix') rules.push({ domain_suffix: [rule.value], server })
-    else if (rule.type === 'domain') rules.push({ domain: [rule.value], server })
-  }
-
   return {
     servers,
     rules,
-    final: region && region.catchAll === 'proxy' ? 'dns-proxy' : 'dns-direct',
+    // 兜底:上面都没命中的域名,按兜底站点集默认走哪来定用哪边解析
+    final: effectiveOutbound(conf.fallback.default, members) === 'direct' ? 'dns-direct' : 'dns-proxy',
     strategy,
   }
 }
