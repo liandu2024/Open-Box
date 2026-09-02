@@ -197,19 +197,6 @@
               <TrashIcon class="h-4 w-4" />
             </button>
           </div>
-
-          <div class="flex flex-wrap items-center gap-1.5">
-            <span class="text-base-content/60 text-xs">{{ $t('routingCategoryPresetsLabel') }}</span>
-            <button
-              v-for="preset in CATEGORY_PRESETS"
-              :key="preset.ruleset"
-              type="button"
-              class="badge badge-outline badge-sm cursor-pointer"
-              @click="fillPreset(preset)"
-            >
-              {{ $t(preset.labelKey) }}
-            </button>
-          </div>
         </div>
 
         <div class="flex justify-end gap-2">
@@ -291,15 +278,6 @@ interface RuleRow {
 }
 let ruleKeySeed = 0
 
-// 沿用改版前那几个「快速填入」:点一下把规则集填进去,不直接保存。
-const CATEGORY_PRESETS = [
-  { labelKey: 'routingPresetAI', ruleset: 'geosite-openai' },
-  { labelKey: 'routingPresetStreaming', ruleset: 'geosite-netflix' },
-  { labelKey: 'routingPresetGoogle', ruleset: 'geosite-google' },
-  { labelKey: 'routingPresetGithub', ruleset: 'geosite-github' },
-  { labelKey: 'routingPresetTelegram', ruleset: 'geosite-telegram' },
-] as const
-
 const policies = computed<OpenboxRoutingPolicy[]>(() => props.profile.routing.policies || [])
 // 拖拽要求 v-model 绑一个 ref(vuedraggable 会整个替换数组),所以列表在本地存一份
 const rows = ref<OpenboxRoutingPolicy[]>([])
@@ -345,13 +323,6 @@ const openEditor = (policy: OpenboxRoutingPolicy | null) => {
   }
   if (!rules.value.length) addRule()
   showEditor.value = true
-}
-
-// 快速填入:补一行 geosite,已经有了就不重复加
-const fillPreset = (preset: { ruleset: string }) => {
-  const row = rulesetToRow(preset.ruleset)
-  const exists = rules.value.some((r) => r.type === row.type && r.value === row.value)
-  if (!exists) rules.value.push(row)
 }
 
 const persist = async (next: OpenboxRoutingPolicy[]) => {

@@ -86,12 +86,12 @@ const loadError = ref('')
 
 type PageTab = 'rules' | 'policies' | 'outbounds' | 'other'
 const PAGE_TABS: { key: PageTab; labelKey: string }[] = [
-  { key: 'rules', labelKey: 'routing' },
   { key: 'policies', labelKey: 'routingPoliciesTab' },
+  { key: 'rules', labelKey: 'routing' },
   { key: 'outbounds', labelKey: 'routingOutboundsTab' },
   { key: 'other', labelKey: 'routingOtherTab' },
 ]
-const pageTab = ref<PageTab>('rules')
+const pageTab = ref<PageTab>('policies')
 
 // 「节点组」页里建的组名。策略的可选出站与「出站」页签的预览都用它。
 const groupNames = ref<string[]>([])

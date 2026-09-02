@@ -554,17 +554,11 @@ const en = {
   routingPolicyDeleteTitle: 'Delete policy',
   routingPolicyDeleteConfirm: 'Delete policy “{name}”? Its selector disappears from the kernel and from the Proxies page.',
   routingSaveFailed: "Couldn't save: {message}",
-  routingCategoryPresetsLabel: 'Quick fill:',
   routingRulesetInvalidChars: "Only letters, numbers, '.', '_', '-' are allowed.",
   routingAdBlockTitle: 'Block ads',
   routingAdBlockDescription: 'When on, sites matching the ad rule set are blocked outright instead of loading.',
   routingAdRulesetLabel: 'Ad rule set',
   routingPolicyGroupsLoadFailed: "Couldn't load proxy groups: {message}",
-  routingPresetAI: 'AI services',
-  routingPresetStreaming: 'Streaming',
-  routingPresetGoogle: 'Google',
-  routingPresetGithub: 'GitHub',
-  routingPresetTelegram: 'Telegram',
 
   // --- Region defaults card ---
   routingRegionTitle: 'Where this router is',

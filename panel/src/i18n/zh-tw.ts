@@ -551,17 +551,11 @@ const zhTW: LANG_MESSAGE = {
   routingPolicyDeleteTitle: '刪除策略',
   routingPolicyDeleteConfirm: '確定刪除策略「{name}」?核心裡那個同名選擇器會一起消失,「代理」頁上也就沒有它了。',
   routingSaveFailed: '\u6c92\u5132\u5b58\u6210\u529f:{message}',
-  routingCategoryPresetsLabel: '\u5feb\u901f\u586b\u5165:',
   routingRulesetInvalidChars: '\u53ea\u80fd\u7528\u82f1\u6587\u5b57\u6bcd\u3001\u6578\u5b57\u3001"."\u3001"_"\u3001"-"\u3002',
   routingAdBlockTitle: '\u5c01\u9396\u5ee3\u544a',
   routingAdBlockDescription: '\u958b\u555f\u5f8c,\u7b26\u5408\u5ee3\u544a\u898f\u5247\u96c6\u7684\u7db2\u7ad9\u6703\u88ab\u76f4\u63a5\u62d2\u7d55,\u4e0d\u6703\u8f09\u5165\u5167\u5bb9\u3002',
   routingAdRulesetLabel: '\u5ee3\u544a\u898f\u5247\u96c6',
   routingPolicyGroupsLoadFailed: '\u6c92\u8f09\u5165\u51fa\u7b56\u7565\u7d44:{message}',
-  routingPresetAI: 'AI \u670d\u52d9',
-  routingPresetStreaming: '\u4e32\u6d41\u5a92\u9ad4',
-  routingPresetGoogle: 'Google',
-  routingPresetGithub: 'GitHub',
-  routingPresetTelegram: 'Telegram',
 
   // --- 地區預設值卡片 ---
   routingRegionTitle: '地區分流',
