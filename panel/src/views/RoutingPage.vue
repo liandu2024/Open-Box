@@ -2,7 +2,7 @@
   <div class="flex h-full min-h-0 flex-col overflow-hidden">
     <div class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
       <div
-        class="flex flex-col gap-3 p-3"
+        class="flex flex-col gap-2 p-2"
         :style="padding"
       >
         <!-- 分流设置 = 站点集列表(含系统兜底的「其他」):一条流量走哪,只由站点集的顺序 +

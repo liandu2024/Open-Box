@@ -4,7 +4,7 @@
       class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto"
       :style="padding"
     >
-      <div class="flex flex-col gap-3 p-3">
+      <div class="flex flex-col gap-2 p-2">
         <div
           v-if="loading && !status"
           class="flex justify-center py-14"
