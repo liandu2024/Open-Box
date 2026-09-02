@@ -144,6 +144,8 @@
           </option>
         </select>
       </div>
+      <!-- GeneralSettings 把它的几行(空闲 UDP / 修改密码 / IP 信息 API)放进来,和上面同一个网格 -->
+      <slot />
     </div>
     <!-- 「更新面板 / 自动更新」已去掉:面板由 Open-Box 自己发布,sing-box 也没有 /upgrade/ui 接口 -->
   </div>
