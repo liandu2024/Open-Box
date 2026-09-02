@@ -29,6 +29,7 @@
       <template #item="{ element: policy }">
         <div
           class="card bg-base-100 border-base-content/10 flex flex-row items-center gap-2 border p-3"
+          :class="policy.enabled === false && 'opacity-50'"
         >
           <Bars3Icon class="drag-handle text-base-content/40 h-4 w-4 shrink-0 cursor-move" />
           <CountryFlag
@@ -37,11 +38,31 @@
             :size="18"
           />
           <div class="min-w-0 flex-1">
-            <div class="truncate text-base font-medium">{{ policy.name }}</div>
+            <div class="flex items-center gap-2">
+              <span class="truncate text-base font-medium">{{ policy.name }}</span>
+              <StatusBadge
+                v-if="policy.enabled === false"
+                :on="false"
+                on-text=""
+                :off-text="$t('groupDisabledBadge')"
+              />
+            </div>
             <div class="text-base-content/60 mt-0.5 truncate text-xs">
               {{ conditionSummary(policy) }}
             </div>
           </div>
+          <!-- 启用/停用:停用的留在列表里,不进内核配置 -->
+          <button
+            type="button"
+            class="btn btn-ghost btn-square btn-sm"
+            :class="policy.enabled === false ? 'text-base-content/40' : 'text-success'"
+            v-tip="$t(policy.enabled === false ? 'groupEnable' : 'groupDisable')"
+            :aria-label="$t(policy.enabled === false ? 'groupEnable' : 'groupDisable')"
+            :disabled="saving"
+            @click="toggleEnabled(policy)"
+          >
+            <PowerIcon class="h-4 w-4" />
+          </button>
           <button
             type="button"
             class="btn btn-ghost btn-square btn-sm"
@@ -71,17 +92,106 @@
     >
       <span class="w-4 shrink-0" />
       <CountryFlag
-        :code="FALLBACK_ICON"
+        :code="fallbackIcon"
         :size="18"
       />
       <div class="min-w-0 flex-1">
-        <div class="truncate text-base font-medium">{{ FALLBACK_NAME }}</div>
+        <div class="flex items-center gap-2">
+          <span class="truncate text-base font-medium">{{ fallbackName }}</span>
+          <span class="badge badge-ghost badge-sm shrink-0">{{ $t('routingFallbackBadge') }}</span>
+        </div>
         <div class="text-base-content/60 mt-0.5 truncate text-xs">
           {{ $t('routingFallbackHint') }}
         </div>
       </div>
-      <span class="badge badge-ghost badge-sm shrink-0">{{ $t('routingFallbackBadge') }}</span>
+      <!-- 三个图标和普通站点集对齐;兜底不能停用、不能删除,这两个置灰,只能改名字和图标 -->
+      <span v-tip="$t('routingFallbackNoDisable')">
+        <button
+          type="button"
+          class="btn btn-ghost btn-square btn-sm opacity-30"
+          :aria-label="$t('routingFallbackNoDisable')"
+          disabled
+        >
+          <PowerIcon class="h-4 w-4" />
+        </button>
+      </span>
+      <button
+        type="button"
+        class="btn btn-ghost btn-square btn-sm"
+        v-tip="$t('edit')"
+        :aria-label="$t('edit')"
+        @click="openFallbackEditor"
+      >
+        <PencilSquareIcon class="h-4 w-4" />
+      </button>
+      <span v-tip="$t('routingFallbackNoDelete')">
+        <button
+          type="button"
+          class="btn btn-ghost btn-square btn-sm opacity-30"
+          :aria-label="$t('routingFallbackNoDelete')"
+          disabled
+        >
+          <TrashIcon class="h-4 w-4" />
+        </button>
+      </span>
     </div>
+
+    <!-- 兜底站点集:只能改名字和图标 -->
+    <DialogWrapper
+      v-model="showFallbackEditor"
+      :title="$t('routingFallbackEditTitle')"
+      box-class="w-full max-w-md"
+    >
+      <div
+        v-if="fallbackDraft"
+        class="flex flex-col gap-4"
+      >
+        <div class="flex items-end gap-2">
+          <div class="flex flex-col gap-1">
+            <label class="text-xs font-medium">{{ $t('groupIconLabel') }}</label>
+            <div class="w-56">
+              <CountrySelect
+                v-model="fallbackDraft.icon"
+                clearable
+                globes
+                brands
+                :placeholder="$t('groupIconNone')"
+              />
+            </div>
+          </div>
+          <div class="flex min-w-0 flex-1 flex-col gap-1">
+            <label class="text-xs font-medium">{{ $t('routingPolicyNameLabel') }}</label>
+            <input
+              v-model="fallbackDraft.name"
+              type="text"
+              class="input input-sm w-full"
+            />
+          </div>
+        </div>
+        <p class="text-base-content/50 text-xs">{{ $t('routingFallbackEditHint') }}</p>
+        <div class="flex justify-end gap-2">
+          <button
+            type="button"
+            class="btn btn-sm"
+            @click="showFallbackEditor = false"
+          >
+            {{ $t('cancel') }}
+          </button>
+          <button
+            type="button"
+            class="btn btn-primary btn-sm"
+            :disabled="saving"
+            @click="saveFallback"
+          >
+            <span
+              v-if="saving"
+              class="loading loading-spinner loading-xs"
+            />
+            {{ $t('save') }}
+          </button>
+        </div>
+      </div>
+    </DialogWrapper>
 
     <!-- 删掉一个站点集会连带删掉内核里那个同名 selector(代理页上就没了),先确认一次 -->
     <DialogWrapper
@@ -250,7 +360,8 @@ import CountrySelect from '@/components/common/CountrySelect.vue'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import GeoRuleValue from '@/components/routing/GeoRuleValue.vue'
 import { showNotification } from '@/helper/notification'
-import { Bars3Icon, PencilSquareIcon, PlusIcon, TrashIcon } from '@heroicons/vue/24/outline'
+import StatusBadge from '@/components/common/StatusBadge.vue'
+import { Bars3Icon, PencilSquareIcon, PlusIcon, PowerIcon, TrashIcon } from '@heroicons/vue/24/outline'
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Draggable from 'vuedraggable'
@@ -260,10 +371,64 @@ const props = defineProps<{
   patchProfile: (patch: Record<string, unknown>) => Promise<OpenboxProfile>
 }>()
 
-// 兜底站点集的名字和图标是数据不是文案:名字直接当内核里的出站 tag 用,改了名
-// 代理页上原来的选择就对不上号了(服务端同一份定义在 engine/routing-model.mjs)。
-const FALLBACK_NAME = '其他'
-const FALLBACK_ICON = 'globe:earth-meridians'
+// 兜底站点集:默认叫「其他」、彩色地球(服务端同一份默认在 engine/routing-model.mjs)。
+// 名字直接当内核里的出站 tag 用,用户可以改;图标也可以改。存在本身是固定的。
+const DEFAULT_FALLBACK_NAME = '其他'
+const DEFAULT_FALLBACK_ICON = 'globe:earth-meridians'
+const fallbackName = computed(() => props.profile.routing.fallbackName?.trim() || DEFAULT_FALLBACK_NAME)
+const fallbackIcon = computed(() => props.profile.routing.fallbackIcon?.trim() || DEFAULT_FALLBACK_ICON)
+
+const showFallbackEditor = ref(false)
+const fallbackDraft = ref<{ name: string; icon: string } | null>(null)
+const openFallbackEditor = () => {
+  fallbackDraft.value = { name: fallbackName.value, icon: fallbackIcon.value }
+  showFallbackEditor.value = true
+}
+const saveFallback = async () => {
+  const d = fallbackDraft.value
+  if (!d || saving.value) return
+  const name = d.name.trim()
+  if (!name) {
+    showNotification({ content: 'routingPolicyNameRequired', type: 'alert-error' })
+    return
+  }
+  // 名字就是内核里的出站 tag,和普通站点集重名同样不行
+  if (rows.value.some((p) => p.name === name)) {
+    showNotification({ content: 'routingPolicyNameDuplicate', type: 'alert-error' })
+    return
+  }
+  saving.value = true
+  try {
+    await props.patchProfile({ routing: { fallbackName: name, fallbackIcon: d.icon || '' } })
+    showNotification({ content: 'routingPolicySaved', type: 'alert-success' })
+    showFallbackEditor.value = false
+  } catch (err) {
+    showNotification({
+      content: 'routingSaveFailed',
+      params: { message: err instanceof Error ? err.message : String(err) },
+      type: 'alert-error',
+    })
+  } finally {
+    saving.value = false
+  }
+}
+
+// 启用/停用:停用的站点集留在列表里,不进内核配置(重启内核后生效,和别的改动一样)
+const toggleEnabled = async (policy: OpenboxRoutingPolicy) => {
+  if (saving.value) return
+  saving.value = true
+  try {
+    await persist(rows.value.map((p) => (p.id === policy.id ? { ...p, enabled: p.enabled === false } : p)))
+  } catch (err) {
+    showNotification({
+      content: 'routingSaveFailed',
+      params: { message: err instanceof Error ? err.message : String(err) },
+      type: 'alert-error',
+    })
+  } finally {
+    saving.value = false
+  }
+}
 
 const { t } = useI18n()
 

@@ -116,6 +116,8 @@ export const normalizePolicy = (raw, index = 0) => ({
   icon: isNonEmptyString(raw?.icon) ? raw.icon.trim() : '',
   // selector 首次生成时的默认选中项;空则由 config.mjs 用成员表里的第一个兜底
   default: isNonEmptyString(raw?.default) ? raw.default.trim() : '',
+  // 停用的站点集留在档案里、界面上能看到,但不进内核配置(没有 selector、没有规则)
+  enabled: raw?.enabled !== false,
   rulesets: strList(raw?.rulesets),
   domain: strList(raw?.domain),
   domainSuffix: strList(raw?.domainSuffix),
@@ -228,10 +230,16 @@ export const normalizeRouting = (routing) => {
   // fallbackDefault 一旦写进档案,就说明这份档案已经迁过了,不再重复翻译。
   const migratedRegion = isNonEmptyString(raw.fallbackDefault) ? null : migrateRegion(raw)
 
+  // 兜底站点集:名字和图标可以改(名字就是内核里的出站 tag),只有存在本身是固定的
+  const fallbackName = isNonEmptyString(raw.fallbackName) ? raw.fallbackName.trim() : FALLBACK_TAG
+  const fallbackIcon = isNonEmptyString(raw.fallbackIcon) ? raw.fallbackIcon.trim() : FALLBACK_ICON
+
   const policies = [
     ...(migrated ? migrated.policies : raw.policies.map(normalizePolicy)),
     ...(migratedRegion ? migratedRegion.policies : []),
-  ].filter(policyHasCondition).filter((p) => p.name !== FALLBACK_TAG)
+  ].filter(policyHasCondition).filter((p) => p.name !== FALLBACK_TAG && p.name !== fallbackName)
+  // 真正进内核的那部分:停用的不算
+  const activePolicies = policies.filter((p) => p.enabled !== false)
 
   const opts = raw.outboundOptions && typeof raw.outboundOptions === 'object' ? raw.outboundOptions : {}
   const outboundOptions = {
@@ -240,10 +248,9 @@ export const normalizeRouting = (routing) => {
     groups: opts.groups !== false,
   }
 
-  // 兜底站点集:名字/图标固定,只有"默认走哪"是用户能改的
   const fallback = {
-    name: FALLBACK_TAG,
-    icon: FALLBACK_ICON,
+    name: fallbackName,
+    icon: fallbackIcon,
     default: isNonEmptyString(raw.fallbackDefault)
       ? raw.fallbackDefault.trim()
       : migratedRegion
@@ -255,6 +262,7 @@ export const normalizeRouting = (routing) => {
     proxyTag: isNonEmptyString(raw.proxyTag) ? raw.proxyTag.trim() : 'PROXY',
     outboundOptions,
     policies,
+    activePolicies,
     fallback,
     adBlock: raw.adBlock === true,
     adRuleset: isNonEmptyString(raw.adRuleset) ? raw.adRuleset.trim() : 'geosite-category-ads-all',
@@ -318,7 +326,7 @@ export const dnsmasqForwardDomains = (routing, members = ['direct'], builtin = D
   const conf = normalizeRouting(routing)
   if (effectiveOutbound(conf.fallback.default, members, builtin) !== builtin.direct) return []
   const domains = []
-  for (const p of conf.policies) {
+  for (const p of conf.activePolicies) {
     if (effectiveOutbound(p.default, members, builtin) === builtin.direct) continue
     // 这个集合要走代理,但它的规则 dnsmasq 展不开 → 只能全局转发
     if (p.rulesets.length || p.domainKeyword.length) return []

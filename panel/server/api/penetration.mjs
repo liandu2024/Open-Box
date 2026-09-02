@@ -188,7 +188,7 @@ export const registerPenetrationRoutes = (app, { store, ctx, paths, fetchImpl = 
     const routingConf = normalizeRouting(profile.routing)
     const groupTags = new Set([
       ...(store.getGroups() || []).map((g) => g.name).filter(Boolean),
-      ...routingConf.policies.map((p) => p.name),
+      ...routingConf.activePolicies.map((p) => p.name),
       routingConf.fallback.name,
     ])
 

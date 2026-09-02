@@ -163,3 +163,21 @@ test('全都直连时也不走逐条转发:全局转发更简单可靠', () => {
     [],
   )
 })
+
+test('停用的站点集留在 policies 里但不进 activePolicies;兜底名字/图标可改', () => {
+  const conf = normalizeRouting({
+    fallbackDefault: 'direct',
+    fallbackName: '默认',
+    fallbackIcon: 'brand:google',
+    policies: [
+      { id: 'a', name: 'A', rulesets: ['geosite-google'] },
+      { id: 'b', name: 'B', rulesets: ['geosite-cn'], enabled: false },
+      // 和兜底重名的会被剔掉,不然内核里两个同名出站
+      { id: 'c', name: '默认', rulesets: ['geosite-apple'] },
+    ],
+  })
+  assert.deepEqual(conf.policies.map((p) => [p.name, p.enabled]), [['A', true], ['B', false]])
+  assert.deepEqual(conf.activePolicies.map((p) => p.name), ['A'])
+  assert.equal(conf.fallback.name, '默认')
+  assert.equal(conf.fallback.icon, 'brand:google')
+})

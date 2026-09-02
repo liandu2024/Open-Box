@@ -40,7 +40,7 @@ export const buildConfig = ({ nodes, profile, userGroups, systemDns }) => {
     default: effectiveOutbound(preferred, policyMemberTags, builtin),
   })
   const policyOutbounds = [
-    ...routingConf.policies.map((p) => asSelector(p.name, p.default)),
+    ...routingConf.activePolicies.map((p) => asSelector(p.name, p.default)),
     asSelector(routingConf.fallback.name, routingConf.fallback.default),
   ]
   const outbounds = [

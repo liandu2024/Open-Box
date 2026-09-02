@@ -83,8 +83,16 @@ export const validateProfilePatch = (patch) => {
       }
     }
 
+    // 兜底站点集的名字/图标。名字就是内核里的出站 tag,不能为空
+    if ('fallbackName' in routing && (!isString(routing.fallbackName) || !routing.fallbackName.trim())) {
+      return 'routing.fallbackName must be a non-empty string'
+    }
+    if ('fallbackIcon' in routing && !isString(routing.fallbackIcon)) {
+      return 'routing.fallbackIcon must be a string'
+    }
+
     if ('policies' in routing) {
-      const error = validatePolicies(routing.policies)
+      const error = validatePolicies(routing.policies, isString(routing.fallbackName) ? routing.fallbackName.trim() : '')
       if (error) return error
     }
 
@@ -108,15 +116,16 @@ export const validateProfilePatch = (patch) => {
 // 类型检查,不限制字符——域名里带下划线、CIDR 带斜杠都是合法的。
 const POLICY_LIST_FIELDS = ['domain', 'domainSuffix', 'domainKeyword', 'ipCidr']
 
-const validatePolicies = (policies) => {
+const validatePolicies = (policies, fallbackName = '') => {
   if (!Array.isArray(policies)) return 'routing.policies must be an array'
   for (const p of policies) {
     if (!isPlainObject(p)) return 'routing.policies entries must be objects'
     if (!isString(p.name) || !p.name.trim()) return 'routing.policies[].name is required'
-    // 「其他」是兜底站点集占着的名字:重名会在内核里生成两个同名出站
-    if (p.name.trim() === FALLBACK_TAG) {
-      return `routing.policies[].name "${FALLBACK_TAG}" is reserved for the built-in fallback`
+    // 兜底站点集占着的名字(默认「其他」,或用户改过的):重名会在内核里生成两个同名出站
+    if (p.name.trim() === FALLBACK_TAG || (fallbackName && p.name.trim() === fallbackName)) {
+      return `routing.policies[].name "${p.name.trim()}" is reserved for the built-in fallback`
     }
+    if ('enabled' in p && !isBoolean(p.enabled)) return 'routing.policies[].enabled must be a boolean'
     if ('default' in p && !isString(p.default)) return 'routing.policies[].default must be a string'
     if ('icon' in p && !isString(p.icon)) return 'routing.policies[].icon must be a string'
     if ('rulesets' in p) {

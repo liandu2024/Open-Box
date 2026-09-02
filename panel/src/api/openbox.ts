@@ -20,6 +20,8 @@ export interface OpenboxRoutingPolicy {
   icon?: string
   // selector 的默认选中项(direct / 某个节点组 / block)
   default?: string
+  // 停用 = 留在列表里,不进内核配置
+  enabled?: boolean
   rulesets?: string[]
   domain?: string[]
   domainSuffix?: string[]
@@ -37,6 +39,9 @@ export interface OpenboxOutboundOptions {
 export interface OpenboxProfileRouting {
   proxyTag?: string
   fallbackDefault?: string
+  // 兜底站点集的名字(默认「其他」,就是内核里的出站 tag)和图标
+  fallbackName?: string
+  fallbackIcon?: string
   // 改版前的地区层;服务端读出来时会翻译成站点集,并把结果写回档案
   regions?: unknown[]
   regionId?: string

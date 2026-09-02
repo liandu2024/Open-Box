@@ -66,7 +66,7 @@ export const buildDns = (profile, options = {}) => {
   // 默认就选直连的集合不给专属服务器:直连的东西该用本地解析,绕一圈代理没有意义。
   const builtin = options.builtin || DEFAULT_BUILTIN
   const members = policyOutboundOptions(conf.outboundOptions, options.groupTags || [], builtin)
-  conf.policies.forEach((policy, index) => {
+  conf.activePolicies.forEach((policy, index) => {
     if (!hasDomainCondition(policy)) return
     if (effectiveOutbound(policy.default, members, builtin) === builtin.direct) {
       rules.push(policyDnsRule(policy, 'dns-direct'))

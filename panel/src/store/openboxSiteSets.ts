@@ -47,12 +47,14 @@ export const loadOpenboxSiteSets = async () => {
     // 测速地址以档案为准(「分流与策略 → 其他」里改),面板的延迟测试跟着它
     if (profile.testUrl) speedtestUrl.value = profile.testUrl
     if (profile.directTestUrl) directTestUrl.value = profile.directTestUrl
-    const policies = (profile.routing.policies || []).filter((p) => p.name)
+    // 停用的站点集不在内核里,代理页也就不用认它
+    const policies = (profile.routing.policies || []).filter((p) => p.name && p.enabled !== false)
     const names = policies.map((p) => p.name)
-    siteSetNames.value = new Set([...names, FALLBACK_NAME])
-    siteSetOrder.value = [...names, FALLBACK_NAME]
+    const fallbackName = profile.routing.fallbackName?.trim() || FALLBACK_NAME
+    siteSetNames.value = new Set([...names, fallbackName])
+    siteSetOrder.value = [...names, fallbackName]
     const icons = new Map<string, string>(policies.filter((p) => p.icon).map((p) => [p.name, p.icon as string]))
-    icons.set(FALLBACK_NAME, 'globe:earth-meridians')
+    icons.set(fallbackName, profile.routing.fallbackIcon?.trim() || 'globe:earth-meridians')
     siteSetIcons.value = icons
   } catch {
     // 拉不到就保持原样(空集 → 退回猜法),不让代理页因此打不开

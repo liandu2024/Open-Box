@@ -38,7 +38,7 @@ export const buildRoute = (routing, rulesetDir, options = {}) => {
   }
 
   // 站点集按用户排的顺序逐条匹配,首条命中生效。
-  for (const policy of conf.policies) {
+  for (const policy of conf.activePolicies) {
     for (const tag of policy.rulesets) addTag(tag)
     rules.push(policyRule(policy))
   }
