@@ -105,16 +105,15 @@
         </div>
       </div>
       <!-- 三个图标和普通站点集对齐;兜底不能停用、不能删除,这两个置灰,只能改名字和图标 -->
-      <span v-tip="$t('routingFallbackNoDisable')">
-        <button
-          type="button"
-          class="btn btn-ghost btn-square btn-sm opacity-30"
-          :aria-label="$t('routingFallbackNoDisable')"
-          disabled
-        >
-          <PowerIcon class="h-4 w-4" />
-        </button>
-      </span>
+      <button
+        type="button"
+        class="btn btn-ghost btn-square btn-sm text-base-content/30 cursor-not-allowed"
+        v-tip="$t('routingFallbackNoDisable')"
+        :aria-label="$t('routingFallbackNoDisable')"
+        aria-disabled="true"
+      >
+        <PowerIcon class="h-4 w-4" />
+      </button>
       <button
         type="button"
         class="btn btn-ghost btn-square btn-sm"
@@ -124,16 +123,15 @@
       >
         <PencilSquareIcon class="h-4 w-4" />
       </button>
-      <span v-tip="$t('routingFallbackNoDelete')">
-        <button
-          type="button"
-          class="btn btn-ghost btn-square btn-sm opacity-30"
-          :aria-label="$t('routingFallbackNoDelete')"
-          disabled
-        >
-          <TrashIcon class="h-4 w-4" />
-        </button>
-      </span>
+      <button
+        type="button"
+        class="btn btn-ghost btn-square btn-sm text-base-content/30 cursor-not-allowed"
+        v-tip="$t('routingFallbackNoDelete')"
+        :aria-label="$t('routingFallbackNoDelete')"
+        aria-disabled="true"
+      >
+        <TrashIcon class="h-4 w-4" />
+      </button>
     </div>
 
     <!-- 兜底站点集:只能改名字和图标 -->

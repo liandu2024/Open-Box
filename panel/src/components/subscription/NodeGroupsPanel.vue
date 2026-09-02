@@ -89,11 +89,11 @@
         <button
           type="button"
           class="btn btn-ghost btn-square btn-sm"
-          :class="group.kind ? 'opacity-30' : 'hover:text-error'"
-          :disabled="Boolean(group.kind)"
+          :class="group.kind ? 'text-base-content/30 cursor-not-allowed' : 'hover:text-error'"
+          :aria-disabled="Boolean(group.kind) || undefined"
           :aria-label="$t('delete')"
           v-tip="group.kind ? $t('groupBuiltinNoDelete') : $t('delete')"
-          @click="askDelete(group)"
+          @click="!group.kind && askDelete(group)"
         >
           <TrashIcon class="h-4 w-4" />
         </button>
