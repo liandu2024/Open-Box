@@ -43,15 +43,15 @@ import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import ProxyEmbeddedGroup from './ProxyEmbeddedGroup.vue'
 
-// 穿透:一打开代理页就把整条链(站点集 → 组 → … → 节点)全部展开摆出来,每一层的
-// 节点列表也是展开的,不用点「展开穿透」,也没有「逐层 / 到底」的模式可选——
-// 原来那套逐层展开只是多点几次鼠标。「收起穿透」按钮留着,想清爽时可以收起来。
+// 穿透:展开站点集卡片只看到它的成员(节点 / 节点组),穿透默认收着;点「策略穿透」
+// 才把整条链(站点集 → 组 → … → 节点)一次全部摆出来,每一层的节点列表也是展开的。
+// 没有「逐层 / 到底」的模式可选——原来那套逐层展开只是多点几次鼠标。
 const props = defineProps<{
   groupName: string
 }>()
 
 const { t } = useI18n()
-const isExpanded = ref(true)
+const isExpanded = ref(false)
 const groupNameRoot = props.groupName
 const selectedPenetrationGroupMap = ref<Record<string, string>>({})
 
@@ -133,8 +133,8 @@ const openRenderedGroups = (groupNames: string[]) => {
 }
 
 watch(canPenetrate, (value) => {
-  isExpanded.value = value
   if (!value) {
+    isExpanded.value = false
     selectedPenetrationGroupMap.value = {}
   }
 })
