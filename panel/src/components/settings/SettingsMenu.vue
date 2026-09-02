@@ -34,25 +34,15 @@
           </button>
         </li>
       </ul>
-      <button
-        type="button"
-        class="settings-menu-action btn btn-square btn-sm my-auto shrink-0"
-        @click="showVisibilityDialog = true"
-      >
-        <Cog6ToothIcon class="h-5 w-5" />
-      </button>
     </div>
-    <SettingsVisibilityDialog v-model="showVisibilityDialog" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { useCtrlsBar } from '@/composables/useCtrlsBar'
-import { Cog6ToothIcon } from '@heroicons/vue/24/outline'
 import { useSwipe } from '@vueuse/core'
 import type { Component } from 'vue'
 import { ref } from 'vue'
-import SettingsVisibilityDialog from './SettingsVisibilityDialog.vue'
 
 // key 故意放宽成 string:这个条形菜单原本只服务于面板设置内部的分组
 // (SETTINGS_MENU_KEY),现在改为驱动设置页的一级页签(SETTINGS_TAB)。两者是不同
@@ -71,8 +61,6 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'menu-click', key: string): void
 }>()
-
-const showVisibilityDialog = ref(false)
 
 const menuRef = ref<HTMLDivElement>()
 const menuItemRefs = ref(new Map<string, HTMLButtonElement>())
