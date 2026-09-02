@@ -78,11 +78,13 @@
         />
       </div>
     </div>
+    <ProxyGroupRulePenetrationDialog />
   </div>
 </template>
 
 <script setup lang="ts">
 import ProxyGroup from '@/components/proxies/ProxyGroup.vue'
+import ProxyGroupRulePenetrationDialog from '@/components/proxies/ProxyGroupRulePenetrationDialog.vue'
 import ProxyGroupForMobile from '@/components/proxies/ProxyGroupForMobile.vue'
 import ProxyProvider from '@/components/proxies/ProxyProvider.vue'
 import ProxiesCtrl from '@/components/sidebar/ProxiesCtrl.tsx'

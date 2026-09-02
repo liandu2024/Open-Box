@@ -560,3 +560,40 @@ export const queryPenetration = async (target: string): Promise<OpenboxPenetrati
     body: JSON.stringify({ target }),
   })
 }
+
+// 「域名穿透」:一个站点集会命中哪些域名/IP(规则集展开 + 手写条件),分档/搜索/排序/分页
+export type OpenboxPolicyEntryFamily = 'domain' | 'ip' | 'other'
+export interface OpenboxPolicyEntry {
+  type: string
+  family: OpenboxPolicyEntryFamily
+  content: string
+  // 来源:规则集名,或 'custom'(站点集里手写的条件)
+  source: string
+}
+export interface OpenboxPolicyEntries {
+  name: string
+  fallback: boolean
+  counts: { all: number; domain: number; ip: number }
+  total: number
+  matched: number
+  offset: number
+  limit: number
+  hasMore: boolean
+  entries: OpenboxPolicyEntry[]
+  missing: string[]
+}
+export const fetchPolicyEntries = async (params: {
+  name: string
+  tab?: 'all' | 'domain' | 'ip'
+  q?: string
+  sort?: 'type' | 'content' | 'source' | ''
+  dir?: 'asc' | 'desc'
+  offset?: number
+  limit?: number
+}): Promise<OpenboxPolicyEntries> => {
+  const search = new URLSearchParams()
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== '' && v !== null) search.set(k, String(v))
+  }
+  return requestJson<OpenboxPolicyEntries>(`/api/openbox/policies/entries?${search.toString()}`)
+}

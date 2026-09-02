@@ -25,6 +25,17 @@
               <span class="shrink-0 text-base">
                 {{ name }}
               </span>
+              <button
+                v-if="isSiteSet"
+                type="button"
+                :class="[
+                  'btn btn-sm bg-base-200 border-base-200 text-base-content/80 hover:text-base-content h-6 min-h-6 shrink-0 cursor-pointer px-2 text-xs font-medium shadow-none',
+                  domainPenetrationHoverClass,
+                ]"
+                @click.stop="openPenetrationDialog(name)"
+              >
+                {{ $t('domainPenetration') }}
+              </button>
               <span class="text-base-content/60 min-w-0 truncate text-xs">
                 {{ proxyGroup.type }}
               </span>
@@ -82,6 +93,17 @@
               {{ name }}
             </span>
           </div>
+          <button
+            v-if="isSiteSet"
+            type="button"
+            :class="[
+              'btn btn-sm bg-base-200 border-base-200 text-base-content/80 hover:text-base-content h-6 min-h-6 shrink-0 cursor-pointer px-2 text-xs font-medium shadow-none',
+              domainPenetrationHoverClass,
+            ]"
+            @click.stop="openPenetrationDialog(name)"
+          >
+            {{ $t('domainPenetration') }}
+          </button>
           <span class="text-base-content/60 text-xs">
             {{ proxyGroup.type }}
           </span>
@@ -174,6 +196,9 @@ import {
   useLargeProxyGroupIcon,
 } from '@/store/settings'
 import { EyeIcon, EyeSlashIcon } from '@heroicons/vue/24/outline'
+import { siteSetNames } from '@/store/openboxSiteSets'
+import { openPenetrationDialog } from '@/store/proxyGroupRulePenetration'
+import { DARK_THEME, theme } from '@/store/settings'
 import { twMerge } from 'tailwind-merge'
 import { computed, ref } from 'vue'
 import CollapseCard from '../common/CollapseCard.vue'
@@ -223,6 +248,14 @@ const handlerGroupToggle = () => {
 }
 
 const titleIconSize = computed(() => Math.max(proxyGroupIconSize.value, 46))
+
+// 「域名穿透」只给站点集(它们才有自己的匹配规则);节点组的成员是节点,没有域名可穿
+const isSiteSet = computed(() => siteSetNames.value.has(props.name))
+const domainPenetrationHoverClass = computed(() =>
+  theme.value === DARK_THEME
+    ? 'hover:!bg-[#4b4428] hover:!border-base-content/[0.16]'
+    : 'hover:!bg-[#f1ead6] hover:!border-base-content/[0.16]',
+)
 
 useBounceOnVisible()
 </script>

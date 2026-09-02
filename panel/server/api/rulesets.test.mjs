@@ -120,3 +120,44 @@ test('解码失败 → 503,把内核的话原样带出去', async () => {
     await close()
   }
 })
+
+test('GET /policies/entries:站点集的规则集展开 + 手写条件,分档计数、搜索、分页;兜底返回空', async () => {
+  const ctx = okCtx()
+  const store = {
+    getProfile: () => ({
+      routing: {
+        fallbackDefault: 'direct',
+        policies: [
+          { id: 'g', name: 'Google', rulesets: ['geosite-google'], domainSuffix: ['gg.example'], ipCidr: ['1.1.1.0/24'] },
+        ],
+      },
+    }),
+  }
+  const app = express()
+  clearRulesetEntriesCache()
+  registerRulesetRoutes(app, { ctx, paths, store })
+  const server = app.listen(0)
+  await new Promise((resolve) => server.once('listening', resolve))
+  const base = `http://127.0.0.1:${server.address().port}`
+  try {
+    const all = await (await fetch(`${base}/api/openbox/policies/entries?name=Google`)).json()
+    // 规则集 5 条(1 domain + 2 suffix + 1 cidr + 1 keyword)+ 手写 2 条
+    assert.equal(all.total, 7)
+    assert.deepEqual(all.counts, { all: 7, domain: 5, ip: 2 })
+    assert.ok(all.entries.some((e) => e.source === 'custom' && e.content === 'gg.example'))
+    assert.ok(all.entries.some((e) => e.source === 'geosite-google' && e.type === 'domain_suffix'))
+    const ip = await (await fetch(`${base}/api/openbox/policies/entries?name=Google&tab=ip`)).json()
+    assert.equal(ip.matched, 2)
+    const q = await (await fetch(`${base}/api/openbox/policies/entries?name=Google&q=gstatic`)).json()
+    assert.equal(q.matched, 1)
+    const page = await (await fetch(`${base}/api/openbox/policies/entries?name=Google&limit=3`)).json()
+    assert.equal(page.entries.length, 3)
+    assert.equal(page.hasMore, true)
+    const fb = await (await fetch(`${base}/api/openbox/policies/entries?name=${encodeURIComponent('其他')}`)).json()
+    assert.equal(fb.fallback, true)
+    const nf = await fetch(`${base}/api/openbox/policies/entries?name=Nope`)
+    assert.equal(nf.status, 404)
+  } finally {
+    await new Promise((resolve) => server.close(resolve))
+  }
+})
