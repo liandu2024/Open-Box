@@ -126,7 +126,7 @@
         <div class="flex items-end gap-2">
           <div class="flex flex-col gap-1">
             <label class="text-xs font-medium">{{ $t('groupIconLabel') }}</label>
-            <div class="w-32">
+            <div class="w-56">
               <CountrySelect
                 v-model="draft.icon"
                 clearable

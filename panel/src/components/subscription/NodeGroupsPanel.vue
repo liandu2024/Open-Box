@@ -110,7 +110,7 @@
         <div class="flex items-end gap-2">
           <div class="flex flex-col gap-1">
             <label class="text-xs font-medium">{{ $t('groupIconLabel') }}</label>
-            <div class="w-32">
+            <div class="w-56">
               <CountrySelect
                 v-model="builtinDraft.icon"
                 clearable
@@ -168,8 +168,8 @@
                (香港-自动、台湾-自动),给它配一面旗,列表里一眼就找得到。 -->
           <div class="flex flex-col gap-1">
             <label class="text-xs font-medium">{{ $t('groupIconLabel') }}</label>
-            <!-- w-32:地球那几项的名字比国名长(「地球(亚洲)」),28 放不下会被截断 -->
-            <div class="w-32">
+            <!-- w-56:公司名(Google 云端硬盘)和通用图标名(拒绝(停止))比国名长得多,窄了就截断 -->
+            <div class="w-56">
               <CountrySelect
                 v-model="draft.icon"
                 clearable
