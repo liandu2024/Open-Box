@@ -59,85 +59,87 @@
            所以界面上没有单独的「部署」按钮:各设置页保存完,来这里启动一下就生效。 -->
       <p class="text-base-content/60 text-xs">{{ $t('kernelApplyHint') }}</p>
 
-      <div class="flex flex-col gap-2">
-        <div class="flex flex-wrap gap-2">
-          <button
-            type="button"
-            class="btn btn-sm btn-outline"
-            :disabled="isStartDisabled"
-            @click="runAction('start')"
-          >
-            <span
-              v-if="pendingAction === 'start'"
-              class="loading loading-spinner loading-xs"
-            />
-            <PlayIcon
-              v-else
-              class="h-4 w-4"
-            />
-            {{ $t('kernelActionStart') }}
-          </button>
-          <button
-            type="button"
-            class="btn btn-sm btn-outline btn-error"
-            :disabled="isStopDisabled"
-            :title="$t('kernelActionStopHint')"
-            @click="runAction('stop')"
-          >
-            <span
-              v-if="pendingAction === 'stop'"
-              class="loading loading-spinner loading-xs"
-            />
-            <StopIcon
-              v-else
-              class="h-4 w-4"
-            />
-            {{ $t('kernelActionStop') }}
-          </button>
-          <button
-            type="button"
-            class="btn btn-sm btn-outline"
-            :disabled="isRestartDisabled"
-            @click="runAction('restart')"
-          >
-            <span
-              v-if="pendingAction === 'restart'"
-              class="loading loading-spinner loading-xs"
-            />
-            <ArrowPathIcon
-              v-else
-              class="h-4 w-4"
-            />
-            {{ $t('kernelActionRestart') }}
-          </button>
-        </div>
-        <div class="flex flex-wrap items-center gap-2">
-          <span class="text-base-content/60 text-xs">{{ $t('kernelAutostartLabel') }}:</span>
-          <button
-            type="button"
-            class="btn btn-xs btn-outline"
-            :disabled="pendingAction !== null"
-            @click="runAction('enable')"
-          >
-            <span
-              v-if="pendingAction === 'enable'"
-              class="loading loading-spinner loading-xs"
-            />
-            {{ $t('kernelActionEnable') }}
-          </button>
-          <button
-            type="button"
-            class="btn btn-xs btn-outline"
-            :disabled="pendingAction !== null"
-            @click="runAction('disable')"
-          >
-            <span
-              v-if="pendingAction === 'disable'"
-              class="loading loading-spinner loading-xs"
-            />
-            {{ $t('kernelActionDisable') }}
-          </button>
-        </div>
+      <!-- 一行:[启动] [停止] [重启] | 开机自启:[开启] [关闭]。按钮用全局统一的 btn btn-sm;
+           互斥:内核在跑就不能再「启动」,没在跑就不能「停止/重启」,自启已开就不能再「开启」,
+           以此类推;有动作进行中时全部禁用,进行中的那个转圈。 -->
+      <div class="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          class="btn btn-sm"
+          :disabled="isStartDisabled"
+          @click="runAction('start')"
+        >
+          <span
+            v-if="pendingAction === 'start'"
+            class="loading loading-spinner loading-xs"
+          />
+          <PlayIcon
+            v-else
+            class="h-4 w-4"
+          />
+          {{ $t('kernelActionStart') }}
+        </button>
+        <button
+          type="button"
+          class="btn btn-sm"
+          :disabled="isStopDisabled"
+          :title="$t('kernelActionStopHint')"
+          @click="runAction('stop')"
+        >
+          <span
+            v-if="pendingAction === 'stop'"
+            class="loading loading-spinner loading-xs"
+          />
+          <StopIcon
+            v-else
+            class="h-4 w-4"
+          />
+          {{ $t('kernelActionStop') }}
+        </button>
+        <button
+          type="button"
+          class="btn btn-sm"
+          :disabled="isRestartDisabled"
+          @click="runAction('restart')"
+        >
+          <span
+            v-if="pendingAction === 'restart'"
+            class="loading loading-spinner loading-xs"
+          />
+          <ArrowPathIcon
+            v-else
+            class="h-4 w-4"
+          />
+          {{ $t('kernelActionRestart') }}
+        </button>
+
+        <div class="bg-base-content/15 mx-1 h-6 w-px" />
+
+        <span class="text-base-content/60 text-xs">{{ $t('kernelAutostartLabel') }}:</span>
+        <button
+          type="button"
+          class="btn btn-sm"
+          :disabled="isEnableDisabled"
+          @click="runAction('enable')"
+        >
+          <span
+            v-if="pendingAction === 'enable'"
+            class="loading loading-spinner loading-xs"
+          />
+          {{ $t('kernelAutostartOn') }}
+        </button>
+        <button
+          type="button"
+          class="btn btn-sm"
+          :disabled="isDisableDisabled"
+          @click="runAction('disable')"
+        >
+          <span
+            v-if="pendingAction === 'disable'"
+            class="loading loading-spinner loading-xs"
+          />
+          {{ $t('kernelAutostartOff') }}
+        </button>
       </div>
     </div>
   </div>
@@ -181,7 +183,11 @@ const isStartDisabled = computed(
   () => pendingAction.value !== null || Boolean(props.status?.core.running) || Boolean(props.status?.conflicts.length),
 )
 const isStopDisabled = computed(() => pendingAction.value !== null || !props.status?.core.running)
-const isRestartDisabled = computed(() => pendingAction.value !== null || Boolean(props.status?.conflicts.length))
+const isRestartDisabled = computed(
+  () => pendingAction.value !== null || !props.status?.core.running || Boolean(props.status?.conflicts.length),
+)
+const isEnableDisabled = computed(() => pendingAction.value !== null || props.status?.core.autostart === true)
+const isDisableDisabled = computed(() => pendingAction.value !== null || props.status?.core.autostart === false)
 
 const runAction = async (action: OpenboxServiceAction) => {
   if (pendingAction.value) return
