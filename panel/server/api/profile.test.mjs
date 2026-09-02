@@ -306,9 +306,9 @@ test('GET /defaults?region=CN → 中国大陆那一档', async () => {
     const res = await fetch(`${baseUrl}/api/openbox/profile/defaults?region=CN`)
     assert.equal(res.status, 200)
     const body = await res.json()
-    assert.equal(body.defaults.regionMode, 'CN')
-    assert.equal(body.defaults.routing.regionMode, 'CN')
-    // 规则不再写进档案:由 regionMode 在生成配置时决定(engine/routing.mjs)
+    assert.equal(body.defaults.regionId, 'cn')
+    assert.equal(body.defaults.routing.regionId, 'cn')
+    // 规则不再写进档案:由选中的那条地区自己带着(engine/routing.mjs)
     assert.ok(!('directRulesets' in body.defaults.routing))
     assert.ok(!('fallback' in body.defaults.routing))
   } finally {
@@ -321,7 +321,7 @@ test('GET /defaults?region=HKMO → 香港澳门那一档', async () => {
   try {
     const res = await fetch(`${baseUrl}/api/openbox/profile/defaults?region=HKMO`)
     const body = await res.json()
-    assert.equal(body.defaults.regionMode, 'HKMO')
+    assert.equal(body.defaults.regionId, 'hkmo')
   } finally {
     await close()
   }
@@ -332,7 +332,7 @@ test('GET /defaults?region=不认识的 → 回落到中国大陆', async () => 
   try {
     const res = await fetch(`${baseUrl}/api/openbox/profile/defaults?region=US`)
     const body = await res.json()
-    assert.equal(body.defaults.regionMode, 'CN')
+    assert.equal(body.defaults.regionId, 'cn')
   } finally {
     await close()
   }
@@ -344,7 +344,7 @@ test('GET /defaults 缺 region → 按 CN 兜底', async () => {
     const res = await fetch(`${baseUrl}/api/openbox/profile/defaults`)
     assert.equal(res.status, 200)
     const body = await res.json()
-    assert.equal(body.defaults.region, 'CN')
+    assert.equal(body.defaults.regionId, 'cn')
   } finally {
     await close()
   }
@@ -356,7 +356,7 @@ test('GET /defaults?region=hkmo → 大小写归一化', async () => {
     const res = await fetch(`${baseUrl}/api/openbox/profile/defaults?region=hkmo`)
     assert.equal(res.status, 200)
     const body = await res.json()
-    assert.equal(body.defaults.regionMode, 'HKMO')
+    assert.equal(body.defaults.regionId, 'hkmo')
   } finally {
     await close()
   }
@@ -398,11 +398,14 @@ test('PUT 校验:域名条件不限制字符(带下划线、斜杠的 CIDR 都�
   }
 })
 
-test('PUT 校验:regionMode 只认三档', async () => {
+test('PUT 校验:地区列表要有 id/name,规则集名不能带路径', async () => {
   const { baseUrl, close } = await startApp()
   try {
-    assert.equal((await putJson(baseUrl, '/api/openbox/profile', { routing: { regionMode: 'HKMO' } })).status, 200)
-    assert.equal((await putJson(baseUrl, '/api/openbox/profile', { routing: { regionMode: 'JP' } })).status, 400)
+    const ok = { routing: { regions: [{ id: 'jp', name: '日本', rulesets: ['geosite-jp'], target: 'direct', fallback: 'proxy' }], regionId: 'jp' } }
+    assert.equal((await putJson(baseUrl, '/api/openbox/profile', ok)).status, 200)
+    assert.equal((await putJson(baseUrl, '/api/openbox/profile', { routing: { regions: [{ name: '没有 id' }] } })).status, 400)
+    assert.equal((await putJson(baseUrl, '/api/openbox/profile', { routing: { regions: [{ id: 'x', name: 'x', rulesets: ['../../etc/passwd'] } ] } })).status, 400)
+    assert.equal((await putJson(baseUrl, '/api/openbox/profile', { routing: { regions: [{ id: 'x', name: 'x', target: '走哪儿' }] } })).status, 400)
   } finally {
     await close()
   }

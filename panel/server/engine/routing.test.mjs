@@ -12,7 +12,7 @@ const policy = (over = {}) => ({
 // 前三条规则(sniff / DNS 劫持 / 内网直连)与地区、策略都无关,单独断言一次,
 // 后面的用例只看它们各自关心的那几条,免得任何一条规则挪位置就全线飘红。
 test('固定前缀:sniff → DNS 劫持 → 内网直连', () => {
-  const { route } = build({ regionMode: 'CN' })
+  const { route } = build({ regionId: 'cn' })
   assert.deepEqual(route.rules.slice(0, 3), [
     { action: 'sniff' },
     { protocol: 'dns', action: 'hijack-dns' },
@@ -23,7 +23,7 @@ test('固定前缀:sniff → DNS 劫持 → 内网直连', () => {
 })
 
 test('中国大陆:中国站点直连,其余走代理', () => {
-  const { route, rulesetTags } = build({ regionMode: 'CN' })
+  const { route, rulesetTags } = build({ regionId: 'cn' })
   const tail = route.rules.slice(3)
   assert.deepEqual(tail, [
     { rule_set: 'geosite-cn', outbound: 'direct' },
@@ -34,13 +34,13 @@ test('中国大陆:中国站点直连,其余走代理', () => {
 })
 
 test('香港澳门:除策略之外全部直连,不额外生成地区规则', () => {
-  const { route } = build({ regionMode: 'HKMO' })
+  const { route } = build({ regionId: 'hkmo' })
   assert.deepEqual(route.rules.slice(3), [])
   assert.equal(route.final, 'direct')
 })
 
 test('其他地区:中国站点走代理(回国),其余直连', () => {
-  const { route } = build({ regionMode: 'OTHER' })
+  const { route } = build({ regionId: 'other' })
   assert.deepEqual(route.rules.slice(3), [
     { rule_set: 'geosite-cn', outbound: 'PROXY' },
     { rule_set: 'geoip-cn', outbound: 'PROXY' },
@@ -49,7 +49,7 @@ test('其他地区:中国站点走代理(回国),其余直连', () => {
 })
 
 test('策略排在地区规则之前:显式指定要盖过"这个地区默认怎么走"', () => {
-  const { route } = build({ regionMode: 'CN', policies: [policy()] })
+  const { route } = build({ regionId: 'cn', policies: [policy()] })
   const idxPolicy = route.rules.findIndex((r) => r.outbound === '谷歌')
   const idxRegion = route.rules.findIndex((r) => r.rule_set === 'geosite-cn')
   assert.ok(idxPolicy >= 0 && idxRegion >= 0)
@@ -58,7 +58,7 @@ test('策略排在地区规则之前:显式指定要盖过"这个地区默认怎
 
 test('策略的五类条件都落进同一条规则,出站是策略自己', () => {
   const { route, rulesetTags } = build({
-    regionMode: 'HKMO',
+    regionId: 'hkmo',
     policies: [
       policy({
         rulesets: ['geosite-google', 'geoip-google'],
@@ -82,18 +82,18 @@ test('策略的五类条件都落进同一条规则,出站是策略自己', () =
 })
 
 test('没有任何条件的策略被丢掉——空条件规则在内核里等于"全部命中",会盖住后面所有规则', () => {
-  const { route } = build({ regionMode: 'HKMO', policies: [{ id: 'x', name: '空的' }] })
+  const { route } = build({ regionId: 'hkmo', policies: [{ id: 'x', name: '空的' }] })
   assert.deepEqual(route.rules.slice(3), [])
 })
 
 test('广告拦截排在策略之前', () => {
-  const { route } = build({ regionMode: 'CN', adBlock: true, policies: [policy()] })
+  const { route } = build({ regionId: 'cn', adBlock: true, policies: [policy()] })
   assert.deepEqual(route.rules[3], { rule_set: 'geosite-category-ads-all', action: 'reject' })
   assert.equal(route.rules[4].outbound, '谷歌')
 })
 
 test('dnsMode=dnsmasq 时只劫持 dns-in,避免 tun→dns-in 自环', () => {
-  const { route } = build({ regionMode: 'CN' }, { dnsMode: 'dnsmasq' })
+  const { route } = build({ regionId: 'cn' }, { dnsMode: 'dnsmasq' })
   assert.deepEqual(route.rules[1], { inbound: ['dns-in'], action: 'hijack-dns' })
   assert.ok(!route.rules.some((r) => r.protocol === 'dns'))
 })

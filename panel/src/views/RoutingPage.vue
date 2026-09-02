@@ -1,14 +1,6 @@
 <template>
   <div class="flex h-full min-h-0 flex-col overflow-hidden">
     <div class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
-      <RoutingDeployBanner
-        :has-undeployed-changes="hasUndeployedChanges"
-        :deploying="deploying"
-        :last-result="lastDeployResult"
-        @deploy="handleDeploy"
-        @dismiss="lastDeployResult = null"
-      />
-
       <div
         class="flex flex-col gap-3 p-3"
         :style="padding"
@@ -68,10 +60,6 @@
               :patch-profile="patchProfile"
             />
           </template>
-          <DnsSettingsCard
-            :profile="profile"
-            :patch-profile="patchProfile"
-          />
           <Ipv6Card
             :profile="profile"
             :patch-profile="patchProfile"
@@ -83,23 +71,14 @@
 </template>
 
 <script setup lang="ts">
-import type { OpenboxDeployResult, OpenboxDeployState, OpenboxProfile } from '@/api/openbox'
-import {
-  deployNow,
-  fetchDeployState,
-  fetchNodeGroups,
-  fetchProfile,
-  saveProfile,
-} from '@/api/openbox'
-import DnsSettingsCard from '@/components/routing/DnsSettingsCard.vue'
+import type { OpenboxProfile } from '@/api/openbox'
+import { fetchNodeGroups, fetchProfile, saveProfile } from '@/api/openbox'
 import Ipv6Card from '@/components/routing/Ipv6Card.vue'
-import RoutingDeployBanner from '@/components/routing/RoutingDeployBanner.vue'
 import RoutingOutboundsCard from '@/components/routing/RoutingOutboundsCard.vue'
 import RoutingPoliciesCard from '@/components/routing/RoutingPoliciesCard.vue'
 import RoutingRegionCard from '@/components/routing/RoutingRegionCard.vue'
 import { usePaddingForViews } from '@/composables/paddingViews'
-import { routingPendingDeploy } from '@/store/routing'
-import { computed, onMounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
@@ -118,16 +97,6 @@ const pageTab = ref<'rules' | 'outbounds'>('rules')
 const groupNames = ref<string[]>([])
 const groupsLoading = ref(false)
 const groupsError = ref('')
-
-const deployState = ref<OpenboxDeployState>({ stage: 'idle', message: '', at: 0, badTags: [] })
-const deploying = ref(false)
-const lastDeployResult = ref<OpenboxDeployResult | null>(null)
-
-// Not deployed yet (or the last attempt didn't end up 'running') always counts as "changes
-// pending" regardless of the local flag; on top of that, any save made through this page since
-// the last successful deploy also counts — see store/routing.ts for why that second half has to
-// be tracked client-side.
-const hasUndeployedChanges = computed(() => deployState.value.stage !== 'running' || routingPendingDeploy.value)
 
 // 策略能选的节点组直接问「节点组」接口:那是权威来源。原来是从配置预览的 outbounds
 // 里反推,策略自己生成的 selector 混进去之后就不准了(策略会把自己也列成可选项)。
@@ -150,9 +119,7 @@ const load = async () => {
   loading.value = true
   loadError.value = ''
   try {
-    const [fetchedProfile, fetchedDeployState] = await Promise.all([fetchProfile(), fetchDeployState()])
-    profile.value = fetchedProfile
-    deployState.value = fetchedDeployState
+    profile.value = await fetchProfile()
     await loadPolicyGroups()
   } catch (error) {
     loadError.value = t('routingLoadFailed', {
@@ -166,35 +133,14 @@ const load = async () => {
 onMounted(load)
 
 // Single choke point every card's edits go through: on success it updates the shared profile
-// (so every card re-renders from the new server truth) and marks changes pending; on failure it
-// rethrows so the calling card can show its own contextual error message.
+// (so every card re-renders from the new server truth); on failure it rethrows so the calling
+// card can show its own contextual error message.
+// 保存到这里就结束了——没有"部署"这一步:要让设置生效,去内核页启动/重启内核,
+// 那里会用当前档案重新生成并应用配置(见 server/api/service.mjs)。
 const patchProfile = async (patch: Record<string, unknown>): Promise<OpenboxProfile> => {
   const updated = await saveProfile(patch)
   profile.value = updated
-  routingPendingDeploy.value = true
   return updated
 }
 
-const handleDeploy = async () => {
-  if (deploying.value) return
-
-  deploying.value = true
-  try {
-    const result = await deployNow()
-    lastDeployResult.value = result
-    if (result.ok) {
-      routingPendingDeploy.value = false
-    }
-    deployState.value = await fetchDeployState().catch(() => deployState.value)
-  } catch (error) {
-    lastDeployResult.value = {
-      ok: false,
-      stage: 'error',
-      message: error instanceof Error ? error.message : String(error),
-      badTags: [],
-    }
-  } finally {
-    deploying.value = false
-  }
-}
 </script>

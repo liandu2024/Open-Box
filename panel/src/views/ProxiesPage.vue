@@ -98,7 +98,6 @@ import {
   loadOpenboxSubscriptions,
   openboxSubscriptions,
 } from '@/store/openboxSubscriptions'
-import { routingPendingDeploy } from '@/store/routing'
 import { useRouter } from 'vue-router'
 import { isMiddleScreen } from '@/helper/utils'
 import {
@@ -127,8 +126,6 @@ const handleSubscriptionRefresh = async (id: string) => {
   refreshingSubId.value = id
   try {
     await refreshSubscription(id)
-    // 刷新会换掉这条订阅的节点,和在订阅设置页刷新是同一件事,同样要提示需要重新部署
-    routingPendingDeploy.value = true
     await loadOpenboxSubscriptions()
   } catch {
     // 失败原因在订阅设置页会逐条显示;这里是只读入口,不重复铺错误文案

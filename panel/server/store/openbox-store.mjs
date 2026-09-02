@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto'
+import { BUILTIN_REGIONS } from '../engine/routing-model.mjs'
 import { defaultGroups, normalizeGroups } from '../engine/user-groups.mjs'
 
 export const KEYS = {
@@ -17,7 +18,9 @@ export const DEFAULT_PROFILE = {
   dns: { split: true, mode: 'hijack', direct: '223.5.5.5', proxy: 'https://1.1.1.1/dns-query' },
   routing: {
     proxyTag: 'PROXY',
-    // 地区分流:路由器本身在哪。CN 中国大陆 / HKMO 香港澳门 / OTHER 其他地区。
+    // 地区分流:预置中国大陆/香港澳门/其他地区三条,用户可以增删改、拖拽排序。
+    // regionId 指向当前选中的那条(没有时按 regionMode 推断,见 routing-model.mjs)。
+    regions: BUILTIN_REGIONS.map((r) => ({ ...r, rulesets: [...r.rulesets] })),
     regionMode: 'CN',
     // 「出站」页签:每条策略的 selector 里能选到哪几类东西
     outboundOptions: { direct: true, reject: true, groups: true },

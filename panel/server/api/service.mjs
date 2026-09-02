@@ -1,8 +1,15 @@
 import express from 'express'
-import { serviceStatus, startService, stopService, restartService, enableService, disableService } from '../system/service.mjs'
+import { serviceStatus, stopService, enableService, disableService } from '../system/service.mjs'
 import { detectConflicts } from '../system/conflicts.mjs'
+import { runDeploy } from './deploy-runner.mjs'
 
-export const registerServiceRoutes = (app, { ctx, paths } = {}) => {
+// 启动/重启内核 = 用当前设置重新生成配置并应用。界面上没有单独的「部署」按钮:各个
+// 设置页保存到档案即可,要生效就来启动内核。所以这两个动作不能只是喊一声 init 脚本
+// (那样起来的还是上一次落盘的配置),必须走完整条 runDeploy:冲突检测 → 拉规则集 →
+// 校验 → 落盘 → DNS 接管 → 防火墙 → 启动 → 验证,失败自动回滚到直连。
+const failureDetail = (result) => result.message || `deploy failed at stage: ${result.stage}`
+
+export const registerServiceRoutes = (app, { store, ctx, paths } = {}) => {
   const router = express.Router({ caseSensitive: true })
   router.use(express.json({ limit: '1mb' }))
 
@@ -24,8 +31,13 @@ export const registerServiceRoutes = (app, { ctx, paths } = {}) => {
     }
 
     let result
-    if (action === 'start') {
-      result = await startService(ctx, paths.initd.core)
+    if (action === 'start' || action === 'restart') {
+      const deployed = await runDeploy({ store, ctx, paths })
+      // 统一成 service 动作的返回形状({ok,code,stderr}),失败原因原样带出去,
+      // 内核页那条结果横幅就能直接显示"哪一步没过"。
+      result = deployed.ok
+        ? { ok: true, code: 0, stderr: '' }
+        : { ok: false, code: 1, stderr: failureDetail(deployed) }
     } else if (action === 'stop') {
       // 停止内核时一并关闭开机自启:部署成功会把自启打开,若「停止」不关掉它,
       // 坏配置把网搞断时用户停了内核,一重启 procd 又会把它拉起来、网又断——
@@ -46,8 +58,6 @@ export const registerServiceRoutes = (app, { ctx, paths } = {}) => {
           }
         }
       }
-    } else if (action === 'restart') {
-      result = await restartService(ctx, paths.initd.core)
     } else if (action === 'enable') {
       result = await enableService(ctx, paths.initd.core)
     } else if (action === 'disable') {

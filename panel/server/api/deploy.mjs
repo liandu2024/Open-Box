@@ -1,47 +1,7 @@
 import express from 'express'
-import { readSystemDns } from '../system/resolv.mjs'
-import { buildConfig } from '../engine/config.mjs'
-import { groupNodesByRegion } from '../engine/groups.mjs'
-import { deployConfig, rollbackToDirect } from '../system/deploy.mjs'
-import { enableService, disableService } from '../system/service.mjs'
-
-// deployConfig 对 start/verify/error 三个阶段都会自行调用 rollbackToDirect 回到直连,
-// 但 rollbackToDirect 只管停服务/还原 DNS/撤防火墙,不动"开机自启"标志位——
-// 若不在这里额外 disable,曾经 enable 过的内核在下次重启时仍会被 procd 拉起,
-// 而此时配置/DNS 接管已经回滚,等于开机直接指向一份死配置(P3 终审延期项)。
-const ROLLED_BACK_STAGES = new Set(['start', 'verify', 'error'])
-
-const STATUS_BY_STAGE = {
-  conflict: 409,
-  validate: 409,
-  // 规则集拉不下来是外部依赖(GitHub / 加速站)不可用,不是请求本身有问题,也没动
-  // 任何系统状态 —— 用 503 与"配置有毛病"的 409 区分开。
-  rulesets: 503,
-  start: 500,
-  verify: 500,
-  error: 500,
-}
-
-// GET preview 与 POST deploy 共用:从当前 store 状态(profile + 节点 + 按区域分组)组装
-// 一份 sing-box 配置。clash secret 独立存储,只在此处临时注入 profile 副本供 buildConfig
-// 写入 experimental.clash_api.secret,不回写 store.profile。
-// systemDns 是路由器 WAN 下发的 DNS 上游(见 system/resolv.mjs):dnsmasq 接管模式下
-// 直连侧要用它,不能让 sing-box 去问系统解析器——那时系统解析器就是 dnsmasq,而 dnsmasq
-// 的上游又是 sing-box,一问就死循环。预览接口没有 ctx 也照样能出配置,回落到档案里的值。
-const buildCurrentConfig = (store, systemDns) => {
-  const profile = store.getProfile()
-  const nodes = store.getNodes()
-  const { groups } = groupNodesByRegion(nodes)
-  const clashApiSecret = store.getClashSecret()
-  const config = buildConfig({
-    nodes,
-    regionGroups: groups,
-    userGroups: store.getGroups(),
-    profile: { ...profile, clashApiSecret },
-    systemDns,
-  })
-  return { config, profile }
-}
+import { buildCurrentConfig, runDeploy, STATUS_BY_STAGE } from './deploy-runner.mjs'
+import { rollbackToDirect } from '../system/deploy.mjs'
+import { disableService } from '../system/service.mjs'
 
 export const registerDeployRoutes = (app, { store, ctx, paths } = {}) => {
   const router = express.Router({ caseSensitive: true })
@@ -53,56 +13,15 @@ export const registerDeployRoutes = (app, { store, ctx, paths } = {}) => {
     res.json({ config })
   })
 
-  // 部署:用当前 store 状态组装配置,交给 P3 的安全部署编排(冲突检测/校验归因/落盘/
-  // DNS接管/防火墙/重启/失败回滚),把结果持久化后返回。
+  // 生成并应用配置。界面上没有单独的「部署」按钮了——启动/重启内核会走同一条路径
+  // (见 api/service.mjs);这个端点保留给命令行和外部脚本单独触发用。
   router.post('/deploy', async (_req, res) => {
-    let result
-
-    try {
-      const systemDns = await readSystemDns(ctx)
-      const { config, profile } = buildCurrentConfig(store, systemDns)
-      result = await deployConfig(ctx, paths, { config, profile })
-
-      store.setDeployState({
-        stage: result.stage,
-        message: result.message || '',
-        at: Date.now(),
-        badTags: result.badTags || [],
-      })
-    } catch (error) {
-      // deployConfig 只在"落盘"之后的步骤自行 try/catch;冲突检测(detectConflicts)、
-      // mkdirp、validateConfigObject 这些落盘之前的步骤抛出的异常会直接冒泡到这里。
-      // 不兜底的话 Express 会用默认 HTML 错误页(带调用栈)回应,且 setDeployState 不会
-      // 执行——部署态停留在上一次的结果,前端轮询会显示过期状态。
-      const message = error instanceof Error ? error.message : String(error)
-      store.setDeployState({ stage: 'error', message, at: Date.now(), badTags: [] })
-      res.status(500).json({ ok: false, stage: 'error', message })
-      return
-    }
-
-    // enableService/disableService 只是"开机自启"标志位的同步动作,发生在部署结果已经
-    // setDeployState 落盘之后——它失败不代表部署本身失败(内核已经在跑、配置已经生效)。
-    // P4a round2 复审实证:这里原先在外层 try 里,enableService 抛错会被外层 catch 捕获、
-    // 把刚刚写入的成功状态(stage:'running')整个改写成 'error',而配置其实已经部署成功、
-    // 接管也已生效——纯属"开机自启没标上"这一件小事,不该覆盖已经落盘的成功结果。
-    try {
-      if (result.ok) {
-        await enableService(ctx, paths.initd.core)
-      } else if (ROLLED_BACK_STAGES.has(result.stage)) {
-        await disableService(ctx, paths.initd.core)
-      }
-    } catch (error) {
-      console.warn(
-        'deploy: enable/disable service (autostart flag) failed:',
-        error instanceof Error ? error.message : error,
-      )
-    }
-
+    const result = await runDeploy({ store, ctx, paths })
     const status = result.ok ? 200 : (STATUS_BY_STAGE[result.stage] || 500)
-    res.status(status).json({ ok: result.ok, stage: result.stage, message: result.message, badTags: result.badTags || [] })
+    res.status(status).json(result)
   })
 
-  // 最近一次部署结果(供面板轮询/展示)。
+  // 最近一次应用结果(供面板轮询/展示)。
   router.get('/deploy/state', (_req, res) => {
     res.json({ state: store.getDeployState() })
   })

@@ -1,4 +1,4 @@
-import { CN_RULESETS, normalizeRouting } from './routing-model.mjs'
+import { normalizeRouting } from './routing-model.mjs'
 
 // 一条策略的匹配条件 → 一条 sing-box 路由规则。
 // 同一条规则里的多个字段是「或」的关系(sing-box 规则内部各字段取并集),所以一条策略
@@ -44,21 +44,15 @@ export const buildRoute = (routing, rulesetDir, options = {}) => {
     rules.push(policyRule(policy))
   }
 
-  // 地区分流:决定"没被策略挑走的流量"往哪走。
-  if (conf.regionMode === 'CN') {
-    // 人在国内:中国站点直连(不经过 Open-Box),其余走代理
-    for (const tag of CN_RULESETS) {
-      addTag(tag)
-      rules.push({ rule_set: tag, outbound: 'direct' })
-    }
-  } else if (conf.regionMode === 'OTHER') {
-    // 人在境外:中国站点反过来要走代理(回国),其余直连
-    for (const tag of CN_RULESETS) {
-      addTag(tag)
-      rules.push({ rule_set: tag, outbound: proxyTag })
-    }
+  // 地区分流:选中的那一条地区决定"没被策略挑走的流量"往哪走。
+  // 比如中国大陆 = geosite-cn/geoip-cn 直连、其余走代理;其他地区 = 同样两个规则集
+  // 反过来走代理(回国)、其余直连;香港澳门 = 没有额外规则集、其余直连。
+  const region = conf.region
+  const regionOutbound = region && region.target === 'proxy' ? proxyTag : 'direct'
+  for (const tag of (region ? region.rulesets : [])) {
+    addTag(tag)
+    rules.push({ rule_set: tag, outbound: regionOutbound })
   }
-  // HKMO 不需要额外规则:策略之外的一切都由下面的 final 兜到直连
 
   const rule_set = [...rulesetTags].map((tag) => ({
     type: 'local', tag, format: 'binary', path: `${rulesetDir}/${tag}.srs`,
@@ -69,7 +63,7 @@ export const buildRoute = (routing, rulesetDir, options = {}) => {
     default_domain_resolver: 'dns-direct',
     rule_set,
     rules,
-    final: conf.regionMode === 'CN' ? proxyTag : 'direct',
+    final: region && region.fallback === 'proxy' ? proxyTag : 'direct',
   }
   return { route, rulesetTags }
 }

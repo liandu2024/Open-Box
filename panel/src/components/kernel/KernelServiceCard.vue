@@ -89,6 +89,10 @@
         {{ resultBanner.text }}
       </div>
 
+      <!-- 启动/重启 = 用当前设置重新生成配置并应用(server/api/service.mjs),
+           所以界面上没有单独的「部署」按钮:各设置页保存完,来这里启动一下就生效。 -->
+      <p class="text-base-content/60 text-xs">{{ $t('kernelApplyHint') }}</p>
+
       <div class="flex flex-col gap-2">
         <div class="flex flex-wrap gap-2">
           <button

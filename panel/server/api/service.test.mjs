@@ -2,14 +2,27 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import express from 'express'
 import { registerServiceRoutes } from './service.mjs'
+import { createStore } from '../store/openbox-store.mjs'
 import { createMockContext } from '../system/context.mjs'
 import { createPaths } from '../system/paths.mjs'
+
+const memStore = () => {
+  const m = new Map()
+  return createStore({
+    get: (k) => (m.has(k) ? m.get(k) : null),
+    set: (k, v) => m.set(k, v),
+    del: (k) => m.delete(k),
+  })
+}
 
 const paths = createPaths('/opt/open-box')
 const cmds = (ctx) => ctx.calls.map((c) => [c.cmd, ...c.args].join(' '))
 
 // 内核 status 默认视为 running;panel 默认 inactive;detectConflicts 返回空列表
+// 启动/重启会走完整条部署流水线,所以这里的 mock 要备齐它依赖的东西:
+// sing-box 二进制存在(重启前的预检),status 视为 running(启动后的验证)。
 const okCtx = (over = {}) => createMockContext({
+  files: { [paths.singbox]: '#!/bin/sh\n' },
   execResults: {
     '/etc/init.d/openbox status': { code: 0, stdout: 'running' },
     '/etc/init.d/openbox-panel status': { code: 1, stdout: 'inactive' },
@@ -17,9 +30,10 @@ const okCtx = (over = {}) => createMockContext({
   },
 })
 
-const startApp = async (ctx) => {
+const startApp = async (ctx, storeOverride) => {
+  const store = storeOverride || memStore()
   const app = express()
-  registerServiceRoutes(app, { ctx, paths })
+  registerServiceRoutes(app, { store, ctx, paths })
   const server = app.listen(0)
   await new Promise((resolve, reject) => {
     server.once('listening', resolve)
@@ -27,6 +41,7 @@ const startApp = async (ctx) => {
   })
   const { port } = server.address()
   return {
+    store,
     baseUrl: `http://127.0.0.1:${port}`,
     close: () => new Promise((resolve) => server.close(resolve)),
   }
@@ -62,7 +77,44 @@ test('POST /api/openbox/service/core/start → {ok,code,stderr}', async () => {
     assert.equal(body.ok, true)
     assert.ok(typeof body.code === 'number')
     assert.ok(typeof body.stderr === 'string')
-    assert.ok(cmds(ctx).includes('/etc/init.d/openbox start'))
+    assert.ok(cmds(ctx).includes('/etc/init.d/openbox restart'))
+  } finally {
+    await close()
+  }
+})
+
+// 界面上没有单独的「部署」按钮了:设置页只管保存,启动内核时才生成并应用配置。
+// 若启动只是喊一声 init 脚本,起来的还是上一次落盘的旧配置——这条守住那件事。
+test('启动内核 = 用当前设置重新生成配置并落盘', async () => {
+  const ctx = okCtx()
+  const { baseUrl, store, close } = await startApp(ctx)
+  try {
+    await fetch(`${baseUrl}/api/openbox/service/core/start`, { method: 'POST' })
+    const written = ctx.writes.find((w) => w.path === paths.configPath)
+    assert.ok(written, '应当写入 config.json')
+    const config = JSON.parse(written.content)
+    assert.ok(config.outbounds.some((o) => o.tag === 'PROXY'))
+    // 结果落进部署态,内核页那张卡片显示的就是它
+    assert.equal(store.getDeployState().stage, 'running')
+  } finally {
+    await close()
+  }
+})
+
+test('应用失败时启动不谎报成功,原因原样带出去', async () => {
+  // 别的代理插件在跑 → 停在 conflict 阶段,内核根本不会被动到
+  const ctx = createMockContext({
+    files: { '/etc/init.d/openclash': '#!' },
+    execResults: { '/etc/init.d/openclash status': { code: 0, stdout: 'running' } },
+  })
+  const { baseUrl, close } = await startApp(ctx)
+  try {
+    const res = await fetch(`${baseUrl}/api/openbox/service/core/start`, { method: 'POST' })
+    const body = await res.json()
+    assert.equal(body.ok, false)
+    assert.match(body.stderr, /OpenClash/)
+    assert.equal(ctx.writes.length, 0)
+    assert.ok(!cmds(ctx).includes('/etc/init.d/openbox restart'))
   } finally {
     await close()
   }

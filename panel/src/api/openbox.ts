@@ -9,7 +9,17 @@ export interface OpenboxProfileRoutingCategory {
 }
 
 // 地区分流:路由器本身在哪。它决定"没被策略挑走的流量"往哪走。
-export type OpenboxRegionMode = 'CN' | 'HKMO' | 'OTHER'
+// 预置中国大陆/香港澳门/其他地区三条,用户可以改名、改规则、增删和拖拽排序。
+export interface OpenboxRegion {
+  id: string
+  name: string
+  // 这个地区要特殊对待的规则集(如 geosite-cn)
+  rulesets?: string[]
+  // 上面那些规则集走哪
+  target?: 'direct' | 'proxy'
+  // 其余流量走哪
+  fallback?: 'direct' | 'proxy'
+}
 
 // 一条策略 = 一组匹配条件 + 内核里一个同名 selector。策略不记具体节点:
 // selector 的成员由 outboundOptions 决定,用户在代理页点选。
@@ -35,7 +45,10 @@ export interface OpenboxOutboundOptions {
 
 export interface OpenboxProfileRouting {
   proxyTag?: string
-  regionMode?: OpenboxRegionMode
+  regions?: OpenboxRegion[]
+  // 当前选中的地区;老档案里可能只有 regionMode('CN'/'HKMO'/'OTHER'),服务端会认
+  regionId?: string
+  regionMode?: string
   outboundOptions?: OpenboxOutboundOptions
   policies?: OpenboxRoutingPolicy[]
   adBlock?: boolean

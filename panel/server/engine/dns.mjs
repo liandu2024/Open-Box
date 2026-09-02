@@ -1,4 +1,4 @@
-import { CN_RULESETS, normalizeRouting } from './routing-model.mjs'
+import { normalizeRouting } from './routing-model.mjs'
 
 const extractHost = (url) => {
   // "https://1.1.1.1/dns-query" -> "1.1.1.1";裸 host 原样返回
@@ -65,17 +65,15 @@ export const buildDns = (profile, options = {}) => {
     rules.push(policyDnsRule(policy, tag))
   })
 
-  // 地区层,和路由规则保持一致:国内是中国域名直连、其余走代理;境外反过来。
-  if (conf.regionMode === 'CN') {
-    for (const tag of CN_RULESETS) rules.push({ rule_set: tag, server: 'dns-direct' })
-  } else if (conf.regionMode === 'OTHER') {
-    for (const tag of CN_RULESETS) rules.push({ rule_set: tag, server: 'dns-proxy' })
-  }
+  // 地区层,和路由规则一一对应:那个地区的规则集走哪个出站,它的域名就用哪边的 DNS。
+  const region = conf.region
+  const regionServer = region && region.target === 'proxy' ? 'dns-proxy' : 'dns-direct'
+  for (const tag of (region ? region.rulesets : [])) rules.push({ rule_set: tag, server: regionServer })
 
   return {
     servers,
     rules,
-    final: conf.regionMode === 'CN' ? 'dns-proxy' : 'dns-direct',
+    final: region && region.fallback === 'proxy' ? 'dns-proxy' : 'dns-direct',
     strategy,
   }
 }

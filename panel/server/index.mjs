@@ -911,7 +911,7 @@ app.delete('/api/background-image', (_req, res) => {
 registerSubscriptionRoutes(app, { store, fetchImpl: globalThis.fetch })
 registerProfileRoutes(app, { store })
 registerDeployRoutes(app, { store, ctx: obCtx, paths: obPaths })
-registerServiceRoutes(app, { ctx: obCtx, paths: obPaths })
+registerServiceRoutes(app, { store, ctx: obCtx, paths: obPaths })
 registerPenetrationRoutes(app, { store, ctx: obCtx, paths: obPaths, fetchImpl: globalThis.fetch })
 registerNodeLatencyRoutes(app, { ctx: obCtx, paths: obPaths, fetchImpl: globalThis.fetch })
 registerGroupRoutes(app, { store })

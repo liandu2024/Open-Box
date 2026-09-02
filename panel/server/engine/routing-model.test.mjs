@@ -8,7 +8,7 @@ test('老档案:categories 变策略,directRulesets 里的中国规则集变地�
     directRulesets: ['geosite-cn', 'geoip-cn', 'geosite-private'],
     fallback: 'PROXY',
   })
-  assert.equal(conf.regionMode, 'CN')
+  assert.equal(conf.region.id, 'cn')
   assert.deepEqual(
     conf.policies.map((p) => [p.name, p.default, p.rulesets]),
     [
@@ -19,16 +19,16 @@ test('老档案:categories 变策略,directRulesets 里的中国规则集变地�
 })
 
 test('老档案:兜底 direct 且没有中国规则集 → 香港澳门那一档', () => {
-  assert.equal(normalizeRouting({ directRulesets: [], fallback: 'direct' }).regionMode, 'HKMO')
+  assert.equal(normalizeRouting({ directRulesets: [], fallback: 'direct' }).region.id, 'hkmo')
 })
 
 test('已经是新模型时不再迁移', () => {
   const conf = normalizeRouting({
-    regionMode: 'OTHER',
+    regionId: 'other',
     policies: [{ id: 'x', name: '谷歌', domainSuffix: ['google.com'] }],
     categories: [{ ruleset: 'geosite-old', target: 'X' }],
   })
-  assert.equal(conf.regionMode, 'OTHER')
+  assert.equal(conf.region.id, 'other')
   assert.deepEqual(conf.policies.map((p) => p.name), ['谷歌'])
 })
 
@@ -68,4 +68,31 @@ test('中国大陆/其他地区的代理面没法枚举,一律全局转发', () 
   const policies = [{ name: '谷歌', domainSuffix: ['google.com'] }]
   assert.deepEqual(dnsmasqForwardDomains({ regionMode: 'CN', policies }), [])
   assert.deepEqual(dnsmasqForwardDomains({ regionMode: 'OTHER', policies }), [])
+})
+
+// -------- 地区列表可增删改 --------
+
+test('没自定义过就是内置那三条,默认选中第一条', () => {
+  const conf = normalizeRouting({ policies: [] })
+  assert.deepEqual(conf.regions.map((r) => r.id), ['cn', 'hkmo', 'other'])
+  assert.equal(conf.region.id, 'cn')
+})
+
+test('可以自己加一条地区(比如日本):规则集直连、其余走代理', () => {
+  const conf = normalizeRouting({
+    policies: [],
+    regions: [{ id: 'jp', name: '日本', rulesets: ['geosite-jp'], target: 'direct', fallback: 'proxy' }],
+    regionId: 'jp',
+  })
+  assert.equal(conf.region.name, '日本')
+  assert.deepEqual(conf.region.rulesets, ['geosite-jp'])
+})
+
+test('选中的 id 不存在时回落到第一条,不至于整份配置没有地区层', () => {
+  const conf = normalizeRouting({ policies: [], regionId: '已经删掉的' })
+  assert.equal(conf.region.id, 'cn')
+})
+
+test('老的 regionMode 仍然认:改版初期存下的档案不该失效', () => {
+  assert.equal(normalizeRouting({ policies: [], regionMode: 'HKMO' }).region.id, 'hkmo')
 })

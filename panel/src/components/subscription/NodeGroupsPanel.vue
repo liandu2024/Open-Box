@@ -531,7 +531,6 @@ import { AUTO_GROUP_DEFAULT_COUNTRIES, COUNTRIES, countryName, findCountry } fro
 import { keywordMatches, normalizeForMatch } from '@/helper/keywordMatch'
 import { showNotification } from '@/helper/notification'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
-import { routingPendingDeploy } from '@/store/routing'
 import {
   Bars3Icon,
   ChevronLeftIcon,
@@ -936,8 +935,6 @@ const persist = async (next: OpenboxUserGroup[]) => {
   const res = await saveNodeGroups(next)
   groups.value = res.groups
   reportDropped(res.dropped || [])
-  // 组的构成会改变生成的配置,和改订阅/分流一样要提示需要重新部署
-  routingPendingDeploy.value = true
   return res
 }
 

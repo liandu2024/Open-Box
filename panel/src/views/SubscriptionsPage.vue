@@ -163,7 +163,6 @@ import AddSubscriptionDialog from '@/components/subscription/AddSubscriptionDial
 import NodeGroupsPanel from '@/components/subscription/NodeGroupsPanel.vue'
 import SubscriptionCard from '@/components/subscription/SubscriptionCard.vue'
 import { usePaddingForViews } from '@/composables/paddingViews'
-import { routingPendingDeploy } from '@/store/routing'
 import {
   PlusIcon,
   RssIcon,
@@ -205,10 +204,6 @@ const groupsPanel = useTemplateRef('groupsPanel')
 
 const showAddDialog = ref(false)
 const handleSaved = () => {
-  // A new subscription changes the node set that feeds policy groups into the deployed config
-  // (Important 2, P4b final review) — the routing/kernel banners need to know a redeploy is due,
-  // same as an edit made through RoutingPage itself.
-  routingPendingDeploy.value = true
   void loadSubscriptions()
 }
 
@@ -221,8 +216,6 @@ const requestEdit = (sub: OpenboxSubscription) => {
 }
 
 const handleEdited = () => {
-  // 改了链接或重命名规则都会换掉这条订阅的节点,和新增/刷新一样要提示需要重新部署
-  routingPendingDeploy.value = true
   editing.value = null
   void loadSubscriptions()
 }
@@ -236,9 +229,6 @@ const handleRefresh = async (id: string) => {
 
   try {
     await refreshSubscription(id)
-    // Refreshing can add/remove/change nodes just like adding or deleting a subscription does —
-    // same undeployed-changes signal (Important 2, P4b final review).
-    routingPendingDeploy.value = true
     await loadSubscriptions()
   } catch (error) {
     showNotification({
@@ -267,9 +257,6 @@ const confirmDelete = async () => {
 
   try {
     await deleteSubscription(pendingDelete.value.id)
-    // Deleting removes that subscription's nodes from what would be deployed — same
-    // undeployed-changes signal as add/refresh (Important 2, P4b final review).
-    routingPendingDeploy.value = true
     showDeleteDialog.value = false
     await loadSubscriptions()
   } catch (error) {

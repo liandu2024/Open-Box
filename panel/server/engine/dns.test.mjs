@@ -5,7 +5,7 @@ import { buildDns } from './dns.mjs'
 const base = {
   ipv6: true,
   dns: { split: true, mode: 'hijack', direct: '223.5.5.5', proxy: 'https://1.1.1.1/dns-query' },
-  routing: { proxyTag: 'PROXY', regionMode: 'CN', policies: [] },
+  routing: { proxyTag: 'PROXY', regionId: 'cn', policies: [] },
 }
 const withRouting = (routing, over = {}) => ({ ...base, ...over, routing: { ...base.routing, ...routing } })
 
@@ -35,13 +35,13 @@ test('中国大陆:中国域名直连解析,其余走代理 DNS', () => {
 })
 
 test('香港澳门:没有地区规则,兜底就是直连解析', () => {
-  const dns = buildDns(withRouting({ regionMode: 'HKMO' }))
+  const dns = buildDns(withRouting({ regionId: 'hkmo' }))
   assert.deepEqual(dns.rules, [])
   assert.equal(dns.final, 'dns-direct')
 })
 
 test('其他地区:中国域名走代理 DNS(回国),兜底直连', () => {
-  const dns = buildDns(withRouting({ regionMode: 'OTHER' }))
+  const dns = buildDns(withRouting({ regionId: 'other' }))
   assert.deepEqual(dns.rules, [
     { rule_set: 'geosite-cn', server: 'dns-proxy' },
     { rule_set: 'geoip-cn', server: 'dns-proxy' },
@@ -52,7 +52,7 @@ test('其他地区:中国域名走代理 DNS(回国),兜底直连', () => {
 test('每条策略一台自己的 DNS,detour 指向同名 selector——代理的 DNS 跟着策略选的线路走', () => {
   const dns = buildDns(
     withRouting({
-      regionMode: 'HKMO',
+      regionId: 'hkmo',
       policies: [{ id: 'p1', name: '谷歌', rulesets: ['geosite-google'], domainSuffix: ['google.com'] }],
     }),
   )
@@ -66,7 +66,7 @@ test('每条策略一台自己的 DNS,detour 指向同名 selector——代理�
 
 test('只有 IP 条件的策略不进 DNS 规则:解析阶段还没有 IP,写进去只会让人以为生效了', () => {
   const dns = buildDns(
-    withRouting({ regionMode: 'HKMO', policies: [{ id: 'p1', name: '内网', ipCidr: ['10.0.0.0/8'] }] }),
+    withRouting({ regionId: 'hkmo', policies: [{ id: 'p1', name: '内网', ipCidr: ['10.0.0.0/8'] }] }),
   )
   assert.deepEqual(dns.rules, [])
   assert.equal(dns.servers.length, 2)
@@ -74,7 +74,7 @@ test('只有 IP 条件的策略不进 DNS 规则:解析阶段还没有 IP,写进
 
 test('广告拦截排在所有策略之前', () => {
   const dns = buildDns(
-    withRouting({ regionMode: 'HKMO', adBlock: true, policies: [{ id: 'p1', name: '谷歌', rulesets: ['geosite-google'] }] }),
+    withRouting({ regionId: 'hkmo', adBlock: true, policies: [{ id: 'p1', name: '谷歌', rulesets: ['geosite-google'] }] }),
   )
   assert.deepEqual(dns.rules[0], { rule_set: 'geosite-category-ads-all', action: 'reject' })
 })

@@ -6,6 +6,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { buildConfig } from './config.mjs'
+import { BUILTIN_REGIONS } from './routing-model.mjs'
 import { parseSubscription } from './subscription.mjs'
 import { renameNodes } from './rename.mjs'
 import { groupNodesByRegion } from './groups.mjs'
@@ -181,7 +182,7 @@ test('一个节点都没命中的用户组也能过 sing-box check(挂 PROXY 占
         // 策略指向那个空组:这正是"组不能被丢掉"的理由——丢了它,策略的 default 就悬空
         routing: {
           proxyTag: 'PROXY',
-          regionMode: 'HKMO',
+          regionId: 'hkmo',
           policies: [{ id: 'ie', name: '爱尔兰站点', rulesets: ['geosite-cn'], default: '爱尔兰-自动' }],
         },
         rulesetDir: dir,
@@ -211,9 +212,9 @@ test('一个节点都没命中的用户组也能过 sing-box check(挂 PROXY 占
 // 三档地区各生成一份完整配置,交给真内核 check。这一组是整个改造的兜底:
 // 规则顺序、策略 selector、block 出站、DNS 的 local/detour 写法,任何一处写错
 // sing-box 都会在这里报出来,而不是等部署到路由器上才 FATAL。
-for (const [regionMode, expectedFinal] of [['CN', 'PROXY'], ['HKMO', 'direct'], ['OTHER', 'direct']]) {
-  test(`地区分流 ${regionMode}:整份配置过 sing-box check`, { skip: hasBin ? false : 'sing-box 二进制缺失(panel/.tools/sing-box);运行 pnpm run check:config 前先放置二进制' }, () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), `openbox-check-${regionMode}-`))
+for (const [regionId, expectedFinal] of [['cn', 'PROXY'], ['hkmo', 'direct'], ['other', 'direct'], ['jp', 'PROXY']]) {
+  test(`地区分流 ${regionId}:整份配置过 sing-box check`, { skip: hasBin ? false : 'sing-box 二进制缺失(panel/.tools/sing-box);运行 pnpm run check:config 前先放置二进制' }, () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), `openbox-check-${regionId}-`))
     try {
       const { nodes } = parseSubscription(
         [
@@ -228,7 +229,12 @@ for (const [regionMode, expectedFinal] of [['CN', 'PROXY'], ['HKMO', 'direct'], 
         dns: { split: true, mode: 'dnsmasq', direct: '223.5.5.5', proxy: 'https://1.1.1.1/dns-query' },
         routing: {
           proxyTag: 'PROXY',
-          regionMode,
+          // 前三条是内置的;jp 是"用户自己加的一条地区",走的是同一条代码路径
+          regions: [
+            ...BUILTIN_REGIONS,
+            { id: 'jp', name: '日本', rulesets: ['geosite-geolocation-!cn'], target: 'proxy', fallback: 'proxy' },
+          ],
+          regionId,
           adBlock: true,
           policies: [
             {

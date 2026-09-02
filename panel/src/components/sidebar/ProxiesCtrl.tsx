@@ -13,7 +13,6 @@ import {
   openboxSubscriptions,
   refreshAllOpenboxSubscriptions,
 } from '@/store/openboxSubscriptions'
-import { routingPendingDeploy } from '@/store/routing'
 import { activeConnections } from '@/store/connections'
 import {
   allProxiesLatencyTest,
@@ -81,8 +80,6 @@ export default defineComponent({
       isUpgrading.value = true
       try {
         await refreshAllOpenboxSubscriptions()
-        // 刷新可能换掉节点,和在订阅设置页刷新一样要提示需要重新部署
-        routingPendingDeploy.value = true
         await fetchProxies()
       } finally {
         isUpgrading.value = false

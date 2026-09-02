@@ -13,10 +13,22 @@
 // (见 store/openbox-store.mjs),硬清空老字段反而会让降级回旧版本的人丢数据。
 // 老档案(categories/directRulesets/fallback)在这里翻译成新模型,行为保持不变。
 
-export const REGION_MODES = Object.freeze(['CN', 'HKMO', 'OTHER'])
-
-// 中国大陆那两个规则集在三种地区里都要用到,只是去向不同,单独拎出来
+// 中国大陆那两个规则集,三个内置地区都用得到,只是去向不同
 export const CN_RULESETS = Object.freeze(['geosite-cn', 'geoip-cn'])
+
+// 内置的三个地区。它们只是"预置的几条",用户可以改、可以删、可以自己加(比如日本:
+// geosite-jp/geoip-jp 直连、其余走代理),所以存的是数据而不是三个写死的分支。
+//   rulesets  这个地区要特殊对待的规则集
+//   target    这些规则集走哪(direct / proxy)
+//   fallback  其余流量走哪(direct / proxy)
+export const BUILTIN_REGIONS = Object.freeze([
+  { id: 'cn', name: '中国大陆', rulesets: [...CN_RULESETS], target: 'direct', fallback: 'proxy' },
+  { id: 'hkmo', name: '香港澳门', rulesets: [], target: 'direct', fallback: 'direct' },
+  { id: 'other', name: '其他地区', rulesets: [...CN_RULESETS], target: 'proxy', fallback: 'direct' },
+])
+
+// 老字段 regionMode 到内置地区的对照,用来迁移改版初期存下的那一版档案
+const REGION_MODE_TO_ID = { CN: 'cn', HKMO: 'hkmo', OTHER: 'other' }
 
 export const DEFAULT_OUTBOUND_OPTIONS = Object.freeze({ direct: true, reject: true, groups: true })
 
@@ -26,6 +38,16 @@ export const REJECT_TAG = 'block'
 
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0
 const strList = (v) => (Array.isArray(v) ? v.filter(isNonEmptyString).map((s) => s.trim()) : [])
+
+const TARGETS = ['direct', 'proxy']
+
+export const normalizeRegion = (raw, index = 0) => ({
+  id: isNonEmptyString(raw?.id) ? raw.id.trim() : `region-${index}`,
+  name: isNonEmptyString(raw?.name) ? raw.name.trim() : `地区-${index + 1}`,
+  rulesets: strList(raw?.rulesets),
+  target: TARGETS.includes(raw?.target) ? raw.target : 'direct',
+  fallback: TARGETS.includes(raw?.fallback) ? raw.fallback : 'proxy',
+})
 
 export const normalizePolicy = (raw, index = 0) => ({
   id: isNonEmptyString(raw?.id) ? raw.id.trim() : `policy-${index}`,
@@ -59,7 +81,7 @@ const migrateLegacy = (routing) => {
   // 老的"始终直连"里带 geosite-cn 就是国内玩法;否则看兜底:兜底是 direct 说明
   // 用户已经在"只有指定的走代理"的模式下了,对应香港澳门那一档。
   const hasCn = directRulesets.some((t) => CN_RULESETS.includes(t))
-  const regionMode = hasCn ? 'CN' : fallback === 'direct' ? 'HKMO' : 'CN'
+  const regionId = hasCn ? 'cn' : fallback === 'direct' ? 'hkmo' : 'cn'
 
   const policies = []
   for (const cat of categories) {
@@ -86,18 +108,27 @@ const migrateLegacy = (routing) => {
       ),
     )
   }
-  return { regionMode, policies }
+  return { regionId, policies }
 }
 
 export const normalizeRouting = (routing) => {
   const raw = routing && typeof routing === 'object' ? routing : {}
   const migrated = Array.isArray(raw.policies) ? null : migrateLegacy(raw)
 
-  const regionMode = REGION_MODES.includes(raw.regionMode)
-    ? raw.regionMode
-    : migrated
-      ? migrated.regionMode
-      : 'CN'
+  // 地区列表:用户没自定义过就用内置的三条
+  const regions = Array.isArray(raw.regions) && raw.regions.length
+    ? raw.regions.map(normalizeRegion)
+    : BUILTIN_REGIONS.map((r) => ({ ...r, rulesets: [...r.rulesets] }))
+
+  // 选中哪一条。regionMode 是改版初期的写法,一并认下来。
+  const wanted = isNonEmptyString(raw.regionId)
+    ? raw.regionId.trim()
+    : isNonEmptyString(raw.regionMode)
+      ? REGION_MODE_TO_ID[raw.regionMode] || ''
+      : migrated
+        ? migrated.regionId
+        : ''
+  const region = regions.find((r) => r.id === wanted) || regions[0]
 
   const policies = (migrated ? migrated.policies : raw.policies.map(normalizePolicy)).filter(
     policyHasCondition,
@@ -112,7 +143,9 @@ export const normalizeRouting = (routing) => {
 
   return {
     proxyTag: isNonEmptyString(raw.proxyTag) ? raw.proxyTag.trim() : 'PROXY',
-    regionMode,
+    regions,
+    regionId: region ? region.id : '',
+    region,
     outboundOptions,
     policies,
     adBlock: raw.adBlock === true,
@@ -144,7 +177,9 @@ export const policyOutboundOptions = (outboundOptions, groupTags) => {
 // 列不出来就返回空数组,调用方回落到现在的全局转发。
 export const dnsmasqForwardDomains = (routing) => {
   const conf = normalizeRouting(routing)
-  if (conf.regionMode !== 'HKMO') return []
+  // 只有"其余流量直连、且这个地区没有额外的代理规则集"时,代理面才等于那几条策略
+  if (!conf.region || conf.region.fallback !== 'direct') return []
+  if (conf.region.target === 'proxy' && conf.region.rulesets.length) return []
   const domains = []
   for (const p of conf.policies) {
     if (p.rulesets.length || p.domainKeyword.length) return []

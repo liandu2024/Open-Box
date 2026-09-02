@@ -1,5 +1,5 @@
 import express from 'express'
-import { REGION_MODES } from '../engine/routing-model.mjs'
+import { BUILTIN_REGIONS } from '../engine/routing-model.mjs'
 
 const isPlainObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v)
 const isString = (v) => typeof v === 'string'
@@ -61,8 +61,13 @@ export const validateProfilePatch = (patch) => {
       return 'routing.adRuleset must match /^[A-Za-z0-9._-]+$/'
     }
 
-    if ('regionMode' in routing && !REGION_MODES.includes(routing.regionMode)) {
-      return `routing.regionMode must be one of ${REGION_MODES.join(', ')}`
+    if ('regionId' in routing && !isString(routing.regionId)) {
+      return 'routing.regionId must be a string'
+    }
+
+    if ('regions' in routing) {
+      const error = validateRegions(routing.regions)
+      if (error) return error
     }
 
     if ('outboundOptions' in routing) {
@@ -120,14 +125,41 @@ const validatePolicies = (policies) => {
   return null
 }
 
+const REGION_TARGETS = new Set(['direct', 'proxy'])
+
+// 地区条目校验。名字直接当界面上的标签用,规则集要落到 <tag>.srs 文件名,
+// 所以两者都不能是空的/带路径分隔符的东西。
+const validateRegions = (regions) => {
+  if (!Array.isArray(regions)) return 'routing.regions must be an array'
+  for (const r of regions) {
+    if (!isPlainObject(r)) return 'routing.regions entries must be objects'
+    if (!isString(r.id) || !r.id.trim()) return 'routing.regions[].id must be a non-empty string'
+    if (!isString(r.name) || !r.name.trim()) return 'routing.regions[].name must be a non-empty string'
+    if ('rulesets' in r) {
+      if (!isStringArray(r.rulesets)) return 'routing.regions[].rulesets must be an array of strings'
+      if (!r.rulesets.every(isValidRulesetTag)) {
+        return 'routing.regions[].rulesets entries must match /^[A-Za-z0-9._-]+$/'
+      }
+    }
+    for (const field of ['target', 'fallback']) {
+      if (field in r && !REGION_TARGETS.has(r[field])) {
+        return `routing.regions[].${field} must be one of direct, proxy`
+      }
+    }
+  }
+  return null
+}
+
 // 首次引导用的区域推荐默认值。CN 走境内直连(direct DNS + geosite/geoip-cn + PROXY 兜底);
 // 其它区域默认更保守——不启用 DNS 分流,失败时直接落回直连,直连规则集按区域代号派生。
 const buildRegionDefaults = (regionParam) => {
   const raw = isString(regionParam) && regionParam.trim() ? regionParam.trim().toUpperCase() : 'CN'
-  const regionMode = REGION_MODES.includes(raw) ? raw : 'CN'
-  // 三档地区只改 regionMode,不再替用户改写规则:规则由 regionMode 在生成时决定
+  const byMode = { CN: 'cn', HKMO: 'hkmo', OTHER: 'other' }
+  const regionId = byMode[raw] || 'cn'
+  // 只挑中内置的哪一条地区,不替用户改写规则:规则由地区条目自己带着
   // (见 engine/routing.mjs),不需要再往档案里塞一堆 directRulesets。
-  return { region: regionMode, regionMode, dns: { split: true }, routing: { regionMode } }
+  const region = BUILTIN_REGIONS.find((r) => r.id === regionId)
+  return { region: region.name, regionId, dns: { split: true }, routing: { regionId } }
 }
 
 export const registerProfileRoutes = (app, { store } = {}) => {
