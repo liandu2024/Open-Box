@@ -69,7 +69,7 @@
       </Draggable>
     </div>
 
-    <!-- 删掉一条策略会连带删掉内核里那个同名 selector(代理页上就没了),先确认一次 -->
+    <!-- 删掉一个站点集会连带删掉内核里那个同名 selector(代理页上就没了),先确认一次 -->
     <DialogWrapper
       v-model="showDelete"
       :title="$t('routingPolicyDeleteTitle')"
@@ -133,9 +133,9 @@
           </div>
         </div>
 
-        <!-- 一条规则一行:类型 + 值。同一条策略里各行是「或」的关系(和内核一致),
+        <!-- 一条规则一行:类型 + 值。同一个站点集里各行是「或」的关系(和内核一致),
              所以行与行之间没有先后可言——不给拖拽柄,免得暗示一个并不存在的顺序。
-             策略走哪条线路不在这儿定:在「代理」页点选。 -->
+             站点集走哪条线路不在这儿定:在「代理」页点选。 -->
         <div class="flex flex-col gap-2">
           <div class="flex items-center justify-between gap-2">
             <label class="text-xs font-medium">{{ $t('routingPolicyRulesLabel') }}</label>
@@ -336,7 +336,7 @@ const saveDraft = async () => {
     showNotification({ content: 'routingPolicyNameRequired', type: 'alert-error' })
     return
   }
-  // 策略名就是内核里的出站名,重名会生成两个同名出站
+  // 站点集的名字就是内核里的出站名,重名会生成两个同名出站
   if (rows.value.some((p) => p.name === name && p.id !== draft.value?.id)) {
     showNotification({ content: 'routingPolicyNameDuplicate', type: 'alert-error' })
     return

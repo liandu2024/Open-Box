@@ -5,7 +5,7 @@
         class="flex flex-col gap-3 p-3"
         :style="padding"
       >
-        <!-- 三个页签,按改动频率从高到低排:策略最常改,地区设一次,出站基本不动。 -->
+        <!-- 四个页签,按改动频率从高到低排:站点集最常改,地区设一次,出站基本不动。 -->
         <div
           role="tablist"
           class="tabs-box tabs tabs-sm w-fit"
@@ -93,13 +93,13 @@ const PAGE_TABS: { key: PageTab; labelKey: string }[] = [
 ]
 const pageTab = ref<PageTab>('policies')
 
-// 「节点组」页里建的组名。策略的可选出站与「出站」页签的预览都用它。
+// 「节点组」页里建的组名。站点集的可选出站与「出站」页签的预览都用它。
 const groupNames = ref<string[]>([])
 const groupsLoading = ref(false)
 const groupsError = ref('')
 
-// 策略能选的节点组直接问「节点组」接口:那是权威来源。原来是从配置预览的 outbounds
-// 里反推,策略自己生成的 selector 混进去之后就不准了(策略会把自己也列成可选项)。
+// 站点集能选的节点组直接问「节点组」接口:那是权威来源。原来是从配置预览的 outbounds
+// 里反推,站点集自己生成的 selector 混进去之后就不准了(它会把自己也列成可选项)。
 const loadPolicyGroups = async () => {
   groupsLoading.value = true
   groupsError.value = ''

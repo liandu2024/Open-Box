@@ -23,7 +23,7 @@
         </label>
       </div>
 
-      <!-- 把"策略里到底会看到哪几项"直接摆出来:三个开关是抽象的,这一行才是结果。
+      <!-- 把"站点集里到底会看到哪几项"直接摆出来:三个开关是抽象的,这一行才是结果。
            节点组取自「节点组」页(权威来源),不从配置预览里猜。 -->
       <div class="border-base-300/60 rounded-lg border p-3">
         <p class="text-base-content/60 mb-2 text-xs">{{ $t('routingOutboundsPreview') }}</p>
@@ -51,7 +51,7 @@ import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{
   profile: OpenboxProfile
-  // 「节点组」页里建的组名,策略选择器里会原样列出来
+  // 「节点组」页里建的组名,站点集的选择器里会原样列出来
   groupNames: string[]
   patchProfile: (patch: Record<string, unknown>) => Promise<OpenboxProfile>
 }>()
