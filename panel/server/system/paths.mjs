@@ -6,5 +6,13 @@ export const createPaths = (root = '/opt/open-box') => ({
   configPath: `${root}/etc/config.json`,
   dataDir: `${root}/data`,
   rulesetDir: `${root}/data/rulesets`,
+  metaPath: `${root}/meta.json`,
+  updateScript: `${root}/update.sh`,
+  channelPath: `${root}/data/channel`,
+  // 和 scripts/update.sh 里 STATUS_PATH / UPDATE_LOG 的默认值一致(TMPDIR 未设置时)
+  updateStatusPath: '/tmp/openbox-update.status',
+  updateLogPath: '/tmp/openbox-update.log',
+  geoUpdateStatePath: `${root}/data/geo-update.json`,
+  scheduleStatePath: `${root}/data/schedule-state.json`,
   initd: { core: '/etc/init.d/openbox', panel: '/etc/init.d/openbox-panel' },
 })

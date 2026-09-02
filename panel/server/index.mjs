@@ -13,6 +13,9 @@ import { registerPenetrationRoutes } from './api/penetration.mjs'
 import { registerProfileRoutes } from './api/profile.mjs'
 import { registerServiceRoutes } from './api/service.mjs'
 import { registerRulesetRoutes } from './api/rulesets.mjs'
+import { registerUpdateRoutes } from './api/updates.mjs'
+import { runDeploy } from './api/deploy-runner.mjs'
+import { startScheduler } from './system/scheduler.mjs'
 import { registerSubscriptionRoutes } from './api/subscriptions.mjs'
 import { createStore } from './store/openbox-store.mjs'
 import { createRealContext } from './system/context-real.mjs'
@@ -917,6 +920,9 @@ registerRulesetRoutes(app, { store, ctx: obCtx, paths: obPaths, fetchImpl: globa
 registerPenetrationRoutes(app, { store, ctx: obCtx, paths: obPaths, fetchImpl: globalThis.fetch })
 registerNodeLatencyRoutes(app, { ctx: obCtx, paths: obPaths, fetchImpl: globalThis.fetch })
 registerGroupRoutes(app, { store })
+registerUpdateRoutes(app, { store, ctx: obCtx, paths: obPaths, fetchImpl: globalThis.fetch })
+// 自动更新计划:每分钟看一眼档案里的计划,到点就做(见 system/scheduler.mjs)
+startScheduler({ store, ctx: obCtx, paths: obPaths, fetchImpl: globalThis.fetch, runDeploy, log: (m) => console.log(m) })
 
 // /api/* 专用 JSON 错误兜底:必须注册在所有路由之后、SPA fallback 之前。任何路由处理器里
 // 未被自己 try/catch 的异常(同步抛出,或调用 next(err))原本会落到 Express 默认错误处理器,

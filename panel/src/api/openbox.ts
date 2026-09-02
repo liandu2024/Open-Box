@@ -65,7 +65,14 @@ export interface OpenboxProfileDns {
 
 // The backend deep-merges patches onto this shape (see server/store/openbox-store.mjs), so a
 // profile is always fully populated — no field is ever missing on GET.
+// 自动更新计划(面板进程内的定时器)
+export interface OpenboxUpdatePlans {
+  openbox?: { auto?: boolean; hour?: number; channel?: 'auto' | 'direct' | 'mirror' }
+  geo?: { auto?: boolean; hour?: number; days?: number }
+}
+
 export interface OpenboxProfile {
+  updates?: OpenboxUpdatePlans
   region: string
   ipv6: boolean
   tun?: { autoRedirect?: boolean }
@@ -597,3 +604,43 @@ export const fetchPolicyEntries = async (params: {
   }
   return requestJson<OpenboxPolicyEntries>(`/api/openbox/policies/entries?${search.toString()}`)
 }
+
+// ---- Open-Box 自身升级 / Geo 规则集刷新 ----
+export interface OpenboxUpdateProgress {
+  stage: string
+  pid?: string
+  bytes: number | null
+  total: number | null
+  message: string
+  running: boolean
+}
+export interface OpenboxUpdateStatus {
+  version: string
+  singboxVersion: string
+  builtAt: string
+  channel: { mode: 'direct' | 'mirror'; prefix: string }
+  status: OpenboxUpdateProgress
+  logTail: string
+}
+export const fetchUpdateStatus = () => requestJson<OpenboxUpdateStatus>('/api/openbox/update/status')
+export const checkUpdate = () =>
+  requestJson<{ current: string; latest: string; via: string; hasUpdate: boolean }>('/api/openbox/update/check')
+export const runUpdate = (channel: 'auto' | 'direct' | 'mirror') =>
+  requestJson<{ ok: boolean; output: string }>('/api/openbox/update/run', { method: 'POST', body: JSON.stringify({ channel }) })
+export const cancelUpdate = () => requestJson<{ result: string }>('/api/openbox/update/cancel', { method: 'POST' })
+
+export interface OpenboxRulesetsRefreshResult {
+  ok: boolean
+  updated: string[]
+  failed: Array<{ tag: string; message: string }>
+  total?: number
+  restarted: boolean
+  restartMessage?: string
+  message?: string
+}
+export const refreshRulesets = () =>
+  requestJson<OpenboxRulesetsRefreshResult>('/api/openbox/rulesets/refresh', { method: 'POST' })
+export const fetchRulesetsRefreshStatus = () =>
+  requestJson<{ count: number; lastAt: string; updated: string[]; failed: Array<{ tag: string; message: string }>; restarted: boolean }>(
+    '/api/openbox/rulesets/refresh/status',
+  )

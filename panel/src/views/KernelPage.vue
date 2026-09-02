@@ -19,6 +19,18 @@
           @refresh="loadStatus"
         />
 
+        <!-- Open-Box 自身更新 / Geo 规则集更新(各带自动更新计划) -->
+        <template v-if="profile">
+          <OpenboxUpdateCard
+            :profile="profile"
+            :patch-profile="patchProfile"
+          />
+          <GeoUpdateCard
+            :profile="profile"
+            :patch-profile="patchProfile"
+          />
+        </template>
+
         <!-- 内核参数:测速地址、IPv6。改动写进档案,重启内核后生效。 -->
         <template v-if="profile">
           <TestUrlCard
@@ -38,7 +50,9 @@
 <script setup lang="ts">
 import type { OpenboxKernelVersion, OpenboxProfile, OpenboxServiceStatus } from '@/api/openbox'
 import { fetchKernelVersion, fetchProfile, fetchServiceStatus, saveProfile } from '@/api/openbox'
+import GeoUpdateCard from '@/components/kernel/GeoUpdateCard.vue'
 import KernelServiceCard from '@/components/kernel/KernelServiceCard.vue'
+import OpenboxUpdateCard from '@/components/kernel/OpenboxUpdateCard.vue'
 import Ipv6Card from '@/components/routing/Ipv6Card.vue'
 import TestUrlCard from '@/components/routing/TestUrlCard.vue'
 import { usePaddingForViews } from '@/composables/paddingViews'

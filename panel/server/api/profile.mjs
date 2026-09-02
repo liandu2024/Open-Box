@@ -42,6 +42,27 @@ export const validateProfilePatch = (patch) => {
     if (key in patch && !isHttpUrl(patch[key])) return `${key} must be an http(s) URL`
   }
 
+  // 自动更新计划:openbox {auto, hour, channel} / geo {auto, hour, days}
+  if ('updates' in patch) {
+    const u = patch.updates
+    if (!isPlainObject(u)) return 'updates must be an object'
+    const isHour = (v) => Number.isInteger(v) && v >= 0 && v <= 23
+    if ('openbox' in u) {
+      const o = u.openbox
+      if (!isPlainObject(o)) return 'updates.openbox must be an object'
+      if ('auto' in o && !isBoolean(o.auto)) return 'updates.openbox.auto must be a boolean'
+      if ('hour' in o && !isHour(o.hour)) return 'updates.openbox.hour must be an integer 0-23'
+      if ('channel' in o && !['auto', 'direct', 'mirror'].includes(o.channel)) return 'updates.openbox.channel must be auto, direct or mirror'
+    }
+    if ('geo' in u) {
+      const g = u.geo
+      if (!isPlainObject(g)) return 'updates.geo must be an object'
+      if ('auto' in g && !isBoolean(g.auto)) return 'updates.geo.auto must be a boolean'
+      if ('hour' in g && !isHour(g.hour)) return 'updates.geo.hour must be an integer 0-23'
+      if ('days' in g && !(Number.isInteger(g.days) && g.days >= 1 && g.days <= 30)) return 'updates.geo.days must be an integer 1-30'
+    }
+  }
+
   if ('dns' in patch) {
     const dns = patch.dns
     if (!isPlainObject(dns)) return 'dns must be an object'

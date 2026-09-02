@@ -23,6 +23,11 @@ export const DEFAULT_PROFILE = {
   // 直连出站用——默认那个是 Google 的域名,从国内直连去测量出来的是"直连到 Google 有多远"。
   testUrl: 'https://www.gstatic.com/generate_204',
   directTestUrl: 'http://www.msftconnecttest.com/connecttest.txt',
+  // 自动更新计划(面板进程内的定时器,见 system/scheduler.mjs):默认都关
+  updates: {
+    openbox: { auto: false, hour: 4, channel: 'auto' },
+    geo: { auto: false, hour: 4, days: 7 },
+  },
   routing: {
     proxyTag: 'PROXY',
     // 地区分流:预置中国大陆/香港澳门/其他地区三条,用户可以增删改、拖拽排序。
