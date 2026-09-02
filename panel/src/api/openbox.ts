@@ -193,11 +193,6 @@ export interface OpenboxConfigPreview {
   [key: string]: unknown
 }
 
-export interface OpenboxPolicyGroup {
-  name: string
-  type: string
-  nodeCount: number
-}
 
 // Error bodies aren't consistent across these routes — profile.mjs/subscriptions.mjs answer
 // with {error}, deploy.mjs/service.mjs/penetration.mjs answer with {message} — so both are
@@ -421,20 +416,6 @@ export const fetchConfigPreview = async (): Promise<OpenboxConfigPreview> => {
 // selector itself — see server/engine/emit-groups.mjs: emitGroupOutbounds always emits
 // `[proxySelector, ...regionGroups]`, and each region group's `outbounds` is its member node
 // tags (so its length is the node count). Filtering by tag instead of position is robust to
-// that ordering ever changing.
-export const extractPolicyGroups = (
-  config: OpenboxConfigPreview | null | undefined,
-  proxyTag: string,
-): OpenboxPolicyGroup[] => {
-  if (!config || !Array.isArray(config.outbounds)) return []
-
-  return config.outbounds
-    .filter(
-      (o): o is OpenboxConfigOutbound & { outbounds: string[] } =>
-        (o.type === 'selector' || o.type === 'urltest') && o.tag !== proxyTag && Array.isArray(o.outbounds),
-    )
-    .map((o) => ({ name: o.tag, type: o.type, nodeCount: o.outbounds.length }))
-}
 
 // --- Kernel/service management, emergency rollback & penetration query (P4b Task 7) ---
 
