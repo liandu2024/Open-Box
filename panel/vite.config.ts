@@ -38,8 +38,12 @@ export default defineConfig({
     // 国旗/通用图标默认会被当成小资源内联成 data URI,150 多个全塞进主 chunk 就是白白
     // 多背 400KB——而一次界面上只会显示到其中几个。让这两个目录下的文件一律走独立文件,
     // 浏览器按需去取;其余资源保持 Vite 的默认阈值不变。
+    // globes/ 也不能内联:内联出来是 data:image/svg+xml,%3csvg…(URL 编码),而代理页的
+    // ProxyIcon 把这个前缀当成"后面是原始 svg 标记"直接 v-html,页面上就成了一串乱码。
     assetsInlineLimit: (filePath: string) =>
-      filePath.includes('/assets/flags/') || filePath.includes('/assets/misc/') ? false : undefined,
+      filePath.includes('/assets/flags/') || filePath.includes('/assets/misc/') || filePath.includes('/assets/globes/')
+        ? false
+        : undefined,
   },
   server: {
     proxy: {
