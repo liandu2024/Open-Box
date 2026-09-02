@@ -55,6 +55,23 @@ html.apple-mobile-ui {
   @apply bg-transparent! shadow-none! backdrop-blur-none!;
 }
 
+/* 页面级滚动容器一律预留滚动条的位置。
+   没有它的话,内容多到出现滚动条的那一页会比不出现的那一页窄十来像素,页签之间
+   来回切、或者列表刚好增删一行,整块内容就横向跳一下(订阅/节点组两个页签之间
+   最明显)。scrollbar-gutter: stable 让这条槽常驻,有没有滚动条宽度都一样。
+
+   选择器挑的是「页面骨架」那一层:所有视图的滚动容器都是
+   `min-h-0 flex-1 overflow-x-hidden overflow-y-auto`(见 src/views/*.vue),
+   以后新加的页面照这个骨架写就自动有了,不需要各自记着加类名。
+   卡片里那些小列表(max-h-* + overflow-y-auto)不带 flex-1,不受影响——
+   几十像素高的小框里再留一条空槽反而难看。
+   macOS 的浮层滚动条本来就不占宽度,那边看不出变化;Windows/Linux 上才是重点。 */
+#app-content .flex-1.overflow-y-auto,
+/* 首页那一层滚动容器不走上面的骨架(它是 absolute + h-full),单独点名 */
+#app-content .scrollable-parent {
+  scrollbar-gutter: stable;
+}
+
 #app-content .card,
 #app-content .collapse,
 #app-content .rounded-lg {
