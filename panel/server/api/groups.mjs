@@ -1,3 +1,4 @@
+import { FALLBACK_TAG } from '../engine/routing-model.mjs'
 import express from 'express'
 import { normalizeGroups, emitUserGroups, GROUP_TYPES } from '../engine/user-groups.mjs'
 
@@ -38,6 +39,10 @@ export const registerGroupRoutes = (app, { store } = {}) => {
     // 所以在写入前就拦住,而不是等部署时才炸。
     const seen = new Set()
     for (const g of normalized) {
+      if (g.name === FALLBACK_TAG) {
+        res.status(400).json({ error: `「${FALLBACK_TAG}」是兜底站点集占着的名字,分组不能叫这个` })
+        return
+      }
       if (seen.has(g.name)) {
         res.status(400).json({ error: `分组名称重复:${g.name}` })
         return

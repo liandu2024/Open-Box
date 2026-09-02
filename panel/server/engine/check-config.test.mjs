@@ -219,10 +219,14 @@ for (const fallbackDefault of ['direct', 'proxy']) {
         [
           'trojan://pw@hk.example.com:443?sni=hk.example.com#HK-01',
           'ss://YWVzLTI1Ni1nY206c2VjcmV0cHc=@us.example.com:8388#US-01',
+          // 认不出国别的节点会被分到「其他」那一桶——真机上就是它和兜底站点集「其他」
+          // 撞了同一个出站 tag,内核 FATAL: duplicate outbound/endpoint tag
+          'ss://YWVzLTI1Ni1nY206c2VjcmV0cHc=@mystery.example.com:8388#Node-X',
         ].join('\n'),
       )
       const renamed = renameNodes(nodes)
       const { groups } = groupNodesByRegion(renamed)
+      assert.ok(groups.some((g) => g.name === '其他地区'), '认不出国别的节点该落到「其他地区」组')
       const profile = {
         ipv6: false,
         dns: { split: true, mode: 'dnsmasq', direct: '223.5.5.5', proxy: 'https://1.1.1.1/dns-query' },
@@ -266,7 +270,7 @@ for (const fallbackDefault of ['direct', 'proxy']) {
       assert.equal(fb.default, fallbackDefault === 'direct' ? 'direct' : '美国')
       const sel = config.outbounds.find((o) => o.tag === '谷歌')
       // 顺序:直连 → 地区组(按节点顺序)→ 用户组 → 拒绝
-      assert.deepEqual(sel.outbounds, ['direct', '美国', '香港', '所有-自动', 'block'])
+      assert.deepEqual(sel.outbounds, ['direct', '美国', '香港', '其他地区', '所有-自动', 'block'])
       assert.ok(config.outbounds.some((o) => o.type === 'block'), '有策略选了拒绝,block 出站必须在')
       // dnsmasq 模式下直连侧不能是 local(会绕回 dnsmasq),要用读到的系统上游
       assert.deepEqual(config.dns.servers[0], { type: 'udp', tag: 'dns-direct', server: '192.168.1.1', detour: 'direct' })

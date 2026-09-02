@@ -1,3 +1,10 @@
+import { FALLBACK_TAG } from './routing-model.mjs'
+
+// 认不出国别的节点,重命名时地区标签是「其他」(rename.mjs 的 unknownLabel),节点名形如
+// 「其他-01」。按前缀分出来的组要是也叫「其他」,就和兜底站点集撞了同一个出站 tag,
+// 内核直接 FATAL(duplicate outbound/endpoint tag)。组名改叫「其他地区」,节点名不动。
+const UNKNOWN_REGION_GROUP = '其他地区'
+
 export const groupNodesByRegion = (nodes, options = {}) => {
   const groupType = options.groupType || 'urltest'
   const order = []
@@ -13,7 +20,7 @@ export const groupNodesByRegion = (nodes, options = {}) => {
     byRegion.get(region).push(node.tag)
   }
   const groups = order.map((region) => ({
-    name: region,
+    name: region === FALLBACK_TAG ? UNKNOWN_REGION_GROUP : region,
     type: groupType,
     nodeTags: byRegion.get(region),
   }))
