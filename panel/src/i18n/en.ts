@@ -363,6 +363,7 @@ const en = {
   groupBuiltinBlockSummary: 'Matched traffic is dropped.',
   groupBuiltinDirectSummary: 'Traffic leaves the router directly, bypassing any proxy. The kernel needs it; disabling only hides it from site sets.',
   groupBuiltinBadge: 'Built-in',
+  groupBuiltinNoDelete: 'Built-in outbounds cannot be deleted',
   groupDisabledBadge: 'Disabled',
   groupDisable: 'Disable',
   groupEnable: 'Enable',

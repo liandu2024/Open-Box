@@ -81,12 +81,15 @@
         >
           <PencilSquareIcon class="h-4 w-4" />
         </button>
-        <!-- 内置的直连/拒绝删不掉:内核离不开 direct,拒绝是站点集里「拒绝」的实体 -->
+        <!-- 内置的直连/拒绝删不掉:内核离不开 direct,拒绝是站点集里「拒绝」的实体。
+             按钮照样摆着(置灰、不可点),每一行的按钮列才对得齐。 -->
         <button
-          v-if="!group.kind"
           type="button"
-          class="btn btn-ghost btn-square btn-sm hover:text-error"
+          class="btn btn-ghost btn-square btn-sm"
+          :class="group.kind ? 'opacity-30' : 'hover:text-error'"
+          :disabled="Boolean(group.kind)"
           :aria-label="$t('delete')"
+          :title="group.kind ? $t('groupBuiltinNoDelete') : $t('delete')"
           @click="askDelete(group)"
         >
           <TrashIcon class="h-4 w-4" />

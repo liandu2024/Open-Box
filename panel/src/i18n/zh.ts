@@ -360,6 +360,7 @@ const zh: LANG_MESSAGE = {
   groupBuiltinBlockSummary: '命中的流量直接丢弃。',
   groupBuiltinDirectSummary: '流量不经代理,直接从路由器出去。内核离不开它,停用只是站点集里选不到。',
   groupBuiltinBadge: '内置',
+  groupBuiltinNoDelete: '内置出站不能删除',
   groupDisabledBadge: '已停用',
   groupDisable: '停用',
   groupEnable: '启用',
