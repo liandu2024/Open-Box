@@ -132,7 +132,8 @@ const appStyles = computed(() => {
   return [
     backgroundImage.value,
     {
-      '--app-space': '0.75rem',
+      // 全局间距 = 8px,和代理页写死的 p-2 / gap-2 一致(工具栏、日志行、连接表、虚拟列表都用它)
+      '--app-space': '0.5rem',
       '--radius-box': boxRadius,
       '--radius-selector': fieldRadius,
       '--radius-field': fieldRadius,
