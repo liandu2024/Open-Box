@@ -203,6 +203,15 @@ html.apple-mobile-ui {
   border-radius: var(--app-radius-compact, 0.4rem) !important;
 }
 
+/* 拖拽排序进行中(SortableJS 在按住的那一项上加 sortable-chosen,松手才去掉)整页禁止
+   选中文字:列表都用的是 force-fallback(鼠标事件模拟拖拽,不走浏览器原生 DnD),拖动时
+   指针扫过的文字会像普通拖选一样被选中,一路高亮。 */
+body:has(.sortable-chosen),
+body:has(.sortable-chosen) * {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+
 /* 悬浮下拉层:不跟着「背景透明度」变透明,永远实底 */
 .app-popover {
   background-color: var(--color-base-100) !important;
