@@ -107,6 +107,9 @@ const props = defineProps<{
   clearable?: boolean
   // 列出地球图标(节点组用;地区关键词那边必须选真国家)
   globes?: boolean
+  // 只给这些国家可选(按给定顺序,不再按名字排)。调用方用它把范围收窄到
+  // "当前节点里真有的国家"——给一个选了也没用的选项没有意义。
+  only?: string[]
 }>()
 
 const emit = defineEmits<{ 'update:modelValue': [string] }>()
@@ -120,11 +123,18 @@ const label = computed(() => {
   return c ? countryName(c, locale.value) : ''
 })
 
-const options = computed(() =>
-  COUNTRIES.map((c) => ({ code: c.code, label: countryName(c, locale.value) })).sort((a, b) =>
+const options = computed(() => {
+  if (props.only) {
+    // 保持调用方给的顺序:那个顺序本身带着信息(比如按节点数从多到少)
+    return props.only
+      .map((code) => findCountry(code))
+      .filter((c): c is NonNullable<typeof c> => Boolean(c))
+      .map((c) => ({ code: c.code, label: countryName(c, locale.value) }))
+  }
+  return COUNTRIES.map((c) => ({ code: c.code, label: countryName(c, locale.value) })).sort((a, b) =>
     a.label.localeCompare(b.label, locale.value),
-  ),
-)
+  )
+})
 
 // 代码和名字都能搜:输 "jp" 和输 "日本" 都该找到日本
 // 地球图标只在明确要的地方给(节点组图标);地区关键词那边必须是真国家,不能选地球。

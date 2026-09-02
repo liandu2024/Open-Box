@@ -15,14 +15,21 @@
     </p>
 
     <!-- 服务端把「按当前节点跑一遍」的结果一并返回。落地不了的组必须说出来:
-         成员是按名字引用的,节点一改名(比如打开订阅名前缀)引用就会悬空,
-         组会被静默丢掉——不提示的话,用户只会发现配置里少了个组,却不知道为什么。 -->
+         成员是按名字引用的,节点一改名(比如打开订阅名前缀)引用就会悬空,组会被
+         静默丢掉——不提示的话,用户只会发现配置里少了个组,却不知道为什么。
+         同一个原因的合成一条:一组一行的话,建十个空组就是十行一模一样的话,
+         真正的信息(哪几个组)反而被淹没了。 -->
     <p
-      v-for="item in dropped"
-      :key="item.name"
+      v-if="droppedEmpty.length"
       class="text-warning text-sm"
     >
-      {{ $t(item.reason === 'cycle' ? 'groupDroppedCycle' : 'groupDroppedEmpty', { name: item.name }) }}
+      {{ $t('groupDroppedEmpty', { names: droppedEmpty.join('、') }) }}
+    </p>
+    <p
+      v-if="droppedCycle.length"
+      class="text-warning text-sm"
+    >
+      {{ $t('groupDroppedCycle', { names: droppedCycle.join('、') }) }}
     </p>
 
     <div
@@ -433,6 +440,7 @@
             <div class="ml-auto w-36">
               <CountrySelect
                 model-value=""
+                :only="addableCountries"
                 :placeholder="$t('groupAutoAddCountry')"
                 @update:model-value="addAutoCountry"
               />
@@ -554,6 +562,12 @@ const loading = ref(false)
 const error = ref('')
 // 保存后服务端回报的「落地不了的组」,见模板里的说明
 const dropped = ref<Array<{ name: string; reason: string }>>([])
+const droppedEmpty = computed(() =>
+  dropped.value.filter((d) => d.reason !== 'cycle').map((d) => d.name),
+)
+const droppedCycle = computed(() =>
+  dropped.value.filter((d) => d.reason === 'cycle').map((d) => d.name),
+)
 
 const load = async () => {
   loading.value = true
@@ -801,6 +815,15 @@ const autoRow = (code: string) => {
   if (!c) return null
   return { code: c.code, label: countryName(c, locale.value), count: autoNodeCount.value[c.code] ?? 0 }
 }
+
+// 下拉框里只给"当前节点里真有的国家",并且已经加过的不再出现:选了也没用的选项
+// 不该摆在那儿。按节点数从多到少排,常用的在最上面。
+const addableCountries = computed(() => {
+  const counts = autoNodeCount.value
+  return COUNTRIES.map((c) => c.code)
+    .filter((code) => (counts[code] ?? 0) > 0 && !autoCountries.value.includes(code))
+    .sort((a, b) => (counts[b] ?? 0) - (counts[a] ?? 0))
+})
 
 const addAutoCountry = (code: string) => {
   if (!code || autoCountries.value.includes(code)) return
