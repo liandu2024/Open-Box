@@ -289,7 +289,6 @@ import {
 import { QuestionMarkCircleIcon } from '@heroicons/vue/24/outline'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import TextInput from '../common/TextInput.vue'
 import GroupTestUrlsSettings from './GroupTestUrlsSettings.vue'
 import IconSettings from './IconSettings.vue'
 
@@ -330,7 +329,6 @@ const disabledProxyGroupIconSettingClass = computed(() => {
 
 const hasVisibleLatencyItems = computed(() => {
   return (
-    isVisibleSpeedtestUrl.value ||
     isVisibleSpeedtestTimeout.value ||
     isVisibleLowLatency.value ||
     isVisibleMediumLatency.value ||
