@@ -35,7 +35,6 @@ const props = defineProps<{
   now: string
   renderProxies: string[]
   renderAll?: boolean
-  previewOnly?: boolean
 }>()
 
 type ProviderSection =
@@ -223,55 +222,8 @@ const selectProxy = (nodeName: string) => {
       v-for="(section, index) in renderedSections"
       :key="section.key"
     >
-      <section
-        v-if="previewOnly && section.title === ''"
-        class="flex flex-col gap-3"
-        :class="index === renderedSections.length - 1 ? 'pb-0' : 'pb-3'"
-      >
-        <div
-          v-if="index > 0"
-          class="border-base-300/55 mb-1 border-t"
-        />
-        <p
-          v-if="section.title !== ''"
-          class="text-base-content min-w-0 flex-1 text-left text-base font-medium"
-        >
-          {{ section.title }}
-        </p>
-        <ProxyPreview
-          :nodes="section.proxies"
-          :now="now"
-          :group-name="name"
-          :force-dots="true"
-          @nodeclick="selectProxy"
-        />
-      </section>
       <ProxyCategorySection
-        v-else-if="previewOnly"
-        :title="section.title"
-        :show-divider="index > 0"
-        :toggleable="false"
-        :flush-bottom="index === renderedSections.length - 1"
-      >
-        <template #action>
-          <div @click.stop>
-            <LatencyTag
-              :class="'bg-base-200/50 hover:bg-base-200 z-10 cursor-pointer'"
-              :loading="isSectionLatencyTesting(section)"
-              @click.stop="handleSectionLatencyTest(section)"
-            />
-          </div>
-        </template>
-        <ProxyPreview
-          :nodes="section.proxies"
-          :now="now"
-          :group-name="name"
-          :force-dots="true"
-          @nodeclick="selectProxy"
-        />
-      </ProxyCategorySection>
-      <ProxyCategorySection
-        v-else-if="section.kind === 'category'"
+        v-if="section.kind === 'category'"
         :title="section.title"
         :show-divider="index > 0"
         :collapsed="isSectionCollapsed(section)"

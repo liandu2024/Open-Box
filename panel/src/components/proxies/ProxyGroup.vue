@@ -128,14 +128,7 @@
         v-if="isWindowResizing"
         class="bg-base-content/10 mt-2 h-4 rounded-full"
       />
-      <ProxiesByProvider
-        v-else-if="groupProxiesByProvider"
-        :name="name"
-        :now="proxyGroup.now"
-        :render-proxies="renderProxies"
-        :preview-only="true"
-        @select="handlerProxySelect(name, $event)"
-      />
+      <!-- 折叠态永远是一排圆点,不按订阅分段:分段是展开后看节点卡片用的,圆点摊成几行反而占地方 -->
       <ProxyPreview
         v-else
         :nodes="renderProxies"

@@ -1,10 +1,14 @@
 <template>
-  <div class="mt-2.5">
+  <!-- 成员里没有组可以往下穿(比如「节点」页签里的组,成员全是节点)就整个不显示,
+       不留一个灰掉的按钮 -->
+  <div
+    v-if="canPenetrate"
+    class="mt-2.5"
+  >
     <div class="flex flex-wrap items-center gap-3">
       <button
         class="proxy-penetration-toggle btn btn-sm min-w-24 gap-1.5"
         :class="isExpanded ? 'btn-neutral' : 'btn-outline'"
-        :disabled="!canPenetrate"
         @click="togglePenetration"
       >
         <span>{{ buttonLabel }}</span>
