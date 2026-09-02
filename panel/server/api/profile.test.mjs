@@ -444,3 +444,15 @@ test('GET 时把地区翻译成站点集写回档案:界面看到的和内核跑
     await close()
   }
 })
+
+test('PUT 校验:测速地址必须是 http(s) URL', async () => {
+  const { baseUrl, close } = await startApp()
+  try {
+    assert.equal((await putJson(baseUrl, '/api/openbox/profile', { testUrl: 'http://connect.rom.miui.com/generate_204' })).status, 200)
+    assert.equal((await putJson(baseUrl, '/api/openbox/profile', { directTestUrl: 'https://www.msftconnecttest.com/connecttest.txt' })).status, 200)
+    assert.equal((await putJson(baseUrl, '/api/openbox/profile', { testUrl: 'gstatic.com' })).status, 400)
+    assert.equal((await putJson(baseUrl, '/api/openbox/profile', { directTestUrl: 'ftp://x' })).status, 400)
+  } finally {
+    await close()
+  }
+})

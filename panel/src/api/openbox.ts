@@ -66,6 +66,9 @@ export interface OpenboxProfile {
   tun?: { autoRedirect?: boolean }
   dns: OpenboxProfileDns
   routing: OpenboxProfileRouting
+  // 测速地址:testUrl 给自动择优组和面板延迟测试用;directTestUrl 只给内置直连用
+  testUrl?: string
+  directTestUrl?: string
   rulesetDir?: string
 }
 
@@ -353,6 +356,8 @@ export interface OpenboxUserGroup {
   members: string[]
   interval?: string
   tolerance?: number
+  // urltest 用:这个组自己的测速地址,空 = 用档案里的全局地址
+  testUrl?: string
 }
 
 export interface OpenboxGroupsPayload {

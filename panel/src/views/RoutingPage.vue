@@ -42,11 +42,16 @@
             :profile="profile"
             :patch-profile="patchProfile"
           />
-          <Ipv6Card
-            v-else
-            :profile="profile"
-            :patch-profile="patchProfile"
-          />
+          <template v-else>
+            <TestUrlCard
+              :profile="profile"
+              :patch-profile="patchProfile"
+            />
+            <Ipv6Card
+              :profile="profile"
+              :patch-profile="patchProfile"
+            />
+          </template>
         </template>
       </div>
     </div>
@@ -57,6 +62,7 @@
 import type { OpenboxProfile } from '@/api/openbox'
 import { fetchProfile, saveProfile } from '@/api/openbox'
 import Ipv6Card from '@/components/routing/Ipv6Card.vue'
+import TestUrlCard from '@/components/routing/TestUrlCard.vue'
 import RoutingPoliciesCard from '@/components/routing/RoutingPoliciesCard.vue'
 import { usePaddingForViews } from '@/composables/paddingViews'
 import { onMounted, ref } from 'vue'

@@ -20,7 +20,9 @@ export const buildConfig = ({ nodes, profile, userGroups, systemDns }) => {
   // 节点组只有用户自己建的这一种:emitUserGroups 已经保证了成员非空、无悬空引用、
   // 无环(sing-box check 只能挡住第一条,见 user-groups.mjs 的说明)。
   // 内置的直连/拒绝也从这里出(它们和节点组同在「节点管理」列表里,按那里的顺序)
-  const { outbounds: userGroupOutbounds, builtin } = emitUserGroups(userGroups || [], nodes)
+  const { outbounds: userGroupOutbounds, builtin } = emitUserGroups(userGroups || [], nodes, {
+    testUrl: profile.testUrl,
+  })
 
   // 每个站点集在内核里就是一个同名 selector,成员是「出站」页签里选中的那几类
   // (直连 / 各节点组 / 拒绝)。用户在代理页点选,和 Clash 的策略组用法一致——

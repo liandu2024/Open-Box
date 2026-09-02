@@ -239,3 +239,14 @@ test('内置出站的旧默认图标自动换成新默认;用户自己挑的不�
   const [custom] = normalizeGroups([{ id: BUILTIN_IDS.direct, name: '直连', icon: 'brand:google' }])
   assert.equal(custom.icon, 'brand:google')
 })
+
+test('url-test 组的测速地址:组里填了用组的,没填用档案里的全局地址,都没有才用默认', () => {
+  const groups = [
+    { id: 'a', name: 'A', type: 'urltest', mode: 'dynamic', keywords: [], testUrl: 'http://a.test/204' },
+    { id: 'b', name: 'B', type: 'urltest', mode: 'dynamic', keywords: [] },
+  ]
+  const withGlobal = userOnly(emitUserGroups(groups, nodes, { testUrl: 'http://global.test/204' }).outbounds)
+  assert.deepEqual(withGlobal.map((o) => o.url), ['http://a.test/204', 'http://global.test/204'])
+  const noGlobal = userOnly(emitUserGroups(groups, nodes).outbounds)
+  assert.equal(noGlobal[1].url, 'https://www.gstatic.com/generate_204')
+})

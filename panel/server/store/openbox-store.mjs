@@ -19,6 +19,10 @@ export const DEFAULT_PROFILE = {
   ipv6: false,
   tun: { autoRedirect: true },
   dns: { split: true, mode: 'hijack', direct: '223.5.5.5', proxy: 'https://1.1.1.1/dns-query' },
+  // 测速地址。testUrl 给自动择优(url-test)组和面板的延迟测试用;directTestUrl 只给内置
+  // 直连出站用——默认那个是 Google 的域名,从国内直连去测量出来的是"直连到 Google 有多远"。
+  testUrl: 'https://www.gstatic.com/generate_204',
+  directTestUrl: 'http://www.msftconnecttest.com/connecttest.txt',
   routing: {
     proxyTag: 'PROXY',
     // 地区分流:预置中国大陆/香港澳门/其他地区三条,用户可以增删改、拖拽排序。

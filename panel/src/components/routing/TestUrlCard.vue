@@ -1,0 +1,80 @@
+<template>
+  <div class="card bg-base-100 border-base-300/60 border">
+    <div class="card-body gap-3 p-4">
+      <div>
+        <h2 class="text-base font-semibold">{{ $t('testUrlTitle') }}</h2>
+        <p class="text-base-content/60 text-xs">{{ $t('testUrlDescription') }}</p>
+      </div>
+
+      <div class="flex flex-col gap-3 sm:flex-row">
+        <div class="flex min-w-0 flex-1 flex-col gap-1">
+          <label class="text-xs font-medium">{{ $t('testUrlLabel') }}</label>
+          <input
+            v-model="testUrl"
+            type="url"
+            class="input input-sm w-full font-mono text-xs"
+            :placeholder="TEST_URL"
+            @change="save('testUrl', testUrl)"
+          />
+          <p class="text-base-content/50 text-xs">{{ $t('testUrlHint') }}</p>
+        </div>
+        <div class="flex min-w-0 flex-1 flex-col gap-1">
+          <label class="text-xs font-medium">{{ $t('directTestUrl') }}</label>
+          <input
+            v-model="directUrl"
+            type="url"
+            class="input input-sm w-full font-mono text-xs"
+            :placeholder="DIRECT_TEST_URL"
+            @change="save('directTestUrl', directUrl)"
+          />
+          <p class="text-base-content/50 text-xs">{{ $t('directTestUrlHint') }}</p>
+        </div>
+      </div>
+
+      <p
+        v-if="error"
+        class="text-error text-xs"
+      >
+        {{ error }}
+      </p>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import type { OpenboxProfile } from '@/api/openbox'
+import { DIRECT_TEST_URL, TEST_URL } from '@/constant'
+import { directTestUrl, speedtestUrl } from '@/store/settings'
+import { ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const props = defineProps<{
+  profile: OpenboxProfile
+  patchProfile: (patch: Record<string, unknown>) => Promise<OpenboxProfile>
+}>()
+
+const { t } = useI18n()
+const error = ref('')
+const testUrl = ref(props.profile.testUrl || '')
+const directUrl = ref(props.profile.directTestUrl || '')
+watch(
+  () => props.profile,
+  (p) => {
+    testUrl.value = p.testUrl || ''
+    directUrl.value = p.directTestUrl || ''
+  },
+)
+
+// 空就回落到默认;存进档案的同时更新面板那份,延迟测试立刻按新地址走,不用刷新
+const save = async (key: 'testUrl' | 'directTestUrl', raw: string) => {
+  const value = raw.trim() || (key === 'testUrl' ? TEST_URL : DIRECT_TEST_URL)
+  error.value = ''
+  try {
+    await props.patchProfile({ [key]: value })
+    if (key === 'testUrl') speedtestUrl.value = value
+    else directTestUrl.value = value
+  } catch (err) {
+    error.value = t('routingSaveFailed', { message: err instanceof Error ? err.message : String(err) })
+  }
+}
+</script>

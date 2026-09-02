@@ -7,6 +7,7 @@ const isBoolean = (v) => typeof v === 'boolean'
 const isStringArray = (v) => Array.isArray(v) && v.every(isString)
 
 const DNS_MODES = new Set(['hijack', 'dnsmasq'])
+const isHttpUrl = (v) => isString(v) && /^https?:\/\/[^\s]+$/.test(v.trim())
 
 // 规则集 tag(directRulesets[]/adRuleset/categories[].ruleset)最终会原样拼进生成配置的
 // rule_set.path,并作为参数传给 `sing-box rule-set match`(见 engine/routing.mjs、
@@ -35,6 +36,10 @@ export const validateProfilePatch = (patch) => {
 
   if ('rulesetDir' in patch && !isValidRulesetDir(patch.rulesetDir)) {
     return 'rulesetDir must be an absolute path without ".."'
+  }
+
+  for (const key of ['testUrl', 'directTestUrl']) {
+    if (key in patch && !isHttpUrl(patch[key])) return `${key} must be an http(s) URL`
   }
 
   if ('dns' in patch) {

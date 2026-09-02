@@ -110,6 +110,8 @@ export const normalizeGroup = (raw, index = 0) => {
     members: Array.isArray(raw?.members) ? raw.members.filter(isNonEmptyString).map((m) => m.trim()) : [],
   }
   if (type === 'urltest') {
+    // 每个组可以有自己的测速地址;空 = 用档案里的全局地址
+    group.testUrl = isNonEmptyString(raw?.testUrl) ? raw.testUrl.trim() : ''
     group.interval = isNonEmptyString(raw?.interval) ? raw.interval.trim() : DEFAULT_INTERVAL
     const tol = Number(raw?.tolerance)
     group.tolerance = Number.isFinite(tol) && tol >= 0 ? Math.floor(tol) : DEFAULT_TOLERANCE
@@ -255,7 +257,7 @@ export const emitUserGroups = (groups, nodes, options = {}) => {
         type: 'urltest',
         tag: g.name,
         outbounds: members,
-        url: testUrl,
+        url: g.testUrl || testUrl,
         interval: g.interval || DEFAULT_INTERVAL,
         tolerance: g.tolerance ?? DEFAULT_TOLERANCE,
       })

@@ -226,6 +226,15 @@
                 <span class="text-base-content/60 text-xs">{{ $t('groupUnitMs') }}</span>
               </div>
             </div>
+            <div class="flex min-w-0 flex-1 flex-col gap-1">
+              <label class="text-xs font-medium">{{ $t('groupTestUrl') }}</label>
+              <input
+                v-model="draft.testUrl"
+                type="url"
+                class="input input-sm w-full font-mono text-xs"
+                :placeholder="$t('groupTestUrlPlaceholder')"
+              />
+            </div>
           </template>
         </div>
         <!-- 成员怎么来:动态组按关键词现算,静态组手工挑。放在这儿是因为下面整块
@@ -726,6 +735,7 @@ const openEditor = (group: OpenboxUserGroup | null) => {
         members: [],
         interval: '3m',
         tolerance: 50,
+        testUrl: '',
       }
   // 老记录可能没有这几个字段(服务端读的时候会补,但这里编辑的是本地副本)
   if (draft.value) {

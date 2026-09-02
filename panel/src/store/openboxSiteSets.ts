@@ -1,5 +1,6 @@
 import type { OpenboxUserGroup } from '@/api/openbox'
 import { fetchNodeGroups, fetchProfile } from '@/api/openbox'
+import { directTestUrl, speedtestUrl } from '@/store/settings'
 import { ref } from 'vue'
 
 // 代理页「策略 / 节点」两个页签怎么分:zashboard 原来是猜的——一个组的成员如果全是
@@ -32,6 +33,9 @@ export const loadOpenboxNodeGroups = async () => {
 export const loadOpenboxSiteSets = async () => {
   try {
     const profile = await fetchProfile()
+    // 测速地址以档案为准(「分流与策略 → 其他」里改),面板的延迟测试跟着它
+    if (profile.testUrl) speedtestUrl.value = profile.testUrl
+    if (profile.directTestUrl) directTestUrl.value = profile.directTestUrl
     const names = (profile.routing.policies || []).map((p) => p.name).filter(Boolean)
     siteSetNames.value = new Set([...names, FALLBACK_NAME])
     siteSetOrder.value = [...names, FALLBACK_NAME]
