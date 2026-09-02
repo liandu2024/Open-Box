@@ -2,7 +2,7 @@ import { isSingBox } from '@/api'
 import { GLOBAL, PROXY_TAB_TYPE } from '@/constant'
 import { isHiddenGroup, isProxyGroup } from '@/helper'
 import { configs } from '@/store/config'
-import { siteSetNames } from '@/store/openboxSiteSets'
+import { siteSetNames, siteSetOrder } from '@/store/openboxSiteSets'
 import { proxiesTabShow, proxyGroupList, proxyMap, proxyProviederList } from '@/store/proxies'
 import { customGlobalNode, displayGlobalByMode, manageHiddenGroup } from '@/store/settings'
 import { isEmpty } from 'lodash'
@@ -28,7 +28,7 @@ const getRenderGroups = () => {
   const currentGroups = getCurrentProxyGroups()
 
   if (proxiesTabShow.value === PROXY_TAB_TYPE.POLICY) {
-    return currentGroups.filter((name) => isPolicyGroup(name))
+    return sortByPolicyOrder(currentGroups.filter((name) => isPolicyGroup(name)))
   }
 
   if (proxiesTabShow.value === PROXY_TAB_TYPE.NODE) {
@@ -105,6 +105,18 @@ const nodeGroupNames = computed(() => {
   return new Set(getCurrentProxyGroups().filter((name) => isSemanticNodeGroup(name)))
 })
 
+// 策略页签按「分流与策略」里的顺序排,兜底「其他」最后;名单里没有的(退回猜法时)
+// 保持内核给的顺序放在后面。
+const sortByPolicyOrder = (names: string[]) => {
+  const order = siteSetOrder.value
+  if (!order.length) return names
+  const index = (name: string) => {
+    const i = order.indexOf(name)
+    return i === -1 ? order.length : i
+  }
+  return [...names].sort((a, b) => index(a) - index(b))
+}
+
 // 站点集 = 策略,其余带成员的组 = 节点组。名单从 Open-Box 自己的档案来(见
 // store/openboxSiteSets.ts);没拉到时退回 zashboard 原来按成员形状猜的那套。
 const isPolicyGroup = (name: string) => {
@@ -115,7 +127,7 @@ const isPolicyGroup = (name: string) => {
 export const disableProxiesPageScroll = ref(false)
 export const isProxiesPageMounted = ref(false)
 export const policyGroups = computed(() =>
-  getCurrentProxyGroups().filter((name) => isPolicyGroup(name)),
+  sortByPolicyOrder(getCurrentProxyGroups().filter((name) => isPolicyGroup(name))),
 )
 export const nodeGroups = computed(() =>
   getCurrentProxyGroups().filter((name) => !isPolicyGroup(name)),

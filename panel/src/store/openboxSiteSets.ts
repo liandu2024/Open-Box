@@ -9,6 +9,10 @@ import { ref } from 'vue'
 // Open-Box 自己知道哪些 selector 是站点集(routing.policies + 兜底「其他」),不用猜。
 // 这里把名字拉过来,composables/proxies.ts 优先按它分;拉不到再退回原来的猜法。
 export const siteSetNames = ref<Set<string>>(new Set())
+// 站点集的顺序(用户拖出来的那个顺序,兜底「其他」永远最后)。代理页的「策略」页签按它排,
+// 而不是按内核 GLOBAL 列表的顺序——内核把 route.final 指向的那个排在最前面,兜底就跑到
+// 顶上去了,和「分流与策略」页里钉在最下面的样子对不上。
+export const siteSetOrder = ref<string[]>([])
 
 // 兜底站点集的名字,和服务端 engine/routing-model.mjs 的 FALLBACK_TAG 同一个值
 const FALLBACK_NAME = '其他'
@@ -18,6 +22,7 @@ export const loadOpenboxSiteSets = async () => {
     const profile = await fetchProfile()
     const names = (profile.routing.policies || []).map((p) => p.name).filter(Boolean)
     siteSetNames.value = new Set([...names, FALLBACK_NAME])
+    siteSetOrder.value = [...names, FALLBACK_NAME]
   } catch {
     // 拉不到就保持原样(空集 → 退回猜法),不让代理页因此打不开
   }
