@@ -441,6 +441,7 @@ const zh: LANG_MESSAGE = {
   groupNameDuplicate: '已有同名分组;分组名会直接用作内核里的出站名称,不能重复。',
   groupMembersRequired: '请至少选择一个成员,或勾选「包含所有有效节点」。',
   subscriptionAdd: '\u6dfb\u52a0\u8ba2\u9605',
+  subscriptionsManageTab: '订阅管理',
   subscriptionEmptyHint: '\u8fd8\u6ca1\u6709\u8ba2\u9605,\u5148\u6dfb\u52a0\u4e00\u4e2a',
   subscriptionNodeCount: '{count} \u4e2a\u8282\u70b9',
   subscriptionListFailed: '\u6ca1\u52a0\u8f7d\u51fa\u6765:{message}',

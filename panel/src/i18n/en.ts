@@ -444,6 +444,7 @@ const en = {
   groupNameDuplicate: 'A group with this name already exists; the name is used as the outbound tag in the kernel and must be unique.',
   groupMembersRequired: 'Pick at least one member, or tick “Include all valid nodes”.',
   subscriptionAdd: 'Add subscription',
+  subscriptionsManageTab: 'Subscriptions',
   subscriptionEmptyHint: "No subscriptions yet — add one to get started.",
   subscriptionNodeCount: '{count} nodes',
   subscriptionListFailed: "Couldn't load subscriptions: {message}",

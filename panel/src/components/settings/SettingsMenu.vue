@@ -6,7 +6,8 @@
     @touchmove.passive.stop
     @touchend.passive.stop
   >
-    <!-- 不限最大宽度:右侧没有按钮了,页签要一直铺到和下面卡片同一条右边线 -->
+    <!-- 页签靠左、各自按内容取宽,不两端拉伸;右侧 #settings-header-actions 是各页签
+         把自己的操作按钮(添加订阅、自动分组…)Teleport 过来的位置,位置固定在右上角 -->
     <div class="flex w-full items-center gap-2">
       <ul
         class="menu menu-horizontal settings-menu-list scrollbar-hidden flex min-w-0 flex-1 flex-nowrap gap-2 overflow-x-auto bg-transparent p-0"
@@ -14,7 +15,7 @@
         <li
           v-for="item in menuItems"
           :key="item.key"
-          class="settings-menu-slot min-w-fit flex-1"
+          class="settings-menu-slot min-w-fit"
         >
           <button
             :ref="(el) => setMenuItemRef(el as HTMLButtonElement | null, item.key)"
@@ -35,6 +36,10 @@
           </button>
         </li>
       </ul>
+      <div
+        id="settings-header-actions"
+        class="ml-auto flex shrink-0 items-center gap-2"
+      />
     </div>
   </div>
 </template>

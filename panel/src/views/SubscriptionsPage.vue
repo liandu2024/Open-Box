@@ -5,30 +5,33 @@
       :style="padding"
     >
       <div class="flex flex-col gap-3 p-3">
-        <!-- 标题位改成页签:订阅与节点组是这一屏并列的两件事(节点从订阅来,策略组
-             把节点编成组),挤在一个标题下反而看不出并列关系。 -->
-        <div class="flex items-center justify-between gap-2">
-          <div
-            role="tablist"
-            class="tabs-box tabs tabs-sm"
+        <!-- 订阅管理 / 节点管理 两个页签。两边的操作按钮不放在这一行,统一 Teleport 到
+             顶部页签栏右上角(SettingsMenu 里的 #settings-header-actions),切页签时按钮
+             位置不变。 -->
+        <div
+          role="tablist"
+          class="tabs-box tabs tabs-sm self-start"
+        >
+          <a
+            role="tab"
+            :class="['tab', pageTab === 'subs' && 'tab-active']"
+            @click="pageTab = 'subs'"
           >
-            <a
-              role="tab"
-              :class="['tab', pageTab === 'subs' && 'tab-active']"
-              @click="pageTab = 'subs'"
-            >
-              {{ $t('subscriptions') }}
-            </a>
-            <a
-              role="tab"
-              :class="['tab', pageTab === 'groups' && 'tab-active']"
-              @click="pageTab = 'groups'"
-            >
-              {{ $t('groupsTab') }}
-            </a>
-          </div>
-          <!-- 两个页签各自的"新增"按钮都放在这一行:位置固定在右上角,切页签时
-               按钮不会跳来跳去。 -->
+            {{ $t('subscriptionsManageTab') }}
+          </a>
+          <a
+            role="tab"
+            :class="['tab', pageTab === 'groups' && 'tab-active']"
+            @click="pageTab = 'groups'"
+          >
+            {{ $t('groupsTab') }}
+          </a>
+        </div>
+
+        <Teleport
+          defer
+          to="#settings-header-actions"
+        >
           <button
             v-if="pageTab === 'subs'"
             type="button"
@@ -38,26 +41,28 @@
             <PlusIcon class="h-4 w-4" />
             {{ $t('subscriptionAdd') }}
           </button>
-          <!-- 两个按钮并排:justify-between 只管两端,中间的间距要自己给 -->
+          <!-- 节点管理:两个图标按钮,悬停显示说明 -->
           <template v-else>
             <button
               type="button"
-              class="btn btn-sm ml-auto"
+              class="btn btn-sm btn-square"
+              :title="$t('groupAutoAdd')"
+              :aria-label="$t('groupAutoAdd')"
               @click="groupsPanel?.openAutoDialog()"
             >
               <SparklesIcon class="h-4 w-4" />
-              {{ $t('groupAutoAdd') }}
             </button>
             <button
               type="button"
-              class="btn btn-primary btn-sm"
+              class="btn btn-primary btn-sm btn-square"
+              :title="$t('groupAdd')"
+              :aria-label="$t('groupAdd')"
               @click="groupsPanel?.openEditor(null)"
             >
               <PlusIcon class="h-4 w-4" />
-              {{ $t('groupAdd') }}
             </button>
           </template>
-        </div>
+        </Teleport>
 
         <NodeGroupsPanel
           v-if="pageTab === 'groups'"

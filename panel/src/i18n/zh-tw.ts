@@ -441,6 +441,7 @@ const zhTW: LANG_MESSAGE = {
   groupNameDuplicate: '已有同名分組;分組名會直接用作核心裡的出站名稱,不能重複。',
   groupMembersRequired: '請至少選擇一個成員,或勾選「包含所有有效節點」。',
   subscriptionAdd: '\u65b0\u589e\u8a02\u95b1',
+  subscriptionsManageTab: '訂閱管理',
   subscriptionEmptyHint: '\u9084\u6c92\u6709\u8a02\u95b1,\u5148\u65b0\u589e\u4e00\u500b',
   subscriptionNodeCount: '{count} \u500b\u7bc0\u9ede',
   subscriptionListFailed: '\u6c92\u8f09\u5165\u6210\u529f:{message}',
