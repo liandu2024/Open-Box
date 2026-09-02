@@ -27,56 +27,26 @@
         <span class="font-medium">{{ kernelVersion?.version || $t('kernelVersionUnknown') }}</span>
       </div>
 
-      <div class="flex flex-col gap-2">
-        <div class="border-base-300 flex items-center justify-between gap-2 rounded-lg border px-3 py-2">
-          <div class="flex items-center gap-2">
-            <span class="font-medium">{{ $t('kernelCoreLabel') }}</span>
-            <span
-              class="badge badge-sm"
-              :class="status?.core.running ? 'badge-success' : 'badge-ghost'"
-            >
-              {{ status?.core.running ? $t('kernelStatusRunning') : $t('kernelStatusStopped') }}
-            </span>
-          </div>
-          <button
-            v-if="status?.core.raw"
-            type="button"
-            class="btn btn-ghost btn-xs"
-            @click="showCoreRaw = !showCoreRaw"
+      <!-- 内核 / 面板两项状态放同一行,和上面的版本行一个样式;init.d 的原始输出不再展示 -->
+      <div class="flex flex-wrap items-center gap-x-4 gap-y-1">
+        <div class="flex items-center gap-2">
+          <span class="font-medium">{{ $t('kernelCoreLabel') }}</span>
+          <span
+            class="badge badge-sm"
+            :class="status?.core.running ? 'badge-success' : 'badge-ghost'"
           >
-            {{ showCoreRaw ? $t('kernelHideDetail') : $t('kernelShowDetail') }}
-          </button>
+            {{ status?.core.running ? $t('kernelStatusRunning') : $t('kernelStatusStopped') }}
+          </span>
         </div>
-        <pre
-          v-if="showCoreRaw && status?.core.raw"
-          class="bg-base-200 rounded p-2 text-xs break-words whitespace-pre-wrap"
-          >{{ status.core.raw }}</pre
-        >
-
-        <div class="border-base-300 flex items-center justify-between gap-2 rounded-lg border px-3 py-2">
-          <div class="flex items-center gap-2">
-            <span class="font-medium">{{ $t('kernelPanelLabel') }}</span>
-            <span
-              class="badge badge-sm"
-              :class="status?.panel.running ? 'badge-success' : 'badge-ghost'"
-            >
-              {{ status?.panel.running ? $t('kernelStatusRunning') : $t('kernelStatusStopped') }}
-            </span>
-          </div>
-          <button
-            v-if="status?.panel.raw"
-            type="button"
-            class="btn btn-ghost btn-xs"
-            @click="showPanelRaw = !showPanelRaw"
+        <div class="flex items-center gap-2">
+          <span class="font-medium">{{ $t('kernelPanelLabel') }}</span>
+          <span
+            class="badge badge-sm"
+            :class="status?.panel.running ? 'badge-success' : 'badge-ghost'"
           >
-            {{ showPanelRaw ? $t('kernelHideDetail') : $t('kernelShowDetail') }}
-          </button>
+            {{ status?.panel.running ? $t('kernelStatusRunning') : $t('kernelStatusStopped') }}
+          </span>
         </div>
-        <pre
-          v-if="showPanelRaw && status?.panel.raw"
-          class="bg-base-200 rounded p-2 text-xs break-words whitespace-pre-wrap"
-          >{{ status.panel.raw }}</pre
-        >
       </div>
 
       <div
@@ -200,8 +170,6 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 
-const showCoreRaw = ref(false)
-const showPanelRaw = ref(false)
 
 const pendingAction = ref<OpenboxServiceAction | null>(null)
 const lastAction = ref<OpenboxServiceAction | null>(null)

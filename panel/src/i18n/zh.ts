@@ -608,8 +608,6 @@ const zh: LANG_MESSAGE = {
   proxiesKernelStopped: '内核没有在运行,这一页的内容都来自内核。先去启动它。',
   proxiesKernelNoData: '内核在运行,但没有返回任何节点或分组。',
   proxiesGoToKernel: '前往内核设置',
-  kernelShowDetail: '\u67e5\u770b\u8be6\u60c5',
-  kernelHideDetail: '\u9690\u85cf\u8be6\u60c5',
   kernelActionStart: '\u542f\u52a8',
   kernelActionStop: '\u505c\u6b62',
   kernelActionStopHint: '会同时关闭开机自启,重启后内核不会自己跑起来。',

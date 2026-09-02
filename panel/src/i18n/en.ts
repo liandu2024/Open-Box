@@ -611,8 +611,6 @@ const en = {
   proxiesKernelStopped: 'The kernel is not running — everything on this page comes from it. Start it first.',
   proxiesKernelNoData: 'The kernel is running but returned no nodes or groups.',
   proxiesGoToKernel: 'Go to kernel settings',
-  kernelShowDetail: 'Show detail',
-  kernelHideDetail: 'Hide detail',
   kernelActionStart: 'Start',
   kernelActionStop: 'Stop',
   kernelActionStopHint: 'Also turns off autostart, so the core stays stopped after a reboot.',

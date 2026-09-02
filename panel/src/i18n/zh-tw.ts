@@ -608,8 +608,6 @@ const zhTW: LANG_MESSAGE = {
   proxiesKernelStopped: '核心沒有在執行,這一頁的內容都來自核心。先去啟動它。',
   proxiesKernelNoData: '核心在執行,但沒有回傳任何節點或分組。',
   proxiesGoToKernel: '前往核心設定',
-  kernelShowDetail: '\u67e5\u770b\u8a73\u60c5',
-  kernelHideDetail: '\u96b1\u85cf\u8a73\u60c5',
   kernelActionStart: '\u555f\u52d5',
   kernelActionStop: '\u505c\u6b62',
   kernelActionStopHint: '會同時關閉開機自啟,重新啟動後核心不會自己執行。',
