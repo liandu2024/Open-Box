@@ -35,12 +35,6 @@
       >
         {{ validationError }}
       </p>
-      <p
-        v-else-if="queryError"
-        class="text-error text-xs"
-      >
-        {{ queryError }}
-      </p>
 
       <PenetrationPath
         v-if="result"
@@ -62,6 +56,7 @@
 </template>
 
 <script setup lang="ts">
+import { showNotification } from '@/helper/notification'
 import { isValidPenetrationTarget, queryPenetration, type OpenboxPenetrationResult } from '@/api/openbox'
 import TextInput from '@/components/common/TextInput.vue'
 import { ref } from 'vue'
@@ -74,7 +69,6 @@ const target = ref('')
 const queriedTarget = ref('')
 const loading = ref(false)
 const validationError = ref('')
-const queryError = ref('')
 const result = ref<OpenboxPenetrationResult | null>(null)
 
 // Rejects obviously-bad input (flag-like, e.g. "--help") before it ever round-trips to the
@@ -84,7 +78,6 @@ const result = ref<OpenboxPenetrationResult | null>(null)
 const handleSubmit = async () => {
   const value = target.value.trim()
   validationError.value = ''
-  queryError.value = ''
 
   if (!value) {
     validationError.value = t('penetrationInputRequired')
@@ -101,9 +94,7 @@ const handleSubmit = async () => {
     result.value = await queryPenetration(value)
     queriedTarget.value = value
   } catch (error) {
-    queryError.value = t('penetrationQueryFailed', {
-      message: error instanceof Error ? error.message : String(error),
-    })
+    showNotification({ content: 'penetrationQueryFailed', params: { message: error instanceof Error ? error.message : String(error), }, type: 'alert-error' })
   } finally {
     loading.value = false
   }

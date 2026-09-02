@@ -29,12 +29,6 @@
           <span class="loading loading-spinner loading-md" />
         </div>
 
-        <p
-          v-else-if="loadError"
-          class="text-error text-sm"
-        >
-          {{ loadError }}
-        </p>
 
         <template v-else-if="profile">
           <RoutingPoliciesCard
@@ -59,6 +53,7 @@
 </template>
 
 <script setup lang="ts">
+import { showNotification } from '@/helper/notification'
 import type { OpenboxProfile } from '@/api/openbox'
 import { fetchProfile, saveProfile } from '@/api/openbox'
 import Ipv6Card from '@/components/routing/Ipv6Card.vue'
@@ -66,9 +61,7 @@ import TestUrlCard from '@/components/routing/TestUrlCard.vue'
 import RoutingPoliciesCard from '@/components/routing/RoutingPoliciesCard.vue'
 import { usePaddingForViews } from '@/composables/paddingViews'
 import { onMounted, ref } from 'vue'
-import { useI18n } from 'vue-i18n'
 
-const { t } = useI18n()
 const { padding } = usePaddingForViews({
   offsetTop: 0,
   offsetBottom: 0,
@@ -76,7 +69,6 @@ const { padding } = usePaddingForViews({
 
 const profile = ref<OpenboxProfile | null>(null)
 const loading = ref(true)
-const loadError = ref('')
 
 type PageTab = 'policies' | 'other'
 const PAGE_TABS: { key: PageTab; labelKey: string }[] = [
@@ -89,13 +81,10 @@ const pageTab = ref<PageTab>('policies')
 
 const load = async () => {
   loading.value = true
-  loadError.value = ''
   try {
     profile.value = await fetchProfile()
   } catch (error) {
-    loadError.value = t('routingLoadFailed', {
-      message: error instanceof Error ? error.message : String(error),
-    })
+    showNotification({ content: 'routingLoadFailed', params: { message: error instanceof Error ? error.message : String(error), }, type: 'alert-error' })
   } finally {
     loading.value = false
   }

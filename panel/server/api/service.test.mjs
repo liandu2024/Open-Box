@@ -62,6 +62,8 @@ test('GET /api/openbox/service/status → {core:{running,raw}, panel:{running,ra
     assert.ok(body.panel.raw)
     assert.ok(Array.isArray(body.conflicts))
     assert.equal(body.conflicts.length, 0)
+    // mock 里没配 enabled 的返回,默认退出码 0 → 视为已开启自启
+    assert.equal(body.core.autostart, true)
   } finally {
     await close()
   }
@@ -261,6 +263,18 @@ test('GET /api/openbox/kernel/version handles missing singbox gracefully', async
     assert.equal(body.ok, false)
     assert.equal(body.version, '')
     assert.match(body.raw, /command not found/)
+  } finally {
+    await close()
+  }
+})
+
+test('GET /service/status:init 脚本 enabled 退出码非 0 → core.autostart=false', async () => {
+  const ctx = okCtx({ '/etc/init.d/openbox enabled': { code: 1 } })
+  const { baseUrl, close } = await startApp(ctx)
+  try {
+    const body = await (await fetch(`${baseUrl}/api/openbox/service/status`)).json()
+    assert.equal(body.core.autostart, false)
+    assert.equal(body.core.running, true)
   } finally {
     await close()
   }

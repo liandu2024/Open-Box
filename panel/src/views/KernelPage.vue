@@ -10,12 +10,6 @@
         <!-- Always rendered, independent of the status/version fetch below: the panic button
              has to work (and be visible) even if the status card itself failed to load. -->
 
-        <p
-          v-if="loadError"
-          class="text-error text-sm"
-        >
-          {{ loadError }}
-        </p>
 
         <div
           v-if="loading && !status"
@@ -43,6 +37,7 @@
 </template>
 
 <script setup lang="ts">
+import { showNotification } from '@/helper/notification'
 import type { OpenboxDeployState, OpenboxKernelVersion, OpenboxServiceStatus } from '@/api/openbox'
 import { fetchDeployState, fetchKernelVersion, fetchServiceStatus } from '@/api/openbox'
 import KernelDeployStateCard from '@/components/kernel/KernelDeployStateCard.vue'
@@ -50,9 +45,7 @@ import KernelServiceCard from '@/components/kernel/KernelServiceCard.vue'
 import PenetrationQueryCard from '@/components/penetration/PenetrationQueryCard.vue'
 import { usePaddingForViews } from '@/composables/paddingViews'
 import { onMounted, ref } from 'vue'
-import { useI18n } from 'vue-i18n'
 
-const { t } = useI18n()
 const { padding } = usePaddingForViews({
   offsetTop: 0,
   offsetBottom: 0,
@@ -62,22 +55,18 @@ const status = ref<OpenboxServiceStatus | null>(null)
 const kernelVersion = ref<OpenboxKernelVersion | null>(null)
 const deployState = ref<OpenboxDeployState | null>(null)
 const loading = ref(true)
-const loadError = ref('')
 
 // Shared by the initial page load and every child card's post-action @refresh (service
 // start/stop/restart/enable/disable, emergency rollback) — none of those change the deploy
 // state, only service/core status and the kernel version, so this deliberately doesn't touch
 // deployState.
 const loadStatus = async () => {
-  loadError.value = ''
   try {
     const [fetchedStatus, fetchedVersion] = await Promise.all([fetchServiceStatus(), fetchKernelVersion()])
     status.value = fetchedStatus
     kernelVersion.value = fetchedVersion
   } catch (error) {
-    loadError.value = t('kernelLoadFailed', {
-      message: error instanceof Error ? error.message : String(error),
-    })
+    showNotification({ content: 'kernelLoadFailed', params: { message: error instanceof Error ? error.message : String(error), }, type: 'alert-error' })
   }
 }
 

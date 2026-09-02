@@ -31,30 +31,22 @@
         </div>
       </div>
 
-      <p
-        v-if="error"
-        class="text-error text-xs"
-      >
-        {{ error }}
-      </p>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { showNotification } from '@/helper/notification'
 import type { OpenboxProfile } from '@/api/openbox'
 import { DIRECT_TEST_URL, TEST_URL } from '@/constant'
 import { directTestUrl, speedtestUrl } from '@/store/settings'
 import { ref, watch } from 'vue'
-import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{
   profile: OpenboxProfile
   patchProfile: (patch: Record<string, unknown>) => Promise<OpenboxProfile>
 }>()
 
-const { t } = useI18n()
-const error = ref('')
 const testUrl = ref(props.profile.testUrl || '')
 const directUrl = ref(props.profile.directTestUrl || '')
 watch(
@@ -68,13 +60,12 @@ watch(
 // 空就回落到默认;存进档案的同时更新面板那份,延迟测试立刻按新地址走,不用刷新
 const save = async (key: 'testUrl' | 'directTestUrl', raw: string) => {
   const value = raw.trim() || (key === 'testUrl' ? TEST_URL : DIRECT_TEST_URL)
-  error.value = ''
   try {
     await props.patchProfile({ [key]: value })
     if (key === 'testUrl') speedtestUrl.value = value
     else directTestUrl.value = value
   } catch (err) {
-    error.value = t('routingSaveFailed', { message: err instanceof Error ? err.message : String(err) })
+    showNotification({ content: 'routingSaveFailed', params: { message: err instanceof Error ? err.message : String(err) }, type: 'alert-error' })
   }
 }
 </script>

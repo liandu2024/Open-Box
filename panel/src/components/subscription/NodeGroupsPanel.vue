@@ -47,7 +47,7 @@
             >{{ $t(`groupType_${group.type}`) }}</span>
             <span
               v-if="group.enabled === false"
-              class="badge badge-warning badge-sm"
+              class="badge badge-ghost badge-sm"
             >{{ $t('groupDisabledBadge') }}</span>
           </div>
           <div class="text-base-content/60 mt-0.5 text-xs">

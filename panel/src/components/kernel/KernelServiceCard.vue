@@ -27,36 +27,32 @@
         <span class="font-medium">{{ kernelVersion?.version || $t('kernelVersionUnknown') }}</span>
       </div>
 
-      <!-- 内核 / 面板两项状态放同一行,和上面的版本行一个样式;init.d 的原始输出不再展示 -->
+      <!-- 内核 / 面板 / 开机自启三项状态放同一行,标签用全局统一的 StatusBadge -->
       <div class="flex flex-wrap items-center gap-x-4 gap-y-1">
         <div class="flex items-center gap-2">
           <span class="font-medium">{{ $t('kernelCoreLabel') }}</span>
-          <span
-            class="badge badge-sm"
-            :class="status?.core.running ? 'badge-success' : 'badge-ghost'"
-          >
-            {{ status?.core.running ? $t('kernelStatusRunning') : $t('kernelStatusStopped') }}
-          </span>
+          <StatusBadge
+            :on="Boolean(status?.core.running)"
+            :on-text="$t('kernelStatusRunning')"
+            :off-text="$t('kernelStatusStopped')"
+          />
         </div>
         <div class="flex items-center gap-2">
           <span class="font-medium">{{ $t('kernelPanelLabel') }}</span>
-          <span
-            class="badge badge-sm"
-            :class="status?.panel.running ? 'badge-success' : 'badge-ghost'"
-          >
-            {{ status?.panel.running ? $t('kernelStatusRunning') : $t('kernelStatusStopped') }}
-          </span>
+          <StatusBadge
+            :on="Boolean(status?.panel.running)"
+            :on-text="$t('kernelStatusRunning')"
+            :off-text="$t('kernelStatusStopped')"
+          />
         </div>
-      </div>
-
-      <div
-        v-if="resultBanner"
-        class="rounded-lg border px-3 py-2 text-xs"
-        :class="
-          resultBanner.kind === 'success' ? 'border-success/30 bg-success/10 text-success' : 'border-error/30 bg-error/10 text-error'
-        "
-      >
-        {{ resultBanner.text }}
+        <div class="flex items-center gap-2">
+          <span class="font-medium">{{ $t('kernelAutostartLabel') }}</span>
+          <StatusBadge
+            :on="Boolean(status?.core.autostart)"
+            :on-text="$t('kernelAutostartOn')"
+            :off-text="$t('kernelAutostartOff')"
+          />
+        </div>
       </div>
 
       <!-- 启动/重启 = 用当前设置重新生成配置并应用(server/api/service.mjs),
@@ -152,9 +148,10 @@ import {
   runServiceAction,
   type OpenboxKernelVersion,
   type OpenboxServiceAction,
-  type OpenboxServiceActionResult,
   type OpenboxServiceStatus,
 } from '@/api/openbox'
+import StatusBadge from '@/components/common/StatusBadge.vue'
+import { showNotification } from '@/helper/notification'
 import { ArrowPathIcon, CpuChipIcon, ExclamationTriangleIcon, PlayIcon, StopIcon } from '@heroicons/vue/24/outline'
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -172,10 +169,6 @@ const { t } = useI18n()
 
 
 const pendingAction = ref<OpenboxServiceAction | null>(null)
-const lastAction = ref<OpenboxServiceAction | null>(null)
-const lastResult = ref<OpenboxServiceActionResult | null>(null)
-const lastRequestError = ref('')
-
 const ACTION_LABEL_KEYS: Record<OpenboxServiceAction, string> = {
   start: 'kernelActionStart',
   stop: 'kernelActionStop',
@@ -190,40 +183,25 @@ const isStartDisabled = computed(
 const isStopDisabled = computed(() => pendingAction.value !== null || !props.status?.core.running)
 const isRestartDisabled = computed(() => pendingAction.value !== null || Boolean(props.status?.conflicts.length))
 
-// This dev machine has no /etc/init.d at all, so every action here fails on it — that's the
-// actual path this banner exists to cover: `ok:false` with an empty stderr (execFile never even
-// spawned) must still read as a sentence, not a blank line or a raw stack dump. `code` is always
-// a number (see server/system/context-real.mjs — ENOENT collapses to code 1), so it's always
-// safe to show as a fallback identifier when stderr has nothing.
-const resultBanner = computed(() => {
-  if (lastRequestError.value) {
-    return { kind: 'error' as const, text: lastRequestError.value }
-  }
-  if (!lastResult.value || !lastAction.value) return null
-
-  const actionLabel = t(ACTION_LABEL_KEYS[lastAction.value])
-  if (lastResult.value.ok) {
-    return { kind: 'success' as const, text: t('kernelActionSucceeded', { action: actionLabel }) }
-  }
-
-  const detail = lastResult.value.stderr.trim() || t('kernelActionNoDetail', { code: lastResult.value.code })
-  return { kind: 'error' as const, text: t('kernelActionFailed', { action: actionLabel, detail }) }
-})
-
 const runAction = async (action: OpenboxServiceAction) => {
   if (pendingAction.value) return
 
   pendingAction.value = action
-  lastRequestError.value = ''
+  const actionLabel = t(ACTION_LABEL_KEYS[action])
   try {
     const result = await runServiceAction(action)
-    lastAction.value = action
-    lastResult.value = result
+    if (result.ok) {
+      showNotification({ content: 'kernelActionSucceeded', params: { action: actionLabel }, type: 'alert-success' })
+    } else {
+      // 这台开发机没有 /etc/init.d,ok:false 且 stderr 为空是常态:没细节时至少给个退出码
+      const detail = result.stderr.trim() || t('kernelActionNoDetail', { code: String(result.code) })
+      showNotification({ content: 'kernelActionFailed', params: { action: actionLabel, detail }, type: 'alert-error' })
+    }
   } catch (error) {
-    lastAction.value = action
-    lastResult.value = null
-    lastRequestError.value = t('kernelActionRequestFailed', {
-      message: error instanceof Error ? error.message : String(error),
+    showNotification({
+      content: 'kernelActionRequestFailed',
+      params: { message: error instanceof Error ? error.message : String(error) },
+      type: 'alert-error',
     })
   } finally {
     pendingAction.value = null

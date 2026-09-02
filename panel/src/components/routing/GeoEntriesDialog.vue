@@ -11,16 +11,7 @@
         clearable
       />
 
-      <p
-        v-if="error"
-        class="text-error text-xs"
-      >
-        {{ error }}
-      </p>
-      <p
-        v-else
-        class="text-base-content/60 text-xs"
-      >
+      <p class="text-base-content/60 text-xs">
         {{ keyword ? $t('geoEntriesCountFiltered', { matched, total }) : $t('geoEntriesCount', { total }) }}
       </p>
 
@@ -69,16 +60,15 @@
 </template>
 
 <script setup lang="ts">
+import { showNotification } from '@/helper/notification'
 import { fetchRulesetEntries } from '@/api/openbox'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import TextInput from '@/components/common/TextInput.vue'
 import { ref, watch } from 'vue'
-import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{ tag: string }>()
 const open = defineModel<boolean>({ required: true })
 
-const { t } = useI18n()
 
 const PAGE = 50
 
@@ -86,7 +76,6 @@ const entries = ref<{ type: string; value: string }[]>([])
 const total = ref(0)
 const matched = ref(0)
 const loading = ref(false)
-const error = ref('')
 const keyword = ref('')
 
 // 每次请求都带一个序号,慢的那次回来时就知道自己已经过时了——搜索框是边打边搜的,
@@ -96,7 +85,6 @@ let seq = 0
 const load = async (offset: number) => {
   const mine = ++seq
   loading.value = true
-  error.value = ''
   try {
     const res = await fetchRulesetEntries(props.tag, { q: keyword.value.trim(), offset, limit: PAGE })
     if (mine !== seq) return
@@ -111,7 +99,7 @@ const load = async (offset: number) => {
     entries.value = []
     total.value = 0
     matched.value = 0
-    error.value = t('geoEntriesLoadFailed', { message: err instanceof Error ? err.message : String(err) })
+    showNotification({ content: 'geoEntriesLoadFailed', params: { message: err instanceof Error ? err.message : String(err) }, type: 'alert-error' })
   } finally {
     if (mine === seq) loading.value = false
   }

@@ -615,6 +615,8 @@ const zh: LANG_MESSAGE = {
   kernelActionEnable: '\u5f00\u542f\u81ea\u542f',
   kernelActionDisable: '\u5173\u95ed\u81ea\u542f',
   kernelAutostartLabel: '\u5f00\u673a\u81ea\u542f',
+  kernelAutostartOn: '开启',
+  kernelAutostartOff: '关闭',
   kernelActionSucceeded: '{action}\u6210\u529f\u3002',
   kernelActionFailed: '{action}\u5931\u8d25:{detail}',
   kernelActionNoDetail: '\u9000\u51fa\u7801 {code},\u6ca1\u6709\u66f4\u591a\u7ec6\u8282',

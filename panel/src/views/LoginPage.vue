@@ -21,12 +21,6 @@
         />
       </div>
 
-      <p
-        v-if="error"
-        class="text-error text-sm"
-      >
-        {{ $t('wrongAccessPassword') }}
-      </p>
 
       <button
         class="btn btn-primary btn-sm w-full"
@@ -39,13 +33,13 @@
 </template>
 
 <script setup lang="ts">
+import { showNotification } from '@/helper/notification'
 import { ROUTE_NAME } from '@/constant'
 import router from '@/router'
 import { loginWithAccessPassword } from '@/store/auth'
 import { ref } from 'vue'
 
 const password = ref('')
-const error = ref(false)
 const loading = ref(false)
 
 const handleLogin = async () => {
@@ -57,11 +51,10 @@ const handleLogin = async () => {
     const result = await loginWithAccessPassword(password.value)
 
     if (!result.ok) {
-      error.value = true
+      showNotification({ content: 'wrongAccessPassword', type: 'alert-error' })
       return
     }
 
-    error.value = false
 
     const redirect = router.currentRoute.value.query.redirect
     const target =

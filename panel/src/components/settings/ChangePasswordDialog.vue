@@ -43,18 +43,6 @@
         />
       </div>
 
-      <p
-        v-if="errorMessage"
-        class="text-error text-xs"
-      >
-        {{ errorMessage }}
-      </p>
-      <p
-        v-if="successMessage"
-        class="text-success text-xs"
-      >
-        {{ successMessage }}
-      </p>
 
       <button
         class="btn btn-primary btn-sm w-full"
@@ -68,6 +56,7 @@
 </template>
 
 <script setup lang="ts">
+import { showNotification } from '@/helper/notification'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import {
   ACCESS_PASSWORD_INVALID_CODE,
@@ -75,27 +64,21 @@ import {
   PASSWORD_TOO_SHORT_CODE,
 } from '@/store/auth'
 import { ref, watch } from 'vue'
-import { useI18n } from 'vue-i18n'
 
 const isOpen = defineModel<boolean>({ required: true })
 
 const MIN_PASSWORD_LENGTH = 8
 
-const { t } = useI18n()
 
 const currentPassword = ref('')
 const newPassword = ref('')
 const confirmPassword = ref('')
 const loading = ref(false)
-const errorMessage = ref('')
-const successMessage = ref('')
 
 const resetForm = () => {
   currentPassword.value = ''
   newPassword.value = ''
   confirmPassword.value = ''
-  errorMessage.value = ''
-  successMessage.value = ''
 }
 
 // Fresh form every time the dialog opens, so a previous run's error/success
@@ -109,16 +92,14 @@ watch(isOpen, (open) => {
 const handleSubmit = async () => {
   if (loading.value) return
 
-  errorMessage.value = ''
-  successMessage.value = ''
 
   if (newPassword.value.length < MIN_PASSWORD_LENGTH) {
-    errorMessage.value = t('passwordMinLengthHint')
+    showNotification({ content: 'passwordMinLengthHint', type: 'alert-error' })
     return
   }
 
   if (newPassword.value !== confirmPassword.value) {
-    errorMessage.value = t('passwordsDoNotMatch')
+    showNotification({ content: 'passwordsDoNotMatch', type: 'alert-error' })
     return
   }
 
@@ -129,21 +110,21 @@ const handleSubmit = async () => {
 
     if (!result.ok) {
       if (result.code === ACCESS_PASSWORD_INVALID_CODE) {
-        errorMessage.value = t('currentPasswordIncorrect')
+        showNotification({ content: 'currentPasswordIncorrect', type: 'alert-error' })
       } else if (result.code === PASSWORD_TOO_SHORT_CODE) {
-        errorMessage.value = t('passwordMinLengthHint')
+        showNotification({ content: 'passwordMinLengthHint', type: 'alert-error' })
       } else {
-        errorMessage.value = t('changePasswordFailed')
+        showNotification({ content: 'changePasswordFailed', type: 'alert-error' })
       }
       return
     }
 
-    successMessage.value = t('passwordChanged')
+    showNotification({ content: 'passwordChanged', type: 'alert-success' })
     currentPassword.value = ''
     newPassword.value = ''
     confirmPassword.value = ''
   } catch {
-    errorMessage.value = t('changePasswordFailed')
+    showNotification({ content: 'changePasswordFailed', type: 'alert-error' })
   } finally {
     loading.value = false
   }

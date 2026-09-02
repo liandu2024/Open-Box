@@ -615,6 +615,8 @@ const zhTW: LANG_MESSAGE = {
   kernelActionEnable: '\u958b\u555f\u81ea\u52d5\u555f\u52d5',
   kernelActionDisable: '\u95dc\u9589\u81ea\u52d5\u555f\u52d5',
   kernelAutostartLabel: '\u958b\u6a5f\u81ea\u52d5\u555f\u52d5',
+  kernelAutostartOn: '開啟',
+  kernelAutostartOff: '關閉',
   kernelActionSucceeded: '{action}\u6210\u529f\u3002',
   kernelActionFailed: '{action}\u5931\u6557:{detail}',
   kernelActionNoDetail: '\u7d50\u675f\u4ee3\u78bc {code},\u6c92\u6709\u66f4\u591a\u7d30\u7bc0',

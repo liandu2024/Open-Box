@@ -454,6 +454,8 @@ export const fetchConfigPreview = async (): Promise<OpenboxConfigPreview> => {
 export interface OpenboxServiceInfo {
   running: boolean
   raw: string
+  // 只有内核那份带:开机自启是否开着
+  autostart?: boolean
 }
 
 // Only ever populated with services detectConflicts actually found running (see

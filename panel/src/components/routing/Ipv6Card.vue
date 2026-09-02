@@ -19,36 +19,26 @@
         {{ profile.ipv6 ? $t('ipv6OnNote') : $t('ipv6OffWarning') }}
       </p>
 
-      <p
-        v-if="error"
-        class="text-error text-xs"
-      >
-        {{ error }}
-      </p>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { showNotification } from '@/helper/notification'
 import type { OpenboxProfile } from '@/api/openbox'
-import { ref } from 'vue'
-import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{
   profile: OpenboxProfile
   patchProfile: (patch: Record<string, unknown>) => Promise<OpenboxProfile>
 }>()
 
-const { t } = useI18n()
 
-const error = ref('')
 
 const onToggle = async (event: Event) => {
-  error.value = ''
   try {
     await props.patchProfile({ ipv6: (event.target as HTMLInputElement).checked })
   } catch (err) {
-    error.value = t('routingSaveFailed', { message: err instanceof Error ? err.message : String(err) })
+    showNotification({ content: 'routingSaveFailed', params: { message: err instanceof Error ? err.message : String(err) }, type: 'alert-error' })
   }
 }
 </script>

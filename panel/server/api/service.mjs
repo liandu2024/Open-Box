@@ -1,5 +1,5 @@
 import express from 'express'
-import { serviceStatus, stopService, enableService, disableService } from '../system/service.mjs'
+import { serviceStatus, serviceEnabled, stopService, enableService, disableService } from '../system/service.mjs'
 import { detectConflicts } from '../system/conflicts.mjs'
 import { runDeploy } from './deploy-runner.mjs'
 
@@ -16,9 +16,11 @@ export const registerServiceRoutes = (app, { store, ctx, paths } = {}) => {
   // GET /api/openbox/service/status
   router.get('/service/status', async (_req, res) => {
     const core = await serviceStatus(ctx, paths.initd.core)
+    // 内核页状态行要显示「开机自启:开启/关闭」
+    const autostart = await serviceEnabled(ctx, paths.initd.core)
     const panel = await serviceStatus(ctx, paths.initd.panel)
     const { conflicts } = await detectConflicts(ctx)
-    res.json({ core, panel, conflicts })
+    res.json({ core: { ...core, autostart }, panel, conflicts })
   })
 
   // POST /api/openbox/service/core/:action

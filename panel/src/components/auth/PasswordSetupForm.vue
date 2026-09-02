@@ -48,12 +48,6 @@
       />
     </div>
 
-    <p
-      v-if="errorMessage"
-      class="text-error text-sm"
-    >
-      {{ errorMessage }}
-    </p>
 
     <button
       class="btn btn-primary btn-sm w-full"
@@ -66,10 +60,10 @@
 </template>
 
 <script setup lang="ts">
+import { showNotification } from '@/helper/notification'
 import { PASSWORD_ALREADY_SET_CODE, PASSWORD_TOO_SHORT_CODE, setupPassword } from '@/store/auth'
 import { EyeIcon, EyeSlashIcon } from '@heroicons/vue/24/outline'
 import { ref } from 'vue'
-import { useI18n } from 'vue-i18n'
 
 // The standalone /setup route's form (SetupPasswordPage.vue, forced by the router guard
 // while no password exists). This component only knows how to collect+submit a new
@@ -80,50 +74,47 @@ const emit = defineEmits<{
 
 const MIN_PASSWORD_LENGTH = 8
 
-const { t } = useI18n()
 
 const newPassword = ref('')
 const confirmPassword = ref('')
 const showPassword = ref(false)
 const loading = ref(false)
-const errorMessage = ref('')
 
 const handleSubmit = async () => {
   if (loading.value) return
 
   if (newPassword.value.length < MIN_PASSWORD_LENGTH) {
-    errorMessage.value = t('passwordMinLengthHint')
+    showNotification({ content: 'passwordMinLengthHint', type: 'alert-error' })
     return
   }
 
   if (newPassword.value !== confirmPassword.value) {
-    errorMessage.value = t('passwordsDoNotMatch')
+    showNotification({ content: 'passwordsDoNotMatch', type: 'alert-error' })
     return
   }
 
   loading.value = true
-  errorMessage.value = ''
 
   try {
     const result = await setupPassword(newPassword.value)
 
     if (!result.ok) {
       if (result.code === PASSWORD_TOO_SHORT_CODE) {
-        errorMessage.value = t('passwordMinLengthHint')
+        showNotification({ content: 'passwordMinLengthHint', type: 'alert-error' })
       } else if (result.code === PASSWORD_ALREADY_SET_CODE) {
         // Another tab/session already finished setup — the store has resynced
         // itself; reload so the router picks up the now-current state.
-        errorMessage.value = t('passwordAlreadySetError')
+        showNotification({ content: 'passwordAlreadySetError', type: 'alert-error' })
         window.setTimeout(() => window.location.reload(), 1500)
       } else {
-        errorMessage.value = t('setupPasswordFailed')
+        showNotification({ content: 'setupPasswordFailed', type: 'alert-error' })
       }
       return
     }
 
     emit('success')
   } catch {
-    errorMessage.value = t('setupPasswordFailed')
+    showNotification({ content: 'setupPasswordFailed', type: 'alert-error' })
   } finally {
     loading.value = false
   }

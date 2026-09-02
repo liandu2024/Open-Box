@@ -618,6 +618,8 @@ const en = {
   kernelActionEnable: 'Enable autostart',
   kernelActionDisable: 'Disable autostart',
   kernelAutostartLabel: 'Start on boot',
+  kernelAutostartOn: 'On',
+  kernelAutostartOff: 'Off',
   kernelActionSucceeded: '{action} succeeded.',
   kernelActionFailed: '{action} failed: {detail}',
   kernelActionNoDetail: 'exit code {code}, no further detail',

@@ -17,3 +17,9 @@ export const serviceStatus = async (ctx, initdPath) => {
   const running = code === 0 && /running/i.test(raw) && !/no instances/i.test(raw)
   return { running, raw }
 }
+
+// 开机自启是否已开启:procd 脚本的 `enabled` 子命令,开着退出码 0。
+export const serviceEnabled = async (ctx, initdPath) => {
+  const { code } = await ctx.exec(initdPath, ['enabled'])
+  return code === 0
+}
