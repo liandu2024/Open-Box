@@ -163,3 +163,41 @@ test('生成的配置通过 sing-box check(dns.mode=dnsmasq;仅 dns-in 入站被
     fs.rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('一个节点都没命中的用户组也能过 sing-box check(挂 PROXY 占位)', { skip: hasBin ? false : 'sing-box 二进制缺失(panel/.tools/sing-box);运行 pnpm run check:config 前先放置二进制' }, () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'openbox-check-empty-'))
+  try {
+    const { nodes } = parseSubscription('trojan://pw@hk.example.com:443?sni=hk.example.com#HK-01')
+    const renamed = renameNodes(nodes)
+    const { groups } = groupNodesByRegion(renamed)
+    compileSrs(dir, 'geosite-cn')
+    compileSrs(dir, 'geoip-cn')
+    const config = buildConfig({
+      nodes: renamed,
+      regionGroups: groups,
+      profile: {
+        ipv6: false,
+        dns: { split: true, direct: '223.5.5.5', proxy: 'https://1.1.1.1/dns-query' },
+        // 分流规则指向那个空组:这正是"组不能被丢掉"的理由——丢了它就得被重映射
+        routing: { proxyTag: 'PROXY', categories: [{ ruleset: 'geosite-cn', target: '爱尔兰-自动' }], directRulesets: ['geosite-cn'], fallback: 'PROXY' },
+        rulesetDir: dir,
+      },
+      userGroups: [
+        // 一个爱尔兰节点都没有,组照样要在
+        { id: 'ie', name: '爱尔兰-自动', type: 'urltest', mode: 'dynamic', keywords: ['ie', '爱尔兰'], icon: 'IE' },
+      ],
+    })
+
+    const ie = config.outbounds.find((o) => o.tag === '爱尔兰-自动')
+    assert.ok(ie, '空组必须仍然出现在配置里')
+    assert.deepEqual(ie.outbounds, ['PROXY'], '空组挂 PROXY 占位')
+    const rule = config.route.rules.find((r) => r.outbound === '爱尔兰-自动')
+    assert.ok(rule, '指向空组的分流规则不该被重映射掉')
+
+    const file = path.join(dir, 'config.json')
+    fs.writeFileSync(file, JSON.stringify(config, null, 2))
+    execFileSync(sbBin, ['check', '-c', file], { stdio: 'pipe' })
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})

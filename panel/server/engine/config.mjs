@@ -15,7 +15,9 @@ export const buildConfig = ({ nodes, regionGroups, profile, userGroups }) => {
 
   // 用户自定义节点组排在自动生成的地区组之后:emitUserGroups 已经保证了成员非空、
   // 无悬空引用、无环(sing-box check 只能挡住第一条,见 user-groups.mjs 的说明)。
-  const { outbounds: userGroupOutbounds } = emitUserGroups(userGroups || [], nodes)
+  // proxyTag 传下去是给"一个节点都没命中"的组当占位成员用的:那种组照样写进配置,
+  // 等订阅刷出节点自动接管(理由见 user-groups.mjs)。
+  const { outbounds: userGroupOutbounds } = emitUserGroups(userGroups || [], nodes, { proxyTag })
   const outbounds = [
     { type: 'direct', tag: 'direct' },
     ...emitGroupOutbounds(regionGroups, { proxyTag }),
