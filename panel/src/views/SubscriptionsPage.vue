@@ -38,15 +38,25 @@
             <PlusIcon class="h-4 w-4" />
             {{ $t('subscriptionAdd') }}
           </button>
-          <button
-            v-else
-            type="button"
-            class="btn btn-primary btn-sm"
-            @click="groupsPanel?.openEditor(null)"
-          >
-            <PlusIcon class="h-4 w-4" />
-            {{ $t('groupAdd') }}
-          </button>
+          <!-- 两个按钮并排:justify-between 只管两端,中间的间距要自己给 -->
+          <template v-else>
+            <button
+              type="button"
+              class="btn btn-sm ml-auto"
+              @click="groupsPanel?.openAutoDialog()"
+            >
+              <SparklesIcon class="h-4 w-4" />
+              {{ $t('groupAutoAdd') }}
+            </button>
+            <button
+              type="button"
+              class="btn btn-primary btn-sm"
+              @click="groupsPanel?.openEditor(null)"
+            >
+              <PlusIcon class="h-4 w-4" />
+              {{ $t('groupAdd') }}
+            </button>
+          </template>
         </div>
 
         <NodeGroupsPanel
@@ -168,7 +178,11 @@ import NodeGroupsPanel from '@/components/subscription/NodeGroupsPanel.vue'
 import SubscriptionCard from '@/components/subscription/SubscriptionCard.vue'
 import { usePaddingForViews } from '@/composables/paddingViews'
 import { routingPendingDeploy } from '@/store/routing'
-import { PlusIcon, RssIcon } from '@heroicons/vue/24/outline'
+import {
+  PlusIcon,
+  RssIcon,
+  SparklesIcon,
+} from '@heroicons/vue/24/outline'
 import { onMounted, reactive, ref, useTemplateRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 

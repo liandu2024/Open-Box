@@ -6,6 +6,13 @@
     >
       {{ error }}
     </p>
+    <!-- 提示不是错误:跳过同名分组是正常结果,用红色会让人以为出事了 -->
+    <p
+      v-if="notice"
+      class="text-base-content/60 text-sm"
+    >
+      {{ notice }}
+    </p>
 
     <!-- 服务端把「按当前节点跑一遍」的结果一并返回。落地不了的组必须说出来:
          成员是按名字引用的,节点一改名(比如打开订阅名前缀)引用就会悬空,
@@ -374,15 +381,130 @@
         </div>
       </div>
     </DialogWrapper>
+
+    <!-- 自动分组:按国家批量建组。手工建的话,一个国家要点开弹窗、挑规则、写关键词、
+         选图标,十个国家就是十遍——而这些信息国家目录里全都有。 -->
+    <DialogWrapper
+      v-model="showAuto"
+      :title="$t('groupAutoTitle')"
+      box-class="w-full max-w-xl"
+    >
+      <div class="flex flex-col gap-4">
+        <div class="flex flex-col gap-1">
+          <label class="text-xs font-medium">{{ $t('groupAutoTypesLabel') }}</label>
+          <div class="flex items-center gap-4">
+            <label class="flex cursor-pointer items-center gap-2 text-sm">
+              <input
+                v-model="autoTypes"
+                type="checkbox"
+                value="urltest"
+                class="checkbox checkbox-sm"
+              />
+              {{ $t('groupType_urltest') }}
+            </label>
+            <label class="flex cursor-pointer items-center gap-2 text-sm">
+              <input
+                v-model="autoTypes"
+                type="checkbox"
+                value="selector"
+                class="checkbox checkbox-sm"
+              />
+              {{ $t('groupType_selector') }}
+            </label>
+          </div>
+        </div>
+
+        <div class="flex flex-col gap-1">
+          <div class="flex items-center gap-2">
+            <label class="text-xs font-medium">{{ $t('groupAutoCountriesLabel') }}</label>
+            <button
+              type="button"
+              class="btn btn-ghost btn-xs ml-auto"
+              @click="autoCountries = autoCandidates.map((c) => c.code)"
+            >
+              {{ $t('groupSelectAll') }}
+            </button>
+            <button
+              type="button"
+              class="btn btn-ghost btn-xs"
+              @click="autoCountries = []"
+            >
+              {{ $t('groupSelectNone') }}
+            </button>
+          </div>
+          <!-- 只列当前真有节点的国家:列全部 52 个的话,绝大多数勾了也只会生成一个
+               空组(空组不会写进配置,见 emitUserGroups),白白让人在一堵墙里找。 -->
+          <div class="border-base-content/10 max-h-64 overflow-y-auto rounded-lg border">
+            <p
+              v-if="!autoCandidates.length"
+              class="text-base-content/50 p-4 text-center text-xs"
+            >
+              {{ $t('groupAutoNoCountries') }}
+            </p>
+            <label
+              v-for="c in autoCandidates"
+              :key="c.code"
+              class="hover:bg-base-200/60 flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm"
+            >
+              <input
+                v-model="autoCountries"
+                type="checkbox"
+                :value="c.code"
+                class="checkbox checkbox-xs shrink-0"
+              />
+              <CountryFlag
+                :code="c.code"
+                :size="16"
+              />
+              <span class="truncate">{{ c.label }}</span>
+              <span class="text-base-content/50 ml-auto text-xs">
+                {{ $t('groupAutoNodeCount', { count: c.count }) }}
+              </span>
+            </label>
+          </div>
+        </div>
+
+        <p class="text-base-content/50 text-xs">{{ $t('groupAutoHint') }}</p>
+        <p
+          v-if="autoError"
+          class="text-error text-sm"
+        >
+          {{ autoError }}
+        </p>
+
+        <div class="flex justify-end gap-2">
+          <button
+            type="button"
+            class="btn btn-sm"
+            @click="showAuto = false"
+          >
+            {{ $t('cancel') }}
+          </button>
+          <button
+            type="button"
+            class="btn btn-primary btn-sm"
+            :disabled="autoSaving || !autoCountries.length || !autoTypes.length"
+            @click="createAutoGroups"
+          >
+            <span
+              v-if="autoSaving"
+              class="loading loading-spinner loading-xs"
+            />
+            {{ $t('groupAutoCreate', { count: autoCountries.length * autoTypes.length }) }}
+          </button>
+        </div>
+      </div>
+    </DialogWrapper>
   </div>
 </template>
 
 <script setup lang="ts">
-import type { OpenboxUserGroup } from '@/api/openbox'
+import type { OpenboxGroupType, OpenboxUserGroup } from '@/api/openbox'
 import { fetchNodeGroups, saveNodeGroups } from '@/api/openbox'
 import BulkPick from '@/components/subscription/BulkPick.vue'
 import CountryFlag from '@/components/common/CountryFlag.vue'
 import CountrySelect from '@/components/common/CountrySelect.vue'
+import { COUNTRIES, countryName, findCountry } from '@/constant/countries'
 import { keywordMatches, normalizeForMatch } from '@/helper/keywordMatch'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import { routingPendingDeploy } from '@/store/routing'
@@ -395,7 +517,7 @@ import {
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const groups = ref<OpenboxUserGroup[]>([])
 const availableNodes = ref<Array<{ name: string; subscription: string }>>([])
@@ -625,8 +747,91 @@ const keywordsText = computed({
 // 按当前节点实时算一遍:关键词写完能立刻看到会选中谁,不用保存了再回来看
 const dynamicMatched = computed(() => (draft.value ? matchedNodes(draft.value) : []))
 
-// 「添加分组」按钮在父组件(页签那一行),弹窗在这里,所以要把入口暴露出去
-defineExpose({ openEditor })
+// ---------- 自动分组 ----------
+const showAuto = ref(false)
+const autoTypes = ref<OpenboxGroupType[]>(['urltest'])
+const autoCountries = ref<string[]>([])
+const autoSaving = ref(false)
+const autoError = ref('')
+// 生成完之后的提示(比如"跳过了几个同名的"),和 error 分开:它不是错误
+const notice = ref('')
+
+// 候选国家 = 当前节点里真能匹配上的那些,按节点数从多到少。数量直接显示出来,
+// 免得勾完才发现某个国家一个节点都没有。
+const autoCandidates = computed(() => {
+  const names = availableNodes.value.map((n) => normalizeForMatch(n.name))
+  return COUNTRIES.map((c) => ({
+    code: c.code,
+    label: countryName(c, locale.value),
+    count: names.filter((n) => c.keywords.some((kw) => keywordMatches(n, kw))).length,
+  }))
+    .filter((c) => c.count > 0)
+    .sort((a, b) => b.count - a.count)
+})
+
+const openAutoDialog = () => {
+  autoError.value = ''
+  autoTypes.value = ['urltest']
+  // 默认全勾上:开这个弹窗多半就是想一次把当前有的国家都建出来
+  autoCountries.value = autoCandidates.value.map((c) => c.code)
+  showAuto.value = true
+}
+
+const AUTO_SUFFIX: Record<OpenboxGroupType, string> = {
+  urltest: '自动',
+  selector: '手动',
+}
+
+const createAutoGroups = async () => {
+  if (autoSaving.value) return
+  const existing = new Set(groups.value.map((g) => g.name))
+  const next: OpenboxUserGroup[] = []
+  let skipped = 0
+  for (const code of autoCountries.value) {
+    const country = findCountry(code)
+    if (!country) continue
+    for (const type of autoTypes.value) {
+      const name = `${countryName(country, locale.value)}-${AUTO_SUFFIX[type]}`
+      // 同名的跳过:组名就是内核里的出站名,重名会生成两个同名出站
+      if (existing.has(name)) {
+        skipped += 1
+        continue
+      }
+      existing.add(name)
+      next.push({
+        id: `auto-${code.toLowerCase()}-${type}-${Date.now()}-${next.length}`,
+        name,
+        type,
+        mode: 'dynamic',
+        icon: code,
+        // 关键词直接用国家目录里的那份,和地区词典是同一套词
+        keywords: [...country.keywords],
+        members: [],
+        ...(type === 'urltest' ? { interval: '3m', tolerance: 50 } : {}),
+      })
+    }
+  }
+
+  if (!next.length) {
+    autoError.value = t('groupAutoAllExist')
+    return
+  }
+
+  autoSaving.value = true
+  autoError.value = ''
+  try {
+    await persist([...groups.value, ...next])
+    showAuto.value = false
+    notice.value = skipped ? t('groupAutoSkipped', { count: skipped }) : ''
+  } catch (err) {
+    autoError.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    autoSaving.value = false
+  }
+}
+
+// 两个入口都在父组件的页签行上,弹窗在这里,所以要把它们暴露出去
+defineExpose({ openEditor, openAutoDialog })
 
 const persist = async (next: OpenboxUserGroup[]) => {
   const res = await saveNodeGroups(next)
