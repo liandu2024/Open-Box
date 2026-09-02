@@ -365,6 +365,8 @@ const zhTW: LANG_MESSAGE = {
   groupAutoNodeCount: '{count} 個節點',
   groupAutoNoCountries: '目前節點裡沒有辨識出任何國家/地區。',
   groupAutoHint: '按「國家-自動」「國家-手動」命名,自動配國旗,而且是動態組——以後新加的訂閱裡只要有這個國家的節點,會自動進組。',
+  groupAutoAddCountry: '新增國家/地區',
+  groupAutoEmpty: '還沒有選國家/地區,用右上角的下拉框新增。',
   groupAutoCreate: '產生 {count} 個分組',
   groupAutoAllExist: '要產生的分組都已經存在了。',
   groupAutoSkipped: '已略過 {count} 個同名分組。',

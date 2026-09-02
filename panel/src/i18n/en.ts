@@ -368,6 +368,8 @@ const en = {
   groupAutoNodeCount: '{count} node(s)',
   groupAutoNoCountries: 'No country was recognised in the current nodes.',
   groupAutoHint: 'Named “Country-自动” / “Country-手动”, with the right flag, and dynamic — nodes from that country in future subscriptions join automatically.',
+  groupAutoAddCountry: 'Add country',
+  groupAutoEmpty: 'No country picked yet — add one from the dropdown above.',
   groupAutoCreate: 'Create {count} group(s)',
   groupAutoAllExist: 'All of those groups already exist.',
   groupAutoSkipped: 'Skipped {count} group(s) with an existing name.',

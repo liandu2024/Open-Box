@@ -417,50 +417,54 @@
         <div class="flex flex-col gap-1">
           <div class="flex items-center gap-2">
             <label class="text-xs font-medium">{{ $t('groupAutoCountriesLabel') }}</label>
-            <button
-              type="button"
-              class="btn btn-ghost btn-xs ml-auto"
-              @click="autoCountries = autoCandidates.map((c) => c.code)"
-            >
-              {{ $t('groupSelectAll') }}
-            </button>
+            <!-- 用下拉框往里加,而不是把几十个国家铺成一列勾选框:常用的那几个已经
+                 默认摆好了,剩下的按需搜索添加。 -->
+            <div class="ml-auto w-36">
+              <CountrySelect
+                model-value=""
+                :placeholder="$t('groupAutoAddCountry')"
+                @update:model-value="addAutoCountry"
+              />
+            </div>
             <button
               type="button"
               class="btn btn-ghost btn-xs"
+              :disabled="!autoCountries.length"
               @click="autoCountries = []"
             >
               {{ $t('groupSelectNone') }}
             </button>
           </div>
-          <!-- 只列当前真有节点的国家:列全部 52 个的话,绝大多数勾了也只会生成一个
-               空组(空组不会写进配置,见 emitUserGroups),白白让人在一堵墙里找。 -->
           <div class="border-base-content/10 max-h-64 overflow-y-auto rounded-lg border">
             <p
-              v-if="!autoCandidates.length"
+              v-if="!autoRows.length"
               class="text-base-content/50 p-4 text-center text-xs"
             >
-              {{ $t('groupAutoNoCountries') }}
+              {{ $t('groupAutoEmpty') }}
             </p>
-            <label
-              v-for="c in autoCandidates"
+            <div
+              v-for="c in autoRows"
               :key="c.code"
-              class="hover:bg-base-200/60 flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm"
+              class="flex items-center gap-2 px-3 py-1.5 text-sm"
             >
-              <input
-                v-model="autoCountries"
-                type="checkbox"
-                :value="c.code"
-                class="checkbox checkbox-xs shrink-0"
-              />
               <CountryFlag
                 :code="c.code"
                 :size="16"
               />
               <span class="truncate">{{ c.label }}</span>
-              <span class="text-base-content/50 ml-auto text-xs">
+              <!-- 当前节点数只是参考:0 也照样能建,动态组等的就是以后会有的节点 -->
+              <span class="text-base-content/50 ml-auto text-xs whitespace-nowrap">
                 {{ $t('groupAutoNodeCount', { count: c.count }) }}
               </span>
-            </label>
+              <button
+                type="button"
+                class="btn btn-ghost btn-circle btn-xs shrink-0"
+                :aria-label="$t('subscriptionRenameRemoveRow')"
+                @click="autoCountries = autoCountries.filter((x) => x !== c.code)"
+              >
+                <XMarkIcon class="h-3.5 w-3.5" />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -504,7 +508,7 @@ import { fetchNodeGroups, saveNodeGroups } from '@/api/openbox'
 import BulkPick from '@/components/subscription/BulkPick.vue'
 import CountryFlag from '@/components/common/CountryFlag.vue'
 import CountrySelect from '@/components/common/CountrySelect.vue'
-import { COUNTRIES, countryName, findCountry } from '@/constant/countries'
+import { AUTO_GROUP_DEFAULT_COUNTRIES, countryName, findCountry } from '@/constant/countries'
 import { keywordMatches, normalizeForMatch } from '@/helper/keywordMatch'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import { routingPendingDeploy } from '@/store/routing'
@@ -513,6 +517,7 @@ import {
   ChevronRightIcon,
   PencilSquareIcon,
   TrashIcon,
+  XMarkIcon,
 } from '@heroicons/vue/24/outline'
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -756,24 +761,29 @@ const autoError = ref('')
 // 生成完之后的提示(比如"跳过了几个同名的"),和 error 分开:它不是错误
 const notice = ref('')
 
-// 候选国家 = 当前节点里真能匹配上的那些,按节点数从多到少。数量直接显示出来,
-// 免得勾完才发现某个国家一个节点都没有。
-const autoCandidates = computed(() => {
+// 已选国家 + 各自当前命中的节点数(只是参考,0 也能建)
+const autoRows = computed(() => {
   const names = availableNodes.value.map((n) => normalizeForMatch(n.name))
-  return COUNTRIES.map((c) => ({
-    code: c.code,
-    label: countryName(c, locale.value),
-    count: names.filter((n) => c.keywords.some((kw) => keywordMatches(n, kw))).length,
-  }))
-    .filter((c) => c.count > 0)
-    .sort((a, b) => b.count - a.count)
+  return autoCountries.value.flatMap((code) => {
+    const c = findCountry(code)
+    if (!c) return []
+    return [{
+      code: c.code,
+      label: countryName(c, locale.value),
+      count: names.filter((n) => c.keywords.some((kw) => keywordMatches(n, kw))).length,
+    }]
+  })
 })
+
+const addAutoCountry = (code: string) => {
+  if (!code || autoCountries.value.includes(code)) return
+  autoCountries.value = [...autoCountries.value, code]
+}
 
 const openAutoDialog = () => {
   autoError.value = ''
   autoTypes.value = ['urltest']
-  // 默认全勾上:开这个弹窗多半就是想一次把当前有的国家都建出来
-  autoCountries.value = autoCandidates.value.map((c) => c.code)
+  autoCountries.value = [...AUTO_GROUP_DEFAULT_COUNTRIES]
   showAuto.value = true
 }
 

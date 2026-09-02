@@ -96,6 +96,10 @@ export const isGlobeIcon = (value: string): boolean => /^globe:/i.test(String(va
 export const globeIconKey = (value: string): string =>
   `globeIcon_${String(value).slice('globe:'.length).toLowerCase()}`
 
+// 「自动分组」弹窗默认摆上的几个:机场订阅里最常见的那批。不按"当前有没有节点"
+// 来挑——动态组本来就是给"以后也会有"准备的,某个国家现在没节点不代表以后没有。
+export const AUTO_GROUP_DEFAULT_COUNTRIES = ['HK', 'TW', 'SG', 'JP', 'KR', 'US']
+
 const BY_CODE = new Map(COUNTRIES.map((c) => [c.code, c]))
 
 export const findCountry = (code: string): Country | undefined =>

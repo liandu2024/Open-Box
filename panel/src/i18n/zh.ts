@@ -365,6 +365,8 @@ const zh: LANG_MESSAGE = {
   groupAutoNodeCount: '{count} 个节点',
   groupAutoNoCountries: '当前节点里没有识别出任何国家/地区。',
   groupAutoHint: '按「国家-自动」「国家-手动」命名,自动配国旗,并且是动态组——以后新加的订阅里只要有这个国家的节点,会自动进组。',
+  groupAutoAddCountry: '添加国家/地区',
+  groupAutoEmpty: '还没有选国家/地区,用右上角的下拉框添加。',
   groupAutoCreate: '生成 {count} 个分组',
   groupAutoAllExist: '要生成的分组都已经存在了。',
   groupAutoSkipped: '已跳过 {count} 个同名分组。',
