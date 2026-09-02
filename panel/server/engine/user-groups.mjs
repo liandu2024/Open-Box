@@ -38,6 +38,9 @@ export const defaultGroups = () => ([
     id: 'all-auto',
     name: '所有-自动',
     type: 'urltest',
+    // 这两个组是跨地区的,配国旗都不对,默认就给地球;不给的话新装出来是两个空图标,
+    // 每个人都得自己去挑一次
+    icon: 'globe:earth-asia',
     mode: 'dynamic',
     keywords: [],
     members: [],
@@ -48,6 +51,7 @@ export const defaultGroups = () => ([
     id: 'all-manual',
     name: '所有-手动',
     type: 'selector',
+    icon: 'globe:earth-meridians',
     mode: 'dynamic',
     keywords: [],
     members: [],

@@ -168,3 +168,10 @@ test('图标不进 sing-box 出站:那边没有这个字段', () => {
   )
   assert.ok(!('icon' in outbounds[0]), '出站里不该出现 icon')
 })
+
+test('两个默认组自带地球图标:跨地区的组配国旗都不对,也不该新装出来是空的', () => {
+  assert.deepEqual(
+    defaultGroups().map((g) => [g.name, g.icon]),
+    [['所有-自动', 'globe:earth-asia'], ['所有-手动', 'globe:earth-meridians']],
+  )
+})
