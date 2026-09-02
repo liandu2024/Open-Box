@@ -77,13 +77,15 @@ const GLOBE_URL = import.meta.glob<string>('../../assets/globes/*.svg', {
 })
 
 const boxWidth = computed(() => Math.round((props.size * 4) / 3))
-// 两种地球的"墨迹"占各自画布的比例不一样,给同样的边长会画出一大一小:
-//   彩色(Twemoji):圆 r=18 / viewBox 36 —— 铺满,比例 1.0
-//   线条(heroicons):圆 r=9 加 1.5 描边 / viewBox 24 —— 比例 0.8125
-// 所以彩色的按 0.8 缩、线条的给满格,两者的圆最终一样大(16px 行里都是 13px),
-// 也都不会超出这个 16px 高的盒子。数字改了要一起改,不然又是一大一小。
-const glyph = computed(() => Math.round(props.size * 0.8))
-const monoGlyph = computed(() => props.size)
+// 目标:地球画出来的圆,和国旗的高度一样(国旗是铺满盒子的,即 size)。
+// 两种地球的"墨迹"占各自画布的比例不同,所以给的边长也不同:
+//   彩色(Twemoji):圆 r=18 / viewBox 36 —— 铺满,比例 1.0,给 size 就够
+//   线条(heroicons):圆 r=9 加 1.5 描边 / viewBox 24 —— 比例 0.8125,要给
+//     size / 0.8125 才画得出一个 size 高的圆
+// 线条那个的元素框因此比盒子高两像素,往行间距里探出去一点——它只是一条细描边,
+// 没有底色,看不出来,而外框仍是统一的 4:3,文字照样对齐。
+const glyph = computed(() => props.size)
+const monoGlyph = computed(() => Math.round(props.size / 0.8125))
 
 const src = computed(() => {
   if (isGlobe.value) {
