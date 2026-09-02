@@ -349,8 +349,11 @@ const openEditor = (policy: OpenboxRoutingPolicy | null) => {
   showEditor.value = true
 }
 
+// 新增 / 修改 / 删除 / 拖拽排序都走这里。保存只是写档案,内核还在跑旧配置,所以每次都
+// 用右上角的标准提示告诉一声"重启内核后生效",由用户自己去内核页重启。
 const persist = async (next: OpenboxRoutingPolicy[]) => {
   await props.patchProfile({ routing: { policies: next } })
+  showNotification({ content: 'routingPolicySaved', type: 'alert-success' })
 }
 
 const saveDraft = async () => {

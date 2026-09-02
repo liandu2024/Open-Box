@@ -8,7 +8,6 @@
       :style="padding"
       @scroll.passive="handleScroll"
     >
-      <PendingSiteSetsNotice v-if="proxiesTabShow === PROXY_TAB_TYPE.POLICY && !kernelEmpty" />
       <!-- 这一页的一切都来自内核的 clash_api:内核没在跑,这里就是空的。与其留一片
            空白让人以为"配置没生效",不如直说,并把去启动的路放在这儿。 -->
       <div
@@ -83,7 +82,6 @@
 </template>
 
 <script setup lang="ts">
-import PendingSiteSetsNotice from '@/components/proxies/PendingSiteSetsNotice.vue'
 import ProxyGroup from '@/components/proxies/ProxyGroup.vue'
 import ProxyGroupForMobile from '@/components/proxies/ProxyGroupForMobile.vue'
 import ProxyProvider from '@/components/proxies/ProxyProvider.vue'
