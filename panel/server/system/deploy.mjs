@@ -2,6 +2,7 @@ import { detectConflicts } from './conflicts.mjs'
 import { validateConfigObject, attributeBadNodes } from './validate.mjs'
 import { restartService, stopService, serviceStatus } from './service.mjs'
 import { applyDnsTakeover, restoreDnsTakeover, dnsTakeoverBackupPath } from './dns-takeover.mjs'
+import { dnsmasqForwardDomains } from '../engine/routing-model.mjs'
 import { applyPanelLanRule, applyIpv6Block, removeProxyRules } from './firewall.mjs'
 import { ensureRulesets } from './rulesets.mjs'
 
@@ -53,7 +54,12 @@ export const deployConfig = async (ctx, paths, { config, profile, fetchImpl } = 
       // LAN DNS 全断却仍报部署成功。备份是否存在的判断与 Critical 2 的回滚修复共用。
       await restoreDnsTakeover(ctx, paths)
     }
-    await applyDnsTakeover(ctx, paths, { mode: dnsMode })
+    // 代理面能被逐条列出来时(香港澳门那一档),只转发那几个域名,其余交回路由器
+    // 自己解析——直连的 DNS 就真的不经过 Open-Box 了。列不出来就照旧全局转发。
+    await applyDnsTakeover(ctx, paths, {
+      mode: dnsMode,
+      forwardDomains: dnsmasqForwardDomains(profile.routing),
+    })
 
     // 6. 防火墙
     await applyPanelLanRule(ctx, { port: 2026 })

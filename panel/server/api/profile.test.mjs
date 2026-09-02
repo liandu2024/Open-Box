@@ -300,33 +300,39 @@ test('PUT 合法的 directRulesets 与 rulesetDir 仍能通过并落库', async 
   }
 })
 
-test('GET /defaults?region=CN → CN 推荐默认', async () => {
+test('GET /defaults?region=CN → 中国大陆那一档', async () => {
   const { baseUrl, close } = await startApp()
   try {
     const res = await fetch(`${baseUrl}/api/openbox/profile/defaults?region=CN`)
     assert.equal(res.status, 200)
     const body = await res.json()
-    assert.equal(body.defaults.region, 'CN')
-    assert.equal(body.defaults.dns.split, true)
-    assert.equal(body.defaults.dns.direct, '223.5.5.5')
-    assert.deepEqual(body.defaults.routing.directRulesets, ['geosite-cn', 'geoip-cn'])
-    assert.equal(body.defaults.routing.fallback, 'PROXY')
+    assert.equal(body.defaults.regionMode, 'CN')
+    assert.equal(body.defaults.routing.regionMode, 'CN')
+    // 规则不再写进档案:由 regionMode 在生成配置时决定(engine/routing.mjs)
+    assert.ok(!('directRulesets' in body.defaults.routing))
+    assert.ok(!('fallback' in body.defaults.routing))
   } finally {
     await close()
   }
 })
 
-test('GET /defaults?region=US → 其它区域推荐默认', async () => {
+test('GET /defaults?region=HKMO → 香港澳门那一档', async () => {
+  const { baseUrl, close } = await startApp()
+  try {
+    const res = await fetch(`${baseUrl}/api/openbox/profile/defaults?region=HKMO`)
+    const body = await res.json()
+    assert.equal(body.defaults.regionMode, 'HKMO')
+  } finally {
+    await close()
+  }
+})
+
+test('GET /defaults?region=不认识的 → 回落到中国大陆', async () => {
   const { baseUrl, close } = await startApp()
   try {
     const res = await fetch(`${baseUrl}/api/openbox/profile/defaults?region=US`)
-    assert.equal(res.status, 200)
     const body = await res.json()
-    assert.equal(body.defaults.region, 'US')
-    assert.equal(body.defaults.dns.split, false)
-    assert.equal(body.defaults.dns.direct, '1.1.1.1')
-    assert.deepEqual(body.defaults.routing.directRulesets, ['geosite-us', 'geoip-us'])
-    assert.equal(body.defaults.routing.fallback, 'direct')
+    assert.equal(body.defaults.regionMode, 'CN')
   } finally {
     await close()
   }
@@ -344,14 +350,59 @@ test('GET /defaults 缺 region → 按 CN 兜底', async () => {
   }
 })
 
-test('GET /defaults?region=jp → 区域大小写归一化(region 大写,ruleset 后缀小写)', async () => {
+test('GET /defaults?region=hkmo → 大小写归一化', async () => {
   const { baseUrl, close } = await startApp()
   try {
-    const res = await fetch(`${baseUrl}/api/openbox/profile/defaults?region=jp`)
+    const res = await fetch(`${baseUrl}/api/openbox/profile/defaults?region=hkmo`)
     assert.equal(res.status, 200)
     const body = await res.json()
-    assert.equal(body.defaults.region, 'JP')
-    assert.deepEqual(body.defaults.routing.directRulesets, ['geosite-jp', 'geoip-jp'])
+    assert.equal(body.defaults.regionMode, 'HKMO')
+  } finally {
+    await close()
+  }
+})
+
+test('PUT 校验:策略必须有名字', async () => {
+  const { baseUrl, close } = await startApp()
+  try {
+    const res = await putJson(baseUrl, '/api/openbox/profile', { routing: { policies: [{ rulesets: ['geosite-google'] }] } })
+    assert.equal(res.status, 400)
+  } finally {
+    await close()
+  }
+})
+
+test('PUT 校验:策略的规则集仍然要过路径安全那道正则', async () => {
+  const { baseUrl, close } = await startApp()
+  try {
+    const res = await putJson(baseUrl, '/api/openbox/profile', {
+      routing: { policies: [{ name: '坏的', rulesets: ['../../etc/passwd'] }] },
+    })
+    assert.equal(res.status, 400)
+  } finally {
+    await close()
+  }
+})
+
+test('PUT 校验:域名条件不限制字符(带下划线、斜杠的 CIDR 都合法)', async () => {
+  const { baseUrl, close } = await startApp()
+  try {
+    const res = await putJson(baseUrl, '/api/openbox/profile', {
+      routing: {
+        policies: [{ name: '谷歌', domainSuffix: ['my_host.example.com'], ipCidr: ['8.8.8.8/32'] }],
+      },
+    })
+    assert.equal(res.status, 200)
+  } finally {
+    await close()
+  }
+})
+
+test('PUT 校验:regionMode 只认三档', async () => {
+  const { baseUrl, close } = await startApp()
+  try {
+    assert.equal((await putJson(baseUrl, '/api/openbox/profile', { routing: { regionMode: 'HKMO' } })).status, 200)
+    assert.equal((await putJson(baseUrl, '/api/openbox/profile', { routing: { regionMode: 'JP' } })).status, 400)
   } finally {
     await close()
   }

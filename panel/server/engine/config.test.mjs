@@ -38,35 +38,64 @@ test('ipv6 关:tun address 仅 v4', () => {
   assert.equal(c.dns.strategy, 'ipv4_only')
 })
 
-test('修复2: category.target 引用不存在的组时重映射为 proxyTag', () => {
-  const profileWithDanglingTarget = {
-    ...profile,
-    routing: { ...profile.routing, categories: [{ ruleset: 'geosite-netflix', target: '不存在的组' }] },
-  }
-  const c = buildConfig({ nodes, regionGroups, profile: profileWithDanglingTarget })
-  const rule = c.route.rules.find((r) => r.rule_set === 'geosite-netflix')
-  assert.ok(rule)
-  assert.equal(rule.outbound, 'PROXY')
+test('每条策略生成一个同名 selector,成员是「出站」页签选中的那几类', () => {
+  const c = buildConfig({
+    nodes,
+    regionGroups,
+    userGroups: [{ id: 'g', name: '香港-自动', type: 'urltest', mode: 'dynamic', keywords: [] }],
+    profile: {
+      ...profile,
+      routing: {
+        proxyTag: 'PROXY',
+        regionMode: 'CN',
+        policies: [{ id: 'p1', name: '谷歌', rulesets: ['geosite-google'], default: '香港-自动' }],
+      },
+    },
+  })
+  const sel = c.outbounds.find((o) => o.tag === '谷歌')
+  assert.deepEqual(sel, {
+    type: 'selector',
+    tag: '谷歌',
+    // 直连 → 各节点组(地区组 + 用户组)→ 拒绝
+    outbounds: ['direct', '美国', '香港-自动', 'block'],
+    default: '香港-自动',
+  })
+  assert.ok(c.outbounds.some((o) => o.type === 'block' && o.tag === 'block'), '拒绝出站要在')
+  const rule = c.route.rules.find((r) => r.outbound === '谷歌')
+  assert.deepEqual(rule.rule_set, ['geosite-google'])
 })
 
-test('修复2: fallback 引用不存在的 tag 时重映射为 proxyTag', () => {
-  const profileWithDanglingFallback = {
-    ...profile,
-    routing: { ...profile.routing, fallback: '也不存在' },
-  }
-  const c = buildConfig({ nodes, regionGroups, profile: profileWithDanglingFallback })
-  assert.equal(c.route.final, 'PROXY')
+test('策略的 default 不在成员表里就不写 default,免得内核启动时找不到', () => {
+  const c = buildConfig({
+    nodes,
+    regionGroups,
+    profile: {
+      ...profile,
+      routing: {
+        regionMode: 'CN',
+        policies: [{ id: 'p1', name: '谷歌', rulesets: ['geosite-google'], default: '并不存在的组' }],
+      },
+    },
+  })
+  const sel = c.outbounds.find((o) => o.tag === '谷歌')
+  assert.ok(!('default' in sel))
 })
 
-test('修复2: 合法 target/fallback 不被改写', () => {
-  const profileWithValidTarget = {
-    ...profile,
-    routing: { ...profile.routing, categories: [{ ruleset: 'geosite-netflix', target: '美国' }], fallback: '美国' },
-  }
-  const c = buildConfig({ nodes, regionGroups, profile: profileWithValidTarget })
-  const rule = c.route.rules.find((r) => r.rule_set === 'geosite-netflix')
-  assert.equal(rule.outbound, '美国')
-  assert.equal(c.route.final, '美国')
+test('「出站」页签关掉拒绝时,配置里不生成 block 出站', () => {
+  const c = buildConfig({
+    nodes,
+    regionGroups,
+    profile: {
+      ...profile,
+      routing: {
+        regionMode: 'CN',
+        outboundOptions: { direct: true, groups: true, reject: false },
+        policies: [{ id: 'p1', name: '谷歌', rulesets: ['geosite-google'] }],
+      },
+    },
+  })
+  assert.ok(!c.outbounds.some((o) => o.tag === 'block'))
+  assert.deepEqual(c.outbounds.find((o) => o.tag === '谷歌').outbounds, ['direct', '美国'])
 })
 
 test('tun.autoRedirect 默认关闭,可开启', () => {

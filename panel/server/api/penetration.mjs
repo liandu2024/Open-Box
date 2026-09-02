@@ -1,5 +1,6 @@
 import express from 'express'
 import { buildRoute } from '../engine/routing.mjs'
+import { normalizeRouting } from '../engine/routing-model.mjs'
 import { groupNodesByRegion } from '../engine/groups.mjs'
 import { isPrivateOrLoopbackIp } from './net-guard.mjs'
 
@@ -49,6 +50,68 @@ export const matchRuleSet = async (ctx, paths, srsPath, target) => {
     return { hit: false, error: `sing-box rule-set match exited ${code} with no output` }
   }
   return { hit: false }
+}
+
+// 一条规则里可能挂着多个规则集(策略允许填多个),任一命中即算这条规则命中。
+// 任何一个没能确认,整条就是"不知道"——理由同 matchRuleSet 的三态说明。
+export const matchRuleSetList = async (ctx, paths, srsPathByTag, ruleSet, target) => {
+  const tags = Array.isArray(ruleSet) ? ruleSet : [ruleSet]
+  for (const tag of tags) {
+    const srsPath = srsPathByTag.get(tag)
+    if (!srsPath) continue
+    const result = await matchRuleSet(ctx, paths, srsPath, target)
+    if (result.error) return result
+    if (result.hit) return { hit: true }
+  }
+  return { hit: false }
+}
+
+// 策略带来的四类条件都能在本地判定,不必去 exec 内核。
+const LOCAL_CONDITION_KEYS = ['domain', 'domain_suffix', 'domain_keyword', 'ip_cidr']
+
+export const hasLocalCondition = (rule) =>
+  LOCAL_CONDITION_KEYS.some((k) => Object.prototype.hasOwnProperty.call(rule, k))
+
+// 「172.16.0.0/12 是否包含 172.20.1.1」这类判断。只处理 IPv4:策略里写 IPv6 段的
+// 情况极少,而写错一个 v6 判定比老实说"这条没法在本地确认"更糟。
+const ipv4ToInt = (ip) => {
+  const parts = String(ip).split('.')
+  if (parts.length !== 4) return null
+  let out = 0
+  for (const part of parts) {
+    const n = Number(part)
+    if (!Number.isInteger(n) || n < 0 || n > 255) return null
+    out = out * 256 + n
+  }
+  return out
+}
+
+export const ipv4InCidr = (ip, cidr) => {
+  const [network, bitsRaw] = String(cidr).split('/')
+  const bits = bitsRaw === undefined ? 32 : Number(bitsRaw)
+  if (!Number.isInteger(bits) || bits < 0 || bits > 32) return false
+  const target = ipv4ToInt(ip)
+  const base = ipv4ToInt(network)
+  if (target === null || base === null) return false
+  if (bits === 0) return true
+  const mask = (0xffffffff << (32 - bits)) >>> 0
+  return (target & mask) >>> 0 === (base & mask) >>> 0
+}
+
+// sing-box 的语义:domain 全等、domain_suffix 后缀(含"就是它本身")、
+// domain_keyword 子串、ip_cidr 网段包含。同一条规则里各字段取并集。
+export const matchLocalConditions = (rule, target) => {
+  const host = String(target).toLowerCase()
+  const list = (v) => (Array.isArray(v) ? v : v === undefined ? [] : [v])
+
+  if (list(rule.domain).some((d) => String(d).toLowerCase() === host)) return true
+  if (list(rule.domain_suffix).some((d) => {
+    const suffix = String(d).toLowerCase()
+    return host === suffix || host.endsWith(suffix.startsWith('.') ? suffix : `.${suffix}`)
+  })) return true
+  if (list(rule.domain_keyword).some((k) => host.includes(String(k).toLowerCase()))) return true
+  if (list(rule.ip_cidr).some((c) => ipv4InCidr(host, c))) return true
+  return false
 }
 
 const errorMessage = (err) => (err instanceof Error ? err.message : String(err))
@@ -123,7 +186,15 @@ export const registerPenetrationRoutes = (app, { store, ctx, paths, fetchImpl = 
     // 一个 outbound 是"策略组"(需要经 clash_api 下钻)还是叶子节点/direct(无需下钻)。
     const { groups } = groupNodesByRegion(nodes)
     const proxyTag = profile.routing.proxyTag || 'PROXY'
-    const groupTags = new Set([proxyTag, ...groups.map((g) => g.name)])
+    // 用户自建的节点组和每条策略的 selector 也是"策略组",一样要能往下钻:
+    // 只列地区组的话,规则命中一条策略之后就断在那儿,看不到它当前选的是哪个节点。
+    const routingConf = normalizeRouting(profile.routing)
+    const groupTags = new Set([
+      proxyTag,
+      ...groups.map((g) => g.name),
+      ...(store.getGroups() || []).map((g) => g.name).filter(Boolean),
+      ...routingConf.policies.map((p) => p.name),
+    ])
 
     let matched = null
     // 三条规则里第几条(1-based,仅用于 matchError 里的人类可读定位)没能确认检查结果。
@@ -133,19 +204,33 @@ export const registerPenetrationRoutes = (app, { store, ctx, paths, fetchImpl = 
       let hit = false
       if (Object.prototype.hasOwnProperty.call(rule, 'ip_is_private')) {
         hit = isPrivateOrLoopbackIp(target)
+      } else if (hasLocalCondition(rule)) {
+        // 策略带来的域名/关键词/CIDR 条件:纯字符串与网段比较,本地算得出来,
+        // 不用去 exec 内核。一条规则里多个条件是"或"的关系,和 sing-box 一致。
+        hit = matchLocalConditions(rule, target)
+        // 同一条规则里还可能带规则集,本地条件没命中时继续用 .srs 判一次
+        if (!hit && Object.prototype.hasOwnProperty.call(rule, 'rule_set')) {
+          const result = await matchRuleSetList(ctx, paths, srsPathByTag, rule.rule_set, target)
+          if (result.error) {
+            matchError = `rule #${i + 1}: ${result.error}`
+            break
+          }
+          hit = result.hit
+        }
       } else if (Object.prototype.hasOwnProperty.call(rule, 'rule_set')) {
-        const srsPath = srsPathByTag.get(rule.rule_set)
+        const tags = Array.isArray(rule.rule_set) ? rule.rule_set : [rule.rule_set]
+        const srsPath = tags.length === 1 ? srsPathByTag.get(tags[0]) : 'multi'
         if (!srsPath) {
           hit = false
         } else {
-          const result = await matchRuleSet(ctx, paths, srsPath, target)
+          const result = await matchRuleSetList(ctx, paths, srsPathByTag, rule.rule_set, target)
           if (result.error) {
             // 没能确认这一条规则是否命中——sing-box 按顺序首条命中生效,这一条排在
             // matched/route.final 判定之前,一旦它没法确认,后面所有规则的求值结果和
             // "落到 final"的结论都不再可信,不能假装什么都没发生地继续走下去(那正是
             // chainError 在 resolveChain 里遇到中途失败时的处理方式:保留已经确定的部分,
             // 剩下的老实说"不知道",而不是替用户瞎猜一个看起来完整的答案)。
-            matchError = `rule #${i + 1} (${rule.rule_set}): ${result.error}`
+            matchError = `rule #${i + 1} (${[rule.rule_set].flat().join(', ')}): ${result.error}`
             break
           }
           hit = result.hit

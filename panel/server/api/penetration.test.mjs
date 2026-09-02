@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import express from 'express'
-import { registerPenetrationRoutes, matchRuleSet } from './penetration.mjs'
+import { registerPenetrationRoutes, matchRuleSet , matchLocalConditions } from './penetration.mjs'
 import { createStore } from '../store/openbox-store.mjs'
 import { createMockContext } from '../system/context.mjs'
 import { createPaths } from '../system/paths.mjs'
@@ -268,13 +268,12 @@ test('按序首个命中生效:前一条 rule_set 命中时,后一条同样会�
   store.setProfile({
     routing: {
       proxyTag: 'PROXY',
-      categories: [
-        { ruleset: 'geosite-a', target: 'NodeA' },
-        { ruleset: 'geosite-b', target: 'NodeB' },
+      // 香港澳门那一档:除策略之外全部直连,所以这里只会有这两条策略规则
+      regionMode: 'HKMO',
+      policies: [
+        { id: 'a', name: '策略A', rulesets: ['geosite-a'], default: 'NodeA' },
+        { id: 'b', name: '策略B', rulesets: ['geosite-b'], default: 'NodeB' },
       ],
-      directRulesets: [],
-      adBlock: false,
-      fallback: 'PROXY',
     },
   })
   const target = 'a.example.com'
@@ -295,9 +294,10 @@ test('按序首个命中生效:前一条 rule_set 命中时,后一条同样会�
     const { res, body } = await post(baseUrl, target)
     assert.equal(res.status, 200)
     assert.ok(body.matched)
-    assert.equal(body.matched.rule.rule_set, 'geosite-a')
-    assert.equal(body.matched.outbound, 'NodeA')
-    assert.equal(body.finalOutbound, 'NodeA')
+    // 规则指向的是策略自己的 selector,具体走哪条线路由代理页点选(下面的 chain 才是)
+    assert.deepEqual(body.matched.rule.rule_set, ['geosite-a'])
+    assert.equal(body.matched.outbound, '策略A')
+    assert.equal(body.finalOutbound, '策略A')
 
     // 关键断言:geosite-b 从未被求值
     assert.ok(!cmds(ctx).includes(keyB))
@@ -312,15 +312,17 @@ test('无命中 → 落到 route.final,matched 为 null', async () => {
   store.setProfile({
     routing: {
       proxyTag: 'PROXY',
-      categories: [],
-      directRulesets: ['geosite-cn'],
-      adBlock: false,
-      fallback: 'PROXY',
+      // 中国大陆那一档:中国站点直连、其余走代理(所以兜底是 PROXY)
+      regionMode: 'CN',
+      policies: [],
     },
   })
   const target = 'nowhere.example.org'
   const ctx = createMockContext({
-    files: withSingbox('/opt/open-box/data/rulesets/geosite-cn.srs'),
+    files: withSingbox(
+      '/opt/open-box/data/rulesets/geosite-cn.srs',
+      '/opt/open-box/data/rulesets/geoip-cn.srs',
+    ),
     defaultExec: { code: 0, stdout: '' }, // 所有 rule-set match 都不命中
   })
   const fetchImpl = async (url) => {
@@ -370,17 +372,19 @@ test('公网 IP 不命中 ip_is_private,继续走后续规则(落到 final)', as
   const store = memStore()
   store.setProfile({
     routing: {
-      proxyTag: 'PROXY', categories: [], directRulesets: [], adBlock: false, fallback: 'PROXY',
+      // 用香港澳门那一档:它不生成任何地区规则,这条用例只想看 ip_is_private 之后
+      // 没有别的规则可命中时会不会老实落到 final
+      proxyTag: 'PROXY', regionMode: 'HKMO', policies: [],
     },
   })
   const ctx = createMockContext({ defaultExec: { code: 0, stdout: '' } })
-  const fetchImpl = async () => ({ ok: true, status: 200, json: async () => ({ name: 'PROXY' }) })
+  const fetchImpl = async () => ({ ok: true, status: 200, json: async () => ({ name: 'direct' }) })
   const { baseUrl, close } = await startApp({ ctx, store, fetchImpl })
   try {
     const { res, body } = await post(baseUrl, '8.8.8.8')
     assert.equal(res.status, 200)
     assert.equal(body.matched, null)
-    assert.equal(body.finalOutbound, 'PROXY')
+    assert.equal(body.finalOutbound, 'direct')
   } finally {
     await close()
   }
@@ -392,10 +396,8 @@ test('策略组下钻:outbound 为策略组时经 clash_api 沿 now 字段逐层
   store.setProfile({
     routing: {
       proxyTag: 'PROXY',
-      categories: [{ ruleset: 'geosite-hk', target: 'HK' }],
-      directRulesets: [],
-      adBlock: false,
-      fallback: 'PROXY',
+      regionMode: 'HKMO',
+      policies: [{ id: 'hk', name: 'HK', rulesets: ['geosite-hk'] }],
     },
   })
   const target = 'hk.example.com'
@@ -443,10 +445,8 @@ test('clash_api 不可达时降级:只返回组名 + chainError,不整体失败'
   store.setProfile({
     routing: {
       proxyTag: 'PROXY',
-      categories: [{ ruleset: 'geosite-hk', target: 'HK' }],
-      directRulesets: [],
-      adBlock: false,
-      fallback: 'PROXY',
+      regionMode: 'HKMO',
+      policies: [{ id: 'hk', name: 'HK', rulesets: ['geosite-hk'] }],
     },
   })
   const target = 'hk.example.com'
@@ -477,10 +477,8 @@ test('clash_api 返回非 2xx 时同样降级为 chainError', async () => {
   store.setProfile({
     routing: {
       proxyTag: 'PROXY',
-      categories: [{ ruleset: 'geosite-hk', target: 'HK' }],
-      directRulesets: [],
-      adBlock: false,
-      fallback: 'PROXY',
+      regionMode: 'HKMO',
+      policies: [{ id: 'hk', name: 'HK', rulesets: ['geosite-hk'] }],
     },
   })
   const target = 'hk.example.com'
@@ -545,7 +543,7 @@ test('POST /penetration:.srs 文件缺失 → 200 + matchError,matched 为 null,
   const store = memStore()
   store.setProfile({
     routing: {
-      proxyTag: 'PROXY', categories: [], directRulesets: ['geosite-cn'], adBlock: false, fallback: 'PROXY',
+      proxyTag: 'PROXY', regionMode: 'CN', policies: [],
     },
   })
   const target = 'missing-srs.example.com'
@@ -574,13 +572,16 @@ test('POST /penetration:sing-box 异常退出且无输出 → 200 + matchError,�
   const store = memStore()
   store.setProfile({
     routing: {
-      proxyTag: 'PROXY', categories: [], directRulesets: ['geosite-cn'], adBlock: false, fallback: 'PROXY',
+      proxyTag: 'PROXY', regionMode: 'CN', policies: [],
     },
   })
   const target = 'crash.example.com'
   const key = `${paths.singbox} rule-set match -f binary /opt/open-box/data/rulesets/geosite-cn.srs ${target}`
   const ctx = createMockContext({
-    files: withSingbox('/opt/open-box/data/rulesets/geosite-cn.srs'),
+    files: withSingbox(
+      '/opt/open-box/data/rulesets/geosite-cn.srs',
+      '/opt/open-box/data/rulesets/geoip-cn.srs',
+    ),
     execResults: { [key]: { code: 1, stdout: '', stderr: '' } },
   })
 
@@ -602,13 +603,11 @@ test('POST /penetration:could-not-check 命中后立刻停止求值——后面�
   store.setProfile({
     routing: {
       proxyTag: 'PROXY',
-      categories: [
-        { ruleset: 'geosite-a', target: 'NodeA' }, // .srs 缺失 → could-not-check
-        { ruleset: 'geosite-b', target: 'NodeB' }, // 若被求值也会命中——用来证明循环已经停了
+      regionMode: 'HKMO',
+      policies: [
+        { id: 'a', name: '策略A', rulesets: ['geosite-a'] }, // .srs 缺失 → could-not-check
+        { id: 'b', name: '策略B', rulesets: ['geosite-b'] }, // 若被求值也会命中——用来证明循环已经停了
       ],
-      directRulesets: [],
-      adBlock: false,
-      fallback: 'PROXY',
     },
   })
   const target = 'a.example.com'
@@ -639,7 +638,7 @@ test('POST /penetration:更早的确定命中(ip_is_private)优先于后面失�
   const store = memStore()
   store.setProfile({
     routing: {
-      proxyTag: 'PROXY', categories: [], directRulesets: ['geosite-cn'], adBlock: false, fallback: 'PROXY',
+      proxyTag: 'PROXY', regionMode: 'CN', policies: [],
     },
   })
   // geosite-cn.srs 故意缺失,但 target 是私网 IP,ip_is_private 规则排在 rule_set 规则之前
@@ -655,6 +654,61 @@ test('POST /penetration:更早的确定命中(ip_is_private)优先于后面失�
     assert.equal(body.finalOutbound, 'direct')
     assert.equal(body.matchError, undefined)
     assert.equal(ctx.calls.length, 0) // 从未走到 rule_set 那条规则
+  } finally {
+    await close()
+  }
+})
+
+// -------- 策略带来的本地条件(不用调内核就能判定) --------
+
+test('域名后缀:命中自身与子域,不命中"看起来像后缀"的别的域名', () => {
+  const rule = { domain_suffix: ['google.com'] }
+  assert.equal(matchLocalConditions(rule, 'google.com'), true)
+  assert.equal(matchLocalConditions(rule, 'www.google.com'), true)
+  assert.equal(matchLocalConditions(rule, 'GOOGLE.COM'), true, '大小写不敏感')
+  assert.equal(matchLocalConditions(rule, 'notgoogle.com'), false, '不能把 notgoogle.com 算成子域')
+})
+
+test('域名全等与关键词', () => {
+  assert.equal(matchLocalConditions({ domain: ['a.example.com'] }, 'a.example.com'), true)
+  assert.equal(matchLocalConditions({ domain: ['a.example.com'] }, 'b.a.example.com'), false)
+  assert.equal(matchLocalConditions({ domain_keyword: ['gstatic'] }, 'www.gstatic.cn'), true)
+})
+
+test('IP 段包含', () => {
+  assert.equal(matchLocalConditions({ ip_cidr: ['8.8.8.0/24'] }, '8.8.8.8'), true)
+  assert.equal(matchLocalConditions({ ip_cidr: ['8.8.8.0/24'] }, '8.8.9.8'), false)
+  assert.equal(matchLocalConditions({ ip_cidr: ['0.0.0.0/0'] }, '1.2.3.4'), true)
+  assert.equal(matchLocalConditions({ ip_cidr: ['8.8.8.8/32'] }, '8.8.8.8'), true)
+  // 域名喂给 IP 条件不该炸,也不该误判成命中
+  assert.equal(matchLocalConditions({ ip_cidr: ['8.8.8.0/24'] }, 'example.com'), false)
+})
+
+test('同一条规则里多个条件是"或"的关系', () => {
+  const rule = { domain_suffix: ['google.com'], ip_cidr: ['8.8.8.8/32'] }
+  assert.equal(matchLocalConditions(rule, 'www.google.com'), true)
+  assert.equal(matchLocalConditions(rule, '8.8.8.8'), true)
+  assert.equal(matchLocalConditions(rule, 'example.com'), false)
+})
+
+test('POST /penetration:策略的域名条件本地就能判定,不去 exec 内核', async () => {
+  const store = memStore()
+  store.setProfile({
+    routing: {
+      proxyTag: 'PROXY',
+      regionMode: 'HKMO',
+      policies: [{ id: 'g', name: '谷歌', domainSuffix: ['google.com'] }],
+    },
+  })
+  const ctx = createMockContext({ files: { [paths.singbox]: 'binary' } })
+  const fetchImpl = async () => ({ ok: true, status: 200, json: async () => ({ name: '谷歌', type: 'Selector', now: 'direct' }) })
+  const { baseUrl, close } = await startApp({ ctx, store, fetchImpl })
+  try {
+    const { body } = await post(baseUrl, 'www.google.com')
+    assert.equal(body.matched.outbound, '谷歌')
+    assert.equal(body.finalOutbound, '谷歌')
+    // 一次内核调用都不该有
+    assert.deepEqual(cmds(ctx).filter((c) => c.includes('rule-set match')), [])
   } finally {
     await close()
   }

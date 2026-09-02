@@ -1,4 +1,5 @@
 import express from 'express'
+import { readSystemDns } from '../system/resolv.mjs'
 import { buildConfig } from '../engine/config.mjs'
 import { groupNodesByRegion } from '../engine/groups.mjs'
 import { deployConfig, rollbackToDirect } from '../system/deploy.mjs'
@@ -24,12 +25,21 @@ const STATUS_BY_STAGE = {
 // GET preview 与 POST deploy 共用:从当前 store 状态(profile + 节点 + 按区域分组)组装
 // 一份 sing-box 配置。clash secret 独立存储,只在此处临时注入 profile 副本供 buildConfig
 // 写入 experimental.clash_api.secret,不回写 store.profile。
-const buildCurrentConfig = (store) => {
+// systemDns 是路由器 WAN 下发的 DNS 上游(见 system/resolv.mjs):dnsmasq 接管模式下
+// 直连侧要用它,不能让 sing-box 去问系统解析器——那时系统解析器就是 dnsmasq,而 dnsmasq
+// 的上游又是 sing-box,一问就死循环。预览接口没有 ctx 也照样能出配置,回落到档案里的值。
+const buildCurrentConfig = (store, systemDns) => {
   const profile = store.getProfile()
   const nodes = store.getNodes()
   const { groups } = groupNodesByRegion(nodes)
   const clashApiSecret = store.getClashSecret()
-  const config = buildConfig({ nodes, regionGroups: groups, userGroups: store.getGroups(), profile: { ...profile, clashApiSecret } })
+  const config = buildConfig({
+    nodes,
+    regionGroups: groups,
+    userGroups: store.getGroups(),
+    profile: { ...profile, clashApiSecret },
+    systemDns,
+  })
   return { config, profile }
 }
 
@@ -49,7 +59,8 @@ export const registerDeployRoutes = (app, { store, ctx, paths } = {}) => {
     let result
 
     try {
-      const { config, profile } = buildCurrentConfig(store)
+      const systemDns = await readSystemDns(ctx)
+      const { config, profile } = buildCurrentConfig(store, systemDns)
       result = await deployConfig(ctx, paths, { config, profile })
 
       store.setDeployState({

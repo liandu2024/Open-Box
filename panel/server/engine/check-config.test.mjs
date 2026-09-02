@@ -178,8 +178,12 @@ test('一个节点都没命中的用户组也能过 sing-box check(挂 PROXY 占
       profile: {
         ipv6: false,
         dns: { split: true, direct: '223.5.5.5', proxy: 'https://1.1.1.1/dns-query' },
-        // 分流规则指向那个空组:这正是"组不能被丢掉"的理由——丢了它就得被重映射
-        routing: { proxyTag: 'PROXY', categories: [{ ruleset: 'geosite-cn', target: '爱尔兰-自动' }], directRulesets: ['geosite-cn'], fallback: 'PROXY' },
+        // 策略指向那个空组:这正是"组不能被丢掉"的理由——丢了它,策略的 default 就悬空
+        routing: {
+          proxyTag: 'PROXY',
+          regionMode: 'HKMO',
+          policies: [{ id: 'ie', name: '爱尔兰站点', rulesets: ['geosite-cn'], default: '爱尔兰-自动' }],
+        },
         rulesetDir: dir,
       },
       userGroups: [
@@ -191,8 +195,10 @@ test('一个节点都没命中的用户组也能过 sing-box check(挂 PROXY 占
     const ie = config.outbounds.find((o) => o.tag === '爱尔兰-自动')
     assert.ok(ie, '空组必须仍然出现在配置里')
     assert.deepEqual(ie.outbounds, ['PROXY'], '空组挂 PROXY 占位')
-    const rule = config.route.rules.find((r) => r.outbound === '爱尔兰-自动')
-    assert.ok(rule, '指向空组的分流规则不该被重映射掉')
+    const sel = config.outbounds.find((o) => o.tag === '爱尔兰站点')
+    assert.equal(sel.default, '爱尔兰-自动', '策略的默认选中项就是那个空组')
+    const rule = config.route.rules.find((r) => r.outbound === '爱尔兰站点')
+    assert.ok(rule, '策略规则要在')
 
     const file = path.join(dir, 'config.json')
     fs.writeFileSync(file, JSON.stringify(config, null, 2))
@@ -201,3 +207,65 @@ test('一个节点都没命中的用户组也能过 sing-box check(挂 PROXY 占
     fs.rmSync(dir, { recursive: true, force: true })
   }
 })
+
+// 三档地区各生成一份完整配置,交给真内核 check。这一组是整个改造的兜底:
+// 规则顺序、策略 selector、block 出站、DNS 的 local/detour 写法,任何一处写错
+// sing-box 都会在这里报出来,而不是等部署到路由器上才 FATAL。
+for (const [regionMode, expectedFinal] of [['CN', 'PROXY'], ['HKMO', 'direct'], ['OTHER', 'direct']]) {
+  test(`地区分流 ${regionMode}:整份配置过 sing-box check`, { skip: hasBin ? false : 'sing-box 二进制缺失(panel/.tools/sing-box);运行 pnpm run check:config 前先放置二进制' }, () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), `openbox-check-${regionMode}-`))
+    try {
+      const { nodes } = parseSubscription(
+        [
+          'trojan://pw@hk.example.com:443?sni=hk.example.com#HK-01',
+          'ss://YWVzLTI1Ni1nY206c2VjcmV0cHc=@us.example.com:8388#US-01',
+        ].join('\n'),
+      )
+      const renamed = renameNodes(nodes)
+      const { groups } = groupNodesByRegion(renamed)
+      const profile = {
+        ipv6: false,
+        dns: { split: true, mode: 'dnsmasq', direct: '223.5.5.5', proxy: 'https://1.1.1.1/dns-query' },
+        routing: {
+          proxyTag: 'PROXY',
+          regionMode,
+          adBlock: true,
+          policies: [
+            {
+              id: 'g', name: '谷歌', default: 'direct',
+              rulesets: ['geosite-google'],
+              domain: ['example.com'],
+              domainSuffix: ['google.com'],
+              domainKeyword: ['gstatic'],
+              ipCidr: ['8.8.8.8/32'],
+            },
+            { id: 'block-ad', name: '广告拦截', default: 'block', domainSuffix: ['ads.example.com'] },
+          ],
+        },
+        rulesetDir: dir,
+      }
+      const config = buildConfig({
+        nodes: renamed,
+        regionGroups: groups,
+        userGroups: [{ id: 'all', name: '所有-自动', type: 'urltest', mode: 'dynamic', keywords: [] }],
+        profile,
+        systemDns: ['192.168.1.1'],
+      })
+      for (const entry of config.route.rule_set) compileSrs(dir, entry.tag)
+
+      assert.equal(config.route.final, expectedFinal)
+      const sel = config.outbounds.find((o) => o.tag === '谷歌')
+      // 顺序:直连 → 地区组(按节点顺序)→ 用户组 → 拒绝
+      assert.deepEqual(sel.outbounds, ['direct', '美国', '香港', '所有-自动', 'block'])
+      assert.ok(config.outbounds.some((o) => o.type === 'block'), '有策略选了拒绝,block 出站必须在')
+      // dnsmasq 模式下直连侧不能是 local(会绕回 dnsmasq),要用读到的系统上游
+      assert.deepEqual(config.dns.servers[0], { type: 'udp', tag: 'dns-direct', server: '192.168.1.1', detour: 'direct' })
+
+      const file = path.join(dir, 'config.json')
+      fs.writeFileSync(file, JSON.stringify(config, null, 2))
+      execFileSync(sbBin, ['check', '-c', file], { stdio: 'pipe' })
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+}

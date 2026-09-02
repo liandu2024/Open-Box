@@ -1,4 +1,5 @@
 import express from 'express'
+import { REGION_MODES } from '../engine/routing-model.mjs'
 
 const isPlainObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v)
 const isString = (v) => typeof v === 'string'
@@ -60,6 +61,23 @@ export const validateProfilePatch = (patch) => {
       return 'routing.adRuleset must match /^[A-Za-z0-9._-]+$/'
     }
 
+    if ('regionMode' in routing && !REGION_MODES.includes(routing.regionMode)) {
+      return `routing.regionMode must be one of ${REGION_MODES.join(', ')}`
+    }
+
+    if ('outboundOptions' in routing) {
+      const opts = routing.outboundOptions
+      if (!isPlainObject(opts)) return 'routing.outboundOptions must be an object'
+      for (const key of ['direct', 'reject', 'groups']) {
+        if (key in opts && !isBoolean(opts[key])) return `routing.outboundOptions.${key} must be a boolean`
+      }
+    }
+
+    if ('policies' in routing) {
+      const error = validatePolicies(routing.policies)
+      if (error) return error
+    }
+
     if ('categories' in routing) {
       const categories = routing.categories
       if (!Array.isArray(categories)) return 'routing.categories must be an array'
@@ -75,25 +93,41 @@ export const validateProfilePatch = (patch) => {
   return null
 }
 
+// 策略的规则集 tag 和老的 categories 一样会被拼进 .srs 路径,同一条安全边界。
+// 其余条件(域名/关键词/CIDR)只会进 JSON 配置的值位,不参与路径拼接,所以只做
+// 类型检查,不限制字符——域名里带下划线、CIDR 带斜杠都是合法的。
+const POLICY_LIST_FIELDS = ['domain', 'domainSuffix', 'domainKeyword', 'ipCidr']
+
+const validatePolicies = (policies) => {
+  if (!Array.isArray(policies)) return 'routing.policies must be an array'
+  for (const p of policies) {
+    if (!isPlainObject(p)) return 'routing.policies entries must be objects'
+    if (!isString(p.name) || !p.name.trim()) return 'routing.policies[].name is required'
+    if ('default' in p && !isString(p.default)) return 'routing.policies[].default must be a string'
+    if ('icon' in p && !isString(p.icon)) return 'routing.policies[].icon must be a string'
+    if ('rulesets' in p) {
+      if (!isStringArray(p.rulesets)) return 'routing.policies[].rulesets must be an array of strings'
+      if (!p.rulesets.every(isValidRulesetTag)) {
+        return 'routing.policies[].rulesets entries must match /^[A-Za-z0-9._-]+$/'
+      }
+    }
+    for (const field of POLICY_LIST_FIELDS) {
+      if (field in p && !isStringArray(p[field])) {
+        return `routing.policies[].${field} must be an array of strings`
+      }
+    }
+  }
+  return null
+}
+
 // 首次引导用的区域推荐默认值。CN 走境内直连(direct DNS + geosite/geoip-cn + PROXY 兜底);
 // 其它区域默认更保守——不启用 DNS 分流,失败时直接落回直连,直连规则集按区域代号派生。
 const buildRegionDefaults = (regionParam) => {
-  const region = isString(regionParam) && regionParam.trim() ? regionParam.trim().toUpperCase() : 'CN'
-
-  if (region === 'CN') {
-    return {
-      region,
-      dns: { split: true, direct: '223.5.5.5' },
-      routing: { directRulesets: ['geosite-cn', 'geoip-cn'], fallback: 'PROXY' },
-    }
-  }
-
-  const suffix = region.toLowerCase()
-  return {
-    region,
-    dns: { split: false, direct: '1.1.1.1' },
-    routing: { directRulesets: [`geosite-${suffix}`, `geoip-${suffix}`], fallback: 'direct' },
-  }
+  const raw = isString(regionParam) && regionParam.trim() ? regionParam.trim().toUpperCase() : 'CN'
+  const regionMode = REGION_MODES.includes(raw) ? raw : 'CN'
+  // 三档地区只改 regionMode,不再替用户改写规则:规则由 regionMode 在生成时决定
+  // (见 engine/routing.mjs),不需要再往档案里塞一堆 directRulesets。
+  return { region: regionMode, regionMode, dns: { split: true }, routing: { regionMode } }
 }
 
 export const registerProfileRoutes = (app, { store } = {}) => {

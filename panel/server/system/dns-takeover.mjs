@@ -27,7 +27,11 @@ const parseBackup = (text) => {
   return { servers, noresolv }
 }
 
-export const applyDnsTakeover = async (ctx, paths, { mode }) => {
+// forwardDomains 非空 = 只把这几个域名转给 sing-box,其余交给路由器原有上游自己解析
+// ——这才是"直连的 DNS 完全不经过 Open-Box"。它只在代理面能被逐条列出来时才成立,
+// 由 engine/routing-model.mjs 的 dnsmasqForwardDomains 判断;列不出来就传空数组,
+// 回落到把整个上游指向 sing-box 的老做法。
+export const applyDnsTakeover = async (ctx, paths, { mode, forwardDomains = [] } = {}) => {
   if (mode !== 'dnsmasq') return { changed: false, actions: [] }
 
   if (!(await ctx.exists(backupPath(paths)))) {
@@ -35,12 +39,26 @@ export const applyDnsTakeover = async (ctx, paths, { mode }) => {
     await ctx.mkdirp(paths.dataDir)
     await ctx.writeFile(backupPath(paths), stdout)
   }
-  await ctx.exec('uci', ['set', 'dhcp.@dnsmasq[0].noresolv=1'])
+
+  const perDomain = Array.isArray(forwardDomains) && forwardDomains.length > 0
   await ctx.exec('uci', ['-q', 'delete', 'dhcp.@dnsmasq[0].server'])
-  await ctx.exec('uci', ['add_list', `dhcp.@dnsmasq[0].server=${SINGBOX_DNS_UPSTREAM}`])
+  if (perDomain) {
+    // 不设 noresolv:其余域名还要靠路由器自己的上游解析。反而要把可能残留的那条删掉,
+    // 否则上一次全局接管留下的 noresolv=1 会让"没被转发的域名"彻底无解析。
+    await ctx.exec('uci', ['-q', 'delete', 'dhcp.@dnsmasq[0].noresolv'])
+    for (const domain of forwardDomains) {
+      await ctx.exec('uci', ['add_list', `dhcp.@dnsmasq[0].server=/${domain}/${SINGBOX_DNS_UPSTREAM}`])
+    }
+  } else {
+    await ctx.exec('uci', ['set', 'dhcp.@dnsmasq[0].noresolv=1'])
+    await ctx.exec('uci', ['add_list', `dhcp.@dnsmasq[0].server=${SINGBOX_DNS_UPSTREAM}`])
+  }
   await ctx.exec('uci', ['commit', 'dhcp'])
   await ctx.exec('/etc/init.d/dnsmasq', ['restart'])
-  return { changed: true, actions: ['backup', 'set-upstream', 'restart-dnsmasq'] }
+  return {
+    changed: true,
+    actions: ['backup', perDomain ? 'set-per-domain' : 'set-upstream', 'restart-dnsmasq'],
+  }
 }
 
 export const restoreDnsTakeover = async (ctx, paths) => {

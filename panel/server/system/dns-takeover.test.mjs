@@ -73,3 +73,25 @@ test('还原:多上游备份(同行多个引号值)全部恢复,而非只恢复�
   assert.ok(c.includes('uci add_list dhcp.@dnsmasq[0].server=8.8.8.8'))
   assert.ok(c.includes('uci set dhcp.@dnsmasq[0].noresolv=0'))
 })
+
+test('按域名转发:只把这几个域名交给 sing-box,不设 noresolv(其余交回路由器解析)', async () => {
+  const ctx = createMockContext({ execResults: { 'uci show dhcp.@dnsmasq[0]': { code: 0, stdout: '' } } })
+  const r = await applyDnsTakeover(ctx, paths, { mode: 'dnsmasq', forwardDomains: ['google.com', 'youtube.com'] })
+  assert.ok(r.changed)
+  assert.ok(r.actions.includes('set-per-domain'))
+  const executed = cmds(ctx)
+  assert.ok(executed.includes('uci add_list dhcp.@dnsmasq[0].server=/google.com/127.0.0.1#7853'))
+  assert.ok(executed.includes('uci add_list dhcp.@dnsmasq[0].server=/youtube.com/127.0.0.1#7853'))
+  // 关键:上一次全局接管可能留下 noresolv=1,不删掉的话"没被转发的域名"会彻底无解析
+  assert.ok(executed.includes('uci -q delete dhcp.@dnsmasq[0].noresolv'))
+  assert.ok(!executed.some((c) => c.includes('noresolv=1')))
+})
+
+test('没有可枚举的域名时回落到全局转发(和以前一样)', async () => {
+  const ctx = createMockContext({ execResults: { 'uci show dhcp.@dnsmasq[0]': { code: 0, stdout: '' } } })
+  const r = await applyDnsTakeover(ctx, paths, { mode: 'dnsmasq', forwardDomains: [] })
+  assert.ok(r.actions.includes('set-upstream'))
+  const executed = cmds(ctx)
+  assert.ok(executed.includes('uci set dhcp.@dnsmasq[0].noresolv=1'))
+  assert.ok(executed.includes('uci add_list dhcp.@dnsmasq[0].server=127.0.0.1#7853'))
+})

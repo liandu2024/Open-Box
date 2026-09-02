@@ -17,10 +17,18 @@ export const DEFAULT_PROFILE = {
   dns: { split: true, mode: 'hijack', direct: '223.5.5.5', proxy: 'https://1.1.1.1/dns-query' },
   routing: {
     proxyTag: 'PROXY',
-    categories: [],
-    directRulesets: ['geosite-cn', 'geoip-cn'],
+    // 地区分流:路由器本身在哪。CN 中国大陆 / HKMO 香港澳门 / OTHER 其他地区。
+    regionMode: 'CN',
+    // 「出站」页签:每条策略的 selector 里能选到哪几类东西
+    outboundOptions: { direct: true, reject: true, groups: true },
+    // 策略分流。一条策略 = 一组匹配条件 + 内核里一个同名 selector,不记具体节点。
+    policies: [],
     adBlock: false,
     adRuleset: 'geosite-category-ads-all',
+    // 下面三个是改版前的老字段。deepMerge 没有删键的能力,清空反而会让降级回旧版本
+    // 的人丢数据,所以留着不动;读出来时由 engine/routing-model.mjs 翻译成新模型。
+    categories: [],
+    directRulesets: ['geosite-cn', 'geoip-cn'],
     fallback: 'PROXY',
   },
   rulesetDir: '/opt/open-box/data/rulesets',

@@ -1,4 +1,22 @@
+import { CN_RULESETS, normalizeRouting } from './routing-model.mjs'
+
+// 一条策略的匹配条件 → 一条 sing-box 路由规则。
+// 同一条规则里的多个字段是「或」的关系(sing-box 规则内部各字段取并集),所以一条策略
+// 写了域名后缀又写了 IP 段时,任一命中即算这条策略命中——和用户在界面上的理解一致。
+const policyRule = (policy) => {
+  const rule = {}
+  if (policy.rulesets.length) rule.rule_set = policy.rulesets
+  if (policy.domain.length) rule.domain = policy.domain
+  if (policy.domainSuffix.length) rule.domain_suffix = policy.domainSuffix
+  if (policy.domainKeyword.length) rule.domain_keyword = policy.domainKeyword
+  if (policy.ipCidr.length) rule.ip_cidr = policy.ipCidr
+  rule.outbound = policy.name
+  return rule
+}
+
 export const buildRoute = (routing, rulesetDir, options = {}) => {
+  const conf = normalizeRouting(routing)
+  const proxyTag = conf.proxyTag
   const rulesetTags = new Set()
   const addTag = (tag) => { if (tag) rulesetTags.add(tag) }
 
@@ -14,19 +32,33 @@ export const buildRoute = (routing, rulesetDir, options = {}) => {
   }
   rules.push({ ip_is_private: true, outbound: 'direct' })
 
-  if (routing.adBlock) {
-    const adTag = routing.adRuleset || 'geosite-category-ads-all'
-    addTag(adTag)
-    rules.push({ rule_set: adTag, action: 'reject' })
+  if (conf.adBlock) {
+    addTag(conf.adRuleset)
+    rules.push({ rule_set: conf.adRuleset, action: 'reject' })
   }
-  for (const cat of routing.categories || []) {
-    addTag(cat.ruleset)
-    rules.push({ rule_set: cat.ruleset, outbound: cat.target })
+
+  // 策略排在地区规则之前:策略是用户对某一类流量的显式指定,应当盖过"这个地区默认
+  // 怎么走"。比如人在国内(CN)但想让某个国内站点走代理,建一条策略就能压过 geosite-cn。
+  for (const policy of conf.policies) {
+    for (const tag of policy.rulesets) addTag(tag)
+    rules.push(policyRule(policy))
   }
-  for (const tag of routing.directRulesets || []) {
-    addTag(tag)
-    rules.push({ rule_set: tag, outbound: 'direct' })
+
+  // 地区分流:决定"没被策略挑走的流量"往哪走。
+  if (conf.regionMode === 'CN') {
+    // 人在国内:中国站点直连(不经过 Open-Box),其余走代理
+    for (const tag of CN_RULESETS) {
+      addTag(tag)
+      rules.push({ rule_set: tag, outbound: 'direct' })
+    }
+  } else if (conf.regionMode === 'OTHER') {
+    // 人在境外:中国站点反过来要走代理(回国),其余直连
+    for (const tag of CN_RULESETS) {
+      addTag(tag)
+      rules.push({ rule_set: tag, outbound: proxyTag })
+    }
   }
+  // HKMO 不需要额外规则:策略之外的一切都由下面的 final 兜到直连
 
   const rule_set = [...rulesetTags].map((tag) => ({
     type: 'local', tag, format: 'binary', path: `${rulesetDir}/${tag}.srs`,
@@ -37,7 +69,7 @@ export const buildRoute = (routing, rulesetDir, options = {}) => {
     default_domain_resolver: 'dns-direct',
     rule_set,
     rules,
-    final: routing.fallback || routing.proxyTag || 'PROXY',
+    final: conf.regionMode === 'CN' ? proxyTag : 'direct',
   }
   return { route, rulesetTags }
 }
