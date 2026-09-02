@@ -175,13 +175,47 @@
         </div>
       </div>
       <div
-        v-if="isVisibleTheme"
+        v-if="isVisibleDefaultTheme"
         class="setting-item"
       >
         <div class="setting-item-label">
-          {{ $t('theme') }}
+          {{ $t('defaultTheme') }}
         </div>
-        <ThemeSelector />
+        <div class="join">
+          <ThemeSelector
+            class="w-38!"
+            v-model:value="defaultTheme"
+          />
+          <button
+            class="btn btn-sm join-item"
+            @click="customThemeModal = !customThemeModal"
+          >
+            <PlusIcon class="h-4 w-4" />
+          </button>
+        </div>
+        <CustomTheme v-model:value="customThemeModal" />
+      </div>
+      <div
+        v-if="autoTheme && isVisibleDarkTheme"
+        class="setting-item"
+      >
+        <div class="setting-item-label">
+          {{ $t('darkTheme') }}
+        </div>
+        <ThemeSelector v-model:value="darkTheme" />
+      </div>
+      <div
+        v-if="isVisibleAutoSwitchTheme"
+        class="setting-item"
+      >
+        <div class="setting-item-label">
+          {{ $t('autoSwitchTheme') }}
+        </div>
+        <input
+          type="checkbox"
+          v-model="autoTheme"
+          class="toggle"
+        />
       </div>
       <div
         v-if="isVisibleAutoUpgrade"
@@ -271,6 +305,9 @@ import { handlerUpgradeSuccess } from '@/helper'
 import { deleteBase64FromIndexedDB, LOCAL_IMAGE, saveBase64ToIndexedDB } from '@/helper/indexeddb'
 import { exportSettings, isPWA } from '@/helper/utils'
 import {
+  defaultTheme,
+  darkTheme,
+  autoTheme,
   autoUpgrade,
   blurIntensity,
   customBackgroundURL,
@@ -279,11 +316,12 @@ import {
   font,
   globalRadius,
 } from '@/store/settings'
-import { AdjustmentsHorizontalIcon, ArrowPathIcon, ArrowUpTrayIcon } from '@heroicons/vue/24/outline'
+import { AdjustmentsHorizontalIcon, ArrowPathIcon, ArrowUpTrayIcon, PlusIcon } from '@heroicons/vue/24/outline'
 import { twMerge } from 'tailwind-merge'
 import { computed, ref, watch } from 'vue'
 import ImportSettings from '../common/ImportSettings.vue'
 import TextInput from '../common/TextInput.vue'
+import CustomTheme from './CustomTheme.vue'
 import ThemeSelector from './ThemeSelector.vue'
 
 const k = GENERAL_ITEM_KEYS
@@ -294,7 +332,10 @@ const isVisibleCustomBackgroundURL = useIsSettingVisible(k.customBackgroundURL)
 const isVisibleTransparent = useIsSettingVisible(k.transparent)
 const isVisibleBlurIntensity = useIsSettingVisible(k.blurIntensity)
 const isVisibleGlobalRadius = useIsSettingVisible(k.globalRadius)
-const isVisibleTheme = useIsSettingVisible(k.theme)
+const isVisibleDefaultTheme = useIsSettingVisible(k.defaultTheme)
+const isVisibleDarkTheme = useIsSettingVisible(k.darkTheme)
+const isVisibleAutoSwitchTheme = useIsSettingVisible(k.autoSwitchTheme)
+const customThemeModal = ref(false)
 const isVisibleAutoUpgrade = useIsSettingVisible(k.autoUpgrade)
 const isVisibleUpgradeUI = useIsSettingVisible(k.upgradeUI)
 const isVisibleExportSettings = useIsSettingVisible(k.exportSettings)
@@ -314,7 +355,9 @@ const hasVisibleItems = computed(() => {
     (customBackgroundURL.value && displayBgProperty.value && isVisibleTransparent.value) ||
     (customBackgroundURL.value && displayBgProperty.value && isVisibleBlurIntensity.value) ||
     isVisibleGlobalRadius.value ||
-    isVisibleTheme.value ||
+    isVisibleDefaultTheme.value ||
+    isVisibleDarkTheme.value ||
+    isVisibleAutoSwitchTheme.value ||
     isVisibleAutoUpgrade.value ||
     isVisibleUpgradeUI.value ||
     isVisibleExportSettings.value ||

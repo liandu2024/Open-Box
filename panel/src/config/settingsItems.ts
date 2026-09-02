@@ -36,8 +36,16 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
         label: 'globalRadius',
       },
       {
-        key: `${SETTINGS_MENU_KEY.general}.zashboardSettings.theme`,
-        label: 'theme',
+        key: `${SETTINGS_MENU_KEY.general}.zashboardSettings.defaultTheme`,
+        label: 'defaultTheme',
+      },
+      {
+        key: `${SETTINGS_MENU_KEY.general}.zashboardSettings.darkTheme`,
+        label: 'darkTheme',
+      },
+      {
+        key: `${SETTINGS_MENU_KEY.general}.zashboardSettings.autoSwitchTheme`,
+        label: 'autoSwitchTheme',
       },
       {
         key: `${SETTINGS_MENU_KEY.general}.zashboardSettings.autoUpgrade`,

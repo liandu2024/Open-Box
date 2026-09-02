@@ -30,13 +30,18 @@ const bootstrap = async () => {
   await initializePersistentStorage()
   await import('@/helper/dayjs')
 
-  const [{ createApp }, { default: App }, { loadFonts }, { i18n }, router] = await Promise.all([
-    import('vue'),
-    import('./App.vue'),
-    import('./assets/load-fonts'),
-    import('./i18n'),
-    import('./router'),
-  ])
+  const [{ createApp }, { default: App }, { loadFonts }, { applyCustomThemes }, { i18n }, router] =
+    await Promise.all([
+      import('vue'),
+      import('./App.vue'),
+      import('./assets/load-fonts'),
+      import('./helper'),
+      import('./i18n'),
+      import('./router'),
+    ])
+
+  // 自定义主题是一段注入 <head> 的样式,启动时先挂上,data-theme 切过去才有东西
+  applyCustomThemes()
 
   loadFonts()
 

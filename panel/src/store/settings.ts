@@ -1,3 +1,4 @@
+import type { THEME } from '@/constant'
 import {
   CONNECTIONS_TABLE_ACCESSOR_KEY,
   DETAILED_CARD_STYLE,
@@ -16,7 +17,6 @@ import {
   TABLE_SIZE,
   TABLE_WIDTH_MODE,
   DIRECT_TEST_URL, TEST_URL,
-  THEME_MODE,
 } from '@/constant'
 import { detectDefaultLanguage, getMinCardWidth, isMiddleScreen, isPreferredDark } from '@/helper/utils'
 import type { SourceIPLabel } from '@/types'
@@ -35,30 +35,7 @@ export const theme = computed(() => {
 })
 
 // UI-facing appearance choice: exactly three options (跟随系统 / 亮色 / 暗色).
-// Maps onto the existing default-theme/dark-theme/auto-theme storage keys so
-// the underlying daisyUI theming mechanism doesn't need to change.
-export const themeMode = computed<THEME_MODE>({
-  get: () => {
-    if (autoTheme.value) {
-      return THEME_MODE.AUTO
-    }
-    return defaultTheme.value === 'dark' ? THEME_MODE.DARK : THEME_MODE.LIGHT
-  },
-  set: (mode) => {
-    if (mode === THEME_MODE.AUTO) {
-      // Explicit 亮色/暗色 picks reuse `defaultTheme` (see below), which is
-      // also the "light branch" auto mode reads. Reset both branches to
-      // their canonical values so re-entering auto always honors
-      // prefers-color-scheme instead of replaying a stale explicit pick.
-      autoTheme.value = true
-      defaultTheme.value = 'light'
-      darkTheme.value = 'dark'
-      return
-    }
-    autoTheme.value = false
-    defaultTheme.value = mode === THEME_MODE.DARK ? 'dark' : 'light'
-  },
-})
+export const customThemes = useStorage<THEME[]>('config/custom-themes', [])
 
 export const language = useStorage<LANG>('config/language', detectDefaultLanguage(navigator.language))
 export const isSidebarCollapsedConfig = useStorage('config/is-sidebar-collapsed', true)
