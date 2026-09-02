@@ -126,3 +126,29 @@ test('老档案:始终直连里非中国的规则集变成一条走直连的策�
   const { route } = build({ directRulesets: ['geosite-cn', 'geosite-private'], fallback: 'PROXY' })
   assert.deepEqual(route.rules[3], { rule_set: ['geosite-private'], outbound: '始终直连' })
 })
+
+test('地区规则按表里的顺序逐条生成,每条自己带动作', () => {
+  const { route, rulesetTags } = build({
+    regions: [{
+      id: 'jp',
+      name: '日本',
+      catchAll: 'proxy',
+      rules: [
+        { type: 'domainSuffix', value: 'nhk.or.jp', action: 'direct' },
+        { type: 'geosite', value: 'cn', action: 'proxy' },
+        { type: 'ipcidr', value: '133.0.0.0/8', action: 'direct' },
+        { type: 'domain', value: 'example.com', action: 'proxy' },
+      ],
+    }],
+    regionId: 'jp',
+  })
+  assert.deepEqual(route.rules.slice(3), [
+    { domain_suffix: ['nhk.or.jp'], outbound: 'direct' },
+    { rule_set: 'geosite-cn', outbound: 'PROXY' },
+    { ip_cidr: ['133.0.0.0/8'], outbound: 'direct' },
+    { domain: ['example.com'], outbound: 'PROXY' },
+  ])
+  assert.equal(route.final, 'PROXY')
+  // 只有 geosite/geoip 需要下载 .srs
+  assert.deepEqual([...rulesetTags], ['geosite-cn'])
+})

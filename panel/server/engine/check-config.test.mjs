@@ -232,7 +232,16 @@ for (const [regionId, expectedFinal] of [['cn', 'PROXY'], ['hkmo', 'direct'], ['
           // 前三条是内置的;jp 是"用户自己加的一条地区",走的是同一条代码路径
           regions: [
             ...BUILTIN_REGIONS,
-            { id: 'jp', name: '日本', rulesets: ['geosite-geolocation-!cn'], target: 'proxy', fallback: 'proxy' },
+            {
+              id: 'jp',
+              name: '日本',
+              catchAll: 'proxy',
+              rules: [
+                { type: 'geosite', value: 'geolocation-!cn', action: 'proxy' },
+                { type: 'domainSuffix', value: 'nhk.or.jp', action: 'direct' },
+                { type: 'ipcidr', value: '133.0.0.0/8', action: 'direct' },
+              ],
+            },
           ],
           regionId,
           adBlock: true,

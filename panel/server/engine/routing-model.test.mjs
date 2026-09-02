@@ -78,14 +78,43 @@ test('没自定义过就是内置那三条,默认选中第一条', () => {
   assert.equal(conf.region.id, 'cn')
 })
 
-test('可以自己加一条地区(比如日本):规则集直连、其余走代理', () => {
+test('可以自己加一条地区(比如日本):按规则表逐条走', () => {
   const conf = normalizeRouting({
     policies: [],
-    regions: [{ id: 'jp', name: '日本', rulesets: ['geosite-jp'], target: 'direct', fallback: 'proxy' }],
+    regions: [{
+      id: 'jp', name: '日本', catchAll: 'proxy',
+      rules: [{ type: 'geosite', value: 'jp', action: 'direct' }],
+    }],
     regionId: 'jp',
   })
   assert.equal(conf.region.name, '日本')
-  assert.deepEqual(conf.region.rulesets, ['geosite-jp'])
+  assert.deepEqual(conf.region.rules, [{ type: 'geosite', value: 'jp', action: 'direct' }])
+  assert.equal(conf.region.catchAll, 'proxy')
+})
+
+test('老形状的地区(规则集 + target + fallback)翻译成规则表,行为不变', () => {
+  const conf = normalizeRouting({
+    policies: [],
+    regions: [{ id: 'jp', name: '日本', rulesets: ['geosite-jp', 'geoip-jp'], target: 'proxy', fallback: 'direct' }],
+    regionId: 'jp',
+  })
+  assert.deepEqual(conf.region.rules, [
+    { type: 'geosite', value: 'jp', action: 'proxy' },
+    { type: 'geoip', value: 'jp', action: 'proxy' },
+  ])
+  assert.equal(conf.region.catchAll, 'direct')
+})
+
+test('规则表里认不出的类型/空值直接丢掉,不让它变成"全部命中"', () => {
+  const conf = normalizeRouting({
+    policies: [],
+    regions: [{
+      id: 'x', name: 'x', catchAll: 'direct',
+      rules: [{ type: '乱写的', value: 'a', action: 'direct' }, { type: 'domain', value: '  ', action: 'direct' }],
+    }],
+    regionId: 'x',
+  })
+  assert.deepEqual(conf.region.rules, [])
 })
 
 test('选中的 id 不存在时回落到第一条,不至于整份配置没有地区层', () => {

@@ -1,4 +1,4 @@
-import { normalizeRouting } from './routing-model.mjs'
+import { normalizeRouting, regionRuleTag } from './routing-model.mjs'
 
 // 一条策略的匹配条件 → 一条 sing-box 路由规则。
 // 同一条规则里的多个字段是「或」的关系(sing-box 规则内部各字段取并集),所以一条策略
@@ -44,14 +44,23 @@ export const buildRoute = (routing, rulesetDir, options = {}) => {
     rules.push(policyRule(policy))
   }
 
-  // 地区分流:选中的那一条地区决定"没被策略挑走的流量"往哪走。
-  // 比如中国大陆 = geosite-cn/geoip-cn 直连、其余走代理;其他地区 = 同样两个规则集
-  // 反过来走代理(回国)、其余直连;香港澳门 = 没有额外规则集、其余直连。
+  // 地区分流:选中的那条地区,按它自己的规则表逐条来。表里的顺序就是匹配顺序
+  // (内核首条命中生效),每条自己带动作,所以"中国站点直连、其余走代理"和
+  // "中国站点走代理(回国)、其余直连"是同一套机制、不同的数据。
   const region = conf.region
-  const regionOutbound = region && region.target === 'proxy' ? proxyTag : 'direct'
-  for (const tag of (region ? region.rulesets : [])) {
-    addTag(tag)
-    rules.push({ rule_set: tag, outbound: regionOutbound })
+  for (const rule of (region ? region.rules : [])) {
+    const outbound = rule.action === 'proxy' ? proxyTag : 'direct'
+    const tag = regionRuleTag(rule)
+    if (tag) {
+      addTag(tag)
+      rules.push({ rule_set: tag, outbound })
+    } else if (rule.type === 'ipcidr') {
+      rules.push({ ip_cidr: [rule.value], outbound })
+    } else if (rule.type === 'domainSuffix') {
+      rules.push({ domain_suffix: [rule.value], outbound })
+    } else {
+      rules.push({ domain: [rule.value], outbound })
+    }
   }
 
   const rule_set = [...rulesetTags].map((tag) => ({
@@ -63,7 +72,7 @@ export const buildRoute = (routing, rulesetDir, options = {}) => {
     default_domain_resolver: 'dns-direct',
     rule_set,
     rules,
-    final: region && region.fallback === 'proxy' ? proxyTag : 'direct',
+    final: region && region.catchAll === 'proxy' ? proxyTag : 'direct',
   }
   return { route, rulesetTags }
 }

@@ -10,15 +10,27 @@ export interface OpenboxProfileRoutingCategory {
 
 // 地区分流:路由器本身在哪。它决定"没被策略挑走的流量"往哪走。
 // 预置中国大陆/香港澳门/其他地区三条,用户可以改名、改规则、增删和拖拽排序。
+export type OpenboxRuleAction = 'direct' | 'proxy'
+export const REGION_RULE_TYPES = ['geosite', 'geoip', 'domain', 'domainSuffix', 'ipcidr'] as const
+export type OpenboxRegionRuleType = (typeof REGION_RULE_TYPES)[number]
+
+// 一条地区规则:类型 + 值 + 动作。数组顺序就是匹配顺序(内核首条命中生效)。
+export interface OpenboxRegionRule {
+  type: OpenboxRegionRuleType
+  value: string
+  action: OpenboxRuleAction
+}
+
 export interface OpenboxRegion {
   id: string
   name: string
-  // 这个地区要特殊对待的规则集(如 geosite-cn)
+  rules?: OpenboxRegionRule[]
+  // 一条都没命中的流量走哪
+  catchAll?: OpenboxRuleAction
+  // 改版前的形状(规则集 + 它们走哪 + 其余走哪),服务端读出来时会翻译成上面的 rules
   rulesets?: string[]
-  // 上面那些规则集走哪
-  target?: 'direct' | 'proxy'
-  // 其余流量走哪
-  fallback?: 'direct' | 'proxy'
+  target?: OpenboxRuleAction
+  fallback?: OpenboxRuleAction
 }
 
 // 一条策略 = 一组匹配条件 + 内核里一个同名 selector。策略不记具体节点:

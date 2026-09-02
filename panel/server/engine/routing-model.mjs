@@ -16,16 +16,32 @@
 // 中国大陆那两个规则集,三个内置地区都用得到,只是去向不同
 export const CN_RULESETS = Object.freeze(['geosite-cn', 'geoip-cn'])
 
+// 一条地区规则:类型 + 值 + 动作。顺序即匹配顺序(内核首条命中生效),所以它是数组
+// 不是几个按类型分开的桶——把 geosite-cn 排在某条 domain 前面还是后面,结果是不同的。
+// 类型对到 sing-box 的字段:
+//   geosite/geoip → rule_set(值 cn 存成 geosite-cn,官方规则集就这两个前缀)
+//   domain        → domain(完全匹配)
+//   domainSuffix  → domain_suffix(域名本身和它的子域)
+//   ipcidr        → ip_cidr
+export const REGION_RULE_TYPES = Object.freeze(['geosite', 'geoip', 'domain', 'domainSuffix', 'ipcidr'])
+export const REGION_RULE_ACTIONS = Object.freeze(['direct', 'proxy'])
+
 // 内置的三个地区。它们只是"预置的几条",用户可以改、可以删、可以自己加(比如日本:
-// geosite-jp/geoip-jp 直连、其余走代理),所以存的是数据而不是三个写死的分支。
-//   rulesets  这个地区要特殊对待的规则集
-//   target    这些规则集走哪(direct / proxy)
-//   fallback  其余流量走哪(direct / proxy)
+// geosite-jp 直连、其余走代理),所以存的是数据而不是三个写死的分支。
+//   rules     按顺序匹配的规则表
+//   catchAll  一条都没命中的流量走哪(direct / proxy)
+const cnRules = (action) => [
+  { type: 'geosite', value: 'cn', action },
+  { type: 'geoip', value: 'cn', action },
+]
 export const BUILTIN_REGIONS = Object.freeze([
-  { id: 'cn', name: '中国大陆', rulesets: [...CN_RULESETS], target: 'direct', fallback: 'proxy' },
-  { id: 'hkmo', name: '香港澳门', rulesets: [], target: 'direct', fallback: 'direct' },
-  { id: 'other', name: '其他地区', rulesets: [...CN_RULESETS], target: 'proxy', fallback: 'direct' },
+  { id: 'cn', name: '中国大陆', rules: cnRules('direct'), catchAll: 'proxy' },
+  { id: 'hkmo', name: '香港澳门', rules: [], catchAll: 'direct' },
+  { id: 'other', name: '其他地区', rules: cnRules('proxy'), catchAll: 'direct' },
 ])
+
+// 内网直连那几条(127.0.0.0/8、10.0.0.0/8 ……)不放进这张表:生成配置时固定写在
+// 所有规则之前(见 engine/routing.mjs 的 ip_is_private),用户删不掉也不用管。
 
 // 老字段 regionMode 到内置地区的对照,用来迁移改版初期存下的那一版档案
 const REGION_MODE_TO_ID = { CN: 'cn', HKMO: 'hkmo', OTHER: 'other' }
@@ -41,12 +57,43 @@ const strList = (v) => (Array.isArray(v) ? v.filter(isNonEmptyString).map((s) =>
 
 const TARGETS = ['direct', 'proxy']
 
+// 规则集 tag:geosite/geoip 两类规则要下载对应的 .srs,其余类型没有 tag
+export const regionRuleTag = (rule) =>
+  rule.type === 'geosite' || rule.type === 'geoip' ? `${rule.type}-${rule.value}` : ''
+
+const normalizeRegionRule = (raw) => {
+  if (!raw || typeof raw !== 'object') return null
+  if (!REGION_RULE_TYPES.includes(raw.type)) return null
+  if (!isNonEmptyString(raw.value)) return null
+  return {
+    type: raw.type,
+    value: raw.value.trim(),
+    action: REGION_RULE_ACTIONS.includes(raw.action) ? raw.action : 'direct',
+  }
+}
+
+// 改版前的地区形状:一组规则集 + 它们走哪(target) + 其余走哪(fallback)。
+// 翻译成规则表,行为不变。
+const migrateRegionRules = (raw) => {
+  const target = TARGETS.includes(raw?.target) ? raw.target : 'direct'
+  return strList(raw?.rulesets).map((tag) => {
+    const type = tag.startsWith('geoip-') ? 'geoip' : 'geosite'
+    const value = tag.startsWith(`${type}-`) ? tag.slice(type.length + 1) : tag
+    return { type, value, action: target }
+  })
+}
+
 export const normalizeRegion = (raw, index = 0) => ({
   id: isNonEmptyString(raw?.id) ? raw.id.trim() : `region-${index}`,
   name: isNonEmptyString(raw?.name) ? raw.name.trim() : `地区-${index + 1}`,
-  rulesets: strList(raw?.rulesets),
-  target: TARGETS.includes(raw?.target) ? raw.target : 'direct',
-  fallback: TARGETS.includes(raw?.fallback) ? raw.fallback : 'proxy',
+  rules: Array.isArray(raw?.rules)
+    ? raw.rules.map(normalizeRegionRule).filter(Boolean)
+    : migrateRegionRules(raw),
+  catchAll: TARGETS.includes(raw?.catchAll)
+    ? raw.catchAll
+    : TARGETS.includes(raw?.fallback)
+      ? raw.fallback
+      : 'proxy',
 })
 
 export const normalizePolicy = (raw, index = 0) => ({
@@ -118,7 +165,7 @@ export const normalizeRouting = (routing) => {
   // 地区列表:用户没自定义过就用内置的三条
   const regions = Array.isArray(raw.regions) && raw.regions.length
     ? raw.regions.map(normalizeRegion)
-    : BUILTIN_REGIONS.map((r) => ({ ...r, rulesets: [...r.rulesets] }))
+    : BUILTIN_REGIONS.map(normalizeRegion)
 
   // 选中哪一条。regionMode 是改版初期的写法,一并认下来。
   const wanted = isNonEmptyString(raw.regionId)
@@ -177,9 +224,9 @@ export const policyOutboundOptions = (outboundOptions, groupTags) => {
 // 列不出来就返回空数组,调用方回落到现在的全局转发。
 export const dnsmasqForwardDomains = (routing) => {
   const conf = normalizeRouting(routing)
-  // 只有"其余流量直连、且这个地区没有额外的代理规则集"时,代理面才等于那几条策略
-  if (!conf.region || conf.region.fallback !== 'direct') return []
-  if (conf.region.target === 'proxy' && conf.region.rulesets.length) return []
+  // 只有"其余流量直连、且这个地区自己没有任何走代理的规则"时,代理面才等于那几条策略
+  if (!conf.region || conf.region.catchAll !== 'direct') return []
+  if (conf.region.rules.some((r) => r.action === 'proxy')) return []
   const domains = []
   for (const p of conf.policies) {
     if (p.rulesets.length || p.domainKeyword.length) return []

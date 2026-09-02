@@ -1,5 +1,5 @@
 import express from 'express'
-import { BUILTIN_REGIONS } from '../engine/routing-model.mjs'
+import { BUILTIN_REGIONS, REGION_RULE_ACTIONS, REGION_RULE_TYPES } from '../engine/routing-model.mjs'
 
 const isPlainObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v)
 const isString = (v) => typeof v === 'string'
@@ -125,26 +125,43 @@ const validatePolicies = (policies) => {
   return null
 }
 
-const REGION_TARGETS = new Set(['direct', 'proxy'])
+const REGION_TARGETS = new Set(REGION_RULE_ACTIONS)
 
-// 地区条目校验。名字直接当界面上的标签用,规则集要落到 <tag>.srs 文件名,
-// 所以两者都不能是空的/带路径分隔符的东西。
+// 一条地区规则:类型 + 值 + 动作。geosite/geoip 的值会被拼成 <type>-<value>.srs 的
+// 文件名,所以那两类要过和规则集同一道字符校验(路径穿越防线,不是排版讲究)。
+const validateRegionRule = (rule) => {
+  if (!isPlainObject(rule)) return 'routing.regions[].rules entries must be objects'
+  if (!REGION_RULE_TYPES.includes(rule.type)) {
+    return `routing.regions[].rules[].type must be one of ${REGION_RULE_TYPES.join(', ')}`
+  }
+  if (!isString(rule.value) || !rule.value.trim()) {
+    return 'routing.regions[].rules[].value must be a non-empty string'
+  }
+  if ((rule.type === 'geosite' || rule.type === 'geoip') && !isValidRulesetTag(rule.value)) {
+    return 'routing.regions[].rules[].value must match /^[A-Za-z0-9._-]+$/ for geosite/geoip'
+  }
+  if ('action' in rule && !REGION_TARGETS.has(rule.action)) {
+    return 'routing.regions[].rules[].action must be one of direct, proxy'
+  }
+  return null
+}
+
+// 地区条目校验。名字直接当界面上的标签用,不能是空的。
 const validateRegions = (regions) => {
   if (!Array.isArray(regions)) return 'routing.regions must be an array'
   for (const r of regions) {
     if (!isPlainObject(r)) return 'routing.regions entries must be objects'
     if (!isString(r.id) || !r.id.trim()) return 'routing.regions[].id must be a non-empty string'
     if (!isString(r.name) || !r.name.trim()) return 'routing.regions[].name must be a non-empty string'
-    if ('rulesets' in r) {
-      if (!isStringArray(r.rulesets)) return 'routing.regions[].rulesets must be an array of strings'
-      if (!r.rulesets.every(isValidRulesetTag)) {
-        return 'routing.regions[].rulesets entries must match /^[A-Za-z0-9._-]+$/'
+    if ('rules' in r) {
+      if (!Array.isArray(r.rules)) return 'routing.regions[].rules must be an array'
+      for (const rule of r.rules) {
+        const error = validateRegionRule(rule)
+        if (error) return error
       }
     }
-    for (const field of ['target', 'fallback']) {
-      if (field in r && !REGION_TARGETS.has(r[field])) {
-        return `routing.regions[].${field} must be one of direct, proxy`
-      }
+    if ('catchAll' in r && !REGION_TARGETS.has(r.catchAll)) {
+      return 'routing.regions[].catchAll must be one of direct, proxy'
     }
   }
   return null

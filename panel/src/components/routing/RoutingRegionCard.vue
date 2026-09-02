@@ -69,52 +69,110 @@
       >
         <div class="text-sm font-medium">{{ $t('routingRegionSettingsTitle', { name: selectedName }) }}</div>
 
-        <div class="flex flex-col gap-3 sm:flex-row">
-          <div class="flex min-w-0 flex-1 flex-col gap-1">
-            <label class="text-xs font-medium">{{ $t('routingRegionNameLabel') }}</label>
-            <input
-              v-model="draft.name"
-              type="text"
-              class="input input-sm w-full"
-              :placeholder="$t('routingRegionNamePlaceholder')"
-            />
-          </div>
-          <div class="flex min-w-0 flex-2 flex-col gap-1">
-            <label class="text-xs font-medium">{{ $t('routingRegionRulesetsLabel') }}</label>
-            <input
-              v-model="draftRulesets"
-              type="text"
-              class="input input-sm w-full font-mono text-xs"
-              :placeholder="$t('routingRegionRulesetsPlaceholder')"
-            />
-          </div>
+        <div class="flex flex-col gap-1">
+          <label class="text-xs font-medium">{{ $t('routingRegionNameLabel') }}</label>
+          <input
+            v-model="draft.name"
+            type="text"
+            class="input input-sm w-full max-w-xs"
+            :placeholder="$t('routingRegionNamePlaceholder')"
+          />
         </div>
 
-        <div class="flex flex-col gap-3 sm:flex-row">
-          <div class="flex min-w-0 flex-1 flex-col gap-1">
-            <label class="text-xs font-medium">{{ $t('routingRegionTargetLabel') }}</label>
-            <select
-              v-model="draft.target"
-              class="select select-sm w-full"
-              :disabled="!splitList(draftRulesets).length"
+        <!-- 规则表。顺序即匹配顺序(内核首条命中生效),所以这里能拖、拖完就是新顺序;
+             每条自己带动作,内网那几段(127/8、192.168/16……)不在表里——生成配置时
+             固定排在所有规则之前,删不掉也不用管。 -->
+        <div class="flex flex-col gap-2">
+          <div class="flex items-center justify-between gap-2">
+            <label class="text-xs font-medium">{{ $t('routingRegionRulesLabel') }}</label>
+            <button
+              type="button"
+              class="btn btn-ghost btn-xs"
+              @click="addRule()"
             >
-              <option value="direct">{{ $t('direct') }}</option>
-              <option value="proxy">{{ $t('routingRegionViaProxy') }}</option>
-            </select>
+              <PlusIcon class="h-3.5 w-3.5" />
+              {{ $t('routingRegionRuleAdd') }}
+            </button>
           </div>
-          <div class="flex min-w-0 flex-1 flex-col gap-1">
-            <label class="text-xs font-medium">{{ $t('routingRegionFallbackLabel') }}</label>
-            <select
-              v-model="draft.fallback"
-              class="select select-sm w-full"
-            >
-              <option value="direct">{{ $t('direct') }}</option>
-              <option value="proxy">{{ $t('routingRegionViaProxy') }}</option>
-            </select>
+
+          <div
+            v-if="draftRules.length"
+            class="text-base-content/50 flex items-center gap-2 px-1 text-xs"
+          >
+            <span class="w-4 shrink-0" />
+            <span class="w-32 shrink-0">{{ $t('routingRuleTypeHeader') }}</span>
+            <span class="min-w-0 flex-1">{{ $t('routingRuleValueHeader') }}</span>
+            <span class="w-24 shrink-0">{{ $t('routingRuleActionHeader') }}</span>
+            <span class="w-8 shrink-0" />
           </div>
+
+          <Draggable
+            v-model="draftRules"
+            :animation="150"
+            :force-fallback="true"
+            handle=".rule-handle"
+            ghost-class="opacity-40"
+            item-key="key"
+            class="flex flex-col gap-1.5"
+          >
+            <template #item="{ element: rule, index }: { element: RuleRow; index: number }">
+              <div class="flex items-center gap-2">
+                <Bars3Icon class="rule-handle text-base-content/40 h-4 w-4 shrink-0 cursor-move" />
+                <select
+                  v-model="rule.type"
+                  class="select select-sm w-32 shrink-0"
+                >
+                  <option
+                    v-for="type in REGION_RULE_TYPES"
+                    :key="type"
+                    :value="type"
+                  >
+                    {{ type }}
+                  </option>
+                </select>
+                <input
+                  v-model="rule.value"
+                  type="text"
+                  class="input input-sm min-w-0 flex-1 font-mono text-xs"
+                  :placeholder="RULE_PLACEHOLDER[rule.type]"
+                />
+                <select
+                  v-model="rule.action"
+                  class="select select-sm w-24 shrink-0"
+                >
+                  <option value="direct">{{ $t('direct') }}</option>
+                  <option value="proxy">{{ $t('routingRegionViaProxy') }}</option>
+                </select>
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-square btn-sm hover:text-error"
+                  :aria-label="$t('delete')"
+                  @click="draftRules.splice(index, 1)"
+                >
+                  <TrashIcon class="h-4 w-4" />
+                </button>
+              </div>
+            </template>
+          </Draggable>
+
+          <p
+            v-if="!draftRules.length"
+            class="text-base-content/50 text-xs"
+          >
+            {{ $t('routingRegionNoRules') }}
+          </p>
         </div>
 
-        <p class="text-base-content/50 text-xs">{{ $t('routingRegionRulesetsHint') }}</p>
+        <div class="flex w-40 flex-col gap-1">
+          <label class="text-xs font-medium">{{ $t('routingRegionFallbackLabel') }}</label>
+          <select
+            v-model="draft.catchAll"
+            class="select select-sm w-full"
+          >
+            <option value="direct">{{ $t('direct') }}</option>
+            <option value="proxy">{{ $t('routingRegionViaProxy') }}</option>
+          </select>
+        </div>
 
         <div class="flex items-center justify-between gap-2">
           <span class="text-base-content/60 min-w-0 truncate text-xs">{{ summary(previewRegion) }}</span>
@@ -169,8 +227,8 @@
 </template>
 
 <script setup lang="ts">
-import type { OpenboxProfile, OpenboxRegion } from '@/api/openbox'
-import { RULESET_TAG_PATTERN } from '@/api/openbox'
+import type { OpenboxProfile, OpenboxRegion, OpenboxRegionRule, OpenboxRegionRuleType, OpenboxRuleAction } from '@/api/openbox'
+import { REGION_RULE_TYPES, RULESET_TAG_PATTERN } from '@/api/openbox'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import { showNotification } from '@/helper/notification'
 import { Bars3Icon, PlusIcon, TrashIcon } from '@heroicons/vue/24/outline'
@@ -203,16 +261,21 @@ const currentId = computed(() => {
 const selected = computed(() => regions.value.find((r) => r.id === currentId.value) || null)
 const selectedName = computed(() => selected.value?.name || '')
 
-const splitList = (text: string) => text.split(',').map((s) => s.trim()).filter(Boolean)
+const RULE_PLACEHOLDER: Record<OpenboxRegionRuleType, string> = {
+  geosite: 'cn',
+  geoip: 'cn',
+  domain: 'www.example.com',
+  domainSuffix: 'google.com',
+  ipcidr: '8.8.8.8/32',
+}
 
-// 一句话说清这条地区到底生成什么规则,不然光看名字分不出几条的区别。
+// 卡片上那一行摘要:几条规则 + 其余流量去哪。规则内容太长,卡片里塞不下也没必要。
 const summary = (region: OpenboxRegion | null) => {
   if (!region) return ''
-  const fallback = region.fallback === 'proxy' ? t('routingRegionViaProxy') : t('direct')
-  const list = region.rulesets || []
-  if (!list.length) return t('routingRegionSummaryAll', { fallback })
-  const target = region.target === 'proxy' ? t('routingRegionViaProxy') : t('direct')
-  return t('routingRegionSummary', { rulesets: list.join(', '), target, fallback })
+  const fallback = region.catchAll === 'proxy' ? t('routingRegionViaProxy') : t('direct')
+  const count = (region.rules || []).length
+  if (!count) return t('routingRegionSummaryAll', { fallback })
+  return t('routingRegionSummaryRules', { count, fallback })
 }
 
 const saving = ref(false)
@@ -226,48 +289,69 @@ const persist = async (next: OpenboxRegion[], extra: RegionPatch = {}) => {
 // ---- 选中那条的设置,就地编辑 ----
 
 const draft = ref<OpenboxRegion | null>(null)
-const draftRulesets = ref('')
+// 拖拽要求 v-model 绑一个数组;每行再带一个稳定 key,不然改类型/值会打乱行的复用
+interface RuleRow extends OpenboxRegionRule { key: number }
+const draftRules = ref<RuleRow[]>([])
+let ruleKeySeed = 0
 
-// 换一张卡就把编辑区重置成那条的值。没保存的改动会丢——比"改着 A 的名字却存到 B 上"
+const addRule = (type: OpenboxRegionRuleType = 'geosite', value = '', action: OpenboxRuleAction = 'direct') => {
+  draftRules.value.push({ key: ++ruleKeySeed, type, value, action })
+}
+
+// 换一张卡就把编辑区重置成那条的值。没保存的改动会丢——比"改着 A 的规则却存到 B 上"
 // 安全得多,而且按钮上就写着保存,不存在悄悄丢的问题。
 watch(selected, (region) => {
   draft.value = region ? JSON.parse(JSON.stringify(region)) : null
-  draftRulesets.value = (region?.rulesets || []).join(',')
+  draftRules.value = (region?.rules || []).map((r) => ({ ...r, key: ++ruleKeySeed }))
 }, { immediate: true })
 
+// 存盘用的规则表:空值的行直接忽略(加了一行没填就是没填)
+const cleanRules = (): OpenboxRegionRule[] =>
+  draftRules.value
+    .map((r) => ({ type: r.type, value: r.value.trim(), action: r.action }))
+    .filter((r) => r.value)
+
 const previewRegion = computed<OpenboxRegion | null>(() =>
-  draft.value ? { ...draft.value, rulesets: splitList(draftRulesets.value) } : null,
+  draft.value ? { ...draft.value, rules: cleanRules() } : null,
 )
+
+const ruleKey = (rules: OpenboxRegionRule[]) =>
+  rules.map((r) => `${r.type}|${r.value}|${r.action}`).join('\n')
 
 const dirty = computed(() => {
   const current = selected.value
-  const next = previewRegion.value
+  const next = draft.value
   if (!current || !next) return false
   return (
     current.name !== next.name.trim() ||
-    (current.rulesets || []).join(',') !== (next.rulesets || []).join(',') ||
-    (current.target || 'direct') !== (next.target || 'direct') ||
-    (current.fallback || 'proxy') !== (next.fallback || 'proxy')
+    ruleKey(current.rules || []) !== ruleKey(cleanRules()) ||
+    (current.catchAll || 'proxy') !== (next.catchAll || 'proxy')
   )
 })
 
 const saveDraft = async () => {
-  const item = previewRegion.value
-  if (!item || saving.value) return
-  const name = item.name.trim()
+  const current = draft.value
+  if (!current || saving.value) return
+  const name = current.name.trim()
   if (!name) {
     showNotification({ content: 'routingRegionNameRequired', type: 'alert-error' })
     return
   }
-  // 规则集 tag 会被拼进 .srs 路径,和服务端同一道校验(路径穿越防线,不是排版讲究)
-  if ((item.rulesets || []).some((tag) => !RULESET_TAG_PATTERN.test(tag))) {
+  const rules = cleanRules()
+  // geosite/geoip 的值会被拼成 <type>-<value>.srs 的路径,和服务端同一道校验
+  // (路径穿越防线,不是排版讲究)
+  const badGeo = rules.some(
+    (r) => (r.type === 'geosite' || r.type === 'geoip') && !RULESET_TAG_PATTERN.test(r.value),
+  )
+  if (badGeo) {
     showNotification({ content: 'routingRulesetInvalidChars', type: 'alert-error' })
     return
   }
 
   saving.value = true
   try {
-    const next = rows.value.map((r) => (r.id === item.id ? { ...item, name } : r))
+    const item: OpenboxRegion = { ...current, name, rules }
+    const next = rows.value.map((r) => (r.id === item.id ? item : r))
     // 改的正是当前生效那条,顶层 region(引导页看的那句人话)跟着更新
     await persist(next, { region: name })
   } catch (error) {
@@ -302,13 +386,7 @@ const choose = async (region: OpenboxRegion) => {
 const addRegion = async () => {
   if (saving.value) return
   const name = t('routingRegionNewName')
-  const item: OpenboxRegion = {
-    id: `region-${Date.now()}`,
-    name,
-    rulesets: [],
-    target: 'direct',
-    fallback: 'proxy',
-  }
+  const item: OpenboxRegion = { id: `region-${Date.now()}`, name, rules: [], catchAll: 'proxy' }
   saving.value = true
   try {
     await persist([...rows.value, item], { region: name, routing: { regionId: item.id } })

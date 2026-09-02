@@ -27,10 +27,8 @@ test('dnsmasq 模式读不到系统上游时,回落到档案里填的那台', ()
 test('中国大陆:中国域名直连解析,其余走代理 DNS', () => {
   const dns = buildDns(base)
   assert.deepEqual(dns.servers[1], { type: 'https', tag: 'dns-proxy', server: '1.1.1.1', detour: 'PROXY' })
-  assert.deepEqual(dns.rules, [
-    { rule_set: 'geosite-cn', server: 'dns-direct' },
-    { rule_set: 'geoip-cn', server: 'dns-direct' },
-  ])
+  // geoip 那条不进 DNS 规则:解析阶段还没有 IP,拿它当条件永远不会命中
+  assert.deepEqual(dns.rules, [{ rule_set: 'geosite-cn', server: 'dns-direct' }])
   assert.equal(dns.final, 'dns-proxy')
 })
 
@@ -42,10 +40,7 @@ test('香港澳门:没有地区规则,兜底就是直连解析', () => {
 
 test('其他地区:中国域名走代理 DNS(回国),兜底直连', () => {
   const dns = buildDns(withRouting({ regionId: 'other' }))
-  assert.deepEqual(dns.rules, [
-    { rule_set: 'geosite-cn', server: 'dns-proxy' },
-    { rule_set: 'geoip-cn', server: 'dns-proxy' },
-  ])
+  assert.deepEqual(dns.rules, [{ rule_set: 'geosite-cn', server: 'dns-proxy' }])
   assert.equal(dns.final, 'dns-direct')
 })
 
@@ -88,4 +83,24 @@ test('分流 DNS 关掉时只剩一条直连通道', () => {
 
 test('ipv6 关:strategy=ipv4_only', () => {
   assert.equal(buildDns({ ...base, ipv6: false }).strategy, 'ipv4_only')
+})
+
+test('地区规则里的域名/后缀也各自决定用哪边解析', () => {
+  const dns = buildDns(
+    withRouting({
+      regions: [{
+        id: 'jp', name: '日本', catchAll: 'direct',
+        rules: [
+          { type: 'domainSuffix', value: 'google.com', action: 'proxy' },
+          { type: 'domain', value: 'example.com', action: 'direct' },
+          { type: 'ipcidr', value: '8.8.8.8/32', action: 'proxy' },
+        ],
+      }],
+      regionId: 'jp',
+    }),
+  )
+  assert.deepEqual(dns.rules, [
+    { domain_suffix: ['google.com'], server: 'dns-proxy' },
+    { domain: ['example.com'], server: 'dns-direct' },
+  ])
 })

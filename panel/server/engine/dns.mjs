@@ -1,4 +1,4 @@
-import { normalizeRouting } from './routing-model.mjs'
+import { normalizeRouting, regionRuleTag } from './routing-model.mjs'
 
 const extractHost = (url) => {
   // "https://1.1.1.1/dns-query" -> "1.1.1.1";裸 host 原样返回
@@ -65,15 +65,20 @@ export const buildDns = (profile, options = {}) => {
     rules.push(policyDnsRule(policy, tag))
   })
 
-  // 地区层,和路由规则一一对应:那个地区的规则集走哪个出站,它的域名就用哪边的 DNS。
+  // 地区层,和路由规则一一对应:一条规则走哪个出站,它的域名就用哪边的 DNS。
+  // ip_cidr/geoip 不进 DNS 规则:解析阶段还没有 IP,拿它当条件永远不会命中。
   const region = conf.region
-  const regionServer = region && region.target === 'proxy' ? 'dns-proxy' : 'dns-direct'
-  for (const tag of (region ? region.rulesets : [])) rules.push({ rule_set: tag, server: regionServer })
+  for (const rule of (region ? region.rules : [])) {
+    const server = rule.action === 'proxy' ? 'dns-proxy' : 'dns-direct'
+    if (rule.type === 'geosite') rules.push({ rule_set: regionRuleTag(rule), server })
+    else if (rule.type === 'domainSuffix') rules.push({ domain_suffix: [rule.value], server })
+    else if (rule.type === 'domain') rules.push({ domain: [rule.value], server })
+  }
 
   return {
     servers,
     rules,
-    final: region && region.fallback === 'proxy' ? 'dns-proxy' : 'dns-direct',
+    final: region && region.catchAll === 'proxy' ? 'dns-proxy' : 'dns-direct',
     strategy,
   }
 }

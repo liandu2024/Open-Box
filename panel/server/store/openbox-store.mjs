@@ -23,7 +23,7 @@ export const DEFAULT_PROFILE = {
     proxyTag: 'PROXY',
     // 地区分流:预置中国大陆/香港澳门/其他地区三条,用户可以增删改、拖拽排序。
     // regionId 指向当前选中的那条(没有时按 regionMode 推断,见 routing-model.mjs)。
-    regions: BUILTIN_REGIONS.map((r) => ({ ...r, rulesets: [...r.rulesets] })),
+    regions: BUILTIN_REGIONS.map((r) => ({ ...r, rules: r.rules.map((rule) => ({ ...rule })) })),
     regionMode: 'CN',
     // 「出站」页签:每条策略的 selector 里能选到哪几类东西
     outboundOptions: { direct: true, reject: true, groups: true },
