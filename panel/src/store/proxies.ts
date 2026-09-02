@@ -10,7 +10,7 @@ import {
   selectProxyAPI,
 } from '@/api'
 import { iconUrlFor } from '@/helper/iconUrl'
-import { managedOutbounds, siteSetIcons } from '@/store/openboxSiteSets'
+import { managedOutbounds, nodeProviders, siteSetIcons } from '@/store/openboxSiteSets'
 import {
   GLOBAL,
   IPV6_TEST_URL,
@@ -329,6 +329,12 @@ export const fetchProxies = async () => {
       const url = iconUrlFor(item.icon)
       if (url) proxyMap.value[item.name].icon = url
     }
+  }
+
+  // 节点标上来自哪条订阅:「节点根据提供商分组」按 provider-name 分段,内核不给,这里补
+  for (const [tag, provider] of nodeProviders.value) {
+    const entry = proxyMap.value[tag]
+    if (entry && !entry['provider-name']) entry['provider-name'] = provider
   }
 
   if (smartGroups.length > 0) {

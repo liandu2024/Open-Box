@@ -198,7 +198,7 @@ const isSectionLatencyTesting = (section: ProviderSection) => {
 }
 
 const handleSectionLatencyTest = async (section: ProviderSection) => {
-  if (section.kind !== 'category' || isSectionLatencyTesting(section)) return
+  if (section.title === '' || isSectionLatencyTesting(section)) return
 
   sectionLatencyTestingMap.value[section.key] = true
   try {
@@ -341,6 +341,15 @@ const selectProxy = (nodeName: string) => {
         :flush-bottom="index === renderedSections.length - 1"
         @toggle="toggleSectionCollapsed(section)"
       >
+        <template #action>
+          <div @click.stop>
+            <LatencyTag
+              :class="'bg-base-200/50 hover:bg-base-200 z-10 cursor-pointer'"
+              :loading="isSectionLatencyTesting(section)"
+              @click.stop="handleSectionLatencyTest(section)"
+            />
+          </div>
+        </template>
         <template #collapsed>
           <ProxyPreview
             :nodes="section.proxies"

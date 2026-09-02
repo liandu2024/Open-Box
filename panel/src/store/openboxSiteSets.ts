@@ -24,10 +24,18 @@ const FALLBACK_NAME = '其他'
 
 // 「节点管理」里的条目:代理页的「节点」页签按它排、按它给图标;内置的直连/拒绝也在其中。
 export const managedOutbounds = ref<OpenboxUserGroup[]>([])
+// 每个节点来自哪条订阅(节点名 → 订阅名)。代理页开了「节点根据提供商分组」后按它分段:
+// sing-box 的 clash_api 没有 provider 概念,zashboard 原来靠内核给的 provider-name 分,
+// 在这里永远是空的——所以由 Open-Box 自己按订阅归属补上。
+export const nodeProviders = ref<Map<string, string>>(new Map())
 
 export const loadOpenboxNodeGroups = async () => {
   try {
-    managedOutbounds.value = (await fetchNodeGroups()).groups
+    const payload = await fetchNodeGroups()
+    managedOutbounds.value = payload.groups
+    nodeProviders.value = new Map(
+      (payload.availableNodes || []).filter((n) => n.subscription).map((n) => [n.name, n.subscription]),
+    )
   } catch {
     // 拉不到就保持原样:代理页照内核给的顺序显示,只是没有图标
   }
