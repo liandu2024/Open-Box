@@ -45,10 +45,12 @@
               v-else
               class="badge badge-outline badge-sm"
             >{{ $t(`groupType_${group.type}`) }}</span>
-            <span
+            <StatusBadge
               v-if="group.enabled === false"
-              class="badge badge-ghost badge-sm"
-            >{{ $t('groupDisabledBadge') }}</span>
+              :on="false"
+              on-text=""
+              :off-text="$t('groupDisabledBadge')"
+            />
           </div>
           <div class="text-base-content/60 mt-0.5 text-xs">
             <template v-if="group.kind">
@@ -643,6 +645,7 @@ import {
   XMarkIcon,
 } from '@heroicons/vue/24/outline'
 import { computed, onMounted, ref } from 'vue'
+import StatusBadge from '@/components/common/StatusBadge.vue'
 import Draggable from 'vuedraggable'
 import { useI18n } from 'vue-i18n'
 

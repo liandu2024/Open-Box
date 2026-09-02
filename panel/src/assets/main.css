@@ -212,6 +212,19 @@ body:has(.sortable-chosen) * {
   -webkit-user-select: none !important;
 }
 
+/* 状态小标签(components/common/StatusBadge.vue):开 = 浅绿底绿字,关 = 浅红底红字。
+   !important 是为了压过上面 custom-background 里把所有 .badge 刷成 base-200 的规则。 */
+.status-badge.status-on {
+  background-color: color-mix(in srgb, var(--color-success) 18%, transparent) !important;
+  border-color: color-mix(in srgb, var(--color-success) 30%, transparent) !important;
+  color: var(--color-success) !important;
+}
+.status-badge.status-off {
+  background-color: color-mix(in srgb, var(--color-error) 15%, transparent) !important;
+  border-color: color-mix(in srgb, var(--color-error) 30%, transparent) !important;
+  color: var(--color-error) !important;
+}
+
 /* 悬浮下拉层:不跟着「背景透明度」变透明,永远实底 */
 .app-popover {
   background-color: var(--color-base-100) !important;
