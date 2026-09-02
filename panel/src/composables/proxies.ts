@@ -52,16 +52,6 @@ const getCurrentProxyGroups = () => {
   return filterGroups([...proxyGroupList.value, GLOBAL])
 }
 
-const getChildGroupNames = (name: string, currentGroupSet: Set<string>) => {
-  const proxyGroup = proxyMap.value[name]
-
-  if (!proxyGroup?.all?.length) {
-    return []
-  }
-
-  return proxyGroup.all.filter((member) => currentGroupSet.has(member))
-}
-
 const nodeGroupNames = computed(() => {
   const resolved = new Map<string, boolean>()
   const visiting = new Set<string>()
@@ -140,64 +130,13 @@ const sortByManagedOrder = (names: string[]) => {
   return [...names].sort((a, b) => index(a) - index(b))
 }
 
+// 「节点」页签:节点管理里的组,每个组一张独立卡片。内核的 GLOBAL 组不列——它是
+// sing-box 自动生成的"所有出站"总表,不是用户建的组,放进来只会多一张几十个成员的大卡片。
 export const nodeGroups = computed(() =>
-  sortByManagedOrder(getCurrentProxyGroups().filter((name) => !isPolicyGroup(name))),
+  sortByManagedOrder(
+    getCurrentProxyGroups().filter((name) => name !== GLOBAL && !isPolicyGroup(name)),
+  ),
 )
-export const nodeGroupBlocks = computed(() => {
-  const groups = nodeGroups.value
-  const groupSet = new Set(groups)
-  const referenced = new Set<string>()
-
-  groups.forEach((name) => {
-    getChildGroupNames(name, groupSet).forEach((childName) => {
-      referenced.add(childName)
-    })
-  })
-
-  const assigned = new Set<string>()
-  const blocks: string[][] = []
-
-  const appendBlock = (rootName: string) => {
-    if (assigned.has(rootName) || !groupSet.has(rootName)) {
-      return
-    }
-
-    const block: string[] = []
-    const visited = new Set<string>()
-
-    const walk = (name: string) => {
-      if (visited.has(name) || assigned.has(name) || !groupSet.has(name)) {
-        return
-      }
-
-      visited.add(name)
-      assigned.add(name)
-      block.push(name)
-
-      getChildGroupNames(name, groupSet).forEach((childName) => {
-        walk(childName)
-      })
-    }
-
-    walk(rootName)
-
-    if (block.length > 0) {
-      blocks.push(block)
-    }
-  }
-
-  groups
-    .filter((name) => !referenced.has(name))
-    .forEach((name) => {
-      appendBlock(name)
-    })
-
-  groups.forEach((name) => {
-    appendBlock(name)
-  })
-
-  return blocks
-})
 export const renderGroups = computed(() => {
   const groups = getRenderGroups()
 

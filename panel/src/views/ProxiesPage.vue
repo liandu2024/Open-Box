@@ -32,16 +32,11 @@
             :key="idx"
             class="flex flex-1 flex-col gap-2"
           >
-            <template v-if="proxiesTabShow === PROXY_TAB_TYPE.NODE">
-              <ProxyGroupUnit
-                v-for="names in filterContent(nodeGroupBlocks, idx)"
-                :key="names.join('::')"
-                :names="names"
-              />
-            </template>
             <component
-              v-else
-              v-for="name in filterContent(renderGroups, idx)"
+              v-for="name in filterContent(
+                proxiesTabShow === PROXY_TAB_TYPE.NODE ? nodeGroups : renderGroups,
+                idx,
+              )"
               :is="renderComponent"
               :key="name"
               :name="name"
@@ -76,16 +71,8 @@
         class="grid grid-cols-1 gap-2 p-2"
         v-else
       >
-        <template v-if="proxiesTabShow === PROXY_TAB_TYPE.NODE">
-          <ProxyGroupUnit
-            v-for="names in nodeGroupBlocks"
-            :key="names.join('::')"
-            :names="names"
-          />
-        </template>
         <component
-          v-else
-          v-for="name in renderGroups"
+          v-for="name in proxiesTabShow === PROXY_TAB_TYPE.NODE ? nodeGroups : renderGroups"
           :is="renderComponent"
           :key="name"
           :name="name"
@@ -98,7 +85,6 @@
 <script setup lang="ts">
 import ProxyGroup from '@/components/proxies/ProxyGroup.vue'
 import ProxyGroupForMobile from '@/components/proxies/ProxyGroupForMobile.vue'
-import ProxyGroupUnit from '@/components/proxies/ProxyGroupUnit.vue'
 import ProxyProvider from '@/components/proxies/ProxyProvider.vue'
 import ProxiesCtrl from '@/components/sidebar/ProxiesCtrl.tsx'
 import { fetchServiceStatus } from '@/api/openbox'
@@ -110,7 +96,7 @@ import { usePaddingForViews } from '@/composables/paddingViews'
 import {
   disableProxiesPageScroll,
   isProxiesPageMounted,
-  nodeGroupBlocks,
+  nodeGroups,
   renderGroups,
 } from '@/composables/proxies'
 import { refreshSubscription } from '@/api/openbox'
@@ -240,7 +226,7 @@ const nextAutoRefreshSchedule = computed<AutoRefreshSchedule | null>(() => {
   } else {
     const rootNames =
       proxiesTabShow.value === PROXY_TAB_TYPE.NODE
-        ? nodeGroupBlocks.value.flat()
+        ? nodeGroups.value
         : renderGroups.value
 
     rootNames.forEach((name) => {
