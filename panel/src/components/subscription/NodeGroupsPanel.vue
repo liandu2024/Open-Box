@@ -840,6 +840,33 @@ const AUTO_SUFFIX: Record<OpenboxGroupType, string> = {
   selector: '手动',
 }
 
+// 同一个国家的组要挨在一起,自动排在手动前面。分两次生成(先建一批自动,过几天
+// 再补手动)的话,新的会被追加到末尾,同一个国家就被拆到列表的两头了。
+// 认国家靠 icon 里的两位国家代码——自动分组生成时一定会写上它。
+const TYPE_ORDER: Record<string, number> = { urltest: 0, selector: 1 }
+const countryOf = (g: OpenboxUserGroup) =>
+  g.icon && /^[A-Za-z]{2}$/.test(g.icon) ? g.icon.toUpperCase() : ''
+
+// 把这次涉及到的国家整理成块:同国家的(已有的 + 新建的)聚到一起,放在该国家
+// 第一个已有组的位置上;没有已有组的国家整块追加到末尾。不碰其它国家的顺序——
+// 用户可能是自己拖成那样的。
+const mergeByCountry = (current: OpenboxUserGroup[], added: OpenboxUserGroup[]) => {
+  const codes = [...new Set(added.map(countryOf).filter(Boolean))]
+  const byType = (a: OpenboxUserGroup, b: OpenboxUserGroup) =>
+    (TYPE_ORDER[a.type] ?? 9) - (TYPE_ORDER[b.type] ?? 9)
+
+  let out = [...current]
+  for (const code of codes) {
+    const mine = [...out.filter((g) => countryOf(g) === code), ...added.filter((g) => countryOf(g) === code)]
+    mine.sort(byType)
+    const anchor = out.findIndex((g) => countryOf(g) === code)
+    out = out.filter((g) => countryOf(g) !== code)
+    out.splice(anchor === -1 ? out.length : anchor, 0, ...mine)
+  }
+  // 认不出国家的(比如图标被改成地球)照旧追加到末尾
+  return [...out, ...added.filter((g) => !countryOf(g))]
+}
+
 const createAutoGroups = async () => {
   if (autoSaving.value) return
   const existing = new Set(groups.value.map((g) => g.name))
@@ -877,7 +904,7 @@ const createAutoGroups = async () => {
 
   autoSaving.value = true
   try {
-    await persist([...groups.value, ...next])
+    await persist(mergeByCountry(groups.value, next))
     showAuto.value = false
     if (skipped) {
       showNotification({
