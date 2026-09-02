@@ -25,7 +25,7 @@
       :is="globeComponent"
       v-else
       :class="isGlobe ? 'text-base-content/70' : 'text-base-content/30'"
-      :style="{ width: `${glyph}px`, height: `${glyph}px` }"
+      :style="{ width: `${monoGlyph}px`, height: `${monoGlyph}px` }"
     />
   </span>
 </template>
@@ -77,8 +77,13 @@ const GLOBE_URL = import.meta.glob<string>('../../assets/globes/*.svg', {
 })
 
 const boxWidth = computed(() => Math.round((props.size * 4) / 3))
-// 圆形图标按 0.85 缩,和扁长方形的国旗在视觉上一样大
-const glyph = computed(() => Math.round(props.size * 0.85))
+// 两种地球的"墨迹"占各自画布的比例不一样,给同样的边长会画出一大一小:
+//   彩色(Twemoji):圆 r=18 / viewBox 36 —— 铺满,比例 1.0
+//   线条(heroicons):圆 r=9 加 1.5 描边 / viewBox 24 —— 比例 0.8125
+// 所以彩色的按 0.8 缩、线条的给满格,两者的圆最终一样大(16px 行里都是 13px),
+// 也都不会超出这个 16px 高的盒子。数字改了要一起改,不然又是一大一小。
+const glyph = computed(() => Math.round(props.size * 0.8))
+const monoGlyph = computed(() => props.size)
 
 const src = computed(() => {
   if (isGlobe.value) {
