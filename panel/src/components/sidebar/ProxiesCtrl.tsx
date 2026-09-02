@@ -1,7 +1,7 @@
 import { disconnectByIdAPI, isSingBox } from '@/api'
 import { nodeGroups, policyGroups, renderGroups } from '@/composables/proxies'
 import { useCtrlsBar } from '@/composables/useCtrlsBar'
-import { PROXY_SORT_TYPE, PROXY_TAB_TYPE, ROUTE_NAME, SETTINGS_MENU_KEY } from '@/constant'
+import { PROXY_SORT_TYPE, PROXY_TAB_TYPE } from '@/constant'
 import { getMinCardWidth } from '@/helper/utils'
 import { configs, updateConfigs } from '@/store/config'
 import {
@@ -22,8 +22,6 @@ import {
   collapseGroupMap,
   displayFinalOutbound,
   groupProxiesByProvider,
-  hideUnavailableProxies,
-  manageHiddenGroup,
   minProxyCardWidth,
   providerProxyCategoryCollapseMap,
   proxyCardSize,
@@ -42,7 +40,6 @@ import { every } from 'lodash'
 import { isEmpty } from 'lodash'
 import { computed, defineComponent, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRouter } from 'vue-router'
 import DialogWrapper from '../common/DialogWrapper.vue'
 import TextInput from '../common/TextInput.vue'
 
@@ -60,7 +57,6 @@ export default defineComponent({
         }
 
     const { t } = useI18n()
-    const router = useRouter()
     const isUpgrading = ref(false)
     const isAllLatencyTesting = ref(false)
     const settingsModel = ref(false)
@@ -341,30 +337,6 @@ export default defineComponent({
                 />
               </div>
               <div class="flex items-center gap-2">
-                {t('unavailableProxy')}
-                <input
-                  type="checkbox"
-                  class="toggle"
-                  v-model={hideUnavailableProxies.value}
-                />
-              </div>
-              <div class="flex items-center gap-2">
-                {t('manageHiddenGroup')}
-                <input
-                  class="toggle"
-                  type="checkbox"
-                  v-model={manageHiddenGroup.value}
-                />
-              </div>
-              <div class="flex items-center gap-2">
-                {t('automaticDisconnection')}
-                <input
-                  class="toggle"
-                  type="checkbox"
-                  v-model={automaticDisconnection.value}
-                />
-              </div>
-              <div class="flex items-center gap-2">
                 {t('displayFinalOutbound')}
                 <input
                   class="toggle"
@@ -388,19 +360,6 @@ export default defineComponent({
                   </button>
                 </div>
               </div>
-              <div class="divider m-0"></div>
-              <button
-                class="btn btn-block"
-                onClick={() => {
-                  settingsModel.value = false
-                  router.push({
-                    name: ROUTE_NAME.settings,
-                    query: { scrollTo: SETTINGS_MENU_KEY.proxies },
-                  })
-                }}
-              >
-                {t('moreSettings')}
-              </button>
             </div>
           </DialogWrapper>
         </>
