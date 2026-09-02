@@ -55,23 +55,15 @@ html.apple-mobile-ui {
   @apply bg-transparent! shadow-none! backdrop-blur-none!;
 }
 
-/* 页面级滚动容器一律预留滚动条的位置。
-   没有它的话,内容多到出现滚动条的那一页会比不出现的那一页窄十来像素,页签之间
-   来回切、或者列表刚好增删一行,整块内容就横向跳一下(订阅/节点组两个页签之间
-   最明显)。scrollbar-gutter: stable 让这条槽常驻,有没有滚动条宽度都一样。
-
+/* 页面级滚动容器一律预留滚动条的位置。没有它的话,内容多到出现滚动条的那一页会比
+   不出现的那一页窄十二像素,页签之间来回切整块内容就横向跳一下(订阅/节点组两个
+   页签之间最明显)。stable 只在末端留一条,而那条正是滚动条待的位置——不会在滚动条
+   右边多出空白。
    选择器挑的是「页面骨架」那一层:所有视图的滚动容器都是
-   `min-h-0 flex-1 overflow-x-hidden overflow-y-auto`(见 src/views/*.vue),
-   以后新加的页面照这个骨架写就自动有了,不需要各自记着加类名。
-   卡片里那些小列表(max-h-* + overflow-y-auto)不带 flex-1,不受影响——
-   几十像素高的小框里再留一条空槽反而难看。
-   只留末端那一条(stable),不要 both-edges:两侧都留的话,左边凭空多出一条空槽、
-   内容右缘离滚动条更远,和原版的观感就不一样了。原版是左边保持内边距、右边由
-   滚动条占满贴住边框——留一条末端槽正好还原它,区别只是没有滚动条时这条槽也在,
-   所以页面之间不会横向跳。
-   macOS 的浮层滚动条本来就不占宽度,那边看不出变化;Windows/Linux 上才是重点。 */
+   `min-h-0 flex-1 overflow-x-hidden overflow-y-auto`(见 src/views/*.vue),以后
+   新加的页面照这个骨架写就自动有了。卡片里 max-h-* 的小列表不带 flex-1,不受影响。 */
 #app-content .flex-1.overflow-y-auto,
-/* 首页那一层滚动容器不走上面的骨架(它是 absolute + h-full),单独点名 */
+/* 首页那层是 absolute + h-full,不走上面的骨架,单独点名 */
 #app-content .scrollable-parent {
   scrollbar-gutter: stable;
 }
@@ -561,16 +553,16 @@ div::-webkit-scrollbar-track {
   background: transparent;
 }
 
+/* 滑块铺满整条轨道:原来给了 2px 透明边 + background-clip: content-box,滑块只有
+   8px 宽、两边各空 2px,看上去就是"滚动条没贴到边框上"。去掉这层内缩,右边紧贴
+   边框——上游 zashboard 用的是 scrollbar-thin,同样没有这种内缩。 */
 div::-webkit-scrollbar-thumb {
   background: color-mix(in srgb, var(--color-base-content) 35%, transparent);
   border-radius: 9999px;
-  border: 2px solid transparent;
-  background-clip: content-box;
 }
 
 div::-webkit-scrollbar-thumb:hover {
   background: color-mix(in srgb, var(--color-base-content) 55%, transparent);
-  background-clip: content-box;
 }
 
 .text-main {
