@@ -24,44 +24,6 @@
     <div class="settings-grid">
       <LanguageSelect v-if="isVisibleLanguage" />
       <div
-        v-if="isVisibleFonts"
-        class="setting-item"
-      >
-        <div class="setting-item-label">
-          {{ $t('fonts') }}
-        </div>
-        <select
-          class="select select-sm w-48"
-          v-model="font"
-        >
-          <option
-            v-for="opt in fontOptions"
-            :key="opt"
-            :value="opt"
-          >
-            {{ opt }}
-          </option>
-        </select>
-      </div>
-      <div
-        v-if="isVisibleEmoji"
-        class="setting-item"
-      >
-        <div class="setting-item-label">Emoji</div>
-        <select
-          class="select select-sm w-48"
-          v-model="emoji"
-        >
-          <option
-            v-for="opt in Object.values(EMOJIS)"
-            :key="opt"
-            :value="opt"
-          >
-            {{ opt }}
-          </option>
-        </select>
-      </div>
-      <div
         v-if="isVisibleCustomBackgroundURL"
         class="setting-item"
       >
@@ -212,66 +174,16 @@
       </div>
     </div>
     <!-- 「更新面板 / 自动更新」已去掉:面板由 Open-Box 自己发布,sing-box 也没有 /upgrade/ui 接口 -->
-    <div
-      v-if="isVisibleExportSettings || isVisibleImportSettings"
-      class="mt-4 grid max-w-3xl grid-cols-2 gap-2 gap-y-3 md:grid-cols-4"
-    >
-      <button
-        v-if="isVisibleExportSettings"
-        class="btn btn-sm"
-        @click="openExportDialog"
-      >
-        {{ $t('exportSettings') }}
-      </button>
-      <ImportSettings v-if="isVisibleImportSettings" />
-    </div>
-    <DialogWrapper
-      v-model="exportDialogShow"
-      :title="$t('exportSettings')"
-      box-class="max-w-md"
-    >
-      <div class="flex flex-col gap-4">
-        <label class="flex cursor-pointer items-start gap-3">
-          <input
-            v-model="desensitizedExport"
-            type="checkbox"
-            class="checkbox checkbox-sm mt-0.5"
-          />
-          <div class="space-y-1">
-            <div class="font-medium">{{ $t('desensitizedExport') }}</div>
-            <p class="text-base-content/70 text-sm">
-              {{ $t('desensitizedExportTip') }}
-            </p>
-          </div>
-        </label>
-        <div class="flex justify-end gap-2">
-          <button
-            class="btn btn-ghost btn-sm"
-            @click="exportDialogShow = false"
-          >
-            {{ $t('cancel') }}
-          </button>
-          <button
-            class="btn btn-sm"
-            @click="handleExportSettings"
-          >
-            {{ $t('exportSettings') }}
-          </button>
-        </div>
-      </div>
-    </DialogWrapper>
   </div>
 </template>
 
 <script setup lang="ts">
 import { getDisplayAppVersion, zashboardVersion } from '@/api'
-import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import LanguageSelect from '@/components/settings/LanguageSelect.vue'
 import { useIsSettingVisible } from '@/composables/settings'
 import { GENERAL_ITEM_KEYS } from '@/config/settingsItems'
-import { EMOJIS, FONTS } from '@/constant'
 import { deleteBase64FromIndexedDB, LOCAL_IMAGE, saveBase64ToIndexedDB } from '@/helper/indexeddb'
-import { exportSettings, isPWA } from '@/helper/utils'
+import { isPWA } from '@/helper/utils'
 import {
   defaultTheme,
   darkTheme,
@@ -279,21 +191,16 @@ import {
   blurIntensity,
   customBackgroundURL,
   dashboardTransparent,
-  emoji,
-  font,
   globalRadius,
 } from '@/store/settings'
 import { AdjustmentsHorizontalIcon, ArrowPathIcon, ArrowUpTrayIcon, PlusIcon } from '@heroicons/vue/24/outline'
 import { computed, ref, watch } from 'vue'
-import ImportSettings from '../common/ImportSettings.vue'
 import TextInput from '../common/TextInput.vue'
 import CustomTheme from './CustomTheme.vue'
 import ThemeSelector from './ThemeSelector.vue'
 
 const k = GENERAL_ITEM_KEYS
 const isVisibleLanguage = useIsSettingVisible(k.language)
-const isVisibleFonts = useIsSettingVisible(k.fonts)
-const isVisibleEmoji = useIsSettingVisible(k.emoji)
 const isVisibleCustomBackgroundURL = useIsSettingVisible(k.customBackgroundURL)
 const isVisibleTransparent = useIsSettingVisible(k.transparent)
 const isVisibleBlurIntensity = useIsSettingVisible(k.blurIntensity)
@@ -302,28 +209,20 @@ const isVisibleDefaultTheme = useIsSettingVisible(k.defaultTheme)
 const isVisibleDarkTheme = useIsSettingVisible(k.darkTheme)
 const isVisibleAutoSwitchTheme = useIsSettingVisible(k.autoSwitchTheme)
 const customThemeModal = ref(false)
-const isVisibleExportSettings = useIsSettingVisible(k.exportSettings)
-const isVisibleImportSettings = useIsSettingVisible(k.importSettings)
 
 const displayBgProperty = ref(false)
 const isBackgroundDragOver = ref(false)
-const exportDialogShow = ref(false)
-const desensitizedExport = ref(true)
 
 const hasVisibleItems = computed(() => {
   return (
     isVisibleLanguage.value ||
-    isVisibleFonts.value ||
-    isVisibleEmoji.value ||
     isVisibleCustomBackgroundURL.value ||
     (customBackgroundURL.value && displayBgProperty.value && isVisibleTransparent.value) ||
     (customBackgroundURL.value && displayBgProperty.value && isVisibleBlurIntensity.value) ||
     isVisibleGlobalRadius.value ||
     isVisibleDefaultTheme.value ||
     isVisibleDarkTheme.value ||
-    isVisibleAutoSwitchTheme.value ||
-    isVisibleExportSettings.value ||
-    isVisibleImportSettings.value
+    isVisibleAutoSwitchTheme.value
   )
 })
 const displayVersion = computed(() => {
@@ -333,18 +232,6 @@ const displayVersion = computed(() => {
 const adjustGlobalRadius = (step: number) => {
   const currentValue = Number(globalRadius.value || 0)
   globalRadius.value = Math.min(24, Math.max(0, currentValue + step))
-}
-
-const openExportDialog = () => {
-  desensitizedExport.value = true
-  exportDialogShow.value = true
-}
-
-const handleExportSettings = () => {
-  exportSettings({
-    desensitized: desensitizedExport.value,
-  })
-  exportDialogShow.value = false
 }
 
 watch(customBackgroundURL, (value) => {
@@ -402,15 +289,6 @@ const handleBackgroundDrop = async (event: DragEvent) => {
   await applyBackgroundFile(file)
 }
 
-const fontOptions = computed(() => {
-  const mode = import.meta.env.MODE
-
-  if (Object.values(FONTS).includes(mode as FONTS)) {
-    return [mode]
-  }
-
-  return Object.values(FONTS)
-})
 
 const refreshPages = async () => {
   const registrations = await navigator.serviceWorker.getRegistrations()

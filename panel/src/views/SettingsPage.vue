@@ -48,9 +48,7 @@
 
 <script setup lang="ts">
 import BackendSettings from '@/components/settings/BackendSettings.vue'
-import ConnectionsSettings from '@/components/settings/ConnectionsSettings.vue'
 import GeneralSettings from '@/components/settings/GeneralSettings.vue'
-import OverviewSettings from '@/components/settings/OverviewSettings.vue'
 import ProxiesSettings from '@/components/settings/ProxiesSettings.vue'
 import SettingsMenu from '@/components/settings/SettingsMenu.vue'
 import { usePaddingForViews } from '@/composables/paddingViews'
@@ -110,13 +108,8 @@ type PanelSection = {
 const panelSections = computed<PanelSection[]>(() => {
   const itemsMap = new Map<SETTINGS_MENU_KEY, PanelSection>([
     [SETTINGS_MENU_KEY.general, { key: SETTINGS_MENU_KEY.general, component: GeneralSettings }],
-    [SETTINGS_MENU_KEY.overview, { key: SETTINGS_MENU_KEY.overview, component: OverviewSettings }],
     [SETTINGS_MENU_KEY.backend, { key: SETTINGS_MENU_KEY.backend, component: BackendSettings }],
     [SETTINGS_MENU_KEY.proxies, { key: SETTINGS_MENU_KEY.proxies, component: ProxiesSettings }],
-    [
-      SETTINGS_MENU_KEY.connections,
-      { key: SETTINGS_MENU_KEY.connections, component: ConnectionsSettings },
-    ],
   ])
 
   return settingsMenuOrder.value
