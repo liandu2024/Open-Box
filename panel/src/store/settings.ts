@@ -15,7 +15,7 @@ import {
   SETTINGS_MENU_KEY,
   TABLE_SIZE,
   TABLE_WIDTH_MODE,
-  TEST_URL,
+  DIRECT_TEST_URL, TEST_URL,
   THEME_MODE,
 } from '@/constant'
 import { detectDefaultLanguage, getMinCardWidth, isMiddleScreen, isPreferredDark } from '@/helper/utils'
@@ -169,6 +169,8 @@ export const collapseGroupMap = useStorage<Record<string, boolean>>('config/coll
 export const displayFinalOutbound = useStorage('config/show-seleted-for-now-node', false)
 export const twoColumnProxyGroup = useStorage('config/two-columns', true)
 export const speedtestUrl = useStorage<string>('config/speedtest-url', TEST_URL)
+// 内置直连出站用的测速地址(见 constant/index.ts 的说明)
+export const directTestUrl = useStorage<string>('config/direct-test-url', DIRECT_TEST_URL)
 export const independentLatencyTest = useStorage('config/independent-latency-test', false)
 export const speedtestTimeout = useStorage<number>('config/speedtest-timeout', 5000)
 export const proxySortType = useStorage<PROXY_SORT_TYPE>(

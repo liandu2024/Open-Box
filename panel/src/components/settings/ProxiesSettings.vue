@@ -18,6 +18,22 @@
             :clearable="true"
           />
         </div>
+        <!-- 直连出站单独一个测速地址:默认的 gstatic 是 Google 的域名,从国内直连去测
+             量出来的是"直连到 Google 有多远",不是直连线路本身的快慢 -->
+        <div
+          v-if="isVisibleSpeedtestUrl"
+          class="setting-item"
+        >
+          <div class="setting-item-label">
+            {{ $t('directTestUrl') }}
+          </div>
+          <TextInput
+            class="flex-2"
+            v-model="directTestUrl"
+            :clearable="true"
+            :placeholder="DIRECT_TEST_URL"
+          />
+        </div>
         <div
           v-if="isVisibleSpeedtestTimeout"
           class="setting-item"
@@ -274,6 +290,7 @@
 </template>
 
 <script setup lang="ts">
+import { DIRECT_TEST_URL } from '@/constant'
 import { isSingBox } from '@/api'
 import { useIsSettingVisible } from '@/composables/settings'
 import { PROXIES_ITEM_KEYS } from '@/config/settingsItems'
@@ -296,6 +313,7 @@ import {
   proxyPreviewType,
   speedtestTimeout,
   speedtestUrl,
+  directTestUrl,
   truncateProxyName,
   twoColumnProxyGroup,
   useLargeProxyGroupIcon,

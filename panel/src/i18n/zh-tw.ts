@@ -49,6 +49,7 @@ const zhTW: LANG_MESSAGE = {
   ulSpeed: '上傳速度',
   settings: '設定',
   speedtestUrl: '測速地址',
+  directTestUrl: '直連測速位址',
   speedtestTimeout: '測速超時',
   connectionStyle: '連接樣式',
   card: '卡片',

@@ -49,6 +49,7 @@ const zh: LANG_MESSAGE = {
   ulSpeed: '上传速度',
   settings: '设置',
   speedtestUrl: '测速地址',
+  directTestUrl: '直连测速地址',
   speedtestTimeout: '测速超时',
   connectionStyle: '连接样式',
   card: '卡片',

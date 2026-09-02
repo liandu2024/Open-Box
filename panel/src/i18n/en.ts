@@ -47,6 +47,7 @@ const en = {
   ulSpeed: 'UL speed',
   settings: 'Settings',
   speedtestUrl: 'Speedtest URL',
+  directTestUrl: 'Direct outbound test URL',
   speedtestTimeout: 'Speedtest timeout',
   connectionStyle: 'Connection style',
   card: 'Card',

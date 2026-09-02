@@ -14,6 +14,9 @@ export const IS_APPLE_DEVICE = /Mac|iPod|iPhone|iPad/.test(navigator.platform)
 
 export const GLOBAL = 'GLOBAL'
 export const TEST_URL = 'https://www.gstatic.com/generate_204'
+// 直连出站专用的测速地址。默认那个是 Google 的域名,从国内直连去测,量出来的是"直连到
+// Google 有多远",不是直连线路本身的质量。微软的 NCSI 地址国内外都能通、返回一小段文本。
+export const DIRECT_TEST_URL = 'http://www.msftconnecttest.com/connecttest.txt'
 export const IPV6_TEST_URL = 'https://ipv6.google.com/generate_204'
 export const NOT_CONNECTED = 0
 export enum LANG {

@@ -17,6 +17,7 @@ import {
   NOT_CONNECTED,
   PROXY_TAB_TYPE,
   PROXY_TYPE,
+  DIRECT_TEST_URL,
   TEST_URL,
 } from '@/constant'
 import { isProxyGroup } from '@/helper'
@@ -35,6 +36,7 @@ import {
   IPv6test,
   speedtestTimeout,
   speedtestUrl,
+  directTestUrl,
 } from './settings'
 import { initSmartWeights } from './smart'
 
@@ -367,6 +369,19 @@ const fetchNodeLatency = (proxyName: string, url: string, timeout: number) => {
     if (providerName) {
       return fetchProxyProviderLatencyAPI(providerName, proxyName, url, timeout)
     }
+  }
+
+  // 内置的直连/拒绝不按普通节点测:
+  //   拒绝 —— 永远连不上,测它只会得到一个"失败"的提示,没有信息量,直接给 0
+  //   直连 —— 换用直连专用的测速地址(面板设置里可改)。默认地址是 Google 的域名,从国内
+  //          直连去测量出来的是"直连到 Google 有多远",不是直连线路本身的快慢
+  const managed = managedOutbounds.value.find((g) => g.name === proxyName && g.kind)
+  const type = proxyMap.value[proxyName]?.type?.toLowerCase()
+  if (managed?.kind === 'block' || type === 'block') {
+    return Promise.resolve({ status: 200, data: { delay: 0 } } as Awaited<ReturnType<typeof fetchProxyLatencyAPI>>)
+  }
+  if (managed?.kind === 'direct' || type === 'direct') {
+    return fetchProxyLatencyAPI(proxyName, directTestUrl.value || DIRECT_TEST_URL, timeout)
   }
 
   return fetchProxyLatencyAPI(proxyName, url, timeout)
