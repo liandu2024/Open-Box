@@ -101,7 +101,6 @@ const zhTW: LANG_MESSAGE = {
   dots: '點',
   bar: '條',
   exportSettings: '匯出設定',
-  basedOnZashboard: '基於 zashboard 開發',
   desensitizedExport: '脫敏匯出',
   desensitizedExportTip: '預設勾選，匯出時不包含 API 後端連線資訊。',
   desensitizedExportDescription:

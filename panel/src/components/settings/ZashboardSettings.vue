@@ -4,14 +4,9 @@
     v-if="hasVisibleItems"
     class="settings-section relative flex flex-col gap-2 p-4 text-sm"
   >
+    <!-- 标题就是「通用」:这块(语言/圆角/背景/主题)和下面 GeneralSettings 的几行合成一组 -->
     <div class="settings-title">
-      <div class="indicator">
-        <span class="flex flex-wrap items-center gap-x-3 gap-y-1 sm:flex-nowrap">
-          <span>Open-Box</span>
-          <span class="text-sm font-normal">{{ displayVersion }}</span>
-          <span class="text-base-content/70 text-xs">{{ $t('basedOnZashboard') }}</span>
-        </span>
-      </div>
+      {{ $t('general') }}
       <button
         class="btn btn-sm absolute top-4 right-4"
         @click="refreshPages"
@@ -155,7 +150,6 @@
 </template>
 
 <script setup lang="ts">
-import { getDisplayAppVersion, zashboardVersion } from '@/api'
 import LanguageSelect from '@/components/settings/LanguageSelect.vue'
 import { useIsSettingVisible } from '@/composables/settings'
 import { GENERAL_ITEM_KEYS } from '@/config/settingsItems'
@@ -193,9 +187,6 @@ const hasVisibleItems = computed(() => {
     isVisibleGlobalRadius.value ||
     isVisibleTheme.value
   )
-})
-const displayVersion = computed(() => {
-  return getDisplayAppVersion(zashboardVersion.value)
 })
 
 const adjustGlobalRadius = (step: number) => {

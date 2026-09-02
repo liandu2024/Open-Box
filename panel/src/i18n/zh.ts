@@ -101,7 +101,6 @@ const zh: LANG_MESSAGE = {
   dots: '点',
   bar: '条',
   exportSettings: '导出设置',
-  basedOnZashboard: '基于 zashboard 开发',
   desensitizedExport: '脱敏导出',
   desensitizedExportTip: '默认勾选，导出时不包括 API 后端连接信息。',
   desensitizedExportDescription:

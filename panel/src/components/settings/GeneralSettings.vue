@@ -2,13 +2,11 @@
   <ZashboardSettings />
   <ChangePasswordDialog v-model="isChangePasswordDialogOpen" />
   <!-- dashboard -->
+  <!-- 标题在上面 ZashboardSettings 那块里(「通用」),这里直接接着排 -->
   <div
     v-if="hasVisibleGeneralItems"
-    class="settings-section p-4 text-sm"
+    class="settings-section p-4 pt-0 text-sm"
   >
-    <div class="settings-title">
-      {{ $t('general') }}
-    </div>
     <div class="settings-grid">
       <div
         v-if="isVisibleAutoDisconnectIdleUDP"

@@ -99,7 +99,6 @@ const en = {
   dots: 'Dots',
   bar: 'Bar',
   exportSettings: 'Export settings',
-  basedOnZashboard: 'Based on zashboard',
   desensitizedExport: 'Desensitized export',
   desensitizedExportTip: 'Exclude backend API connection information by default.',
   desensitizedExportDescription:
