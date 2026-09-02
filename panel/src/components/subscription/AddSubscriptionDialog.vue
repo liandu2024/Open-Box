@@ -128,12 +128,6 @@
     </div>
 
     <div class="mt-5 flex flex-col gap-2">
-      <p
-        v-if="saveErrorMessage"
-        class="text-error text-sm"
-      >
-        {{ saveErrorMessage }}
-      </p>
       <div class="flex justify-end gap-2">
         <button
           type="button"
@@ -164,6 +158,7 @@ import type { OpenboxRenameOptions, OpenboxSubscription, OpenboxSubscriptionPrev
 import { createSubscription, previewSubscription, updateSubscription } from '@/api/openbox'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import { debounce } from 'lodash'
+import { showNotification } from '@/helper/notification'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import RenameRulesEditor from './RenameRulesEditor.vue'
@@ -239,7 +234,6 @@ const preview = ref<OpenboxSubscriptionPreview | null>(null)
 const previewing = ref(false)
 const previewErrorMessage = ref('')
 const saving = ref(false)
-const saveErrorMessage = ref('')
 
 // content (when the paste-mode textarea is non-empty) wins over url — mirrors
 // server/api/subscriptions.mjs's resolveNodes priority, so what's shown in the preview panel is
@@ -328,7 +322,6 @@ const resetForm = () => {
   previewing.value = false
   previewErrorMessage.value = ''
   saving.value = false
-  saveErrorMessage.value = ''
 }
 
 watch(isOpen, (open) => {
@@ -343,7 +336,6 @@ const handleSave = async () => {
   if (saving.value || !canSave.value) return
 
   saving.value = true
-  saveErrorMessage.value = ''
 
   try {
     // 保存哪一路由当前模式决定,和预览用的是同一个来源
@@ -360,8 +352,10 @@ const handleSave = async () => {
     emit('saved')
     isOpen.value = false
   } catch (error) {
-    saveErrorMessage.value = t('subscriptionSaveFailed', {
-      message: error instanceof Error ? error.message : String(error),
+    showNotification({
+      content: 'subscriptionSaveFailed',
+      type: 'alert-error',
+      params: { message: error instanceof Error ? error.message : String(error) },
     })
   } finally {
     saving.value = false

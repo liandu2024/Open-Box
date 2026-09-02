@@ -65,13 +65,6 @@
         />
 
         <template v-if="pageTab === 'subs'">
-        <p
-          v-if="listError"
-          class="text-error text-sm"
-        >
-          {{ listError }}
-        </p>
-
         <div
           v-if="loading && subscriptions.length === 0"
           class="flex justify-center py-14"
@@ -104,7 +97,6 @@
             :key="sub.id"
             :subscription="sub"
             :refreshing="refreshingId === sub.id"
-            :refresh-error="refreshErrors[sub.id]"
             @refresh="handleRefresh(sub.id)"
             @delete="requestDelete(sub)"
             @edit="requestEdit(sub)"
@@ -136,12 +128,6 @@
       <div class="flex flex-col gap-4 p-2">
         <p class="text-sm">
           {{ $t('subscriptionDeleteConfirm', { name: pendingDelete?.name || '' }) }}
-        </p>
-        <p
-          v-if="deleteError"
-          class="text-error text-xs"
-        >
-          {{ deleteError }}
         </p>
         <div class="flex justify-end gap-2">
           <button
@@ -183,10 +169,9 @@ import {
   RssIcon,
   SparklesIcon,
 } from '@heroicons/vue/24/outline'
-import { onMounted, reactive, ref, useTemplateRef } from 'vue'
-import { useI18n } from 'vue-i18n'
+import { showNotification } from '@/helper/notification'
+import { onMounted, ref, useTemplateRef } from 'vue'
 
-const { t } = useI18n()
 const { padding } = usePaddingForViews({
   offsetTop: 0,
   offsetBottom: 0,
@@ -196,16 +181,16 @@ const pageTab = ref<'subs' | 'groups'>('subs')
 
 const subscriptions = ref<OpenboxSubscription[]>([])
 const loading = ref(false)
-const listError = ref('')
 
 const loadSubscriptions = async () => {
   loading.value = true
-  listError.value = ''
   try {
     subscriptions.value = await fetchSubscriptions()
   } catch (error) {
-    listError.value = t('subscriptionListFailed', {
-      message: error instanceof Error ? error.message : String(error),
+    showNotification({
+      content: 'subscriptionListFailed',
+      type: 'alert-error',
+      params: { message: error instanceof Error ? error.message : String(error) },
     })
   } finally {
     loading.value = false
@@ -243,13 +228,11 @@ const handleEdited = () => {
 }
 
 const refreshingId = ref<string | null>(null)
-const refreshErrors = reactive<Record<string, string>>({})
 
 const handleRefresh = async (id: string) => {
   if (refreshingId.value) return
 
   refreshingId.value = id
-  delete refreshErrors[id]
 
   try {
     await refreshSubscription(id)
@@ -258,8 +241,10 @@ const handleRefresh = async (id: string) => {
     routingPendingDeploy.value = true
     await loadSubscriptions()
   } catch (error) {
-    refreshErrors[id] = t('subscriptionRefreshFailed', {
-      message: error instanceof Error ? error.message : String(error),
+    showNotification({
+      content: 'subscriptionRefreshFailed',
+      type: 'alert-error',
+      params: { message: error instanceof Error ? error.message : String(error) },
     })
   } finally {
     refreshingId.value = null
@@ -269,11 +254,9 @@ const handleRefresh = async (id: string) => {
 const showDeleteDialog = ref(false)
 const pendingDelete = ref<OpenboxSubscription | null>(null)
 const deleting = ref(false)
-const deleteError = ref('')
 
 const requestDelete = (sub: OpenboxSubscription) => {
   pendingDelete.value = sub
-  deleteError.value = ''
   showDeleteDialog.value = true
 }
 
@@ -281,7 +264,6 @@ const confirmDelete = async () => {
   if (deleting.value || !pendingDelete.value) return
 
   deleting.value = true
-  deleteError.value = ''
 
   try {
     await deleteSubscription(pendingDelete.value.id)
@@ -291,8 +273,10 @@ const confirmDelete = async () => {
     showDeleteDialog.value = false
     await loadSubscriptions()
   } catch (error) {
-    deleteError.value = t('subscriptionDeleteFailed', {
-      message: error instanceof Error ? error.message : String(error),
+    showNotification({
+      content: 'subscriptionDeleteFailed',
+      type: 'alert-error',
+      params: { message: error instanceof Error ? error.message : String(error) },
     })
   } finally {
     deleting.value = false

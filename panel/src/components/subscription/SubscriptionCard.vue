@@ -44,12 +44,6 @@
         </button>
       </div>
     </div>
-    <p
-      v-if="refreshError"
-      class="text-error mt-1 text-xs"
-    >
-      {{ refreshError }}
-    </p>
   </div>
 </template>
 
@@ -62,7 +56,6 @@ import { computed } from 'vue'
 const props = defineProps<{
   subscription: OpenboxSubscription
   refreshing?: boolean
-  refreshError?: string
 }>()
 
 defineEmits<{

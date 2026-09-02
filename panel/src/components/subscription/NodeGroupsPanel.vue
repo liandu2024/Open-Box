@@ -1,37 +1,5 @@
 <template>
   <div class="flex flex-col gap-3">
-    <p
-      v-if="error"
-      class="text-error text-sm"
-    >
-      {{ error }}
-    </p>
-    <!-- 提示不是错误:跳过同名分组是正常结果,用红色会让人以为出事了 -->
-    <p
-      v-if="notice"
-      class="text-base-content/60 text-sm"
-    >
-      {{ notice }}
-    </p>
-
-    <!-- 服务端把「按当前节点跑一遍」的结果一并返回。落地不了的组必须说出来:
-         成员是按名字引用的,节点一改名(比如打开订阅名前缀)引用就会悬空,组会被
-         静默丢掉——不提示的话,用户只会发现配置里少了个组,却不知道为什么。
-         同一个原因的合成一条:一组一行的话,建十个空组就是十行一模一样的话,
-         真正的信息(哪几个组)反而被淹没了。 -->
-    <p
-      v-if="droppedEmpty.length"
-      class="text-warning text-sm"
-    >
-      {{ $t('groupDroppedEmpty', { names: droppedEmpty.join('、') }) }}
-    </p>
-    <p
-      v-if="droppedCycle.length"
-      class="text-warning text-sm"
-    >
-      {{ $t('groupDroppedCycle', { names: droppedCycle.join('、') }) }}
-    </p>
-
     <div
       v-if="loading && !groups.length"
       class="flex justify-center py-10"
@@ -370,12 +338,6 @@
           </div>
         </div>
 
-        <p
-          v-if="editorError"
-          class="text-error text-sm"
-        >
-          {{ editorError }}
-        </p>
         <div class="flex justify-end gap-2">
           <button
             type="button"
@@ -499,13 +461,6 @@
         </div>
 
         <p class="text-base-content/50 text-xs">{{ $t('groupAutoHint') }}</p>
-        <p
-          v-if="autoError"
-          class="text-error text-sm"
-        >
-          {{ autoError }}
-        </p>
-
         <div class="flex justify-end gap-2">
           <button
             type="button"
@@ -540,6 +495,7 @@ import CountryFlag from '@/components/common/CountryFlag.vue'
 import CountrySelect from '@/components/common/CountrySelect.vue'
 import { AUTO_GROUP_DEFAULT_COUNTRIES, COUNTRIES, countryName, findCountry } from '@/constant/countries'
 import { keywordMatches, normalizeForMatch } from '@/helper/keywordMatch'
+import { showNotification } from '@/helper/notification'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import { routingPendingDeploy } from '@/store/routing'
 import {
@@ -559,25 +515,39 @@ const { t, locale } = useI18n()
 const groups = ref<OpenboxUserGroup[]>([])
 const availableNodes = ref<Array<{ name: string; subscription: string }>>([])
 const loading = ref(false)
-const error = ref('')
-// 保存后服务端回报的「落地不了的组」,见模板里的说明
-const dropped = ref<Array<{ name: string; reason: string }>>([])
-const droppedEmpty = computed(() =>
-  dropped.value.filter((d) => d.reason !== 'cycle').map((d) => d.name),
-)
-const droppedCycle = computed(() =>
-  dropped.value.filter((d) => d.reason === 'cycle').map((d) => d.name),
-)
+// 提示一律走右上角那套 toast(zashboard 自带的 showNotification),不在页面里挂
+// 内联文字:内联的会把列表往下顶、切走再回来还在,而且同一屏里两种提示样式看着
+// 像两套东西。
+// content 传 i18n 键,params 交给 t();传原始错误串也行(t 找不到键就原样返回),
+// api/index.ts 里报网络错误就是这么干的。
+const notifyError = (err: unknown) =>
+  showNotification({
+    content: err instanceof Error ? err.message : String(err),
+    type: 'alert-error',
+  })
+
+// 服务端把「按当前节点跑一遍」的结果一并返回:落地不了的组必须说出来。成员是按
+// 名字引用的,节点一改名引用就会悬空,组会被静默丢掉——不提示的话,用户只会发现
+// 配置里少了个组,却不知道为什么。同一个原因的合成一条,免得建十个空组刷十行。
+const reportDropped = (list: Array<{ name: string; reason: string }>) => {
+  const empty = list.filter((d) => d.reason !== 'cycle').map((d) => d.name)
+  const cycle = list.filter((d) => d.reason === 'cycle').map((d) => d.name)
+  if (empty.length) {
+    showNotification({ content: 'groupDroppedEmpty', params: { names: empty.join('、') } })
+  }
+  if (cycle.length) {
+    showNotification({ content: 'groupDroppedCycle', params: { names: cycle.join('、') } })
+  }
+}
 
 const load = async () => {
   loading.value = true
-  error.value = ''
   try {
     const data = await fetchNodeGroups()
     groups.value = data.groups
     availableNodes.value = data.availableNodes
   } catch (err) {
-    error.value = err instanceof Error ? err.message : String(err)
+    notifyError(err)
   } finally {
     loading.value = false
   }
@@ -612,7 +582,6 @@ const selectedSub = ref('')
 // 两栏各自的勾选状态(按名字记)。勾选 ≠ 成员:勾只表示"这条要不要被箭头搬走"。
 const checkedAvailable = ref<string[]>([])
 const checkedSelected = ref<string[]>([])
-const editorError = ref('')
 const saving = ref(false)
 
 const openEditor = (group: OpenboxUserGroup | null) => {
@@ -645,7 +614,6 @@ const openEditor = (group: OpenboxUserGroup | null) => {
   selectedSub.value = ''
   checkedAvailable.value = []
   checkedSelected.value = []
-  editorError.value = ''
   showEditor.value = true
 }
 
@@ -795,9 +763,6 @@ const showAuto = ref(false)
 const autoTypes = ref<OpenboxGroupType[]>(['urltest'])
 const autoCountries = ref<string[]>([])
 const autoSaving = ref(false)
-const autoError = ref('')
-// 生成完之后的提示(比如"跳过了几个同名的"),和 error 分开:它不是错误
-const notice = ref('')
 
 // 每个已选国家当前命中几个节点(只是参考,0 也能建)。列表顺序由 autoCountries
 // 本身决定——它就是拖拽排序的那个数组,所以不能再套一层 computed 去重排。
@@ -831,7 +796,6 @@ const addAutoCountry = (code: string) => {
 }
 
 const openAutoDialog = () => {
-  autoError.value = ''
   autoTypes.value = ['urltest']
   autoCountries.value = [...AUTO_GROUP_DEFAULT_COUNTRIES]
   showAuto.value = true
@@ -873,18 +837,23 @@ const createAutoGroups = async () => {
   }
 
   if (!next.length) {
-    autoError.value = t('groupAutoAllExist')
+    showNotification({ content: 'groupAutoAllExist', type: 'alert-error' })
     return
   }
 
   autoSaving.value = true
-  autoError.value = ''
   try {
     await persist([...groups.value, ...next])
     showAuto.value = false
-    notice.value = skipped ? t('groupAutoSkipped', { count: skipped }) : ''
+    if (skipped) {
+      showNotification({
+        content: 'groupAutoSkipped',
+        params: { count: String(skipped) },
+        type: 'alert-info',
+      })
+    }
   } catch (err) {
-    autoError.value = err instanceof Error ? err.message : String(err)
+    notifyError(err)
   } finally {
     autoSaving.value = false
   }
@@ -898,14 +867,14 @@ const persistOrder = async () => {
   try {
     await persist([...groups.value])
   } catch (err) {
-    error.value = err instanceof Error ? err.message : String(err)
+    notifyError(err)
   }
 }
 
 const persist = async (next: OpenboxUserGroup[]) => {
   const res = await saveNodeGroups(next)
   groups.value = res.groups
-  dropped.value = res.dropped || []
+  reportDropped(res.dropped || [])
   // 组的构成会改变生成的配置,和改订阅/分流一样要提示需要重新部署
   routingPendingDeploy.value = true
   return res
@@ -915,22 +884,21 @@ const saveDraft = async () => {
   if (!draft.value || saving.value) return
   const name = draft.value.name.trim()
   if (!name) {
-    editorError.value = t('groupNameRequired')
+    showNotification({ content: 'groupNameRequired', type: 'alert-error' })
     return
   }
   // 组名就是 sing-box 的出站 tag,重名会生成两个同名出站——在这里就拦住,别等部署时才炸
   if (groups.value.some((g) => g.name === name && g.id !== draft.value?.id)) {
-    editorError.value = t('groupNameDuplicate')
+    showNotification({ content: 'groupNameDuplicate', type: 'alert-error' })
     return
   }
   // 动态组不需要成员名单:关键词为空就是"全部节点",本身是合法的一种组
   if (draft.value.mode === 'static' && !draft.value.members.length) {
-    editorError.value = t('groupMembersRequired')
+    showNotification({ content: 'groupMembersRequired', type: 'alert-error' })
     return
   }
 
   saving.value = true
-  editorError.value = ''
   try {
     const item: OpenboxUserGroup = { ...draft.value, name, id: draft.value.id || `g-${Date.now()}` }
     const next = editing.value
@@ -939,7 +907,7 @@ const saveDraft = async () => {
     await persist(next)
     showEditor.value = false
   } catch (err) {
-    editorError.value = err instanceof Error ? err.message : String(err)
+    notifyError(err)
   } finally {
     saving.value = false
   }
@@ -949,7 +917,7 @@ const removeGroup = async (group: OpenboxUserGroup) => {
   try {
     await persist(groups.value.filter((g) => g.id !== group.id))
   } catch (err) {
-    error.value = err instanceof Error ? err.message : String(err)
+    notifyError(err)
   }
 }
 </script>
