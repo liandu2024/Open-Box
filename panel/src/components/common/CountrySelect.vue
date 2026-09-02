@@ -28,7 +28,7 @@
       <div
         v-if="open"
         ref="panelRef"
-        class="bg-base-100 border-base-content/10 z-[1000] flex flex-col rounded-lg border p-2 shadow-lg"
+        class="app-popover border-base-content/10 z-[1000] flex flex-col rounded-lg border p-2 shadow-lg"
         :style="style"
       >
         <!-- 搜索框用全局那个 TextInput(带清除按钮),和别处的搜索长一样 -->

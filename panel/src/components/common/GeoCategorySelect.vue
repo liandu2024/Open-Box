@@ -31,7 +31,7 @@
       <div
         v-if="open"
         ref="panelRef"
-        class="bg-base-100 border-base-content/10 z-[1000] flex flex-col rounded-lg border p-2 shadow-lg"
+        class="app-popover border-base-content/10 z-[1000] flex flex-col rounded-lg border p-2 shadow-lg"
         :style="style"
       >
         <TextInput

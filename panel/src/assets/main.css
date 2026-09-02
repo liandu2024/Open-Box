@@ -203,7 +203,8 @@ html.apple-mobile-ui {
   border-radius: var(--app-radius-compact, 0.4rem) !important;
 }
 
-#app-content .proxy-domain-group-dropdown {
+/* 悬浮下拉层:不跟着「背景透明度」变透明,永远实底 */
+.app-popover {
   background-color: var(--color-base-100) !important;
   background-image: none !important;
   backdrop-filter: none !important;
