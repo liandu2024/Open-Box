@@ -340,6 +340,11 @@ export interface OpenboxUserGroup {
   name: string
   type: OpenboxGroupType
   mode: OpenboxGroupMode
+  // 内置出站:直连(direct)/拒绝(block)。和节点组同在「节点管理」列表里,可改名、换图标、
+  // 排序、停用,但删不掉。只由固定 id 决定,服务端不信任传上去的值。
+  kind?: 'direct' | 'block'
+  // 停用 = 不写进配置、站点集里选不到。缺省视为启用。
+  enabled?: boolean
   // 国家代码(ISO 3166-1 alpha-2),空 = 不显示图标。纯界面用,不进 sing-box 配置。
   icon?: string
   // dynamic 用:命中任一关键词的节点即成员;为空 = 全部节点

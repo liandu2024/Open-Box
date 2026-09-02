@@ -261,14 +261,21 @@ export const normalizeRouting = (routing) => {
   }
 }
 
-// 策略 selector 的成员表。顺序固定:直连 → 各节点组 → 拒绝,和界面上的顺序一致。
-// 三个开关全关时回落成 ['direct']——空成员的组会让内核 FATAL(实测)。
-export const policyOutboundOptions = (outboundOptions, groupTags) => {
-  const list = []
-  if (outboundOptions.direct) list.push('direct')
-  if (outboundOptions.groups) list.push(...groupTags)
-  if (outboundOptions.reject) list.push(REJECT_TAG)
-  return list.length ? list : ['direct']
+// 没传 builtin 时的默认(测试、预览):直连叫 direct、拒绝叫 block,都启用
+export const DEFAULT_BUILTIN = Object.freeze({ direct: 'direct', block: 'block', directEnabled: true, blockEnabled: true })
+
+// 站点集 selector 的成员表:「节点管理」里启用着的条目,按那里的顺序(内置的直连/
+// 拒绝和节点组混排)。outboundOptions.groups 关掉时只剩直连/拒绝。
+// 一个都不剩时回落成直连——空成员的组会让内核 FATAL(实测)。
+//   groupTags  节点管理里出到配置的条目,按顺序;内置的两个也在其中,由 builtin 标出
+//   builtin    { direct, block, directEnabled, blockEnabled }(见 user-groups.mjs)
+export const policyOutboundOptions = (outboundOptions, groupTags, builtin = DEFAULT_BUILTIN) => {
+  const list = groupTags.filter((tag) => {
+    if (tag === builtin.direct) return builtin.directEnabled
+    if (tag === builtin.block) return builtin.blockEnabled
+    return outboundOptions.groups
+  })
+  return list.length ? list : [builtin.direct]
 }
 
 // 迁移用的占位:老档案里地区的兜底只有"直连/代理"两种说法,而 selector 的成员是
@@ -278,10 +285,12 @@ export const PROXY_SENTINEL = 'proxy'
 
 // 一个站点集实际会走哪个出站。default 空着(或指向一个已经不存在的组)时,内核会
 // 落到成员表里的第一项——这里跟着算同一个结果,不然界面/DNS 的判断会和内核对不上。
-export const effectiveOutbound = (policyDefault, members) => {
-  if (members.includes(policyDefault)) return policyDefault
+// 档案里存的 'direct' / 'block' 是占位:内置出站可以改名,生成时换算成当时的名字。
+export const effectiveOutbound = (policyDefault, members, builtin = DEFAULT_BUILTIN) => {
+  const want = policyDefault === 'direct' ? builtin.direct : policyDefault === 'block' ? builtin.block : policyDefault
+  if (members.includes(want)) return want
   if (policyDefault === PROXY_SENTINEL) {
-    const group = members.find((m) => m !== 'direct' && m !== REJECT_TAG)
+    const group = members.find((m) => m !== builtin.direct && m !== builtin.block)
     if (group) return group
   }
   return members[0]
@@ -304,12 +313,12 @@ export const effectiveOutbound = (policyDefault, members) => {
 // 走代理),只是那些域名这一轮还是本地解析的。
 // members 是内核里那些 selector 的成员表(生成配置时算出来的那一份,直接传进来,
 // 不在这里重算一遍——两处各算一次迟早会算歪)。
-export const dnsmasqForwardDomains = (routing, members = ['direct']) => {
+export const dnsmasqForwardDomains = (routing, members = ['direct'], builtin = DEFAULT_BUILTIN) => {
   const conf = normalizeRouting(routing)
-  if (effectiveOutbound(conf.fallback.default, members) !== 'direct') return []
+  if (effectiveOutbound(conf.fallback.default, members, builtin) !== builtin.direct) return []
   const domains = []
   for (const p of conf.policies) {
-    if (effectiveOutbound(p.default, members) === 'direct') continue
+    if (effectiveOutbound(p.default, members, builtin) === builtin.direct) continue
     // 这个集合要走代理,但它的规则 dnsmasq 展不开 → 只能全局转发
     if (p.rulesets.length || p.domainKeyword.length) return []
     domains.push(...p.domain, ...p.domainSuffix)

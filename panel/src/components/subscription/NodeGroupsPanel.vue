@@ -24,6 +24,7 @@
       <template #item="{ element: group }">
       <div
         class="card bg-base-100 border-base-content/10 flex flex-row items-center gap-2 border p-3"
+        :class="group.enabled === false && 'opacity-50'"
       >
         <Bars3Icon class="drag-handle text-base-content/40 h-4 w-4 shrink-0 cursor-move" />
         <CountryFlag
@@ -35,24 +36,54 @@
         <div class="min-w-0 flex-1">
           <div class="flex items-center gap-2">
             <span class="truncate text-base font-medium">{{ group.name }}</span>
-            <span class="badge badge-outline badge-sm">{{ $t(`groupType_${group.type}`) }}</span>
+            <span
+              v-if="group.kind"
+              class="badge badge-ghost badge-sm"
+            >{{ $t('groupBuiltinBadge') }}</span>
+            <span
+              v-else
+              class="badge badge-outline badge-sm"
+            >{{ $t(`groupType_${group.type}`) }}</span>
+            <span
+              v-if="group.enabled === false"
+              class="badge badge-warning badge-sm"
+            >{{ $t('groupDisabledBadge') }}</span>
           </div>
           <div class="text-base-content/60 mt-0.5 text-xs">
-            {{ memberSummary(group) }}
-            <template v-if="group.type === 'urltest'">
-              · {{ $t('groupInterval') }} {{ group.interval }} · {{ $t('groupTolerance') }} {{ group.tolerance }}ms
+            <template v-if="group.kind">
+              {{ $t(group.kind === 'direct' ? 'groupBuiltinDirectSummary' : 'groupBuiltinBlockSummary') }}
+            </template>
+            <template v-else>
+              {{ memberSummary(group) }}
+              <template v-if="group.type === 'urltest'">
+                · {{ $t('groupInterval') }} {{ group.interval }} · {{ $t('groupTolerance') }} {{ group.tolerance }}ms
+              </template>
             </template>
           </div>
         </div>
+        <!-- 启用/停用:停用 = 不写进配置、站点集里选不到。放在编辑前面。 -->
+        <button
+          type="button"
+          class="btn btn-ghost btn-square btn-sm"
+          :class="group.enabled === false ? 'text-base-content/40' : 'text-success'"
+          :aria-label="$t(group.enabled === false ? 'groupEnable' : 'groupDisable')"
+          :title="$t(group.enabled === false ? 'groupEnable' : 'groupDisable')"
+          :disabled="toggling === group.id"
+          @click="toggleEnabled(group)"
+        >
+          <PowerIcon class="h-4 w-4" />
+        </button>
         <button
           type="button"
           class="btn btn-ghost btn-square btn-sm"
           :aria-label="$t('groupEdit')"
-          @click="openEditor(group)"
+          @click="group.kind ? openBuiltinEditor(group) : openEditor(group)"
         >
           <PencilSquareIcon class="h-4 w-4" />
         </button>
+        <!-- 内置的直连/拒绝删不掉:内核离不开 direct,拒绝是站点集里「拒绝」的实体 -->
         <button
+          v-if="!group.kind"
           type="button"
           class="btn btn-ghost btn-square btn-sm hover:text-error"
           :aria-label="$t('delete')"
@@ -63,6 +94,62 @@
       </div>
       </template>
     </Draggable>
+
+    <DialogWrapper
+      v-model="showBuiltinEditor"
+      :title="$t('groupEditTitle')"
+      box-class="w-full max-w-md"
+    >
+      <div
+        v-if="builtinDraft"
+        class="flex flex-col gap-4"
+      >
+        <div class="flex items-end gap-2">
+          <div class="flex flex-col gap-1">
+            <label class="text-xs font-medium">{{ $t('groupIconLabel') }}</label>
+            <div class="w-32">
+              <CountrySelect
+                v-model="builtinDraft.icon"
+                clearable
+                globes
+                brands
+                :placeholder="$t('groupIconNone')"
+              />
+            </div>
+          </div>
+          <div class="flex min-w-0 flex-1 flex-col gap-1">
+            <label class="text-xs font-medium">{{ $t('groupNameLabel') }}</label>
+            <input
+              v-model="builtinDraft.name"
+              type="text"
+              class="input input-sm w-full"
+            />
+          </div>
+        </div>
+        <p class="text-base-content/50 text-xs">{{ $t('groupBuiltinEditHint') }}</p>
+        <div class="flex justify-end gap-2">
+          <button
+            type="button"
+            class="btn btn-sm"
+            @click="showBuiltinEditor = false"
+          >
+            {{ $t('cancel') }}
+          </button>
+          <button
+            type="button"
+            class="btn btn-primary btn-sm"
+            :disabled="saving"
+            @click="saveBuiltin"
+          >
+            <span
+              v-if="saving"
+              class="loading loading-spinner loading-xs"
+            />
+            {{ $t('subscriptionSave') }}
+          </button>
+        </div>
+      </div>
+    </DialogWrapper>
 
     <DialogWrapper
       v-model="showEditor"
@@ -537,6 +624,7 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   PencilSquareIcon,
+  PowerIcon,
   TrashIcon,
   XMarkIcon,
 } from '@heroicons/vue/24/outline'
@@ -965,6 +1053,51 @@ const saveDraft = async () => {
       : [...groups.value, item]
     await persist(next)
     showEditor.value = false
+  } catch (err) {
+    notifyError(err)
+  } finally {
+    saving.value = false
+  }
+}
+
+// ---- 启用/停用 ----
+const toggling = ref<string | null>(null)
+const toggleEnabled = async (group: OpenboxUserGroup) => {
+  if (toggling.value) return
+  toggling.value = group.id
+  try {
+    await persist(groups.value.map((g) => (g.id === group.id ? { ...g, enabled: g.enabled === false } : g)))
+  } catch (err) {
+    notifyError(err)
+  } finally {
+    toggling.value = null
+  }
+}
+
+// ---- 内置出站:只改名字和图标 ----
+const showBuiltinEditor = ref(false)
+const builtinDraft = ref<OpenboxUserGroup | null>(null)
+const openBuiltinEditor = (group: OpenboxUserGroup) => {
+  builtinDraft.value = JSON.parse(JSON.stringify(group))
+  showBuiltinEditor.value = true
+}
+const saveBuiltin = async () => {
+  const d = builtinDraft.value
+  if (!d || saving.value) return
+  const name = d.name.trim()
+  if (!name) {
+    showNotification({ content: 'groupNameRequired', type: 'alert-error' })
+    return
+  }
+  // 名字就是内核里的出站 tag,和别的组重名同样不行
+  if (groups.value.some((g) => g.name === name && g.id !== d.id)) {
+    showNotification({ content: 'groupNameDuplicate', type: 'alert-error' })
+    return
+  }
+  saving.value = true
+  try {
+    await persist(groups.value.map((g) => (g.id === d.id ? { ...g, name, icon: d.icon } : g)))
+    showBuiltinEditor.value = false
   } catch (err) {
     notifyError(err)
   } finally {

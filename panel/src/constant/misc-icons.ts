@@ -13,6 +13,8 @@ export interface MiscIcon {
 }
 
 export const MISC_ICONS: MiscIcon[] = [
+  { id: 'direct', zh: '直连', en: 'Direct', keywords: ['direct', '直连', '直通', '高速公路'] },
+  { id: 'reject', zh: '拒绝', en: 'Reject', keywords: ['reject', 'block', '拒绝', '拦截', '禁止'] },
   { id: 'car', zh: '汽车', en: 'Car', keywords: ['car', '汽车', '轿车', '车'] },
   { id: 'taxi', zh: '出租车', en: 'Taxi', keywords: ['taxi', '出租车', '打车'] },
   { id: 'bus', zh: '公交车', en: 'Bus', keywords: ['bus', '公交', '巴士'] },

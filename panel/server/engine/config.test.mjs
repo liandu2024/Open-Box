@@ -26,8 +26,8 @@ test('buildConfig 顶层结构', () => {
   // wireguard 进 endpoints,不进 outbounds
   assert.ok(c.endpoints.some((e) => e.tag === 'WG-01'))
   assert.ok(!c.outbounds.some((o) => o.tag === 'WG-01'))
-  // direct + 兜底「其他」selector + ss 节点(按国家自动分的组和 PROXY 已退役)
-  assert.ok(c.outbounds.some((o) => o.tag === 'direct' && o.type === 'direct'))
+  // 内置直连(默认叫「直连」)+ 兜底「其他」selector + ss 节点
+  assert.ok(c.outbounds.some((o) => o.tag === '直连' && o.type === 'direct'))
   assert.ok(c.outbounds.some((o) => o.tag === '其他' && o.type === 'selector'))
   assert.ok(!c.outbounds.some((o) => o.tag === 'PROXY' || o.tag === '美国'))
   assert.ok(c.outbounds.some((o) => o.tag === '美国-01' && o.type === 'shadowsocks'))
@@ -57,11 +57,11 @@ test('每条策略生成一个同名 selector,成员是「出站」页签选中�
   assert.deepEqual(sel, {
     type: 'selector',
     tag: '谷歌',
-    // 直连 → 各节点组(地区组 + 用户组)→ 拒绝
-    outbounds: ['direct', '香港-自动', 'block'],
+    // 按「节点管理」的顺序:内置直连 → 用户组 → 内置拒绝
+    outbounds: ['直连', '香港-自动', '拒绝'],
     default: '香港-自动',
   })
-  assert.ok(c.outbounds.some((o) => o.type === 'block' && o.tag === 'block'), '拒绝出站要在')
+  assert.ok(c.outbounds.some((o) => o.type === 'block' && o.tag === '拒绝'), '拒绝出站要在')
   const rule = c.route.rules.find((r) => r.outbound === '谷歌')
   assert.deepEqual(rule.rule_set, ['geosite-google'])
 })
@@ -82,21 +82,37 @@ test('站点集的 default 不在成员表里时落到第一个成员,而不是�
   assert.equal(sel.default, sel.outbounds[0])
 })
 
-test('「出站」页签关掉拒绝时,配置里不生成 block 出站', () => {
+test('「节点管理」里停用拒绝:配置里不生成 block 出站,站点集里也选不到', () => {
   const c = buildConfig({
     nodes,
     regionGroups,
+    userGroups: [{ id: 'builtin-block', name: '拒绝', enabled: false }],
     profile: {
       ...profile,
       routing: {
         regionMode: 'CN',
-        outboundOptions: { direct: true, groups: true, reject: false },
         policies: [{ id: 'p1', name: '谷歌', rulesets: ['geosite-google'] }],
       },
     },
   })
-  assert.ok(!c.outbounds.some((o) => o.tag === 'block'))
-  assert.deepEqual(c.outbounds.find((o) => o.tag === '谷歌').outbounds, ['direct'])
+  assert.ok(!c.outbounds.some((o) => o.type === 'block'))
+  assert.deepEqual(c.outbounds.find((o) => o.tag === '谷歌').outbounds, ['直连'])
+})
+
+test('内置直连改名后,内网直连规则和空组占位都跟着新名字', () => {
+  const c = buildConfig({
+    nodes,
+    regionGroups,
+    userGroups: [
+      { id: 'builtin-direct', name: '国内直出' },
+      { id: 'e', name: '空组', type: 'selector', mode: 'static', members: [] },
+    ],
+    profile: { ...profile, routing: { policies: [] } },
+  })
+  assert.ok(c.outbounds.some((o) => o.type === 'direct' && o.tag === '国内直出'))
+  assert.ok(!c.outbounds.some((o) => o.tag === 'direct'))
+  assert.deepEqual(c.route.rules.find((r) => r.ip_is_private), { ip_is_private: true, outbound: '国内直出' })
+  assert.deepEqual(c.outbounds.find((o) => o.tag === '空组').outbounds, ['国内直出'])
 })
 
 test('tun.autoRedirect 默认关闭,可开启', () => {

@@ -358,7 +358,14 @@ const en = {
 
   // --- Subscriptions & rename rules (P4b Task 5) ---
   subscriptions: 'Subscriptions',
-  groupsTab: 'Node groups',
+  groupsTab: 'Nodes',
+  groupBuiltinEditHint: 'Built-in outbounds: only the name and icon can be changed.',
+  groupBuiltinBlockSummary: 'Matched traffic is dropped.',
+  groupBuiltinDirectSummary: 'Traffic leaves the router directly, bypassing any proxy. The kernel needs it; disabling only hides it from site sets.',
+  groupBuiltinBadge: 'Built-in',
+  groupDisabledBadge: 'Disabled',
+  groupDisable: 'Disable',
+  groupEnable: 'Enable',
   groupsHint: 'Bundle nodes into policy groups; routing rules can target a group by name.',
   groupAutoAdd: 'Auto groups',
   groupAutoTitle: 'Create groups by country',

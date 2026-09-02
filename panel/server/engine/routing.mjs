@@ -29,7 +29,8 @@ export const buildRoute = (routing, rulesetDir, options = {}) => {
     // 仅劫持 dns-in 自身收到的查询,其余 DNS 流量按普通路由走(交给 dnsmasq 上游)。
     rules.push({ inbound: ['dns-in'], action: 'hijack-dns' })
   }
-  rules.push({ ip_is_private: true, outbound: 'direct' })
+  // 内置的直连出站可以改名,tag 从调用方传进来
+  rules.push({ ip_is_private: true, outbound: options.directTag || 'direct' })
 
   if (conf.adBlock) {
     addTag(conf.adRuleset)

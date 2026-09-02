@@ -23,7 +23,8 @@ export const registerGroupRoutes = (app, { store } = {}) => {
         name: n.tag,
         subscription: subscriptionName.get(n.subscriptionId) || '',
       })),
-      availableGroups: groups.map((g) => g.name),
+      // 内置的直连/拒绝不在候选里:它们不是可以当成员的组
+      availableGroups: groups.filter((g) => !g.kind).map((g) => g.name),
     })
   })
 

@@ -28,11 +28,17 @@ test('兜底站点集永远存在,名字和图标固定,只有"默认走哪"是�
   assert.equal(conf.fallback.default, 'direct')
 })
 
-test('出站选项:顺序固定,全关时回落 direct', () => {
-  assert.deepEqual(policyOutboundOptions({ direct: true, groups: true, reject: true }, GROUPS), [
-    'direct', ...GROUPS, 'block',
-  ])
-  assert.deepEqual(policyOutboundOptions({ direct: false, groups: false, reject: false }, GROUPS), ['direct'])
+test('出站选项:按节点管理的顺序,停用的内置出站被去掉,一个都不剩时回落直连', () => {
+  const tags = ['direct', ...GROUPS, 'block']
+  assert.deepEqual(policyOutboundOptions({ groups: true }, tags), tags)
+  assert.deepEqual(policyOutboundOptions({ groups: false }, tags), ['direct', 'block'])
+  const off = { direct: 'direct', block: 'block', directEnabled: false, blockEnabled: false }
+  assert.deepEqual(policyOutboundOptions({ groups: true }, tags, off), [...GROUPS])
+  assert.deepEqual(policyOutboundOptions({ groups: false }, tags, off), ['direct'])
+  // 内置出站改了名,占位 'direct' 要换算成当时的名字
+  const renamed = { direct: '国内直出', block: '拦截', directEnabled: true, blockEnabled: true }
+  assert.equal(effectiveOutbound('direct', ['国内直出', ...GROUPS, '拦截'], renamed), '国内直出')
+  assert.equal(effectiveOutbound('block', ['国内直出', ...GROUPS, '拦截'], renamed), '拦截')
 })
 
 test('effectiveOutbound:成员里有就用它,没有则按占位/第一项算', () => {

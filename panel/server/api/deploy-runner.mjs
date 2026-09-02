@@ -47,7 +47,7 @@ export const runDeploy = async ({ store, ctx, paths }) => {
   try {
     const systemDns = await readSystemDns(ctx)
     const { config, profile } = buildCurrentConfig(store, systemDns)
-    result = await deployConfig(ctx, paths, { config, profile })
+    result = await deployConfig(ctx, paths, { config, profile, userGroups: store.getGroups() })
     store.setDeployState({
       stage: result.stage,
       message: result.message || '',

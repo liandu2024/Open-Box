@@ -355,7 +355,14 @@ const zhTW: LANG_MESSAGE = {
 
   // --- \u8a02\u95b1\u8207\u91cd\u65b0\u547d\u540d\u898f\u5247(P4b Task 5) ---
   subscriptions: '\u8a02\u95b1',
-  groupsTab: '節點組',
+  groupsTab: '節點管理',
+  groupBuiltinEditHint: '內建出站只能改名字和圖示。',
+  groupBuiltinBlockSummary: '命中的流量直接丟棄。',
+  groupBuiltinDirectSummary: '流量不經代理,直接從路由器出去。核心離不開它,停用只是站點集裡選不到。',
+  groupBuiltinBadge: '內建',
+  groupDisabledBadge: '已停用',
+  groupDisable: '停用',
+  groupEnable: '啟用',
   groupsHint: '把節點編成策略組,分流規則可以直接指向組名。',
   groupAutoAdd: '自動分組',
   groupAutoTitle: '按國家自動分組',

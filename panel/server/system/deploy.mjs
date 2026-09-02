@@ -3,6 +3,7 @@ import { validateConfigObject, attributeBadNodes } from './validate.mjs'
 import { restartService, stopService, serviceStatus } from './service.mjs'
 import { applyDnsTakeover, restoreDnsTakeover, dnsTakeoverBackupPath } from './dns-takeover.mjs'
 import { FALLBACK_TAG, dnsmasqForwardDomains } from '../engine/routing-model.mjs'
+import { builtinTags } from '../engine/user-groups.mjs'
 import { applyPanelLanRule, applyIpv6Block, removeProxyRules } from './firewall.mjs'
 import { ensureRulesets } from './rulesets.mjs'
 
@@ -34,7 +35,7 @@ const lastKernelFatal = async (ctx) => {
   }
 }
 
-export const deployConfig = async (ctx, paths, { config, profile, fetchImpl } = {}) => {
+export const deployConfig = async (ctx, paths, { config, profile, userGroups, fetchImpl } = {}) => {
   // 1. 冲突检测
   const { conflicts, hasRunning } = await detectConflicts(ctx)
   if (hasRunning) {
@@ -79,7 +80,11 @@ export const deployConfig = async (ctx, paths, { config, profile, fetchImpl } = 
     const fallbackSelector = (config.outbounds || []).find((o) => o.tag === FALLBACK_TAG)
     await applyDnsTakeover(ctx, paths, {
       mode: dnsMode,
-      forwardDomains: dnsmasqForwardDomains(profile.routing, fallbackSelector ? fallbackSelector.outbounds : []),
+      forwardDomains: dnsmasqForwardDomains(
+        profile.routing,
+        fallbackSelector ? fallbackSelector.outbounds : [],
+        builtinTags(userGroups || []),
+      ),
     })
 
     // 6. 防火墙

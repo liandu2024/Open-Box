@@ -26,8 +26,8 @@ test('dnsmasq 模式读不到系统上游时,回落到档案里填的那台', ()
   assert.equal(dns.servers[0].server, '223.5.5.5')
 })
 
-// 迁移留下的 'proxy' 占位要落到第一个节点组上,所以这组用例都得给出节点组
-const GROUPS = { groupTags: ['所有-自动'] }
+// 成员表现在整份来自「节点管理」(内置直连/拒绝 + 节点组),用例里要把它们都给出来
+const GROUPS = { groupTags: ['direct', '所有-自动', 'block'] }
 
 test('兜底走代理时,没被站点集挑走的域名用代理侧解析', () => {
   const dns = buildDns(base, GROUPS)
@@ -46,6 +46,7 @@ test('走代理的站点集各有一台自己的 DNS,detour 指向同名 selecto
     withRouting({
       policies: [{ id: 'p1', name: '谷歌', default: 'block', rulesets: ['geosite-google'], domainSuffix: ['google.com'] }],
     }),
+    GROUPS,
   )
   assert.deepEqual(dns.servers[2], { type: 'https', tag: 'dns-policy-0', server: '1.1.1.1', detour: '谷歌' })
   assert.deepEqual(dns.rules[0], {

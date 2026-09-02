@@ -1,4 +1,4 @@
-import { effectiveOutbound, normalizeRouting, policyOutboundOptions } from './routing-model.mjs'
+import { DEFAULT_BUILTIN, effectiveOutbound, normalizeRouting, policyOutboundOptions } from './routing-model.mjs'
 
 const extractHost = (url) => {
   // "https://1.1.1.1/dns-query" -> "1.1.1.1";裸 host 原样返回
@@ -64,10 +64,11 @@ export const buildDns = (profile, options = {}) => {
   // 每个站点集一台自己的 DNS 服务器,detour 指向同名 selector——「代理的 DNS 要到具体
   // 指定的节点」就是靠这个:用户在代理页把它切到哪条线路,域名解析也跟着走那条。
   // 默认就选直连的集合不给专属服务器:直连的东西该用本地解析,绕一圈代理没有意义。
-  const members = policyOutboundOptions(conf.outboundOptions, options.groupTags || [])
+  const builtin = options.builtin || DEFAULT_BUILTIN
+  const members = policyOutboundOptions(conf.outboundOptions, options.groupTags || [], builtin)
   conf.policies.forEach((policy, index) => {
     if (!hasDomainCondition(policy)) return
-    if (effectiveOutbound(policy.default, members) === 'direct') {
+    if (effectiveOutbound(policy.default, members, builtin) === builtin.direct) {
       rules.push(policyDnsRule(policy, 'dns-direct'))
       return
     }
@@ -80,7 +81,7 @@ export const buildDns = (profile, options = {}) => {
     servers,
     rules,
     // 兜底:上面都没命中的域名,按兜底站点集默认走哪来定用哪边解析
-    final: effectiveOutbound(conf.fallback.default, members) === 'direct' ? 'dns-direct' : 'dns-proxy',
+    final: effectiveOutbound(conf.fallback.default, members, builtin) === builtin.direct ? 'dns-direct' : 'dns-proxy',
     strategy,
   }
 }

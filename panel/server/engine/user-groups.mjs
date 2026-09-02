@@ -27,6 +27,19 @@ export const GROUP_TYPES = Object.freeze(['urltest', 'selector'])
 // 新订阅刷进来只要名字命中关键词,下次部署就自动在组里,不用回来重新勾一遍。
 export const GROUP_MODES = Object.freeze(['static', 'dynamic'])
 
+// 两个内置出站:直连(direct)和拒绝(block)。它们和节点组放在同一张「节点管理」列表里
+// ——可以改名、换图标、拖顺序、停用,但删不掉:内核里 direct 出站必须存在(内网直连、
+// DNS 直连解析都指向它),block 则是站点集里「拒绝」这一项的实体。
+// 名字就是内核里的出站 tag(改名会跟着变),所以档案里存的 'direct' / 'block' 是占位,
+// 生成配置时再按当时的名字换算(见 routing-model.mjs 的 effectiveOutbound)。
+export const BUILTIN_IDS = Object.freeze({ direct: 'builtin-direct', block: 'builtin-block' })
+export const BUILTIN_KINDS = Object.freeze(['direct', 'block'])
+
+export const builtinDefaults = () => ([
+  { id: BUILTIN_IDS.direct, kind: 'direct', name: '直连', type: 'selector', mode: 'static', icon: 'misc:direct', keywords: [], members: [], enabled: true },
+  { id: BUILTIN_IDS.block, kind: 'block', name: '拒绝', type: 'selector', mode: 'static', icon: 'misc:reject', keywords: [], members: [], enabled: true },
+])
+
 export const DEFAULT_TEST_URL = 'https://www.gstatic.com/generate_204'
 export const DEFAULT_INTERVAL = '3m'
 export const DEFAULT_TOLERANCE = 50
@@ -34,6 +47,7 @@ export const DEFAULT_TOLERANCE = 50
 // 两个开箱即用的组:一份自动择优、一份手动指定,成员都是"当前所有有效节点"。
 // allNodes 是动态的——订阅刷新后节点变了,组的成员跟着变,不需要用户回来重新勾一遍。
 export const defaultGroups = () => ([
+  builtinDefaults()[0],
   {
     id: 'all-auto',
     name: '所有-自动',
@@ -56,6 +70,7 @@ export const defaultGroups = () => ([
     keywords: [],
     members: [],
   },
+  builtinDefaults()[1],
 ])
 
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0
@@ -69,7 +84,7 @@ const normalizeIcon = (raw) => {
   // 国家代码统一大写(hk -> HK),地球和公司图标统一小写(GLOBE:ASIA -> globe:asia,
   // BRAND:Google -> brand:google)。都要归一,是因为界面按这个值去查图标:大小写不
   // 一致就查不到,直接显示成空白。
-  if (/^(globe|brand):/i.test(v)) return v.toLowerCase()
+  if (/^(globe|brand|misc):/i.test(v)) return v.toLowerCase()
   return /^[A-Za-z]{2}$/.test(v) ? v.toUpperCase() : v
 }
 
@@ -85,6 +100,8 @@ export const normalizeGroup = (raw, index = 0) => {
     name: isNonEmptyString(raw?.name) ? raw.name.trim() : `分组-${index + 1}`,
     type,
     mode,
+    // 停用 = 不写进配置、站点集里也选不到。默认启用;老记录没这个字段。
+    enabled: raw?.enabled !== false,
     // 图标:国家代码(ISO 3166-1 alpha-2),空表示不显示。纯界面用,不进 sing-box 配置
     // ——那边没有这个字段,写进去内核直接报未知字段。
     // 国家代码统一成大写(hk -> HK);地球图标是 globe:xxx 这种,原样留着不能动
@@ -100,8 +117,35 @@ export const normalizeGroup = (raw, index = 0) => {
   return group
 }
 
-export const normalizeGroups = (list) =>
-  (Array.isArray(list) ? list : []).map((g, i) => normalizeGroup(g, i))
+// kind 只由固定 id 决定,不信任传进来的值:普通组写个 kind:'direct' 混进来,内核里就会
+// 多出一个 direct 出站。
+const withKind = (g) => {
+  const kind = Object.entries(BUILTIN_IDS).find(([, id]) => id === g.id)?.[0]
+  if (!kind) return g
+  return { ...g, kind, type: 'selector', mode: 'static', keywords: [], members: [] }
+}
+
+// 两个内置出站永远在列表里:老档案没有就补上——直连放最前、拒绝放最后(和以前站点集
+// 成员表"直连 → 各组 → 拒绝"的顺序一样);有就照用户排的位置。
+export const normalizeGroups = (list) => {
+  const normalized = (Array.isArray(list) ? list : []).map((g, i) => withKind(normalizeGroup(g, i)))
+  const [direct, block] = builtinDefaults()
+  const has = (b) => normalized.some((g) => g.id === b.id)
+  return [...(has(direct) ? [] : [direct]), ...normalized, ...(has(block) ? [] : [block])]
+}
+
+// 生成配置时要用的两样:两个内置出站现在叫什么、有没有被停用。
+export const builtinTags = (groups) => {
+  const normalized = normalizeGroups(groups)
+  const direct = normalized.find((g) => g.kind === 'direct')
+  const block = normalized.find((g) => g.kind === 'block')
+  return {
+    direct: direct.name,
+    block: block.name,
+    directEnabled: direct.enabled,
+    blockEnabled: block.enabled,
+  }
+}
 
 // 解析成员:
 //   dynamic —— 按关键词从当前节点里现挑(不带关键词 = 全部节点)。只认节点,不认别的
@@ -170,18 +214,26 @@ export const emitUserGroups = (groups, nodes, options = {}) => {
   // 跟着它走,策略组列表看起来才和节点列表一致。
   const nodeTags = (nodes || []).map((n) => n.tag)
 
-  const withoutCycles = dropCycles(normalized)
-  const droppedByCycle = normalized.filter((g) => !withoutCycles.includes(g))
+  const builtin = builtinTags(normalized)
+  // 停用的组不进配置。内置的直连例外:内核里 direct 出站必须存在(内网直连、DNS 直连
+  // 解析、空组占位都指向它),"停用直连"的含义只是站点集里选不到它。
+  const active = normalized.filter((g) => g.enabled || g.kind === 'direct')
+  const withoutCycles = dropCycles(active.filter((g) => !g.kind))
+  const droppedByCycle = active.filter((g) => !g.kind && !withoutCycles.includes(g))
 
   const groupNameSet = new Set(withoutCycles.map((g) => g.name))
   const outbounds = []
   const dropped = droppedByCycle.map((g) => ({ name: g.name, reason: 'cycle' }))
 
-  // 一个都没命中的组挂 direct 占位:配置里一定有 direct,而且它不会反过来引用任何组
-  const placeholderTag = 'direct'
+  // 一个都没命中的组挂直连占位:配置里一定有它,而且它不会反过来引用任何组
+  const placeholderTag = builtin.direct
   const placeholders = []
 
-  for (const g of withoutCycles) {
+  // 按列表顺序出:内置出站和节点组混排,用户拖成什么样内核里就是什么样
+  for (const g of active) {
+    if (g.kind === 'direct') { outbounds.push({ type: 'direct', tag: g.name }); continue }
+    if (g.kind === 'block') { outbounds.push({ type: 'block', tag: g.name }); continue }
+    if (!withoutCycles.includes(g)) continue
     let members = resolveMembers(g, nodeTags, groupNameSet)
     if (!members.length) {
       // 空组不能原样写进配置——内核会 FATAL(1.13.14 实测:
@@ -207,5 +259,5 @@ export const emitUserGroups = (groups, nodes, options = {}) => {
     }
   }
 
-  return { outbounds, dropped, placeholders }
+  return { outbounds, dropped, placeholders, builtin }
 }

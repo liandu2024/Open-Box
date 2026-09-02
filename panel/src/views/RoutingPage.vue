@@ -46,6 +46,7 @@
             v-else-if="pageTab === 'outbounds'"
             :profile="profile"
             :group-names="groupNames"
+            :builtins="builtins"
             :patch-profile="patchProfile"
           />
           <Ipv6Card
@@ -60,7 +61,7 @@
 </template>
 
 <script setup lang="ts">
-import type { OpenboxProfile } from '@/api/openbox'
+import type { OpenboxProfile, OpenboxUserGroup } from '@/api/openbox'
 import { fetchNodeGroups, fetchProfile, saveProfile } from '@/api/openbox'
 import Ipv6Card from '@/components/routing/Ipv6Card.vue'
 import RoutingOutboundsCard from '@/components/routing/RoutingOutboundsCard.vue'
@@ -89,6 +90,8 @@ const pageTab = ref<PageTab>('policies')
 
 // 「节点组」页里建的组名。站点集的可选出站与「出站」页签的预览都用它。
 const groupNames = ref<string[]>([])
+// 「节点管理」里内置的直连/拒绝:名字可改、可停用,出站页签的预览要按它们现在的样子显示
+const builtins = ref<OpenboxUserGroup[]>([])
 const groupsLoading = ref(false)
 const groupsError = ref('')
 
@@ -99,7 +102,8 @@ const loadPolicyGroups = async () => {
   groupsError.value = ''
   try {
     const payload = await fetchNodeGroups()
-    groupNames.value = payload.groups.map((g) => g.name)
+    groupNames.value = payload.groups.filter((g) => !g.kind).map((g) => g.name)
+    builtins.value = payload.groups.filter((g) => Boolean(g.kind))
   } catch (error) {
     groupsError.value = t('routingPolicyGroupsLoadFailed', {
       message: error instanceof Error ? error.message : String(error),

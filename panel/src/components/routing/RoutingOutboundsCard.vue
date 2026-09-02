@@ -44,37 +44,39 @@
 </template>
 
 <script setup lang="ts">
-import type { OpenboxOutboundOptions, OpenboxProfile } from '@/api/openbox'
+import type { OpenboxOutboundOptions, OpenboxProfile, OpenboxUserGroup } from '@/api/openbox'
 import { showNotification } from '@/helper/notification'
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{
   profile: OpenboxProfile
-  // 「节点组」页里建的组名,站点集的选择器里会原样列出来
+  // 「节点管理」页里建的组名,站点集的选择器里会原样列出来
   groupNames: string[]
+  // 「节点管理」里内置的直连/拒绝(可改名、可停用),预览按它们现在的样子显示
+  builtins: OpenboxUserGroup[]
   patchProfile: (patch: Record<string, unknown>) => Promise<OpenboxProfile>
 }>()
 
 const { t } = useI18n()
 
 type OptionKey = keyof OpenboxOutboundOptions
-const OPTIONS: { key: OptionKey; labelKey: string }[] = [
-  { key: 'direct', labelKey: 'direct' },
-  { key: 'groups', labelKey: 'groupsTab' },
-  { key: 'reject', labelKey: 'routingOutboundReject' },
-]
+// 直连/拒绝要不要出现,在「节点管理」里启用/停用那两条内置出站;这里只剩节点组一个开关
+const OPTIONS: { key: OptionKey; labelKey: string }[] = [{ key: 'groups', labelKey: 'groupsTab' }]
 
 const saving = ref(false)
 // 服务端把这三个当成"没写就是开",界面要保持一致,否则老档案打开就显示成全关
 const enabled = (key: OptionKey) => props.profile.routing.outboundOptions?.[key] !== false
 
+// 和内核里 selector 的成员表同一个算法:按节点管理的顺序,内置的按启用状态取舍
 const preview = computed(() => {
+  const direct = props.builtins.find((b) => b.kind === 'direct')
+  const block = props.builtins.find((b) => b.kind === 'block')
   const list: string[] = []
-  if (enabled('direct')) list.push(t('direct'))
+  if (direct && direct.enabled !== false) list.push(direct.name)
   if (enabled('groups')) list.push(...props.groupNames)
-  if (enabled('reject')) list.push(t('routingOutboundReject'))
-  return list
+  if (block && block.enabled !== false) list.push(block.name)
+  return list.length ? list : [direct?.name || t('direct')]
 })
 
 const toggle = async (key: OptionKey, value: boolean) => {
