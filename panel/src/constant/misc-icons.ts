@@ -364,6 +364,13 @@ export const MISC_ICONS: MiscIcon[] = [
   { id: 'china-map', zh: '中国地图', en: 'China map', keywords: ['china', 'cn', '中国', '地图', 'map', '国内'] },
   { id: 'china-map-tile', zh: '中国地图(白底)', en: 'China map (tile)', keywords: ['china', 'cn', '中国', '地图', 'map', '国内', '白底', 'tile'] },
   { id: 'china-map-soft', zh: '中国地图(浅色)', en: 'China map (light)', keywords: ['china', 'cn', '中国', '地图', 'map', '国内', '浅色', 'light'] },
+  // 长城(手绘剪影)与 防火墙(Twemoji 砖墙 + 火)
+  { id: 'great-wall', zh: '长城', en: 'Great Wall', keywords: ['great wall', 'gfw', '长城', '墙', '中国'] },
+  { id: 'great-wall-tile', zh: '长城(白底)', en: 'Great Wall (tile)', keywords: ['great wall', 'gfw', '长城', '墙', '白底', 'tile'] },
+  { id: 'great-wall-soft', zh: '长城(浅色)', en: 'Great Wall (light)', keywords: ['great wall', 'gfw', '长城', '墙', '浅色', 'light'] },
+  { id: 'firewall', zh: '防火墙', en: 'Firewall', keywords: ['firewall', 'gfw', '防火墙', '拦截', '墙', '火'] },
+  { id: 'firewall-tile', zh: '防火墙(白底)', en: 'Firewall (tile)', keywords: ['firewall', 'gfw', '防火墙', '拦截', '白底', 'tile'] },
+  { id: 'firewall-soft', zh: '防火墙(浅色)', en: 'Firewall (light)', keywords: ['firewall', 'gfw', '防火墙', '拦截', '浅色', 'light'] },
 ]
 
 // 图标值统一带前缀存,和国旗(HK)、地球(globe:asia)、公司(brand:google)区分开
