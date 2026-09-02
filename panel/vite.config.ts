@@ -35,10 +35,11 @@ export default defineConfig({
   },
   base: './',
   build: {
-    // 国旗默认会被当成小资源内联成 data URI,52 面全塞进主 chunk 就是白白多背 300KB
-    // ——而一次界面上只会显示到其中几面。让 src/assets/flags 下的文件一律走独立文件,
+    // 国旗/通用图标默认会被当成小资源内联成 data URI,150 多个全塞进主 chunk 就是白白
+    // 多背 400KB——而一次界面上只会显示到其中几个。让这两个目录下的文件一律走独立文件,
     // 浏览器按需去取;其余资源保持 Vite 的默认阈值不变。
-    assetsInlineLimit: (filePath: string) => (filePath.includes('/assets/flags/') ? false : undefined),
+    assetsInlineLimit: (filePath: string) =>
+      filePath.includes('/assets/flags/') || filePath.includes('/assets/misc/') ? false : undefined,
   },
   server: {
     proxy: {

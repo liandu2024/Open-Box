@@ -30,9 +30,9 @@
       v-else-if="src"
       :src="src"
       :alt="code"
-      :class="isGlobe ? '' : 'ring-base-content/15 ring-1'"
+      :class="square ? '' : 'ring-base-content/15 ring-1'"
       :style="
-        isGlobe
+        square
           ? { width: `${glyph}px`, height: `${glyph}px` }
           : { width: `${boxWidth}px`, height: `${size}px`, objectFit: 'cover' }
       "
@@ -51,6 +51,7 @@
 <script setup lang="ts">
 import { findBrand } from '@/constant/brands'
 import { isGlobeIcon } from '@/constant/countries'
+import { isMiscIcon } from '@/constant/misc-icons'
 import {
   GlobeAltIcon,
   GlobeAmericasIcon,
@@ -79,6 +80,7 @@ const FLAG_URL = import.meta.glob<string>('../../assets/flags/*.svg', {
 })
 
 const isGlobe = computed(() => isGlobeIcon(props.code))
+const isMisc = computed(() => isMiscIcon(props.code))
 const brand = computed(() => findBrand(props.code))
 
 const brandSvg = computed(() => {
@@ -113,6 +115,16 @@ const GLOBE_URL = import.meta.glob<string>('../../assets/globes/*.svg', {
   import: 'default',
 })
 
+// 「其他」那一栏的通用图标(Twemoji),同样是按需去取的图片资源
+const MISC_URL = import.meta.glob<string>('../../assets/misc/*.svg', {
+  eager: true,
+  query: '?url',
+  import: 'default',
+})
+
+// 地球和通用图标都是方的:铺满盒子高度即可,不像国旗那样要 4:3 铺满并描边
+const square = computed(() => isGlobe.value || isMisc.value)
+
 const boxWidth = computed(() => Math.round((props.size * 4) / 3))
 // 目标:地球画出来的圆,和国旗的高度一样(国旗是铺满盒子的,即 size)。
 // 两种地球的"墨迹"占各自画布的比例不同,所以给的边长也不同:
@@ -128,6 +140,10 @@ const src = computed(() => {
   if (isGlobe.value) {
     const variant = props.code.slice('globe:'.length).toLowerCase()
     return GLOBE_URL[`../../assets/globes/${variant}.svg`] || ''
+  }
+  if (isMisc.value) {
+    const id = props.code.slice('misc:'.length).toLowerCase()
+    return MISC_URL[`../../assets/misc/${id}.svg`] || ''
   }
   const code = String(props.code || '').toLowerCase()
   if (!code) return ''

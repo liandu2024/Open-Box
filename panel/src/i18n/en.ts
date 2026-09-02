@@ -493,6 +493,7 @@ const en = {
   iconCategoryAll: 'All',
   iconCategoryRegions: 'Regions',
   iconCategoryBrands: 'Brands',
+  iconCategoryMisc: 'Other',
   subscriptionRenameCountryNoMatch: 'No matching country/region',
   subscriptionRenamePrefixLabel: 'Prefix node names with the subscription name (e.g. “MySub {sep} HK-01”)',
   subscriptionRenameTokensHint: 'Drag to reorder:',

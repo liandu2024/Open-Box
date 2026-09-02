@@ -490,6 +490,7 @@ const zhTW: LANG_MESSAGE = {
   iconCategoryAll: '全部',
   iconCategoryRegions: '地區',
   iconCategoryBrands: '公司',
+  iconCategoryMisc: '其他',
   subscriptionRenameCountryNoMatch: '沒有符合的國家/地區',
   subscriptionRenamePrefixLabel: '節點名前加訂閱名(如「破曉 {sep} 香港-01」)',
   subscriptionRenameTokensHint: '拖曳排序:',

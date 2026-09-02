@@ -73,6 +73,23 @@
               <span class="truncate">{{ b.label }}</span>
             </button>
           </li>
+          <li
+            v-for="m in miscOptions"
+            :key="m.value"
+          >
+            <button
+              type="button"
+              class="hover:bg-base-200 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm"
+              :class="{ 'bg-base-200': m.value === modelValue }"
+              @click="choose(m.value)"
+            >
+              <CountryFlag
+                :code="m.value"
+                :size="16"
+              />
+              <span class="truncate">{{ m.label }}</span>
+            </button>
+          </li>
           <!-- 可清空时给一条「无」:图标是可选的,选错了得有路退回去 -->
           <!-- 地球图标排在国旗前面:跨地区的组(所有-自动、回国)配国旗都不对,
              这几个才是它们该用的。 -->
@@ -122,7 +139,7 @@
             </button>
           </li>
           <li
-            v-if="!filtered.length && !brandOptions.length && !globeOptions.length"
+            v-if="!filtered.length && !brandOptions.length && !globeOptions.length && !miscOptions.length"
             class="text-base-content/50 px-2 py-3 text-center text-xs"
           >
             {{ $t('subscriptionRenameCountryNoMatch') }}
@@ -145,6 +162,7 @@ import {
   findCountry,
   globeIconKey,
 } from '@/constant/countries'
+import { MISC_ICONS, MISC_PREFIX, findMiscIcon, miscIconName } from '@/constant/misc-icons'
 import { ChevronDownIcon } from '@heroicons/vue/24/outline'
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -172,11 +190,12 @@ const keyword = ref('')
 
 const { open, triggerRef, panelRef, style, toggle, close } = useAnchoredDropdown({ minWidth: 256 })
 
-type Category = 'all' | 'regions' | 'brands'
+type Category = 'all' | 'regions' | 'brands' | 'misc'
 const CATEGORY_TABS: { key: Category; labelKey: string }[] = [
   { key: 'all', labelKey: 'iconCategoryAll' },
   { key: 'regions', labelKey: 'iconCategoryRegions' },
   { key: 'brands', labelKey: 'iconCategoryBrands' },
+  { key: 'misc', labelKey: 'iconCategoryMisc' },
 ]
 const category = ref<Category>('all')
 
@@ -185,6 +204,8 @@ const label = computed(() => {
     return t(globeIconKey(props.modelValue))
   const brand = findBrand(props.modelValue)
   if (brand) return brandName(brand, locale.value)
+  const misc = findMiscIcon(props.modelValue)
+  if (misc) return miscIconName(misc, locale.value)
   const c = findCountry(props.modelValue || '')
   return c ? countryName(c, locale.value) : ''
 })
@@ -207,8 +228,19 @@ const options = computed(() => {
 
 // 代码和名字都能搜:输 "jp" 和输 "日本" 都该找到日本
 // 地球图标只在明确要的地方给(节点组图标);地区关键词那边必须是真国家,不能选地球。
+// 「其他」那一栏:交通、运动、花草、建筑、家居、性别这些通用图标。
+// 和公司图标同一个开关——它们都是"给这个组挑个记号",不是地区绑定。
+const miscOptions = computed(() => {
+  if (!props.brands || category.value === 'regions' || category.value === 'brands') return []
+  const kw = keyword.value.trim().toLowerCase()
+  return MISC_ICONS.filter((i) => matches(kw, i.zh, i.en, i.id, ...i.keywords)).map((i) => ({
+    value: `${MISC_PREFIX}${i.id}`,
+    label: miscIconName(i, locale.value),
+  }))
+})
+
 const globeOptions = computed(() => {
-  if (!props.globes || category.value === 'brands') return []
+  if (!props.globes || category.value === 'brands' || category.value === 'misc') return []
   const kw = keyword.value.trim().toLowerCase()
   return GLOBE_ICONS.map((value) => ({ value, label: t(globeIconKey(value)) })).filter((g) =>
     matches(kw, g.label),
@@ -217,7 +249,7 @@ const globeOptions = computed(() => {
 
 // 公司图标:中英文名和关键词一起参与检索——输「奈飞」「netflix」「nf」都该找到它。
 const brandOptions = computed(() => {
-  if (!props.brands || category.value === 'regions') return []
+  if (!props.brands || category.value === 'regions' || category.value === 'misc') return []
   const kw = keyword.value.trim().toLowerCase()
   return BRANDS.filter((b) => matches(kw, b.zh, b.en, b.id, ...b.keywords)).map((b) => ({
     value: `${BRAND_PREFIX}${b.id}`,
@@ -226,7 +258,7 @@ const brandOptions = computed(() => {
 })
 
 const filtered = computed(() => {
-  if (category.value === 'brands') return []
+  if (category.value === 'brands' || category.value === 'misc') return []
   const kw = keyword.value.trim().toLowerCase()
   if (!kw) return options.value
   return options.value.filter((c) =>

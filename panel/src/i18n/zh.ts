@@ -490,6 +490,7 @@ const zh: LANG_MESSAGE = {
   iconCategoryAll: '全部',
   iconCategoryRegions: '地区',
   iconCategoryBrands: '公司',
+  iconCategoryMisc: '其他',
   subscriptionRenameCountryNoMatch: '没有匹配的国家/地区',
   subscriptionRenamePrefixLabel: '节点名前加订阅名(如「破晓 {sep} 香港-01」)',
   subscriptionRenameTokensHint: '拖拽排序:',
