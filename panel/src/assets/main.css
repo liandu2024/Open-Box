@@ -65,15 +65,15 @@ html.apple-mobile-ui {
    以后新加的页面照这个骨架写就自动有了,不需要各自记着加类名。
    卡片里那些小列表(max-h-* + overflow-y-auto)不带 flex-1,不受影响——
    几十像素高的小框里再留一条空槽反而难看。
-   用 both-edges 而不是光 stable:只留右边那条槽的话,内容左右就不对称了——左边
-   贴着侧栏,右边多空出一条滚动条的宽度。both-edges 两侧各留一条,内容仍然居中,
-   有没有滚动条都一样宽。代价是左边空出同样宽的一条,换来的是页签之间、页面之间
-   彻底不跳。
+   只留末端那一条(stable),不要 both-edges:两侧都留的话,左边凭空多出一条空槽、
+   内容右缘离滚动条更远,和原版的观感就不一样了。原版是左边保持内边距、右边由
+   滚动条占满贴住边框——留一条末端槽正好还原它,区别只是没有滚动条时这条槽也在,
+   所以页面之间不会横向跳。
    macOS 的浮层滚动条本来就不占宽度,那边看不出变化;Windows/Linux 上才是重点。 */
 #app-content .flex-1.overflow-y-auto,
 /* 首页那一层滚动容器不走上面的骨架(它是 absolute + h-full),单独点名 */
 #app-content .scrollable-parent {
-  scrollbar-gutter: stable both-edges;
+  scrollbar-gutter: stable;
 }
 
 #app-content .card,
