@@ -27,6 +27,8 @@
               {{ $t('groupsTab') }}
             </a>
           </div>
+          <!-- 两个页签各自的"新增"按钮都放在这一行:位置固定在右上角,切页签时
+               按钮不会跳来跳去。 -->
           <button
             v-if="pageTab === 'subs'"
             type="button"
@@ -36,9 +38,21 @@
             <PlusIcon class="h-4 w-4" />
             {{ $t('subscriptionAdd') }}
           </button>
+          <button
+            v-else
+            type="button"
+            class="btn btn-primary btn-sm"
+            @click="groupsPanel?.openEditor(null)"
+          >
+            <PlusIcon class="h-4 w-4" />
+            {{ $t('groupAdd') }}
+          </button>
         </div>
 
-        <NodeGroupsPanel v-if="pageTab === 'groups'" />
+        <NodeGroupsPanel
+          v-if="pageTab === 'groups'"
+          ref="groupsPanel"
+        />
 
         <template v-if="pageTab === 'subs'">
         <p
@@ -155,7 +169,7 @@ import SubscriptionCard from '@/components/subscription/SubscriptionCard.vue'
 import { usePaddingForViews } from '@/composables/paddingViews'
 import { routingPendingDeploy } from '@/store/routing'
 import { PlusIcon, RssIcon } from '@heroicons/vue/24/outline'
-import { onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref, useTemplateRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
@@ -185,6 +199,10 @@ const loadSubscriptions = async () => {
 }
 
 onMounted(loadSubscriptions)
+
+// 「添加分组」按钮挪到了页签那一行(和「添加订阅」同一个位置),按钮在父组件、
+// 弹窗在子组件,所以要拿到子组件的引用去开它。
+const groupsPanel = useTemplateRef('groupsPanel')
 
 const showAddDialog = ref(false)
 const handleSaved = () => {

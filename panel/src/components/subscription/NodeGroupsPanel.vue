@@ -1,17 +1,5 @@
 <template>
   <div class="flex flex-col gap-3">
-    <div class="flex items-center justify-between gap-2">
-      <p class="text-base-content/60 text-xs">{{ $t('groupsHint') }}</p>
-      <button
-        type="button"
-        class="btn btn-primary btn-sm"
-        @click="openEditor(null)"
-      >
-        <PlusIcon class="h-4 w-4" />
-        {{ $t('groupAdd') }}
-      </button>
-    </div>
-
     <p
       v-if="error"
       class="text-error text-sm"
@@ -402,7 +390,6 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   PencilSquareIcon,
-  PlusIcon,
   TrashIcon,
 } from '@heroicons/vue/24/outline'
 import { computed, onMounted, ref } from 'vue'
@@ -637,6 +624,9 @@ const keywordsText = computed({
 
 // 按当前节点实时算一遍:关键词写完能立刻看到会选中谁,不用保存了再回来看
 const dynamicMatched = computed(() => (draft.value ? matchedNodes(draft.value) : []))
+
+// 「添加分组」按钮在父组件(页签那一行),弹窗在这里,所以要把入口暴露出去
+defineExpose({ openEditor })
 
 const persist = async (next: OpenboxUserGroup[]) => {
   const res = await saveNodeGroups(next)
