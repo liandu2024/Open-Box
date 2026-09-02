@@ -9,11 +9,12 @@
     <template v-slot:title>
       <div class="flex items-start justify-between gap-2">
         <div class="min-w-0 flex-1">
-          <div class="text-xl font-medium">
-            {{ subscription.name }}
-            <span class="text-base-content/60 text-sm font-normal"> ({{ countText }}) </span>
+          <!-- 字号和「节点」页签里节点组卡片的标题一致:名字 text-base,附注 text-xs -->
+          <div class="flex min-w-0 items-center gap-1">
+            <span class="shrink-0 text-base">{{ subscription.name }}</span>
+            <span class="text-base-content/60 truncate text-xs">({{ countText }})</span>
           </div>
-          <div class="text-base-content/60 mt-0.5 text-left text-sm">
+          <div class="text-base-content/60 mt-1 text-left text-sm">
             {{ $t('updated') }} {{ updatedAtText }}
           </div>
         </div>
