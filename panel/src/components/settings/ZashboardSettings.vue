@@ -130,47 +130,24 @@
         </div>
       </div>
       <div
-        v-if="isVisibleDefaultTheme"
+        v-if="isVisibleTheme"
         class="setting-item"
       >
         <div class="setting-item-label">
-          {{ $t('defaultTheme') }}
+          {{ $t('theme') }}
         </div>
-        <div class="join">
-          <ThemeSelector
-            class="w-38!"
-            v-model:value="defaultTheme"
-          />
-          <button
-            class="btn btn-sm join-item"
-            @click="customThemeModal = !customThemeModal"
+        <select
+          class="select select-sm w-48"
+          v-model="themeMode"
+        >
+          <option
+            v-for="mode in THEME_MODES"
+            :key="mode"
+            :value="mode"
           >
-            <PlusIcon class="h-4 w-4" />
-          </button>
-        </div>
-        <CustomTheme v-model:value="customThemeModal" />
-      </div>
-      <div
-        v-if="autoTheme && isVisibleDarkTheme"
-        class="setting-item"
-      >
-        <div class="setting-item-label">
-          {{ $t('darkTheme') }}
-        </div>
-        <ThemeSelector v-model:value="darkTheme" />
-      </div>
-      <div
-        v-if="isVisibleAutoSwitchTheme"
-        class="setting-item"
-      >
-        <div class="setting-item-label">
-          {{ $t('autoSwitchTheme') }}
-        </div>
-        <input
-          type="checkbox"
-          v-model="autoTheme"
-          class="toggle"
-        />
+            {{ $t(`themeMode_${mode}`) }}
+          </option>
+        </select>
       </div>
     </div>
     <!-- 「更新面板 / 自动更新」已去掉:面板由 Open-Box 自己发布,sing-box 也没有 /upgrade/ui 接口 -->
@@ -185,19 +162,16 @@ import { GENERAL_ITEM_KEYS } from '@/config/settingsItems'
 import { deleteBase64FromIndexedDB, LOCAL_IMAGE, saveBase64ToIndexedDB } from '@/helper/indexeddb'
 import { isPWA } from '@/helper/utils'
 import {
-  defaultTheme,
-  darkTheme,
-  autoTheme,
+  themeMode,
+  THEME_MODES,
   blurIntensity,
   customBackgroundURL,
   dashboardTransparent,
   globalRadius,
 } from '@/store/settings'
-import { AdjustmentsHorizontalIcon, ArrowPathIcon, ArrowUpTrayIcon, PlusIcon } from '@heroicons/vue/24/outline'
+import { AdjustmentsHorizontalIcon, ArrowPathIcon, ArrowUpTrayIcon } from '@heroicons/vue/24/outline'
 import { computed, ref, watch } from 'vue'
 import TextInput from '../common/TextInput.vue'
-import CustomTheme from './CustomTheme.vue'
-import ThemeSelector from './ThemeSelector.vue'
 
 const k = GENERAL_ITEM_KEYS
 const isVisibleLanguage = useIsSettingVisible(k.language)
@@ -205,10 +179,7 @@ const isVisibleCustomBackgroundURL = useIsSettingVisible(k.customBackgroundURL)
 const isVisibleTransparent = useIsSettingVisible(k.transparent)
 const isVisibleBlurIntensity = useIsSettingVisible(k.blurIntensity)
 const isVisibleGlobalRadius = useIsSettingVisible(k.globalRadius)
-const isVisibleDefaultTheme = useIsSettingVisible(k.defaultTheme)
-const isVisibleDarkTheme = useIsSettingVisible(k.darkTheme)
-const isVisibleAutoSwitchTheme = useIsSettingVisible(k.autoSwitchTheme)
-const customThemeModal = ref(false)
+const isVisibleTheme = useIsSettingVisible(k.defaultTheme)
 
 const displayBgProperty = ref(false)
 const isBackgroundDragOver = ref(false)
@@ -220,9 +191,7 @@ const hasVisibleItems = computed(() => {
     (customBackgroundURL.value && displayBgProperty.value && isVisibleTransparent.value) ||
     (customBackgroundURL.value && displayBgProperty.value && isVisibleBlurIntensity.value) ||
     isVisibleGlobalRadius.value ||
-    isVisibleDefaultTheme.value ||
-    isVisibleDarkTheme.value ||
-    isVisibleAutoSwitchTheme.value
+    isVisibleTheme.value
   )
 })
 const displayVersion = computed(() => {

@@ -1,4 +1,3 @@
-import type { THEME } from '@/constant'
 import {
   CONNECTIONS_TABLE_ACCESSOR_KEY,
   DETAILED_CARD_STYLE,
@@ -24,18 +23,18 @@ import { useStorage } from '@vueuse/core'
 import { computed } from 'vue'
 
 // global
-export const defaultTheme = useStorage<string>('config/default-theme', 'light')
-export const darkTheme = useStorage<string>('config/dark-theme', 'dark')
-export const autoTheme = useStorage<boolean>('config/auto-theme', true)
+// 主题只有三档:跟随系统 / 亮色 / 暗色。亮色 = daisyUI 的 emerald,暗色 = forest;
+// 不再有主题列表和自定义主题。默认亮色。
+export type ThemeMode = 'system' | 'light' | 'dark'
+export const THEME_MODES: ThemeMode[] = ['system', 'light', 'dark']
+export const LIGHT_THEME = 'emerald'
+export const DARK_THEME = 'forest'
+export const themeMode = useStorage<ThemeMode>('config/theme-mode', 'light')
 export const theme = computed(() => {
-  if (autoTheme.value && isPreferredDark.value) {
-    return darkTheme.value
-  }
-  return defaultTheme.value
+  if (themeMode.value === 'dark') return DARK_THEME
+  if (themeMode.value === 'system' && isPreferredDark.value) return DARK_THEME
+  return LIGHT_THEME
 })
-
-// UI-facing appearance choice: exactly three options (跟随系统 / 亮色 / 暗色).
-export const customThemes = useStorage<THEME[]>('config/custom-themes', [])
 
 export const language = useStorage<LANG>('config/language', detectDefaultLanguage(navigator.language))
 export const isSidebarCollapsedConfig = useStorage('config/is-sidebar-collapsed', true)
