@@ -265,15 +265,16 @@ export const normalizeRouting = (routing) => {
 export const DEFAULT_BUILTIN = Object.freeze({ direct: 'direct', block: 'block', directEnabled: true, blockEnabled: true })
 
 // 站点集 selector 的成员表:「节点管理」里启用着的条目,按那里的顺序(内置的直连/
-// 拒绝和节点组混排)。outboundOptions.groups 关掉时只剩直连/拒绝。
+// 拒绝和节点组混排)。要不要某一项,就在节点管理里启用/停用它——原来「出站」页签那套
+// 开关已退役,outboundOptions 参数留着只是不改所有调用方的签名。
 // 一个都不剩时回落成直连——空成员的组会让内核 FATAL(实测)。
 //   groupTags  节点管理里出到配置的条目,按顺序;内置的两个也在其中,由 builtin 标出
 //   builtin    { direct, block, directEnabled, blockEnabled }(见 user-groups.mjs)
-export const policyOutboundOptions = (outboundOptions, groupTags, builtin = DEFAULT_BUILTIN) => {
+export const policyOutboundOptions = (_outboundOptions, groupTags, builtin = DEFAULT_BUILTIN) => {
   const list = groupTags.filter((tag) => {
     if (tag === builtin.direct) return builtin.directEnabled
     if (tag === builtin.block) return builtin.blockEnabled
-    return outboundOptions.groups
+    return true
   })
   return list.length ? list : [builtin.direct]
 }

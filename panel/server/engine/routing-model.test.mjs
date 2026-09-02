@@ -28,13 +28,14 @@ test('兜底站点集永远存在,名字和图标固定,只有"默认走哪"是�
   assert.equal(conf.fallback.default, 'direct')
 })
 
-test('出站选项:按节点管理的顺序,停用的内置出站被去掉,一个都不剩时回落直连', () => {
+test('成员表:按节点管理的顺序,停用的内置出站被去掉,一个都不剩时回落直连', () => {
   const tags = ['direct', ...GROUPS, 'block']
-  assert.deepEqual(policyOutboundOptions({ groups: true }, tags), tags)
-  assert.deepEqual(policyOutboundOptions({ groups: false }, tags), ['direct', 'block'])
+  assert.deepEqual(policyOutboundOptions({}, tags), tags)
+  // 老档案里「出站」页签存下的 groups:false 不再有意义,节点组永远在
+  assert.deepEqual(policyOutboundOptions({ groups: false }, tags), tags)
   const off = { direct: 'direct', block: 'block', directEnabled: false, blockEnabled: false }
-  assert.deepEqual(policyOutboundOptions({ groups: true }, tags, off), [...GROUPS])
-  assert.deepEqual(policyOutboundOptions({ groups: false }, tags, off), ['direct'])
+  assert.deepEqual(policyOutboundOptions({}, tags, off), [...GROUPS])
+  assert.deepEqual(policyOutboundOptions({}, [], off), ['direct'])
   // 内置出站改了名,占位 'direct' 要换算成当时的名字
   const renamed = { direct: '国内直出', block: '拦截', directEnabled: true, blockEnabled: true }
   assert.equal(effectiveOutbound('direct', ['国内直出', ...GROUPS, '拦截'], renamed), '国内直出')

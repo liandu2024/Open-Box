@@ -42,13 +42,6 @@
             :profile="profile"
             :patch-profile="patchProfile"
           />
-          <RoutingOutboundsCard
-            v-else-if="pageTab === 'outbounds'"
-            :profile="profile"
-            :group-names="groupNames"
-            :builtins="builtins"
-            :patch-profile="patchProfile"
-          />
           <Ipv6Card
             v-else
             :profile="profile"
@@ -61,10 +54,9 @@
 </template>
 
 <script setup lang="ts">
-import type { OpenboxProfile, OpenboxUserGroup } from '@/api/openbox'
-import { fetchNodeGroups, fetchProfile, saveProfile } from '@/api/openbox'
+import type { OpenboxProfile } from '@/api/openbox'
+import { fetchProfile, saveProfile } from '@/api/openbox'
 import Ipv6Card from '@/components/routing/Ipv6Card.vue'
-import RoutingOutboundsCard from '@/components/routing/RoutingOutboundsCard.vue'
 import RoutingPoliciesCard from '@/components/routing/RoutingPoliciesCard.vue'
 import { usePaddingForViews } from '@/composables/paddingViews'
 import { onMounted, ref } from 'vue'
@@ -80,45 +72,20 @@ const profile = ref<OpenboxProfile | null>(null)
 const loading = ref(true)
 const loadError = ref('')
 
-type PageTab = 'policies' | 'outbounds' | 'other'
+type PageTab = 'policies' | 'other'
 const PAGE_TABS: { key: PageTab; labelKey: string }[] = [
   { key: 'policies', labelKey: 'routingPoliciesTab' },
-  { key: 'outbounds', labelKey: 'routingOutboundsTab' },
   { key: 'other', labelKey: 'routingOtherTab' },
 ]
 const pageTab = ref<PageTab>('policies')
 
-// 「节点组」页里建的组名。站点集的可选出站与「出站」页签的预览都用它。
-const groupNames = ref<string[]>([])
-// 「节点管理」里内置的直连/拒绝:名字可改、可停用,出站页签的预览要按它们现在的样子显示
-const builtins = ref<OpenboxUserGroup[]>([])
-const groupsLoading = ref(false)
-const groupsError = ref('')
 
-// 站点集能选的节点组直接问「节点组」接口:那是权威来源。原来是从配置预览的 outbounds
-// 里反推,站点集自己生成的 selector 混进去之后就不准了(它会把自己也列成可选项)。
-const loadPolicyGroups = async () => {
-  groupsLoading.value = true
-  groupsError.value = ''
-  try {
-    const payload = await fetchNodeGroups()
-    groupNames.value = payload.groups.filter((g) => !g.kind).map((g) => g.name)
-    builtins.value = payload.groups.filter((g) => Boolean(g.kind))
-  } catch (error) {
-    groupsError.value = t('routingPolicyGroupsLoadFailed', {
-      message: error instanceof Error ? error.message : String(error),
-    })
-  } finally {
-    groupsLoading.value = false
-  }
-}
 
 const load = async () => {
   loading.value = true
   loadError.value = ''
   try {
     profile.value = await fetchProfile()
-    await loadPolicyGroups()
   } catch (error) {
     loadError.value = t('routingLoadFailed', {
       message: error instanceof Error ? error.message : String(error),
