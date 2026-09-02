@@ -3,7 +3,8 @@ import { GLOBAL, PROXY_TAB_TYPE } from '@/constant'
 import { isHiddenGroup, isProxyGroup } from '@/helper'
 import { configs } from '@/store/config'
 import { managedOutbounds, siteSetNames, siteSetOrder } from '@/store/openboxSiteSets'
-import { proxiesTabShow, proxyGroupList, proxyMap, proxyProviederList } from '@/store/proxies'
+import { openboxSubscriptions } from '@/store/openboxSubscriptions'
+import { proxiesTabShow, proxyGroupList, proxyMap } from '@/store/proxies'
 import { customGlobalNode, displayGlobalByMode, manageHiddenGroup } from '@/store/settings'
 import { isEmpty } from 'lodash'
 import { computed, ref } from 'vue'
@@ -17,12 +18,14 @@ const filterGroups = (all: string[]) => {
 }
 
 const getRenderGroups = () => {
-  if (isEmpty(proxyMap.value)) {
-    return []
+  // 「订阅」页签:一条订阅一张卡片,卡片名就是订阅名(全局折叠 / 全部测延迟按它找目标)。
+  // sing-box 没有 provider,原来读 clash_api 的 provider 列表在这里永远是空的。
+  if (proxiesTabShow.value === PROXY_TAB_TYPE.PROVIDER) {
+    return openboxSubscriptions.value.map((sub) => sub.name)
   }
 
-  if (proxiesTabShow.value === PROXY_TAB_TYPE.PROVIDER) {
-    return proxyProviederList.value.map((group) => group.name)
+  if (isEmpty(proxyMap.value)) {
+    return []
   }
 
   const currentGroups = getCurrentProxyGroups()

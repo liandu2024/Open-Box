@@ -2,11 +2,6 @@ import { disconnectByIdAPI, isSingBox } from '@/api'
 import { nodeGroups, policyGroups, renderGroups } from '@/composables/proxies'
 import { useCtrlsBar } from '@/composables/useCtrlsBar'
 import { PROXY_SORT_TYPE, PROXY_TAB_TYPE, ROUTE_NAME, SETTINGS_MENU_KEY } from '@/constant'
-import {
-  buildProxyCategoryGroups,
-  getProxyCategoryCollapseKey,
-  isProxyCategoryEnabled,
-} from '@/helper/proxyCategory'
 import { getMinCardWidth } from '@/helper/utils'
 import { configs, updateConfigs } from '@/store/config'
 import {
@@ -21,7 +16,6 @@ import {
   hasSmartGroup,
   proxiesFilter,
   proxiesTabShow,
-  proxyProviederList,
 } from '@/store/proxies'
 import {
   automaticDisconnection,
@@ -32,9 +26,6 @@ import {
   manageHiddenGroup,
   minProxyCardWidth,
   providerProxyCategoryCollapseMap,
-  providerProxyCategoryEnabledMap,
-  providerProxyCategoryFeatureEnabled,
-  providerProxyCategoryWildcardMap,
   proxyCardSize,
   proxySortType,
   twoColumnProxyGroup,
@@ -128,47 +119,10 @@ export default defineComponent({
       }
 
       if (proxiesTabShow.value === PROXY_TAB_TYPE.PROVIDER) {
-        const targets: GlobalCollapseTarget[] = []
-
-        renderGroups.value.forEach((providerName) => {
-          const provider = proxyProviederList.value.find((item) => item.name === providerName)
-
-          if (!provider) {
-            return
-          }
-
-          const providerAllProxies = provider.proxies.map((node) => node.name)
-          const wildcard = providerProxyCategoryWildcardMap.value[providerName] ?? ''
-          const categoryEnabled =
-            providerProxyCategoryFeatureEnabled.value &&
-            isProxyCategoryEnabled(
-              providerAllProxies,
-              wildcard,
-              providerProxyCategoryEnabledMap.value[providerName] ?? false,
-            )
-
-          if (!categoryEnabled) {
-            targets.push({
-              type: 'group',
-              key: providerName,
-            })
-            return
-          }
-
-          buildProxyCategoryGroups(
-            providerAllProxies,
-            wildcard,
-            t('other'),
-            providerAllProxies,
-          ).forEach(({ name: categoryName }) => {
-            targets.push({
-              type: 'provider-category',
-              key: getProxyCategoryCollapseKey(providerName, categoryName),
-            })
-          })
-        })
-
-        return targets
+        return renderGroups.value.map((name) => ({
+          type: 'group',
+          key: name,
+        }))
       }
 
       return renderGroups.value.map((name) => ({

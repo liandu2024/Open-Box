@@ -64,7 +64,6 @@
           :refreshing="refreshingSubId === sub.id"
           @refresh="handleSubscriptionRefresh(sub.id)"
           @edit="goToSubscriptionSettings"
-          @delete="goToSubscriptionSettings"
         />
       </div>
       <div
@@ -100,7 +99,7 @@ import {
   renderGroups,
 } from '@/composables/proxies'
 import { refreshSubscription } from '@/api/openbox'
-import { loadOpenboxNodeGroups, loadOpenboxSiteSets } from '@/store/openboxSiteSets'
+import { loadOpenboxNodeGroups, loadOpenboxSiteSets, nodeProviders } from '@/store/openboxSiteSets'
 import { PROXY_TAB_TYPE, ROUTE_NAME, SETTINGS_TAB } from '@/constant'
 import {
   loadOpenboxSubscriptions,
@@ -114,7 +113,6 @@ import {
   getDescendantProxyNames,
   getProxyAutoRefreshSchedule,
   proxiesTabShow,
-  proxyProviederList,
 } from '@/store/proxies'
 import { twoColumnProxyGroup } from '@/store/settings'
 import { useDocumentVisibility, useSessionStorage } from '@vueuse/core'
@@ -216,12 +214,12 @@ const nextAutoRefreshSchedule = computed<AutoRefreshSchedule | null>(() => {
   const candidateNames = new Set<string>()
 
   if (proxiesTabShow.value === PROXY_TAB_TYPE.PROVIDER) {
-    renderGroups.value.forEach((providerName) => {
-      const provider = proxyProviederList.value.find((item) => item.name === providerName)
+    const subscriptionNames = new Set(renderGroups.value)
 
-      provider?.proxies.forEach((proxy) => {
-        candidateNames.add(proxy.name)
-      })
+    nodeProviders.value.forEach((provider, tag) => {
+      if (subscriptionNames.has(provider)) {
+        candidateNames.add(tag)
+      }
     })
   } else {
     const rootNames =
