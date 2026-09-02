@@ -8,8 +8,18 @@
     :style="{ width: `${boxWidth}px`, height: `${size}px` }"
     :title="title || code"
   >
+    <!-- 公司图标是单色路径,直接内联出来才好上色(<img> 里没法跟着主题变) -->
+    <svg
+      v-if="brand"
+      viewBox="0 0 24 24"
+      :style="{ width: `${glyph}px`, height: `${glyph}px` }"
+      :fill="brandFill"
+      :class="brandFill === 'currentColor' ? 'text-base-content/80' : ''"
+    >
+      <path :d="brand.path" />
+    </svg>
     <img
-      v-if="src"
+      v-else-if="src"
       :src="src"
       :alt="code"
       :class="isGlobe ? '' : 'ring-base-content/15 ring-1'"
@@ -31,6 +41,7 @@
 </template>
 
 <script setup lang="ts">
+import { findBrand } from '@/constant/brands'
 import { isGlobeIcon } from '@/constant/countries'
 import {
   GlobeAltIcon,
@@ -60,6 +71,18 @@ const FLAG_URL = import.meta.glob<string>('../../assets/flags/*.svg', {
 })
 
 const isGlobe = computed(() => isGlobeIcon(props.code))
+const brand = computed(() => findBrand(props.code))
+
+// 品牌色照搬各家的 hex,但近黑的那几个(GitHub #181717、Apple #000)在深色主题下
+// 会糊进背景里,那种情况下改用 currentColor 跟着主题走——认得出形状比色号准确重要。
+const brandFill = computed(() => {
+  const hex = brand.value?.hex || ''
+  const m = /^#([0-9a-f]{6})$/i.exec(hex)
+  if (!m) return 'currentColor'
+  const n = parseInt(m[1], 16)
+  const luma = (0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255
+  return luma < 0.22 ? 'currentColor' : hex
+})
 
 const GLOBE_COMPONENT: Record<string, unknown> = {
   'globe:generic': GlobeAltIcon,

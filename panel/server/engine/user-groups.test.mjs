@@ -177,6 +177,9 @@ test('地球图标统一成小写,不能跟着国家代码转大写', () => {
   // 界面按这个值查图标:变成 GLOBE:ASIA 就查不到,直接显示空白(本地跑的时候就这么中过)
   assert.equal(normalizeGroup({ id: 'x', name: 'n', icon: 'globe:asia' }).icon, 'globe:asia')
   assert.equal(normalizeGroup({ id: 'x', name: 'n', icon: 'GLOBE:EARTH-ASIA' }).icon, 'globe:earth-asia')
+  // 公司图标和地球一样是带前缀的值,不能被当成国家代码转大写
+  assert.equal(normalizeGroup({ id: 'x', name: 'n', icon: 'brand:netflix' }).icon, 'brand:netflix')
+  assert.equal(normalizeGroup({ id: 'x', name: 'n', icon: 'BRAND:Netflix' }).icon, 'brand:netflix')
 })
 
 test('图标不进 sing-box 出站:那边没有这个字段', () => {

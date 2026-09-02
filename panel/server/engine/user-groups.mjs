@@ -60,14 +60,16 @@ export const defaultGroups = () => ([
 
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0
 
-// 图标既可能是两位国家代码,也可能是 globe:asia 这种非国家图标。只有前者该转大写
+// 图标既可能是两位国家代码,也可能是 globe:asia / brand:google 这种非国家图标。
+// 只有前者该转大写
 // ——把 globe:asia 转成 GLOBE:ASIA 的话,界面按值查不到对应图标,直接变成空白。
 const normalizeIcon = (raw) => {
   if (!isNonEmptyString(raw)) return ''
   const v = raw.trim()
-  // 国家代码统一大写(hk -> HK),地球图标统一小写(GLOBE:ASIA -> globe:asia)。
-  // 两种都归一,是因为界面按这个值去查图标:大小写不一致就查不到,直接显示成空白。
-  if (/^globe:/i.test(v)) return v.toLowerCase()
+  // 国家代码统一大写(hk -> HK),地球和公司图标统一小写(GLOBE:ASIA -> globe:asia,
+  // BRAND:Google -> brand:google)。都要归一,是因为界面按这个值去查图标:大小写不
+  // 一致就查不到,直接显示成空白。
+  if (/^(globe|brand):/i.test(v)) return v.toLowerCase()
   return /^[A-Za-z]{2}$/.test(v) ? v.toUpperCase() : v
 }
 

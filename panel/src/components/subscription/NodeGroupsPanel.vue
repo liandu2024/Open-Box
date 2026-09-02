@@ -84,6 +84,7 @@
                 v-model="draft.icon"
                 clearable
                 globes
+                brands
                 :placeholder="$t('groupIconNone')"
               />
             </div>
