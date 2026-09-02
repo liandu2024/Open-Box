@@ -5,25 +5,19 @@
         class="flex flex-col gap-3 p-3"
         :style="padding"
       >
-        <!-- 两个页签:出站是"策略能选到哪些目标",分流是"什么流量走哪条策略"。
-             分成两层是因为它们的改动频率完全不同——出站基本设一次,分流常改。 -->
+        <!-- 三个页签,按改动频率从高到低排:策略最常改,地区设一次,出站基本不动。 -->
         <div
           role="tablist"
           class="tabs-box tabs tabs-sm w-fit"
         >
           <a
+            v-for="tab in PAGE_TABS"
+            :key="tab.key"
             role="tab"
-            :class="['tab', pageTab === 'rules' && 'tab-active']"
-            @click="pageTab = 'rules'"
+            :class="['tab', pageTab === tab.key && 'tab-active']"
+            @click="pageTab = tab.key"
           >
-            {{ $t('routing') }}
-          </a>
-          <a
-            role="tab"
-            :class="['tab', pageTab === 'outbounds' && 'tab-active']"
-            @click="pageTab = 'outbounds'"
-          >
-            {{ $t('routingOutboundsTab') }}
+            {{ $t(tab.labelKey) }}
           </a>
         </div>
 
@@ -42,24 +36,23 @@
         </p>
 
         <template v-else-if="profile">
-          <template v-if="pageTab === 'rules'">
-            <RoutingRegionCard
-              :profile="profile"
-              :patch-profile="patchProfile"
-            />
-            <RoutingPoliciesCard
-              :profile="profile"
-              :group-names="groupNames"
-              :patch-profile="patchProfile"
-            />
-          </template>
-          <template v-else>
-            <RoutingOutboundsCard
-              :profile="profile"
-              :group-names="groupNames"
-              :patch-profile="patchProfile"
-            />
-          </template>
+          <RoutingRegionCard
+            v-if="pageTab === 'rules'"
+            :profile="profile"
+            :patch-profile="patchProfile"
+          />
+          <RoutingPoliciesCard
+            v-else-if="pageTab === 'policies'"
+            :profile="profile"
+            :group-names="groupNames"
+            :patch-profile="patchProfile"
+          />
+          <RoutingOutboundsCard
+            v-else
+            :profile="profile"
+            :group-names="groupNames"
+            :patch-profile="patchProfile"
+          />
           <Ipv6Card
             :profile="profile"
             :patch-profile="patchProfile"
@@ -91,7 +84,13 @@ const profile = ref<OpenboxProfile | null>(null)
 const loading = ref(true)
 const loadError = ref('')
 
-const pageTab = ref<'rules' | 'outbounds'>('rules')
+type PageTab = 'rules' | 'policies' | 'outbounds'
+const PAGE_TABS: { key: PageTab; labelKey: string }[] = [
+  { key: 'rules', labelKey: 'routing' },
+  { key: 'policies', labelKey: 'routingPoliciesTab' },
+  { key: 'outbounds', labelKey: 'routingOutboundsTab' },
+]
+const pageTab = ref<PageTab>('rules')
 
 // 「节点组」页里建的组名。策略的可选出站与「出站」页签的预览都用它。
 const groupNames = ref<string[]>([])
