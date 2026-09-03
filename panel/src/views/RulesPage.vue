@@ -7,12 +7,21 @@
         :style="padding"
       >
         <div class="flex flex-col gap-2 p-2">
-          <RuleCard
-            v-for="rule in renderRules"
-            :key="`${rule.type}-${rule.payload}-${rule.proxy}`"
-            :rule="rule"
-            :index="rules.indexOf(rule) + 1"
+          <RulePenetrationCard
+            v-if="lookupTarget"
+            :target="lookupTarget"
+            @matched="matchedIndex = $event"
           />
+          <div
+            v-for="rule in displayRules"
+            :key="`${rule.type}-${rule.payload}-${rule.proxy}`"
+            :class="isHighlighted(rule) && 'ring-success rounded-[var(--app-radius-panel,1.25rem)] ring-2'"
+          >
+            <RuleCard
+              :rule="rule"
+              :index="rules.indexOf(rule) + 1"
+            />
+          </div>
         </div>
       </div>
     </template>
@@ -20,15 +29,28 @@
       v-else
       class="min-h-0 flex-1"
       :style="virtualScrollerStyle"
-      :data="renderRules"
+      :data="displayRules"
       :size="84"
     >
+      <template #before>
+        <div
+          v-if="lookupTarget"
+          class="app-card-padding"
+        >
+          <RulePenetrationCard
+            :target="lookupTarget"
+            @matched="matchedIndex = $event"
+          />
+        </div>
+      </template>
       <template #default="{ item: rule }: { item: Rule }">
-        <RuleCard
-          :key="`${rule.type}-${rule.payload}-${rule.proxy}`"
-          :rule="rule"
-          :index="rules.indexOf(rule) + 1"
-        />
+        <div :class="isHighlighted(rule) && 'ring-success rounded-[var(--app-radius-panel,1.25rem)] ring-2'">
+          <RuleCard
+            :key="`${rule.type}-${rule.payload}-${rule.proxy}`"
+            :rule="rule"
+            :index="rules.indexOf(rule) + 1"
+          />
+        </div>
       </template>
     </VirtualScroller>
   </div>
@@ -40,9 +62,10 @@ import RuleCard from '@/components/rules/RuleCard.vue'
 import RulesCtrl from '@/components/sidebar/RulesCtrl.tsx'
 import { usePaddingForViews } from '@/composables/paddingViews'
 import { fetchProxies } from '@/store/proxies'
-import { fetchRules, renderRules, rules } from '@/store/rules'
+import RulePenetrationCard from '@/components/rules/RulePenetrationCard.vue'
+import { fetchRules, lookupTarget, renderRules, rules } from '@/store/rules'
 import type { Rule } from '@/types'
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 void Promise.allSettled([fetchRules(), fetchProxies()])
 
@@ -54,7 +77,15 @@ const virtualScrollerStyle = computed(() => ({
   paddingTop: `${paddingTop.value}px`,
 }))
 
+// 穿透查询时,搜索词是域名/IP,按文本过滤规则列表只会得到一片空白;这时列出全部规则,
+// 把命中的那条框出来。普通关键字仍按文本过滤。
+const matchedIndex = ref<number | null>(null)
+watch(lookupTarget, () => { matchedIndex.value = null })
+const displayRules = computed(() => (lookupTarget.value ? rules.value : renderRules.value))
+const isHighlighted = (rule: Rule) =>
+  Boolean(lookupTarget.value) && matchedIndex.value !== null && rules.value.indexOf(rule) === matchedIndex.value
+
 const isVirtualScroller = computed(() => {
-  return renderRules.value.length > 200
+  return displayRules.value.length > 200
 })
 </script>

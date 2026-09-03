@@ -1,8 +1,19 @@
+import { isValidPenetrationTarget } from '@/api/openbox'
 import { fetchRuleProvidersAPI, fetchRulesAPI } from '@/api'
 import type { Rule, RuleProvider } from '@/types'
 import { computed, ref } from 'vue'
 
 export const rulesFilter = ref('')
+
+// 搜索框里只有一个词、且像域名或 IP(带 . 或 :)时,当作一次穿透查询:去问服务端这个
+// 目标会命中哪条规则、走哪个站点集/出口(RulesPage 顶上的结果卡片)。
+export const lookupTarget = computed(() => {
+  const value = rulesFilter.value.trim()
+  if (!value || /\s/.test(value)) return ''
+  if (!isValidPenetrationTarget(value)) return ''
+  if (!value.includes('.') && !value.includes(':')) return ''
+  return value
+})
 
 export const rules = ref<Rule[]>([])
 export const ruleProviderList = ref<RuleProvider[]>([])
