@@ -35,15 +35,17 @@
           :title="group.icon"
         />
         <div class="min-w-0 flex-1">
-          <div class="flex items-center gap-2">
-            <span class="truncate text-base font-medium">{{ group.name }}</span>
+          <!-- 窄屏上名字和类型标签放不下一行就让标签换到下一行,不要把名字挤成「所有…」、
+               标签自己折成两行叠在名字上 -->
+          <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span class="max-w-full truncate text-base font-medium">{{ group.name }}</span>
             <span
               v-if="group.kind"
-              class="badge badge-ghost badge-sm"
+              class="badge badge-ghost badge-sm shrink-0 whitespace-nowrap"
             >{{ $t('groupBuiltinBadge') }}</span>
             <span
               v-else
-              class="badge badge-outline badge-sm"
+              class="badge badge-outline badge-sm shrink-0 whitespace-nowrap"
             >{{ $t(`groupType_${group.type}`) }}</span>
             <StatusBadge
               v-if="group.enabled === false"
