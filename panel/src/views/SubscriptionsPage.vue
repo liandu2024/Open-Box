@@ -74,21 +74,31 @@
           </button>
         </div>
 
-        <div
+        <!-- 拖拽排序:节点组成员选择器、出口选择器里的节点分组和内核里的出站顺序都按这个来 -->
+        <Draggable
           v-else
+          v-model="subscriptions"
+          :animation="150"
+          :force-fallback="true"
+          :fallback-on-body="true"
+          handle=".drag-handle"
+          ghost-class="opacity-40"
+          item-key="id"
           class="flex flex-col gap-2"
+          @end="persistOrder"
         >
-          <SubscriptionCard
-            v-for="sub in subscriptions"
-            :key="sub.id"
-            :subscription="sub"
-            :refreshing="refreshingId === sub.id"
-            deletable
-            @refresh="handleRefresh(sub.id)"
-            @delete="requestDelete(sub)"
-            @edit="requestEdit(sub)"
-          />
-        </div>
+          <template #item="{ element: sub }">
+            <SubscriptionCard
+              :subscription="sub"
+              :refreshing="refreshingId === sub.id"
+              deletable
+              sortable
+              @refresh="handleRefresh(sub.id)"
+              @delete="requestDelete(sub)"
+              @edit="requestEdit(sub)"
+            />
+          </template>
+        </Draggable>
         </template>
       </div>
     </div>
@@ -144,7 +154,7 @@
 
 <script setup lang="ts">
 import type { OpenboxSubscription } from '@/api/openbox'
-import { deleteSubscription, fetchSubscriptions, refreshSubscription } from '@/api/openbox'
+import { deleteSubscription, fetchSubscriptions, refreshSubscription, reorderSubscriptions } from '@/api/openbox'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import AddSubscriptionDialog from '@/components/subscription/AddSubscriptionDialog.vue'
 import NodeGroupsPanel from '@/components/subscription/NodeGroupsPanel.vue'
@@ -159,6 +169,7 @@ import { showNotification } from '@/helper/notification'
 import { loadOpenboxNodeGroups } from '@/store/openboxSiteSets'
 import { fetchProxies } from '@/store/proxies'
 import { computed, onMounted, ref, useTemplateRef } from 'vue'
+import Draggable from 'vuedraggable'
 
 const { padding } = usePaddingForViews({
   offsetTop: 0,
@@ -199,6 +210,19 @@ onMounted(() => {
 // 「添加分组」按钮挪到了页签那一行(和「添加订阅」同一个位置),按钮在父组件、
 // 弹窗在子组件,所以要拿到子组件的引用去开它。
 const groupsPanel = useTemplateRef('groupsPanel')
+
+// 拖完整份顺序发给服务端;失败就重新拉一遍恢复原顺序
+const persistOrder = async () => {
+  try {
+    const r = await reorderSubscriptions(subscriptions.value.map((s) => s.id))
+    subscriptions.value = r.subscriptions
+    showNotification({ content: 'subscriptionOrderSaved', type: 'alert-success' })
+    void loadOpenboxNodeGroups()
+  } catch (error) {
+    showNotification({ content: 'saveFailed', type: 'alert-error', params: { message: error instanceof Error ? error.message : String(error) } })
+    void loadSubscriptions()
+  }
+}
 
 const showAddDialog = ref(false)
 const handleSaved = () => {

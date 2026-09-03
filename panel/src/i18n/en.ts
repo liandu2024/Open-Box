@@ -508,6 +508,7 @@ const en = {
   subscriptionEmptyHint: "No subscriptions yet — add one to get started.",
   subscriptionNodeCount: '{count} nodes',
   subscriptionListFailed: "Couldn't load subscriptions: {message}",
+  subscriptionOrderSaved: 'Subscription order saved; node pickers and kernel outbounds follow it (kernel restart applies it).',
   subscriptionRefreshFailed: "Couldn't refresh: {message}",
   subscriptionDeleteTitle: 'Delete subscription',
   subscriptionDeleteConfirm: 'Delete "{name}"? Its nodes will be removed too. This can\'t be undone.',

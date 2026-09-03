@@ -445,6 +445,11 @@ export const saveNodeGroups = async (
 ): Promise<{ ok: boolean; groups: OpenboxUserGroup[]; dropped: Array<{ name: string; reason: string }> }> =>
   requestJson('/api/openbox/groups', { method: 'PUT', body: JSON.stringify({ groups }) })
 
+// 拖拽排序:传全部订阅 id 的新顺序;服务端把节点池也按这个顺序重排(选择器、内核出站顺序都跟着)
+export const reorderSubscriptions = async (ids: string[]): Promise<{ ok: boolean; subscriptions: OpenboxSubscription[] }> => {
+  return requestJson('/api/openbox/subscriptions/order', { method: 'PUT', body: JSON.stringify({ ids }) })
+}
+
 export const deleteSubscription = async (id: string): Promise<{ ok: boolean }> => {
   return requestJson(`/api/openbox/subscriptions/${encodeURIComponent(id)}`, {
     method: 'DELETE',

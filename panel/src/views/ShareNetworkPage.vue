@@ -40,12 +40,22 @@
           </div>
         </div>
 
-        <div
-          v-for="s in servers"
-          :key="s.id"
-          class="card"
+        <!-- 拖拽排序:内核里的入站顺序跟着它 -->
+        <Draggable
+          v-model="servers"
+          :animation="150"
+          :force-fallback="true"
+          :fallback-on-body="true"
+          handle=".drag-handle"
+          ghost-class="opacity-40"
+          item-key="id"
+          class="flex flex-col gap-2"
+          @end="persist([...servers])"
         >
+          <template #item="{ element: s }">
+        <div class="card">
           <div class="app-card-inset flex flex-wrap items-center gap-3">
+            <Bars3Icon class="drag-handle text-base-content/40 h-4 w-4 shrink-0 cursor-move" />
             <div class="flex min-w-0 flex-1 flex-col gap-1">
               <div class="flex min-w-0 flex-wrap items-center gap-2">
                 <span class="text-base">{{ s.name }}</span>
@@ -106,6 +116,8 @@
             </div>
           </div>
         </div>
+          </template>
+        </Draggable>
       </div>
     </div>
 
@@ -127,6 +139,7 @@ import { copyText as copyToClipboard } from '@/helper/clipboard'
 import { showNotification } from '@/helper/notification'
 import { buildShareLink } from '@/helper/shareLink'
 import {
+  Bars3Icon,
   ClipboardDocumentIcon,
   PencilSquareIcon,
   PlusIcon,
@@ -134,6 +147,7 @@ import {
   TrashIcon,
 } from '@heroicons/vue/24/outline'
 import { computed, onMounted, ref } from 'vue'
+import Draggable from 'vuedraggable'
 
 const { padding } = usePaddingForViews({ offsetTop: 0, offsetBottom: 0 })
 

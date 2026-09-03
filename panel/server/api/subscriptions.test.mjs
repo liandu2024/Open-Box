@@ -910,3 +910,25 @@ test('拉取失败时把系统 fetch 藏在 cause 里的原因带出来', async 
     await close()
   }
 })
+
+test('PUT /order:按给定 id 顺序重排订阅,节点池跟着重排;id 集合不对 → 400', async () => {
+  const fetchImpl = async (url) => ({ status: 200, ok: true, headers: new Map(), text: async () => (url.includes('a.test') ? HK_LINE : JP_LINE) })
+  const { baseUrl, store, close } = await startApp(fetchImpl)
+  try {
+    const a = await (await postJson(baseUrl, '/api/openbox/subscriptions', { url: 'https://a.test/sub', name: 'A' })).json()
+    const b = await (await postJson(baseUrl, '/api/openbox/subscriptions', { url: 'https://b.test/sub', name: 'B' })).json()
+    assert.deepEqual(store.getSubscriptions().map((s) => s.name), ['A', 'B'])
+    assert.equal(store.getNodes()[0].subscriptionId, a.id)
+    const put = (ids) => fetch(`${baseUrl}/api/openbox/subscriptions/order`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ids }) })
+    const ok = await put([b.id, a.id])
+    assert.equal(ok.status, 200)
+    assert.deepEqual((await ok.json()).subscriptions.map((s) => s.name), ['B', 'A'])
+    assert.deepEqual(store.getSubscriptions().map((s) => s.name), ['B', 'A'])
+    assert.deepEqual(store.getNodes().map((n) => n.subscriptionId), [b.id, a.id])
+    assert.equal((await put([a.id])).status, 400)
+    assert.equal((await put([a.id, a.id])).status, 400)
+    assert.equal((await put([a.id, 'nope'])).status, 400)
+  } finally {
+    await close()
+  }
+})

@@ -245,6 +245,19 @@ export const resolveNodes = async ({ url, content, name }, fetchImpl, renameOpti
 
 // 把某订阅的新节点并入全局节点池:其它订阅的节点原样保留,按 subscriptions 记录的顺序
 // 排列(新建订阅排在最后,刷新订阅保持原有位置),目标订阅位置换成新节点,整体再去重一次。
+// 节点池按订阅顺序重排:同一订阅内的相对顺序不变,不属于任何已知订阅的排最后
+export const orderNodesBySubscriptions = (nodes, subscriptionsInOrder) => {
+  const bySub = new Map()
+  const orphans = []
+  const known = new Set(subscriptionsInOrder.map((s) => s.id))
+  for (const node of nodes) {
+    if (!known.has(node.subscriptionId)) { orphans.push(node); continue }
+    if (!bySub.has(node.subscriptionId)) bySub.set(node.subscriptionId, [])
+    bySub.get(node.subscriptionId).push(node)
+  }
+  return [...subscriptionsInOrder.flatMap((s) => bySub.get(s.id) || []), ...orphans]
+}
+
 const rebuildNodePool = (existingNodes, subscriptionsInOrder, subscriptionId, newNodesForSub) => {
   const bySub = new Map()
   for (const node of existingNodes) {
@@ -332,6 +345,25 @@ export const registerSubscriptionRoutes = (app, { store, fetchImpl = subscriptio
   // 列表
   router.get('/', (_req, res) => {
     res.json({ subscriptions: store.getSubscriptions() })
+  })
+
+  // 排序:ids 是全部订阅 id 的新顺序(必须一一对应,不能多也不能少)。节点池也按新顺序
+  // 重排——节点组成员选择器、终端分流的出口选择器、内核里的出站顺序都是照节点池来的。
+  router.put('/order', (req, res) => {
+    const ids = req.body && req.body.ids
+    if (!Array.isArray(ids) || ids.some((x) => typeof x !== 'string')) {
+      return res.status(400).json({ error: 'ids must be an array of strings' })
+    }
+    const subs = store.getSubscriptions()
+    const current = new Set(subs.map((s) => s.id))
+    if (ids.length !== current.size || new Set(ids).size !== ids.length || !ids.every((id) => current.has(id))) {
+      return res.status(400).json({ error: 'ids must list every subscription exactly once' })
+    }
+    const byId = new Map(subs.map((s) => [s.id, s]))
+    const ordered = ids.map((id) => byId.get(id))
+    store.setSubscriptions(ordered)
+    store.setNodes(orderNodesBySubscriptions(store.getNodes(), ordered))
+    res.json({ ok: true, subscriptions: ordered })
   })
 
   // 删除:同时清掉该订阅的节点。幂等——id 不存在也返回 ok:true。

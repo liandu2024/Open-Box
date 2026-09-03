@@ -8,6 +8,12 @@
   >
     <template v-slot:title>
       <div class="flex items-start justify-between gap-2">
+        <!-- 订阅管理页可拖拽排序:把手放在标题最左;点它不要把卡片展开 -->
+        <Bars3Icon
+          v-if="sortable"
+          class="drag-handle text-base-content/40 mt-1 h-4 w-4 shrink-0 cursor-move"
+          @click.stop
+        />
         <div class="min-w-0 flex-1">
           <!-- 字号和「节点」页签里节点组卡片的标题一致:名字 text-base,附注 text-xs -->
           <div class="flex min-w-0 items-center gap-1">
@@ -110,7 +116,7 @@ import ProxyPreview from '@/components/proxies/ProxyPreview.vue'
 import { useRenderProxies } from '@/composables/renderProxies'
 import { nodeProviders } from '@/store/openboxSiteSets'
 import { proxyMap, proxyNodesLatencyTest } from '@/store/proxies'
-import { ArrowPathIcon, BoltIcon, PencilSquareIcon, TrashIcon } from '@heroicons/vue/24/outline'
+import { ArrowPathIcon, Bars3Icon, BoltIcon, PencilSquareIcon, TrashIcon } from '@heroicons/vue/24/outline'
 import dayjs from 'dayjs'
 import { computed, ref } from 'vue'
 
@@ -118,6 +124,8 @@ const props = defineProps<{
   subscription: OpenboxSubscription
   refreshing?: boolean
   deletable?: boolean
+  // 显示拖拽把手(订阅管理页的列表用)
+  sortable?: boolean
 }>()
 
 defineEmits<{

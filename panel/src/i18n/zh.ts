@@ -505,6 +505,7 @@ const zh: LANG_MESSAGE = {
   subscriptionEmptyHint: '\u8fd8\u6ca1\u6709\u8ba2\u9605,\u5148\u6dfb\u52a0\u4e00\u4e2a',
   subscriptionNodeCount: '{count} \u4e2a\u8282\u70b9',
   subscriptionListFailed: '\u6ca1\u52a0\u8f7d\u51fa\u6765:{message}',
+  subscriptionOrderSaved: '订阅顺序已保存;节点选择器和内核出站顺序都按新顺序排列(内核重启后生效)。',
   subscriptionRefreshFailed: '\u6ca1\u5237\u65b0\u6210\u529f:{message}',
   subscriptionDeleteTitle: '\u5220\u9664\u8ba2\u9605',
   subscriptionDeleteConfirm: '\u5220\u9664"{name}"?\u5b83\u7684\u8282\u70b9\u4e5f\u4f1a\u4e00\u5e76\u79fb\u9664,\u4e14\u65e0\u6cd5\u64a4\u9500\u3002',

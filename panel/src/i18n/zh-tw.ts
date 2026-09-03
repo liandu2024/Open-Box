@@ -505,6 +505,7 @@ const zhTW: LANG_MESSAGE = {
   subscriptionEmptyHint: '\u9084\u6c92\u6709\u8a02\u95b1,\u5148\u65b0\u589e\u4e00\u500b',
   subscriptionNodeCount: '{count} \u500b\u7bc0\u9ede',
   subscriptionListFailed: '\u6c92\u8f09\u5165\u6210\u529f:{message}',
+  subscriptionOrderSaved: '訂閱順序已儲存;節點選擇器和核心出站順序都按新順序排列(核心重啟後生效)。',
   subscriptionRefreshFailed: '\u6c92\u91cd\u65b0\u6574\u7406\u6210\u529f:{message}',
   subscriptionDeleteTitle: '\u522a\u9664\u8a02\u95b1',
   subscriptionDeleteConfirm: '\u522a\u9664\u300c{name}\u300d?\u5b83\u7684\u7bc0\u9ede\u4e5f\u6703\u4e00\u4f75\u79fb\u9664,\u4e14\u7121\u6cd5\u5fa9\u539f\u3002',

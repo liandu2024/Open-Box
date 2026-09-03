@@ -38,12 +38,24 @@
           </div>
         </div>
 
+        <!-- 拖拽排序:规则按这个顺序写进内核,先命中的先生效 -->
+        <Draggable
+          v-model="rows"
+          :animation="150"
+          :force-fallback="true"
+          :fallback-on-body="true"
+          handle=".drag-handle"
+          ghost-class="opacity-40"
+          item-key="id"
+          class="flex flex-col gap-2"
+          @end="persist([...rows])"
+        >
+          <template #item="{ element: r }">
         <div
-          v-for="r in routes"
-          :key="r.id"
           class="card bg-base-100 border-base-content/10 flex flex-row items-center gap-2 border p-3"
           :class="r.enabled === false && 'opacity-50'"
         >
+          <Bars3Icon class="drag-handle text-base-content/40 h-4 w-4 shrink-0 cursor-move" />
           <div class="min-w-0 flex-1">
             <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
               <span class="max-w-full truncate text-base font-medium">{{ r.name }}</span>
@@ -89,6 +101,8 @@
             <TrashIcon class="h-4 w-4" />
           </button>
         </div>
+          </template>
+        </Draggable>
       </div>
     </div>
 
@@ -116,8 +130,9 @@ import ClientRouteEditDialog from '@/components/clients/ClientRouteEditDialog.vu
 import StatusBadge from '@/components/common/StatusBadge.vue'
 import { usePaddingForViews } from '@/composables/paddingViews'
 import { showNotification } from '@/helper/notification'
-import { PencilSquareIcon, PlusIcon, PowerIcon, TrashIcon } from '@heroicons/vue/24/outline'
-import { computed, onMounted, ref } from 'vue'
+import { Bars3Icon, PencilSquareIcon, PlusIcon, PowerIcon, TrashIcon } from '@heroicons/vue/24/outline'
+import { computed, onMounted, ref, watch } from 'vue'
+import Draggable from 'vuedraggable'
 
 const { padding } = usePaddingForViews({ offsetTop: 0, offsetBottom: 0 })
 
@@ -130,6 +145,9 @@ const dialogOpen = ref(false)
 const editing = ref<OpenboxClientRoute | null>(null)
 
 const routes = computed(() => profile.value?.clientRoutes || [])
+// 拖拽要求 v-model 绑一个 ref(vuedraggable 会整个替换数组),所以列表在本地存一份,跟着档案走
+const rows = ref<OpenboxClientRoute[]>([])
+watch(routes, (v) => { rows.value = [...v] }, { immediate: true })
 
 // 出口候选:内置直连 / 拒绝(用它们当前的名字)、启用的节点组、单个节点(带订阅名)
 const outboundOptions = computed(() => {
