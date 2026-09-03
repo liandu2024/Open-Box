@@ -24,22 +24,60 @@
           class="textarea textarea-sm w-full font-mono"
           :placeholder="$t('clientRouteSourcesPlaceholder')"
         />
+        <!-- 从已知终端添加:带搜索的浮层(DHCP 租约 + 近期流量里的来源 IP),点一项加进上面的
+             终端框,已加的打勾,可以连续加多项;点外面关闭。 -->
         <div class="flex items-center gap-2">
-          <span class="text-base-content/60 text-xs">{{ $t('clientRouteKnownLabel') }}</span>
-          <select
-            class="select select-sm min-w-0 flex-1"
-            :value="''"
-            @change="addKnown(($event.target as HTMLSelectElement).value)"
+          <span class="text-base-content/60 shrink-0 text-xs">{{ $t('clientRouteKnownLabel') }}</span>
+          <div
+            ref="knownTriggerRef"
+            role="button"
+            tabindex="0"
+            class="input input-sm hover:border-base-content/30 flex min-w-0 flex-1 cursor-pointer items-center gap-1.5"
+            @click="knownToggle"
+            @keydown.enter.prevent="knownToggle"
           >
-            <option value="">{{ $t('clientRouteKnownPlaceholder') }}</option>
-            <option
-              v-for="c in knownClients"
-              :key="c.ip"
-              :value="c.ip"
+            <span class="text-base-content/40 min-w-0 flex-1 truncate text-left">{{ $t('clientRouteKnownPlaceholder') }}</span>
+            <ChevronDownIcon class="text-base-content/40 h-3.5 w-3.5 shrink-0" />
+          </div>
+          <Teleport to="#app-content">
+            <div
+              v-if="knownOpen"
+              ref="knownPanelRef"
+              class="app-popover border-base-content/10 z-[1000] flex flex-col gap-2 rounded-lg border p-2 shadow-lg"
+              :style="knownStyle"
             >
-              {{ c.ip }}{{ c.name ? ` · ${c.name}` : '' }}
-            </option>
-          </select>
+              <TextInput
+                v-model="knownKeyword"
+                :placeholder="$t('outboundPickerSearch')"
+                clearable
+              />
+              <ul class="min-h-0 flex-1 overflow-y-auto text-sm">
+                <li
+                  v-for="c in visibleKnown"
+                  :key="c.ip"
+                >
+                  <button
+                    type="button"
+                    class="hover:bg-base-200 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left"
+                    @click="addKnown(c.ip)"
+                  >
+                    <CheckIcon
+                      class="h-4 w-4 shrink-0"
+                      :class="hasSource(c.ip) ? 'text-success' : 'invisible'"
+                    />
+                    <span class="shrink-0 font-mono text-xs">{{ c.ip }}</span>
+                    <span class="text-base-content/60 min-w-0 flex-1 truncate text-xs">{{ c.name }}</span>
+                  </button>
+                </li>
+                <li
+                  v-if="!visibleKnown.length"
+                  class="text-base-content/50 px-2 py-3 text-center text-xs"
+                >
+                  {{ $t('outboundPickerNoMatch') }}
+                </li>
+              </ul>
+            </div>
+          </Teleport>
         </div>
       </div>
 
@@ -77,8 +115,11 @@
 import type { OpenboxClientRoute } from '@/api/openbox'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import OutboundPicker, { type OutboundPickerOptions } from '@/components/common/OutboundPicker.vue'
+import TextInput from '@/components/common/TextInput.vue'
+import { useAnchoredDropdown } from '@/composables/anchoredDropdown'
 import { showNotification } from '@/helper/notification'
-import { computed, reactive, watch } from 'vue'
+import { CheckIcon, ChevronDownIcon } from '@heroicons/vue/24/outline'
+import { computed, reactive, ref, watch } from 'vue'
 
 const props = defineProps<{
   modelValue: boolean
@@ -113,12 +154,33 @@ watch(
   },
 )
 
+const sourceLines = () => form.sourcesText.split('\n').map((x) => x.trim()).filter(Boolean)
+const hasSource = (ip: string) => sourceLines().includes(ip) || sourceLines().includes(`${ip}/32`)
 const addKnown = (ip: string) => {
-  if (!ip) return
-  const lines = form.sourcesText.split('\n').map((x) => x.trim()).filter(Boolean)
-  if (!lines.includes(ip)) lines.push(ip)
-  form.sourcesText = lines.join('\n')
+  if (!ip || hasSource(ip)) return
+  form.sourcesText = [...sourceLines(), ip].join('\n')
 }
+
+// 已知终端的浮层
+const {
+  open: knownOpen,
+  triggerRef: knownTriggerRef,
+  panelRef: knownPanelRef,
+  style: knownStyle,
+  toggle: knownToggle,
+  close: knownClose,
+} = useAnchoredDropdown({ minWidth: 320, maxHeight: 300 })
+const knownKeyword = ref('')
+watch(knownOpen, (v) => {
+  if (v) knownKeyword.value = ''
+})
+watch(isOpen, (v) => {
+  if (!v) knownClose()
+})
+const visibleKnown = computed(() => {
+  const kw = knownKeyword.value.trim().toLowerCase()
+  return props.knownClients.filter((c) => !kw || c.ip.includes(kw) || (c.name || '').toLowerCase().includes(kw))
+})
 
 // 和 server/engine/client-routes.mjs 同一套判断:裸 IP 或带前缀的网段
 const IPV4 = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/
