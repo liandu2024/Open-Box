@@ -797,12 +797,6 @@ const en = {
   serverErrPortUsed: 'Port {port} is already used by another server',
   serverErrCredential: 'Password / UUID is required',
   copyFailed: 'Copy failed',
-  serverSubscribeLinkLabel: 'Subscription link',
-  serverSubscribeNeedSave: 'Save once to get the subscription link',
-  serverSubscribeHint: 'Served by this panel without login; the client only needs to reach the panel port. Changing the password or UUID invalidates old links.',
-  serverQrShare: 'Node link',
-  serverQrSubscribe: 'Subscription link',
-  serverCopySubscribe: 'Copy subscription link',
 }
 
 export type LANG_MESSAGE = typeof en

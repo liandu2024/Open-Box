@@ -79,12 +79,8 @@ export interface OpenboxServer {
   name: string
   protocol: OpenboxServerProtocol
   port: number
-  // 客户端连接用的域名 / IP,用来生成分享链接和订阅链接
+  // 客户端连接用的域名 / IP,只用来生成节点分享链接;默认取当前打开面板的主机名
   address?: string
-  // 订阅链接用的面板协议(http / https),默认取当前页面的
-  scheme?: 'http' | 'https'
-  // 服务端按凭据现算的订阅令牌(只读,保存时会被剥掉)
-  shareToken?: string
   password?: string
   method?: string
   uuid?: string

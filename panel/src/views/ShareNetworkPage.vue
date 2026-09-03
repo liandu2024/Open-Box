@@ -80,15 +80,6 @@
               <button
                 type="button"
                 class="btn btn-circle btn-sm"
-                :disabled="!buildSubscriptionUrl(s)"
-                v-tip="$t('serverCopySubscribe')"
-                @click="copyText(buildSubscriptionUrl(s))"
-              >
-                <LinkIcon class="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                class="btn btn-circle btn-sm"
                 v-tip="$t(s.enabled === false ? 'groupEnable' : 'groupDisable')"
                 @click="toggle(s)"
               >
@@ -131,10 +122,9 @@ import StatusBadge from '@/components/common/StatusBadge.vue'
 import ServerEditDialog from '@/components/share/ServerEditDialog.vue'
 import { usePaddingForViews } from '@/composables/paddingViews'
 import { showNotification } from '@/helper/notification'
-import { buildShareLink, buildSubscriptionUrl } from '@/helper/shareLink'
+import { buildShareLink } from '@/helper/shareLink'
 import {
   ClipboardDocumentIcon,
-  LinkIcon,
   PencilSquareIcon,
   PlusIcon,
   PowerIcon,
@@ -177,8 +167,7 @@ const load = async () => {
 // 每次改动整份写回档案;成功后提示重启内核生效(和站点集保存后的提示一致)
 const persist = async (next: OpenboxServer[]) => {
   try {
-    // shareToken 是服务端现算的只读字段,不往回送
-    const profile = await saveProfile({ servers: next.map(({ shareToken, ...rest }) => (void shareToken, rest)) })
+    const profile = await saveProfile({ servers: next })
     servers.value = profile.servers || []
     showNotification({ content: 'serverSaved', type: 'alert-success' })
   } catch (error) {
