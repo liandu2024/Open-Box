@@ -65,7 +65,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 const { padding } = usePaddingForViews({
-  offsetTop: 8,
+  offsetTop: 0,
   offsetBottom: 0,
 })
 const route = useRoute()
