@@ -701,6 +701,8 @@ const en = {
   routeTestRule: 'Rule',
   routeTestDestination: 'Destination IP',
   routeTestElapsed: 'Elapsed',
+  routeTestDnsStaleDirect: 'Kernel DNS rules are stale: this site set is now direct; restart the kernel to switch to direct DNS',
+  routeTestDnsStaleProxy: 'Kernel DNS rules are stale: this site set is now proxied; restart the kernel to switch to proxied DNS',
   ruleLookupSiteSet: 'Site set',
   ruleLookupMoreEntries: '{count} more matching entries',
   penetrationNoRuleMatched: 'No rule matched — falls through to the default',

@@ -654,7 +654,7 @@ export interface OpenboxRouteTest {
   dns:
     | { skipped: true }
     | { error: string }
-    | { ruleIndex: number | null; rejected?: boolean; server?: { tag: string; type?: string; server?: string; detour?: string }; viaProxy?: boolean }
+    | { ruleIndex: number | null; rejected?: boolean; server?: { tag: string; type?: string; server?: string; detour?: string }; viaProxy?: boolean; stale?: 'direct' | 'proxy'; runtimeLeaf?: string }
   resolve?: { ok: boolean; status?: number; answers: string[]; ms: number; error?: string }
   exit: {
     url: string

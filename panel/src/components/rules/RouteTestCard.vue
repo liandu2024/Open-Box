@@ -31,7 +31,7 @@
       >
         <!-- 左栏:自下而上的流程线。两行固定等高(h-24),线从箭头下方一直画到 DNS 圈的圆心,
              圆圈在线上层(z-10、实底)把线遮住,看起来就是"线穿过两个节点"。 -->
-        <div class="relative w-16 shrink-0 pb-4">
+        <div class="relative w-16 shrink-0 pt-5 pb-4">
           <div
             class="border-x-transparent absolute left-1/2 top-0 -translate-x-1/2 border-x-[6px] border-b-[10px]"
             style="border-bottom-color: var(--color-primary)"
@@ -55,7 +55,7 @@
         </div>
 
         <!-- 右栏:两行和左边的两个圈同高、垂直居中 -->
-        <div class="flex min-w-0 flex-1 flex-col">
+        <div class="flex min-w-0 flex-1 flex-col pt-5">
           <!-- 出口 -->
           <div class="flex h-16 flex-col justify-center gap-1">
             <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -119,6 +119,10 @@
                     class="text-xs"
                   />
                 </template>
+                <span
+                  v-if="dnsDecision?.stale"
+                  class="text-warning text-xs"
+                >{{ $t(dnsDecision.stale === 'direct' ? 'routeTestDnsStaleDirect' : 'routeTestDnsStaleProxy') }}</span>
               </template>
             </div>
             <div

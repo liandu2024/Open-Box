@@ -698,6 +698,8 @@ const zhTW: LANG_MESSAGE = {
   routeTestRule: '命中規則',
   routeTestDestination: '目標 IP',
   routeTestElapsed: '耗時',
+  routeTestDnsStaleDirect: '核心裡的 DNS 規則是舊的:這個站點集現在走直連,重啟核心後會改為直連 DNS',
+  routeTestDnsStaleProxy: '核心裡的 DNS 規則是舊的:這個站點集現在走代理,重啟核心後會改為代理 DNS',
   ruleLookupSiteSet: '站點集',
   ruleLookupMoreEntries: '還有 {count} 條也命中',
   penetrationNoRuleMatched: '\u6c92\u6709\u898f\u5247\u547d\u4e2d\u2014\u2014\u843d\u5230\u9810\u8a2d\u7b56\u7565',

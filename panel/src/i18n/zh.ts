@@ -698,6 +698,8 @@ const zh: LANG_MESSAGE = {
   routeTestRule: '命中规则',
   routeTestDestination: '目标 IP',
   routeTestElapsed: '耗时',
+  routeTestDnsStaleDirect: '内核里的 DNS 规则是旧的:这个站点集现在走直连,重启内核后会改为直连 DNS',
+  routeTestDnsStaleProxy: '内核里的 DNS 规则是旧的:这个站点集现在走代理,重启内核后会改为代理 DNS',
   ruleLookupSiteSet: '站点集',
   ruleLookupMoreEntries: '还有 {count} 条也命中',
   penetrationNoRuleMatched: '\u6ca1\u6709\u89c4\u5219\u547d\u4e2d\u2014\u2014\u843d\u5230\u9ed8\u8ba4\u7b56\u7565',

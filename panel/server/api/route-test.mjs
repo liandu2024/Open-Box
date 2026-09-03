@@ -3,6 +3,9 @@ import net from 'node:net'
 import tls from 'node:tls'
 import { PANEL_INBOUND_PORT } from '../engine/config.mjs'
 import { CLASH_API_BASE, matchLocalConditions, matchRuleSetList } from './penetration.mjs'
+import { fetchSelections } from './deploy-runner.mjs'
+import { builtinTags } from '../engine/user-groups.mjs'
+import { normalizeRouting } from '../engine/routing-model.mjs'
 
 // 「真实路由」:不只按规则推,而是真的走一遍——
 //   1. DNS 用哪台服务器:按生成配置里 dns.rules 的顺序判(规则集用内核 rule-set match,
@@ -119,6 +122,7 @@ export const registerRouteTestRoutes = (app, { store, ctx, paths, fetchImpl = gl
       return res.status(503).json({ message: '还没有生成过配置(内核没启动过)' })
     }
     const secret = store.getClashSecret ? store.getClashSecret() : ''
+    const routingConf = normalizeRouting((store.getProfile ? store.getProfile() : {}).routing)
     const out = { target }
 
     // 1. DNS 决策
@@ -130,6 +134,33 @@ export const registerRouteTestRoutes = (app, { store, ctx, paths, fetchImpl = gl
       } catch (err) {
         out.dns = { error: errorMessage(err) }
       }
+    }
+
+    // 1b. 内核配置是不是旧的:DoH 的 detour 顺着内核里当前的选择下钻,落到直连出站就说明
+    //     该站点集已经切到直连了,重启内核后 DNS 规则会改成本地解析。反过来(dns-direct 但
+    //     站点集已切到代理)同样标出来。
+    if (out.dns && out.dns.server) {
+      try {
+        const selections = await fetchSelections(fetchImpl, secret)
+        const leafOf = (name) => {
+          let cur = name
+          const seen = new Set()
+          for (let i = 0; i < 16 && Object.prototype.hasOwnProperty.call(selections, cur) && !seen.has(cur); i++) { seen.add(cur); cur = selections[cur] }
+          return cur
+        }
+        const directTag = builtinTags(store.getGroups ? store.getGroups() : []).direct
+        const detour = out.dns.server.detour
+        if (detour) {
+          const leaf = leafOf(detour)
+          out.dns.runtimeLeaf = leaf
+          if (leaf === directTag) out.dns.stale = 'direct'
+        } else if (out.dns.ruleIndex !== null && out.dns.ruleIndex !== undefined) {
+          // dns-direct 规则来自某个站点集:看它现在是否已切到代理
+          const rule = (config.dns.rules || [])[out.dns.ruleIndex] || {}
+          const policy = (routingConf.activePolicies || []).find((p) => (rule.rule_set && p.rulesets.join() === [].concat(rule.rule_set).join()) || (rule.domain_suffix && p.domainSuffix.join() === [].concat(rule.domain_suffix).join()))
+          if (policy && Object.prototype.hasOwnProperty.call(selections, policy.name) && leafOf(policy.name) !== directTag) out.dns.stale = 'proxy'
+        }
+      } catch { /* 拿不到内核状态就不标 */ }
     }
 
     // 2. 内核解析
