@@ -208,11 +208,20 @@ const stageText = computed(() => {
 
 let timer = 0
 let wasRunning = false
+// 面板重启窗口内连续失败的次数;升级进行中最多再试 45 次(约 90 秒),重连上就清零
+let offline = 0
 const load = async () => {
   try {
     info.value = await fetchUpdateStatus()
+    offline = 0
   } catch {
-    // 升级到换文件阶段时面板会重启,接口短暂不可用是正常的
+    // 升级到换文件阶段时面板会重启,接口短暂不可用是正常的。之前这里直接 return,
+    // 轮询就此停掉:弹窗停在「正在替换文件…」,升级其实已完成、页面却不会刷新。
+    // 升级进行中就隔两秒再试,直到重新读到状态(done / failed 会照常提示、刷新)。
+    if (wasRunning && offline < 45) {
+      offline += 1
+      schedule(2000)
+    }
     return
   }
   const running = Boolean(info.value.status.running)
