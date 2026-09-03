@@ -5,6 +5,9 @@ import { effectiveOutbound, normalizeRouting, policyOutboundOptions } from './ro
 import { buildRoute } from './routing.mjs'
 import { buildDns } from './dns.mjs'
 
+// 面板专用回环入站的端口(见下方 inbounds 注释)
+export const PANEL_INBOUND_PORT = 7891
+
 const TUN_V4 = '172.19.0.1/30'
 const TUN_V6 = 'fdfe:dcba:9876::1/126'
 
@@ -68,7 +71,9 @@ export const buildConfig = ({ nodes, profile, userGroups, systemDns }) => {
   }
   if (profile.tun && profile.tun.autoRedirect) tunInbound.auto_redirect = true
 
-  const inbounds = [tunInbound]
+  // 面板「真实路由」测试用的回环入站:面板进程经它发请求,请求才会真的走内核的分流
+  // (路由器自身发出的流量不一定进 tun)。只听 127.0.0.1,外面碰不到。
+  const inbounds = [tunInbound, { type: 'mixed', tag: 'panel-in', listen: '127.0.0.1', listen_port: PANEL_INBOUND_PORT }]
   if (dnsMode === 'dnsmasq') {
     inbounds.push({ type: 'direct', tag: 'dns-in', listen: '127.0.0.1', listen_port: 7853 })
   }

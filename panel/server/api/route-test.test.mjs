@@ -44,10 +44,11 @@ test('POST /route-test:内核解析 + 真实访问 + 在连接表里找到这条
     if (url.includes('/connections')) return { ok: true, status: 200, json: async () => ({ connections: [
       { metadata: { host: 'www.baidu.com', destinationIP: '39.156.66.10' }, chains: ['直连', '中国'], rule: 'RuleSet(geosite-cn)', rulePayload: '', start: '2026-09-03T00:00:00Z' },
     ] }) }
-    return { ok: true, status: 200, body: null }
+    throw new Error('unexpected fetch ' + url)
   }
+  const probe = async (host, { port }) => ({ ok: true, status: port === 443 ? 200 : 301, ms: 7 })
   const app = express()
-  registerRouteTestRoutes(app, { store: { getClashSecret: () => 's' }, ctx, paths, fetchImpl })
+  registerRouteTestRoutes(app, { store: { getClashSecret: () => 's' }, ctx, paths, fetchImpl, probe })
   const server = app.listen(0)
   await new Promise((r) => server.once('listening', r))
   try {
@@ -57,6 +58,7 @@ test('POST /route-test:内核解析 + 真实访问 + 在连接表里找到这条
     assert.equal(body.dns.server.tag, 'dns-direct')
     assert.deepEqual(body.resolve.answers, ['39.156.66.10'])
     assert.equal(body.exit.status, 200)
+    assert.equal(body.exit.ms, 7)
     assert.deepEqual(body.exit.chains, ['中国', '直连'])
     assert.equal(body.exit.rule, 'RuleSet(geosite-cn)')
   } finally {

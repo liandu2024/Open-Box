@@ -1,4 +1,7 @@
 import express from 'express'
+import net from 'node:net'
+import tls from 'node:tls'
+import { PANEL_INBOUND_PORT } from '../engine/config.mjs'
 import { CLASH_API_BASE, matchLocalConditions, matchRuleSetList } from './penetration.mjs'
 
 // 「真实路由」:不只按规则推,而是真的走一遍——
@@ -49,7 +52,55 @@ export const decideDnsServer = async (ctx, paths, config, target) => {
 
 const clashHeaders = (secret) => (secret ? { Authorization: `Bearer ${secret}` } : {})
 
-export const registerRouteTestRoutes = (app, { store, ctx, paths, fetchImpl = globalThis.fetch } = {}) => {
+// 经内核的回环 mixed 入站发一次真实请求:CONNECT host:port → (443 时再套 TLS)→ HEAD /。
+// 走这条路请求才会像客户端流量一样过内核的分流规则,连接表里也就能找到它。
+// 只读响应首行,拿到状态码就断开。
+export const probeViaKernel = (host, { port = 443, proxyPort = PANEL_INBOUND_PORT, timeoutMs = 10000 } = {}) =>
+  new Promise((resolve) => {
+    const t0 = Date.now()
+    let done = false
+    const finish = (r) => { if (!done) { done = true; resolve({ ...r, ms: Date.now() - t0 }) } }
+    const socket = net.connect({ host: '127.0.0.1', port: proxyPort })
+    const timer = setTimeout(() => { finish({ ok: false, error: 'timeout' }); socket.destroy() }, timeoutMs)
+    socket.once('error', (err) => { clearTimeout(timer); finish({ ok: false, error: `inbound: ${err.message}` }) })
+    socket.once('connect', () => {
+      socket.write(`CONNECT ${host}:${port} HTTP/1.1\r\nHost: ${host}:${port}\r\n\r\n`)
+    })
+    let buf = ''
+    const onConnectData = (chunk) => {
+      buf += chunk.toString('latin1')
+      const end = buf.indexOf('\r\n\r\n')
+      if (end === -1) return
+      socket.removeListener('data', onConnectData)
+      const line = buf.slice(0, buf.indexOf('\r\n'))
+      if (!/^HTTP\/1\.[01] 200/.test(line)) { clearTimeout(timer); finish({ ok: false, error: `CONNECT: ${line}` }); socket.destroy(); return }
+      const request = `HEAD / HTTP/1.1\r\nHost: ${host}\r\nUser-Agent: open-box-route-test\r\nConnection: close\r\n\r\n`
+      const readStatus = (stream) => {
+        let head = ''
+        stream.on('data', (c) => {
+          head += c.toString('latin1')
+          const i = head.indexOf('\r\n')
+          if (i === -1) return
+          const m = /^HTTP\/\d(?:\.\d)? (\d{3})/.exec(head.slice(0, i))
+          clearTimeout(timer)
+          finish(m ? { ok: true, status: Number(m[1]) } : { ok: false, error: `bad response: ${head.slice(0, i)}` })
+          stream.destroy()
+        })
+        stream.once('error', (err) => { clearTimeout(timer); finish({ ok: false, error: err.message }) })
+        stream.once('close', () => { clearTimeout(timer); finish({ ok: false, error: 'connection closed' }) })
+      }
+      if (port === 443) {
+        const secure = tls.connect({ socket, servername: host, rejectUnauthorized: false }, () => secure.write(request))
+        readStatus(secure)
+      } else {
+        socket.write(request)
+        readStatus(socket)
+      }
+    }
+    socket.on('data', onConnectData)
+  })
+
+export const registerRouteTestRoutes = (app, { store, ctx, paths, fetchImpl = globalThis.fetch, probe = probeViaKernel } = {}) => {
   const router = express.Router({ caseSensitive: true })
   router.use(express.json({ limit: '16kb' }))
 
@@ -89,35 +140,30 @@ export const registerRouteTestRoutes = (app, { store, ctx, paths, fetchImpl = gl
       }
     }
 
-    // 3. 真实访问 + 从连接表里找这条连接
-    const url = isIp(target) ? `http://${target}/` : `https://${target}/`
-    const t1 = Date.now()
-    let exit = { url }
+    // 3. 经内核的回环入站真实访问一次 + 从连接表里找这条连接
+    const port = isIp(target) ? 80 : 443
+    let exit = { url: `${port === 443 ? 'https' : 'http'}://${target}/` }
+    const r = await probe(target, { port })
+    exit = { ...exit, ok: r.ok, status: r.status, ms: r.ms }
+    if (!r.ok) exit.error = r.error
     try {
-      const r = await fetchWithTimeout(fetchImpl, url, { method: 'GET', redirect: 'manual' }, 10000)
-      exit = { ...exit, ok: true, status: r.status, ms: Date.now() - t1 }
-      try {
-        const c = await fetchWithTimeout(fetchImpl, `${CLASH_API_BASE}/connections`, { headers: clashHeaders(secret) }, 5000)
-        const body = await c.json()
-        const list = (body && body.connections) || []
-        const mine = list
-          .filter((x) => x && x.metadata && (String(x.metadata.host || '').toLowerCase() === target || x.metadata.destinationIP === target))
-          .sort((a, b) => String(b.start || '').localeCompare(String(a.start || '')))
-        const hit = mine[0]
-        if (hit) {
-          exit.chains = Array.isArray(hit.chains) ? hit.chains.slice().reverse() : []
-          exit.rule = hit.rule || ''
-          exit.rulePayload = hit.rulePayload || ''
-          exit.destinationIP = hit.metadata.destinationIP || ''
-        } else {
-          exit.notSeen = true
-        }
-      } catch (err) {
-        exit.connectionsError = errorMessage(err)
+      const c = await fetchWithTimeout(fetchImpl, `${CLASH_API_BASE}/connections`, { headers: clashHeaders(secret) }, 5000)
+      const body = await c.json()
+      const list = (body && body.connections) || []
+      const mine = list
+        .filter((x) => x && x.metadata && (String(x.metadata.host || '').toLowerCase() === target || x.metadata.destinationIP === target))
+        .sort((a, b) => String(b.start || '').localeCompare(String(a.start || '')))
+      const hit = mine[0]
+      if (hit) {
+        exit.chains = Array.isArray(hit.chains) ? hit.chains.slice().reverse() : []
+        exit.rule = hit.rule || ''
+        exit.rulePayload = hit.rulePayload || ''
+        exit.destinationIP = hit.metadata.destinationIP || ''
+      } else if (r.ok) {
+        exit.notSeen = true
       }
-      try { r.body && r.body.cancel && r.body.cancel() } catch { /* ignore */ }
     } catch (err) {
-      exit = { ...exit, ok: false, ms: Date.now() - t1, error: errorMessage(err) }
+      exit.connectionsError = errorMessage(err)
     }
     out.exit = exit
     res.json(out)
