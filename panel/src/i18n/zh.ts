@@ -686,6 +686,7 @@ const zh: LANG_MESSAGE = {
   ruleLookupNoMatch: '没有规则命中,走兜底站点集',
   ruleLookupOutbound: '出口:',
   ruleLookupTitle: '规则路由',
+  ruleFormatQuery: '格式化查询',
   routeTestTitle: '真实路由',
   routeTestRerun: '重新测试',
   routeTestDnsSkipped: '目标是 IP,不用解析',

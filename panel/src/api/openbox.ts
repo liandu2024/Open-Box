@@ -676,5 +676,5 @@ export interface OpenboxRouteTest {
     debug?: { connections: number; sample: string[] }
   }
 }
-export const testRoute = (target: string) =>
-  requestJson<OpenboxRouteTest>('/api/openbox/route-test', { method: 'POST', body: JSON.stringify({ target }) })
+export const testRoute = (target: string, port?: number) =>
+  requestJson<OpenboxRouteTest>('/api/openbox/route-test', { method: 'POST', body: JSON.stringify({ target, port }) })

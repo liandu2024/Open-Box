@@ -689,6 +689,7 @@ const en = {
   ruleLookupNoMatch: 'No rule matched, falls to the fallback site set',
   ruleLookupOutbound: 'Outbound:',
   ruleLookupTitle: 'Rule route',
+  ruleFormatQuery: 'Normalize & query',
   routeTestTitle: 'Actual route',
   routeTestRerun: 'Test again',
   routeTestDnsSkipped: 'Target is an IP, no lookup needed',

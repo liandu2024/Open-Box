@@ -1,5 +1,5 @@
 import { useCtrlsBar } from '@/composables/useCtrlsBar'
-import { rulesFilter } from '@/store/rules'
+import { normalizeRuleTarget, rulesFilter } from '@/store/rules'
 import {
   disconnectOnRuleDisable,
   displayLatencyInRule,
@@ -20,12 +20,20 @@ export default defineComponent({
 
     return () => {
       const searchInput = (
-        <TextInput
-          class={isLargeCtrlsBar.value ? 'w-80' : 'min-w-0 flex-1'}
-          v-model={rulesFilter.value}
-          placeholder={t('ruleSearchPlaceholder')}
-          clearable={true}
-        />
+        <>
+          <TextInput
+            class={isLargeCtrlsBar.value ? 'w-80' : 'min-w-0 flex-1'}
+            v-model={rulesFilter.value}
+            placeholder={t('ruleSearchPlaceholder')}
+            clearable={true}
+          />
+          <button
+            class="btn btn-sm shrink-0"
+            onClick={() => (rulesFilter.value = normalizeRuleTarget(rulesFilter.value))}
+          >
+            {t('ruleFormatQuery')}
+          </button>
+        </>
       )
 
       const settingsModal = (

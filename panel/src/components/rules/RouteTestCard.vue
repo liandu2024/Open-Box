@@ -130,7 +130,7 @@ import { ArrowPathIcon, ArrowRightCircleIcon, BoltIcon } from '@heroicons/vue/24
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-const props = defineProps<{ target: string }>()
+const props = defineProps<{ target: string; port?: number | null }>()
 const { t } = useI18n()
 const loading = ref(false)
 const error = ref('')
@@ -143,7 +143,7 @@ const run = async () => {
   loading.value = true
   error.value = ''
   try {
-    const r = await testRoute(props.target)
+    const r = await testRoute(props.target, props.port ?? undefined)
     if (mine !== seq) return
     result.value = r
   } catch (err) {
@@ -157,7 +157,7 @@ const run = async () => {
 
 // 真实访问一次是有代价的(出网、占一条连接),等输入停下 600ms 再跑
 watch(
-  () => props.target,
+  () => [props.target, props.port] as const,
   () => {
     window.clearTimeout(timer)
     result.value = null

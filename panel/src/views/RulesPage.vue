@@ -8,13 +8,14 @@
       >
         <div class="flex flex-col gap-2 p-2">
           <RulePenetrationCard
-            v-if="lookupTarget"
-            :target="lookupTarget"
+            v-if="lookupHost"
+            :target="lookupHost"
             @matched="matchedIndex = $event"
           />
           <RouteTestCard
-            v-if="lookupTarget"
-            :target="lookupTarget"
+            v-if="lookupHost"
+            :target="lookupHost"
+            :port="lookupPort"
           />
           <div
             v-for="rule in displayRules"
@@ -42,11 +43,12 @@
           class="app-card-padding"
         >
           <RulePenetrationCard
-            :target="lookupTarget"
+            :target="lookupHost"
             @matched="matchedIndex = $event"
           />
           <RouteTestCard
-            :target="lookupTarget"
+            :target="lookupHost"
+            :port="lookupPort"
             class="mt-2"
           />
         </div>
@@ -72,7 +74,7 @@ import { usePaddingForViews } from '@/composables/paddingViews'
 import { fetchProxies } from '@/store/proxies'
 import RouteTestCard from '@/components/rules/RouteTestCard.vue'
 import RulePenetrationCard from '@/components/rules/RulePenetrationCard.vue'
-import { fetchRules, lookupTarget, renderRules, rules } from '@/store/rules'
+import { fetchRules, lookupHost, lookupPort, lookupTarget, renderRules, rules } from '@/store/rules'
 import type { Rule } from '@/types'
 import { computed, ref, watch } from 'vue'
 

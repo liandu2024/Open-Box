@@ -58,7 +58,7 @@ const clashHeaders = (secret) => (secret ? { Authorization: `Bearer ${secret}` }
 // 经内核的回环 mixed 入站发一次真实请求:CONNECT host:port → (443 时再套 TLS)→ HEAD /。
 // 走这条路请求才会像客户端流量一样过内核的分流规则,连接表里也就能找到它。
 // 只读响应首行,拿到状态码就断开。
-export const probeViaKernel = (host, { port = 443, proxyPort = PANEL_INBOUND_PORT, timeoutMs = 10000 } = {}) =>
+export const probeViaKernel = (host, { port = 443, secure = port !== 80, proxyPort = PANEL_INBOUND_PORT, timeoutMs = 10000 } = {}) =>
   new Promise((resolve) => {
     const t0 = Date.now()
     let done = false
@@ -97,9 +97,9 @@ export const probeViaKernel = (host, { port = 443, proxyPort = PANEL_INBOUND_POR
         stream.once('error', (err) => { clearTimeout(timer); finish({ ok: false, error: err.message }) })
         stream.once('close', () => { clearTimeout(timer); finish({ ok: false, error: 'connection closed' }) })
       }
-      if (port === 443) {
-        const secure = tls.connect({ socket, servername: host, rejectUnauthorized: false }, () => secure.write(request))
-        readStatus(secure)
+      if (secure) {
+        const secureStream = tls.connect({ socket, servername: host, rejectUnauthorized: false }, () => secureStream.write(request))
+        readStatus(secureStream)
       } else {
         socket.write(request)
         readStatus(socket)
@@ -177,9 +177,13 @@ export const registerRouteTestRoutes = (app, { store, ctx, paths, fetchImpl = gl
     }
 
     // 3. 经内核的回环入站真实访问一次 + 从连接表里找这条连接
-    const port = isIp(target) ? 80 : 443
-    let exit = { url: `${port === 443 ? 'https' : 'http'}://${target}/` }
-    const r = await probe(target, { port })
+    // 端口:调用方给了就用(格式化查询会把 URL 里的端口带过来),没给按 域名 443 / IP 80。
+    // 80 以外一律按 TLS 处理(4433、8443 这类都是 https)。
+    const bodyPort = Number((req.body || {}).port)
+    const port = Number.isInteger(bodyPort) && bodyPort >= 1 && bodyPort <= 65535 ? bodyPort : isIp(target) ? 80 : 443
+    const secure = port !== 80
+    let exit = { url: `${secure ? 'https' : 'http'}://${target}${(secure && port === 443) || (!secure && port === 80) ? '' : `:${port}`}/` }
+    const r = await probe(target, { port, secure })
     exit = { ...exit, ok: r.ok, status: r.status, ms: r.ms }
     if (!r.ok) exit.error = r.error
     try {
