@@ -770,7 +770,6 @@ const en = {
   uptimeUnderMinute: '< 1m',
   // 设置 · 共享网络
   shareNetworkTab: 'Share network',
-  shareNetworkIntro: 'Servers created here run on this router. Devices that connect to them go online through the current routing rules. TUIC, Hysteria2 and VLESS with TLS use a self-signed certificate, so clients must allow insecure certificates. Restart the kernel after saving; access from the internet requires a public address on the router.',
   serverAdd: 'Add server',
   serverEmpty: 'No servers yet. Click + in the top right to create one.',
   serverAddTitle: 'Add server',

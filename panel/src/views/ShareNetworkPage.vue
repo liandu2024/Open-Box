@@ -22,12 +22,6 @@
       :style="padding"
     >
       <div class="flex flex-col gap-2 p-2">
-        <div class="card">
-          <div class="app-card-inset text-base-content/70 text-sm">
-            {{ $t('shareNetworkIntro') }}
-          </div>
-        </div>
-
         <div
           v-if="loading"
           class="card"

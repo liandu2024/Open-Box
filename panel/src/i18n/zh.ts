@@ -767,7 +767,6 @@ const zh: LANG_MESSAGE = {
   uptimeUnderMinute: '不足 1 分钟',
   // 设置 · 共享网络
   shareNetworkTab: '共享网络',
-  shareNetworkIntro: '这里创建的服务器由本路由器提供,连上它的设备会经过当前的分流规则上网。TUIC、Hysteria2 和开了 TLS 的 VLESS 用自签证书,客户端需允许不安全证书。保存后重启内核生效;从外网访问需要路由器有公网地址。',
   serverAdd: '添加服务器',
   serverEmpty: '还没有服务器,点右上角 + 创建一个。',
   serverAddTitle: '添加服务器',

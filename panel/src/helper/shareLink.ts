@@ -37,7 +37,16 @@ export const buildShareLink = (s: OpenboxServer): string => {
   }
 }
 
-export const randomUuid = () => crypto.randomUUID()
+// 不能用 crypto.randomUUID():它只在安全上下文(https / localhost)里有,面板通常是
+// http://路由器IP 打开的,一调就抛错。getRandomValues 没这个限制,自己拼 v4。
+export const randomUuid = () => {
+  const b = new Uint8Array(16)
+  crypto.getRandomValues(b)
+  b[6] = (b[6] & 0x0f) | 0x40
+  b[8] = (b[8] & 0x3f) | 0x80
+  const h = [...b].map((x) => x.toString(16).padStart(2, '0')).join('')
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`
+}
 
 // 16 字节随机数转成 URL 安全的 base64(去掉 =),够长、不含会让链接出问题的字符
 export const randomPassword = (bytes = 16) => {

@@ -767,7 +767,6 @@ const zhTW: LANG_MESSAGE = {
   uptimeUnderMinute: '不足 1 分鐘',
   // 设置 · 共享网络
   shareNetworkTab: '共享網路',
-  shareNetworkIntro: '這裡建立的伺服器由本路由器提供,連上它的裝置會經過目前的分流規則上網。TUIC、Hysteria2 和開了 TLS 的 VLESS 用自簽憑證,用戶端需允許不安全憑證。儲存後重啟核心生效;從外網存取需要路由器有公網位址。',
   serverAdd: '新增伺服器',
   serverEmpty: '還沒有伺服器,點右上角 + 建立一個。',
   serverAddTitle: '新增伺服器',
