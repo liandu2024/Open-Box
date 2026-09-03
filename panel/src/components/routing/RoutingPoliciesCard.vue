@@ -304,6 +304,7 @@
               v-model="rule.value"
               :kind="rule.type"
               :placeholder="$t(placeholderKey(rule.type))"
+              :exclude="pickedElsewhere(index)"
             />
             <input
               v-else
@@ -542,6 +543,10 @@ const showEditor = ref(false)
 const editing = ref<OpenboxRoutingPolicy | null>(null)
 const draft = ref<OpenboxRoutingPolicy | null>(null)
 const rules = ref<RuleRow[]>([])
+
+// 这一行以外、同类型规则已经选了的分类:下拉框里不再出现,同一个集不会被加两遍
+const pickedElsewhere = (index: number) =>
+  rules.value.filter((r, i) => i !== index && r.type === rules.value[index]?.type).map((r) => r.value)
 const saving = ref(false)
 
 const addRule = (type: RuleType = 'domainSuffix', value = '') => {

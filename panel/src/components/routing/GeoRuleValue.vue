@@ -4,6 +4,7 @@
       v-model="value"
       :kind="kind"
       :placeholder="placeholder"
+      :exclude="exclude"
       class="min-w-0 flex-1"
     />
     <!-- 选了才有「详情」可看:没值的时候点开是一个空对话框 -->
@@ -31,6 +32,7 @@ import { ref } from 'vue'
 defineProps<{
   kind: 'geosite' | 'geoip'
   placeholder?: string
+  exclude?: string[]
 }>()
 
 const value = defineModel<string>({ required: true })

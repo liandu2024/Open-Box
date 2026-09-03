@@ -97,6 +97,8 @@ const props = defineProps<{
   modelValue: string
   kind: 'geosite' | 'geoip'
   placeholder?: string
+  // 同一个站点集里别的规则已经选了的分类:不再列出来,免得同一个集加两遍
+  exclude?: string[]
 }>()
 
 const emit = defineEmits<{ 'update:modelValue': [string] }>()
@@ -190,10 +192,13 @@ const scoreOf = (row: GeoCategoryRow, kw: string) => {
 
 // 名称、中文、英文、繁体一起参与检索。注意说明是一句描述、不是别名表:搜 netflix 或
 // 「流媒体」能找到 geosite:netflix,搜「奈飞」找不到——它的说明里没这两个字。
+const excluded = computed(() => new Set((props.exclude || []).filter((v) => v && v !== props.modelValue)))
+const candidates = computed(() => (excluded.value.size ? rows.value.filter((r) => !excluded.value.has(r[0])) : rows.value))
+
 const filtered = computed(() => {
   const kw = keyword.value.trim().toLowerCase()
-  if (!kw) return rows.value
-  const hits = rows.value.filter((r) => r.some((cell) => (cell || '').toLowerCase().includes(kw)))
+  if (!kw) return candidates.value
+  const hits = candidates.value.filter((r) => r.some((cell) => (cell || '').toLowerCase().includes(kw)))
   // 同档之内短的排前面(cn@ads 先于 cnbeta@ads),再按原顺序稳定收尾
   return hits
     .map((row, index) => ({ row, index, score: scoreOf(row, kw) }))
