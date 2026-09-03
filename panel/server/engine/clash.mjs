@@ -76,7 +76,10 @@ const MAPPERS = {
     type: 'hysteria2',
     fields: {
       password: p.password,
-      tls: { enabled: true, ...(p.sni || p.servername ? { server_name: p.sni || p.servername } : {}) },
+      // 和 anytls 同理:hysteria2 / tuic 本身隐含 TLS,机场条目常不写 tls: true,
+      // 所以补上再交给 buildClashTls——否则 skip-cert-verify(自签/过期证书必需)和
+      // client-fingerprint 会被整个丢掉。
+      tls: buildClashTls({ ...p, tls: true }) || { enabled: true },
       ...(p.obfs ? { obfs: { type: p.obfs, ...(p['obfs-password'] ? { password: p['obfs-password'] } : {}) } } : {}),
     },
   }),
@@ -85,7 +88,7 @@ const MAPPERS = {
     fields: {
       uuid: p.uuid, password: p.password,
       ...(p['congestion-controller'] ? { congestion_control: p['congestion-controller'] } : {}),
-      tls: { enabled: true, ...(p.sni || p.servername ? { server_name: p.sni || p.servername } : {}), ...(p.alpn ? { alpn: toArray(p.alpn) } : {}) },
+      tls: buildClashTls({ ...p, tls: true }) || { enabled: true },
     },
   }),
   // anytls 强制 TLS。buildClashTls 只有在 tls:true / 有 sni 之类的线索时才返回对象,

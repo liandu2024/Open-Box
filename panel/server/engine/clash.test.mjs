@@ -124,6 +124,29 @@ test('parseClashProxies 映射七协议子集,跳过未知', () => {
   assert.deepEqual(skipped, [{ name: 'Legacy', type: 'snell' }])
 })
 
+// Clash 侧同一个 bug:hysteria2 / tuic 之前自己拼 tls,skip-cert-verify 与
+// client-fingerprint 被丢掉,自签 / 过期证书的自建节点连不上。
+test('clash hysteria2 / tuic 采集 skip-cert-verify 与 client-fingerprint', () => {
+  const yaml = [
+    'proxies:',
+    '  - {"name":"H","type":"hysteria2","server":"h.example.com","port":8443,"password":"pw","sni":"kami.im","skip-cert-verify":true,"obfs":"salamander","obfs-password":"o"}',
+    '  - {"name":"T","type":"tuic","server":"t.example.com","port":443,"uuid":"33333333-3333-3333-3333-333333333333","password":"pw","sni":"kami.im","alpn":["h3","h2"],"skip-cert-verify":true,"client-fingerprint":"chrome","congestion-controller":"bbr"}',
+    '  - {"name":"P","type":"hysteria2","server":"p.example.com","port":8443,"password":"pw","sni":"p.example.com"}',
+  ].join('\n')
+  const { nodes } = parseClashProxies(yaml)
+  const byName = Object.fromEntries(nodes.map((n) => [n.tag, n]))
+  assert.equal(byName.H.fields.tls.insecure, true)
+  assert.equal(byName.H.fields.tls.server_name, 'kami.im')
+  assert.equal(byName.H.fields.obfs.password, 'o')
+  assert.equal(byName.T.fields.tls.insecure, true)
+  assert.deepEqual(byName.T.fields.tls.alpn, ['h3', 'h2'])
+  assert.deepEqual(byName.T.fields.tls.utls, { enabled: true, fingerprint: 'chrome' })
+  assert.equal(byName.T.fields.congestion_control, 'bbr')
+  // 没写 skip-cert-verify 的照旧严格校验
+  assert.equal(byName.P.fields.tls.insecure, undefined)
+  assert.equal(byName.P.fields.tls.enabled, true)
+})
+
 test('非 Clash 文本返回空', () => {
   assert.deepEqual(parseClashProxies('just: a string').nodes, [])
 })

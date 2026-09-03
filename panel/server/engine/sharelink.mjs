@@ -176,13 +176,16 @@ const parseAnytls = (uri) => {
   return createNode({ tag: u.fragment, type: 'anytls', server: u.host, server_port: u.port, fields, source: 'sharelink' })
 }
 
+// hysteria2 与 tuic 都强制 TLS,和 trojan / anytls 一样把 security 缺省视为 tls,
+// 再走公共的 buildTlsFromQuery——此前这两个解析器自己拼 tls,只取了 sni(tuic 还取了
+// alpn),把 insecure / allowInsecure 和 fp 丢掉了。自建服务器用自签或过期证书、链接里
+// 带 insecure=1 是常态(实测正式路由器上 tuic / hy2 节点因此全部报
+// "x509: certificate has expired",而同一台服务器的 vless 正常)。
 const parseHysteria2 = (uri) => {
   const u = parseUri(uri)
   const fields = { password: safeDecode(u.userinfo) }
-  const tls = { enabled: true }
-  const sni = u.query.get('sni')
-  if (sni) tls.server_name = sni
-  fields.tls = tls
+  if (!u.query.get('security')) u.query.set('security', 'tls')
+  fields.tls = buildTlsFromQuery(u.query, u.host) || { enabled: true, ...(u.host ? { server_name: u.host } : {}) }
   const obfs = u.query.get('obfs')
   if (obfs) {
     fields.obfs = { type: obfs }
@@ -202,12 +205,8 @@ const parseTuic = (uri) => {
   }
   const cc = u.query.get('congestion_control')
   if (cc) fields.congestion_control = cc
-  const tls = { enabled: true }
-  const sni = u.query.get('sni')
-  if (sni) tls.server_name = sni
-  const alpn = u.query.get('alpn')
-  if (alpn) tls.alpn = alpn.split(',').map((s) => s.trim()).filter(Boolean)
-  fields.tls = tls
+  if (!u.query.get('security')) u.query.set('security', 'tls')
+  fields.tls = buildTlsFromQuery(u.query, u.host) || { enabled: true, ...(u.host ? { server_name: u.host } : {}) }
   return createNode({ tag: u.fragment, type: 'tuic', server: u.host, server_port: u.port, fields, source: 'sharelink' })
 }
 

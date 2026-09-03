@@ -92,6 +92,29 @@ test('tuic:// uuid:password', () => {
   assert.deepEqual(n.fields.tls.alpn, ['h3'])
 })
 
+// 自建服务器用自签 / 过期证书时,链接里必带 insecure=1(或 allowInsecure=1)。此前这两个
+// 解析器自己拼 tls、把它丢了,内核严格校验直接失败(正式路由器实测:同一台服务器的
+// tuic / hy2 报 "x509: certificate has expired",vless 正常)。
+test('tuic:// 与 hysteria2:// 必须采集 insecure / allowInsecure 与 fp,并按 sni 兜底', () => {
+  const t = parseShareLink('tuic://33333333-3333-3333-3333-333333333333:tpass@tu.example.com:443?security=tls&insecure=1&sni=kami.im&alpn=h3,h2&congestion_control=bbr#T')
+  assert.equal(t.fields.tls.insecure, true)
+  assert.equal(t.fields.tls.server_name, 'kami.im')
+  assert.deepEqual(t.fields.tls.alpn, ['h3', 'h2'])
+  const h = parseShareLink('hysteria2://pw@h.example.com:8443?insecure=1&sni=kami.im&alpn=h3&obfs=salamander&obfs-password=xyz#H')
+  assert.equal(h.fields.tls.insecure, true)
+  assert.equal(h.fields.tls.server_name, 'kami.im')
+  assert.deepEqual(h.fields.tls.alpn, ['h3'])
+  assert.equal(h.fields.obfs.password, 'xyz')
+  // allowInsecure 是另一种常见写法;fp 走 utls
+  const a = parseShareLink('hysteria2://pw@h.example.com:8443?allowInsecure=true&fp=chrome#H2')
+  assert.equal(a.fields.tls.insecure, true)
+  assert.deepEqual(a.fields.tls.utls, { enabled: true, fingerprint: 'chrome' })
+  // 不带 insecure 的链接不能凭空多出这个字段
+  const s = parseShareLink('tuic://33333333-3333-3333-3333-333333333333:tpass@tu.example.com:443?sni=tu.example.com#T2')
+  assert.equal(s.fields.tls.insecure, undefined)
+  assert.equal(s.fields.tls.enabled, true)
+})
+
 test('trojan:// 密码含百分号编码字符需解码(修复1)', () => {
   const n = parseShareLink('trojan://p%40ss%23word@t.com:443#PW')
   assert.equal(n.fields.password, 'p@ss#word')
