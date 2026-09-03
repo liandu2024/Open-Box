@@ -468,3 +468,13 @@ test('servers 校验:协议/端口/凭据/重复端口/保留端口', async () =
   assert.match(validateServers([{ id: 'v', name: 'V', protocol: 'vless', port: 8443, uuid: 'nope' }]), /uuid/)
   assert.match(validateServers([{ id: 'bad id', name: 'x', protocol: 'vless', port: 8443, uuid: '11111111-1111-4111-8111-111111111111' }]), /id/)
 })
+
+test('clientRoutes 校验:来源必须是 IP/网段,出口必填,id 不重复', async () => {
+  const { validateClientRoutes } = await import('./profile.mjs')
+  const ok = [{ id: 'tv', enabled: true, name: '电视', sources: ['10.0.0.5', '10.0.1.0/24'], outbound: '香港-自动' }]
+  assert.equal(validateClientRoutes(ok), null)
+  assert.match(validateClientRoutes([{ ...ok[0], sources: ['10.0.0.999'] }]), /invalid IP/)
+  assert.match(validateClientRoutes([{ ...ok[0], sources: [] }]), /sources/)
+  assert.match(validateClientRoutes([{ ...ok[0], outbound: '' }]), /outbound/)
+  assert.match(validateClientRoutes([ok[0], { ...ok[0] }]), /duplicated/)
+})

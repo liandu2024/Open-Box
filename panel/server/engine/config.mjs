@@ -4,6 +4,7 @@ import { emitUserGroups } from './user-groups.mjs'
 import { effectiveOutbound, normalizeRouting, policyOutboundOptions } from './routing-model.mjs'
 import { buildRoute } from './routing.mjs'
 import { buildServerInbounds } from './servers.mjs'
+import { normalizeClientRoutes } from './client-routes.mjs'
 import { buildDns } from './dns.mjs'
 import { collectDirectHosts } from './direct-hosts.mjs'
 
@@ -75,6 +76,9 @@ export const buildConfig = ({ nodes, profile, userGroups, systemDns, subscriptio
     dnsMode, directTag: builtin.direct, directHosts,
     tunCidrs: profile.ipv6 ? [TUN_V4_NET, TUN_V6_NET] : [TUN_V4_NET],
     dnsmasqTag: dnsMode === 'dnsmasq' ? DNSMASQ_OUTBOUND_TAG : '',
+    // 终端分流(engine/client-routes.mjs);出口只认配置里真有的 outbound
+    clientRoutes: normalizeClientRoutes(profile.clientRoutes),
+    knownOutbounds: new Set(outbounds.map((o) => o.tag)),
   })
   // groupTags 传给 DNS:它要按"这个站点集默认走哪"决定用直连还是代理侧解析,
   // 而"默认走哪"在 default 为空时取决于成员表的第一项(见 effectiveOutbound)。

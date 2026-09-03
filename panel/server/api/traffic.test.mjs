@@ -105,3 +105,15 @@ test('parseDhcpLeases:主机名为 * 的不算', () => {
   const m = parseDhcpLeases('1 m1 10.0.0.2 pc 01\n1 m2 10.0.0.3 * *\nbad line\n')
   assert.deepEqual([...m.entries()], [['10.0.0.2', 'pc']])
 })
+
+test('GET /clients:租约里的设备 + 今天流量里的来源 IP', async () => {
+  const collector = fakeCollector()
+  const ctx = createMockContext({ files: { '/tmp/dhcp.leases': '1 m1 10.0.0.209 WIN11 01\n' } })
+  const { base, close } = await startApp(collector, () => new Date(2026, 8, 3, 10), { ctx, paths: { dhcpLeases: '/tmp/dhcp.leases' } })
+  try {
+    const body = await (await fetch(`${base}/api/openbox/clients`)).json()
+    assert.deepEqual(body.clients, [{ ip: '10.0.0.209', name: 'WIN11' }, { ip: '10.0.0.7', name: '' }])
+  } finally {
+    await close()
+  }
+})

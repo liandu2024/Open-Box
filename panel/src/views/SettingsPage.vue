@@ -54,11 +54,20 @@ import { usePaddingForViews } from '@/composables/paddingViews'
 import { isSettingVisible } from '@/composables/settings'
 import { SETTINGS_MENU_KEY, SETTINGS_TAB } from '@/constant'
 import { settingsMenuOrder } from '@/store/settings'
+import ClientRoutingPage from '@/views/ClientRoutingPage.vue'
 import KernelPage from '@/views/KernelPage.vue'
 import RoutingPage from '@/views/RoutingPage.vue'
 import ShareNetworkPage from '@/views/ShareNetworkPage.vue'
 import SubscriptionsPage from '@/views/SubscriptionsPage.vue'
-import { CpuChipIcon, HomeIcon, MapIcon, RectangleStackIcon, RssIcon, ShareIcon } from '@heroicons/vue/24/outline'
+import {
+  CpuChipIcon,
+  DevicePhoneMobileIcon,
+  HomeIcon,
+  MapIcon,
+  RectangleStackIcon,
+  RssIcon,
+  ShareIcon,
+} from '@heroicons/vue/24/outline'
 import { useStorage } from '@vueuse/core'
 import type { Component } from 'vue'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
@@ -80,6 +89,7 @@ const tabItems: { key: SETTINGS_TAB; label: string; icon: Component }[] = [
   { key: SETTINGS_TAB.subscriptions, label: 'subscriptionsManageTab', icon: RssIcon },
   { key: SETTINGS_TAB.groups, label: 'groupsTab', icon: RectangleStackIcon },
   { key: SETTINGS_TAB.routing, label: 'routingSettings', icon: MapIcon },
+  { key: SETTINGS_TAB.clients, label: 'clientRoutingTab', icon: DevicePhoneMobileIcon },
   { key: SETTINGS_TAB.share, label: 'shareNetworkTab', icon: ShareIcon },
   { key: SETTINGS_TAB.kernel, label: 'kernelSettings', icon: CpuChipIcon },
 ]
@@ -88,6 +98,7 @@ const TAB_COMPONENTS: Partial<Record<SETTINGS_TAB, Component>> = {
   [SETTINGS_TAB.subscriptions]: SubscriptionsPage,
   [SETTINGS_TAB.groups]: SubscriptionsPage,
   [SETTINGS_TAB.routing]: RoutingPage,
+  [SETTINGS_TAB.clients]: ClientRoutingPage,
   [SETTINGS_TAB.kernel]: KernelPage,
   [SETTINGS_TAB.share]: ShareNetworkPage,
 }

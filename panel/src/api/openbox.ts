@@ -90,9 +90,20 @@ export interface OpenboxServer {
   obfs?: string
 }
 
+// 「终端分流」里的一条规则:这些来源 IP / 网段的全部流量走 outbound(server/engine/client-routes.mjs)
+export interface OpenboxClientRoute {
+  id: string
+  enabled: boolean
+  name: string
+  sources: string[]
+  // 出站名:内置直连 / 拒绝、节点组、站点集
+  outbound: string
+}
+
 export interface OpenboxProfile {
   updates?: OpenboxUpdatePlans
   servers?: OpenboxServer[]
+  clientRoutes?: OpenboxClientRoute[]
   // 订阅链接和节点服务器的地址一律直连(默认开)
   directForNodes?: boolean
   region: string
@@ -751,3 +762,6 @@ export interface OpenboxPortCheck {
 }
 export const checkServerPort = (port: number, id: string) =>
   requestJson<OpenboxPortCheck>(`/api/openbox/servers/port-check?port=${port}&id=${encodeURIComponent(id)}`)
+
+// 终端分流选来源用:DHCP 租约里的设备 + 今天流量里出现过的来源 IP
+export const fetchKnownClients = () => requestJson<{ clients: Array<{ ip: string; name: string }> }>('/api/openbox/clients')

@@ -1,5 +1,6 @@
 import express from 'express'
 import { RESERVED_PORTS, SERVER_PROTOCOLS, SS_METHODS } from '../engine/servers.mjs'
+import { isIpOrCidr } from '../engine/client-routes.mjs'
 import { FALLBACK_TAG, normalizeRouting } from '../engine/routing-model.mjs'
 
 const isPlainObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v)
@@ -72,6 +73,11 @@ export const validateProfilePatch = (patch) => {
     if (error) return error
   }
 
+  if ('clientRoutes' in patch) {
+    const error = validateClientRoutes(patch.clientRoutes)
+    if (error) return error
+  }
+
   if ('dns' in patch) {
     const dns = patch.dns
     if (!isPlainObject(dns)) return 'dns must be an object'
@@ -138,6 +144,25 @@ export const validateProfilePatch = (patch) => {
     }
   }
 
+  return null
+}
+
+// 终端分流:来源必须是合法 IP / 网段;出口是个出站名(存不存在生成配置时再看)
+export const validateClientRoutes = (list) => {
+  if (!Array.isArray(list)) return 'clientRoutes must be an array'
+  const ids = new Set()
+  for (const r of list) {
+    if (!isPlainObject(r)) return 'clientRoutes entries must be objects'
+    if (!isString(r.id) || !/^[A-Za-z0-9_-]{1,40}$/.test(r.id)) return 'clientRoutes[].id must match /^[A-Za-z0-9_-]{1,40}$/'
+    if (ids.has(r.id)) return `clientRoutes[].id duplicated: ${r.id}`
+    ids.add(r.id)
+    if ('enabled' in r && !isBoolean(r.enabled)) return 'clientRoutes[].enabled must be a boolean'
+    if (!isString(r.name) || !r.name.trim() || r.name.length > 40) return 'clientRoutes[].name must be a non-empty string (<= 40 chars)'
+    if (!isStringArray(r.sources) || !r.sources.length) return 'clientRoutes[].sources must be a non-empty array of strings'
+    const bad = r.sources.find((x) => !isIpOrCidr(x))
+    if (bad !== undefined) return `clientRoutes[].sources contains an invalid IP/CIDR: ${bad}`
+    if (!isString(r.outbound) || !r.outbound.trim()) return 'clientRoutes[].outbound must be a non-empty string'
+  }
   return null
 }
 

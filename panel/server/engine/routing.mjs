@@ -63,6 +63,16 @@ export const buildRoute = (routing, rulesetDir, options = {}) => {
     rules.push(rule)
   }
 
+  // 终端分流:指定来源 IP / 网段的全部流量走某个出口,排在站点集之前(优先级高于按目标
+  // 分流),但在 ip_is_private / 直连站点之后(局域网目标、订阅站点照旧直连)。
+  // 出口必须是配置里真有的 outbound,否则内核 outbound not found 起不来,这种规则直接丢掉。
+  const known = options.knownOutbounds instanceof Set ? options.knownOutbounds : null
+  for (const cr of Array.isArray(options.clientRoutes) ? options.clientRoutes : []) {
+    if (!cr || !Array.isArray(cr.sources) || !cr.sources.length || !cr.outbound) continue
+    if (known && !known.has(cr.outbound)) continue
+    rules.push({ source_ip_cidr: cr.sources, outbound: cr.outbound })
+  }
+
   if (conf.adBlock) {
     addTag(conf.adRuleset)
     rules.push({ rule_set: conf.adRuleset, action: 'reject' })

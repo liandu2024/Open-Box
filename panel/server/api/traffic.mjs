@@ -106,5 +106,19 @@ export const registerTrafficRoutes = (app, { collector, ctx, paths, now = () => 
     })
   })
 
+  // GET /api/openbox/clients:终端分流选来源用。DHCP 租约里的设备 + 今天在流量里出现过的来源 IP
+  router.get('/clients', async (_req, res) => {
+    const names = await readLeaseNames(ctx, paths && paths.dhcpLeases)
+    const seen = new Map()
+    for (const [ip, name] of names) seen.set(ip, name)
+    try {
+      collector.flush()
+      for (const r of collector.store.day(localDay(now()), 'client', 500)) {
+        if (r.key && !seen.has(r.key)) seen.set(r.key, '')
+      }
+    } catch { /* 采集器没数据就只给租约 */ }
+    res.json({ clients: [...seen.entries()].map(([ip, name]) => ({ ip, name })) })
+  })
+
   app.use('/api/openbox', router)
 }

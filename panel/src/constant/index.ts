@@ -297,6 +297,7 @@ export enum SETTINGS_TAB {
   subscriptions = 'subscriptions',
   groups = 'groups',
   routing = 'routing',
+  clients = 'clients',
   kernel = 'kernel',
   share = 'share',
 }

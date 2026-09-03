@@ -174,3 +174,20 @@ test('订阅/节点站点直连:紧跟在 ip_is_private 之后,域名进 domain�
   assert.deepEqual(route.rules[i + 1], { outbound: '直连', domain: ['hiddfy.example.xyz', 'sub.example.com'], ip_cidr: ['1.2.3.4/32'] })
   assert.equal(route.rules[i + 2].outbound, 'A')
 })
+
+test('终端分流:来源网段的流量走指定出口,排在直连站点之后、站点集之前;出口不存在的丢掉', () => {
+  const { route } = build({ policies: [policy()] }, {
+    directHosts: { domains: ['sub.example.com'], cidrs: [] },
+    clientRoutes: [
+      { sources: ['10.0.0.5/32'], outbound: '香港-自动' },
+      { sources: ['10.0.0.6/32'], outbound: '不存在的组' },
+    ],
+    knownOutbounds: new Set(['direct', '香港-自动', '谷歌']),
+  })
+  const i = route.rules.findIndex((r) => r.source_ip_cidr)
+  const dh = route.rules.findIndex((r) => r.domain && r.domain.includes('sub.example.com'))
+  const pol = route.rules.findIndex((r) => r.outbound === '谷歌')
+  assert.ok(i > dh && i < pol, `client=${i} directHosts=${dh} policy=${pol}`)
+  assert.deepEqual(route.rules[i], { source_ip_cidr: ['10.0.0.5/32'], outbound: '香港-自动' })
+  assert.equal(route.rules.filter((r) => r.source_ip_cidr).length, 1)
+})
