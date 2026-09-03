@@ -28,6 +28,16 @@ export const fetchSelections = async (fetchImpl, secret) => {
   }
 }
 
+// 内核在跑就用它此刻的选择并顺手存快照;读不到(内核停着、API 没起来)就退回上次的快照。
+export const resolveSelections = (store, live) => {
+  const hasLive = live && typeof live === 'object' && Object.keys(live).length > 0
+  if (hasLive) {
+    try { store.setSelectionsSnapshot?.(live) } catch { /* 存不上不影响这次部署 */ }
+    return live
+  }
+  try { return store.getSelectionsSnapshot?.() || {} } catch { return {} }
+}
+
 // deployConfig 对 start/verify/error 三个阶段都会自行调用 rollbackToDirect 回到直连,
 // 但 rollbackToDirect 只管停服务/还原 DNS/撤防火墙,不动"开机自启"标志位——
 // 若不在这里额外 disable,曾经 enable 过的内核在下次重启时仍会被 procd 拉起,
@@ -75,7 +85,7 @@ export const runDeploy = async ({ store, ctx, paths, fetchImpl = globalThis.fetc
   let result
   try {
     const systemDns = await readSystemDns(ctx)
-    const selections = await fetchSelections(fetchImpl, store.getClashSecret())
+    const selections = resolveSelections(store, await fetchSelections(fetchImpl, store.getClashSecret()))
     const { config, profile } = buildCurrentConfig(store, systemDns, {
       cacheFilePath: paths.cacheDb, selections, tlsCert: { certPath: paths.tlsCert, keyPath: paths.tlsKey },
     })

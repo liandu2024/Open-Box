@@ -9,6 +9,8 @@ export const KEYS = {
   groups: 'openbox/groups',
   deployState: 'openbox/deploy-state',
   clashSecret: 'openbox/clash-secret',
+  // 内核里各 selector 当前选的线路的快照(system/scheduler.mjs 每分钟刷新)
+  selections: 'openbox.selections',
 }
 
 export const DEFAULT_PROFILE = {
@@ -124,6 +126,17 @@ export const createStore = ({ get, set, del }, { randomHex = defaultRandomHex } 
     set(KEYS.deployState, JSON.stringify(s))
   }
 
+  // 内核跑着的时候从 clash API 读到的「每个 selector 现在选的是谁」。内核没在跑时
+  // (升级脚本停掉内核后用户点启动、开机自启)拿它生成 DNS 规则,不然所有站点集都
+  // 会按配置里的默认项判直连/代理,和内核用 cache_file 恢复出来的实际选择对不上。
+  const getSelectionsSnapshot = () => {
+    const stored = parseJsonOr(get(KEYS.selections), {})
+    return isPlainObject(stored) ? stored : {}
+  }
+  const setSelectionsSnapshot = (map) => {
+    set(KEYS.selections, JSON.stringify(isPlainObject(map) ? map : {}))
+  }
+
   const getClashSecret = () => {
     const existing = get(KEYS.clashSecret)
     if (typeof existing === 'string' && existing) return existing
@@ -162,6 +175,8 @@ export const createStore = ({ get, set, del }, { randomHex = defaultRandomHex } 
     setNodes,
     getDeployState,
     setDeployState,
+    getSelectionsSnapshot,
+    setSelectionsSnapshot,
     getClashSecret,
   }
 }
