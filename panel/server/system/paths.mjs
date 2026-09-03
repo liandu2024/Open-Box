@@ -13,6 +13,8 @@ export const createPaths = (root = '/opt/open-box') => ({
   channelPath: `${root}/data/channel`,
   // 和 scripts/update.sh 里 STATUS_PATH / UPDATE_LOG 的默认值一致(TMPDIR 未设置时)
   updateStatusPath: '/tmp/openbox-update.status',
+  // OpenWrt dnsmasq 的 DHCP 租约表,每日流量「访问终端」用它把 IP 翻成主机名
+  dhcpLeases: '/tmp/dhcp.leases',
   updateLogPath: '/tmp/openbox-update.log',
   geoUpdateStatePath: `${root}/data/geo-update.json`,
   scheduleStatePath: `${root}/data/schedule-state.json`,

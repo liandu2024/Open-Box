@@ -12,7 +12,7 @@ const fakeStore = () => ({
   daySum() { return { n: 0, up: 0, down: 0 } },
 })
 
-const conn = (id, upload, download, chains = ['节点A', '策略'], metadata = { host: 'Example.COM', destinationIP: '1.1.1.1' }) => ({
+const conn = (id, upload, download, chains = ['节点A', '策略'], metadata = { host: 'Example.COM', destinationIP: '1.1.1.1', sourceIP: '10.0.0.9' }) => ({
   id, upload, download, chains, metadata,
 })
 
@@ -52,6 +52,9 @@ test('第一次快照只做基线不计数;之后按增量记 总量/节点/域�
   assert.deepEqual(p['2026-09-03|host|example.com'], { up: 50, down: 500, conns: 0 })
   assert.deepEqual(p['2026-09-03|node|直连'], { up: 20, down: 30, conns: 1 })
   assert.deepEqual(p['2026-09-03|host|10.0.0.8'], { up: 20, down: 30, conns: 1 })
+  // 访问终端:按来源 IP;b 没写 sourceIP,记到空串
+  assert.deepEqual(p['2026-09-03|client|10.0.0.9'], { up: 50, down: 500, conns: 0 })
+  assert.deepEqual(p['2026-09-03|client|'], { up: 20, down: 30, conns: 1 })
 })
 
 test('内核重启计数归零:总量按当前值算;消失的连接被遗忘,同 id 再出现当新连接', () => {

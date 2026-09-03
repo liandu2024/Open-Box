@@ -689,6 +689,8 @@ export interface OpenboxTrafficRow {
   up: number
   down: number
   conns: number
+  // 访问终端那份带:DHCP 租约里的主机名,没有就是空串
+  name?: string
 }
 export interface OpenboxTrafficDaySummary {
   day: string
@@ -710,7 +712,9 @@ export interface OpenboxTrafficDay {
   total: { up: number; down: number; conns: number }
   nodes: OpenboxTrafficRow[]
   hosts: OpenboxTrafficRow[]
+  clients: OpenboxTrafficRow[]
   hostsCount: number
+  clientsCount: number
   // 总量减去各节点之和:没采样到的短连接
   other: { up: number; down: number }
 }

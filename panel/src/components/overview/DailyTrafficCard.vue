@@ -180,9 +180,17 @@
             >
               {{ $t('trafficByHost') }} ({{ detail.hostsCount }})
             </a>
+            <a
+              role="tab"
+              class="tab"
+              :class="tab === 'clients' && 'tab-active'"
+              @click="tab = 'clients'"
+            >
+              {{ $t('trafficByClient') }} ({{ detail.clientsCount }})
+            </a>
           </div>
           <TextInput
-            v-if="tab === 'hosts'"
+            v-if="tab !== 'nodes'"
             v-model="filter"
             class="w-56"
             :placeholder="$t('search')"
@@ -211,6 +219,10 @@
                   :title="row.key"
                 >
                   {{ row.key || '—' }}
+                  <span
+                    v-if="row.name"
+                    class="text-base-content/60 ml-1"
+                  >{{ row.name }}</span>
                 </td>
                 <td class="text-right tabular-nums">{{ fmt(row.down) }}</td>
                 <td class="text-right tabular-nums">{{ fmt(row.up) }}</td>
@@ -322,7 +334,7 @@ const month = ref('')
 const today = ref('')
 const selectedDay = ref<string | null>(null)
 const detail = ref<OpenboxTrafficDay | null>(null)
-const tab = ref<'nodes' | 'hosts'>('nodes')
+const tab = ref<'nodes' | 'hosts' | 'clients'>('nodes')
 const filter = ref('')
 
 const pad2 = (n: number) => String(n).padStart(2, '0')
@@ -450,16 +462,21 @@ const pick = (d: DayBar) => {
 const rows = computed(() => {
   const d = detail.value
   if (!d) return []
-  const list = tab.value === 'nodes' ? d.nodes : d.hosts
+  const list = tab.value === 'nodes' ? d.nodes : tab.value === 'hosts' ? d.hosts : d.clients
   const q = filter.value.trim().toLowerCase()
-  return q ? list.filter((r) => r.key.toLowerCase().includes(q)) : list
+  return q ? list.filter((r) => r.key.toLowerCase().includes(q) || (r.name || '').toLowerCase().includes(q)) : list
 })
 const visibleRows = computed(() => rows.value.slice(0, ROW_LIMIT))
 const hiddenRows = computed(() => {
   const clientHidden = Math.max(0, rows.value.length - ROW_LIMIT)
+  const d = detail.value
   const serverHidden =
-    tab.value === 'hosts' && detail.value && !filter.value.trim()
-      ? Math.max(0, detail.value.hostsCount - detail.value.hosts.length)
+    d && !filter.value.trim()
+      ? tab.value === 'hosts'
+        ? Math.max(0, d.hostsCount - d.hosts.length)
+        : tab.value === 'clients'
+          ? Math.max(0, d.clientsCount - d.clients.length)
+          : 0
       : 0
   return clientHidden + serverHidden
 })

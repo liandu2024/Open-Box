@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import express from 'express'
-import { buildMonthView, registerTrafficRoutes } from './traffic.mjs'
+import { buildMonthView, parseDhcpLeases, registerTrafficRoutes } from './traffic.mjs'
+import { createMockContext } from '../system/context.mjs'
 
-const startApp = async (collector, now) => {
+const startApp = async (collector, now, extra = {}) => {
   const app = express()
-  registerTrafficRoutes(app, { collector, now })
+  registerTrafficRoutes(app, { collector, now, ...extra })
   const server = app.listen(0)
   await new Promise((resolve) => server.once('listening', resolve))
   return { base: `http://127.0.0.1:${server.address().port}`, close: () => new Promise((r) => server.close(r)) }
@@ -17,6 +18,7 @@ const fakeCollector = () => {
       total: { up: 100, down: 900, conns: 7 },
       node: [{ key: 'A', up: 60, down: 500, conns: 4 }, { key: '直连', up: 10, down: 100, conns: 2 }],
       host: [{ key: 'a.com', up: 70, down: 600, conns: 6 }],
+      client: [{ key: '10.0.0.209', up: 60, down: 500, conns: 5 }, { key: '10.0.0.7', up: 10, down: 100, conns: 1 }],
     },
   }
   let flushed = 0
@@ -83,4 +85,23 @@ test('GET /traffic/day:节点/域名明细 + 未采样差额;非法日期 400', 
   } finally {
     await close()
   }
+})
+
+test('GET /traffic/day:访问终端按来源 IP,能从 DHCP 租约翻出主机名', async () => {
+  const collector = fakeCollector()
+  const ctx = createMockContext({ files: { '/tmp/dhcp.leases': '1757000000 00:15:5d:03:0a:28 10.0.0.209 WIN11-VM 01:00:15:5d:03:0a:28\n1757000000 aa:bb:cc:dd:ee:ff 10.0.0.7 * *\n' } })
+  const { base, close } = await startApp(collector, () => new Date(2026, 8, 3, 10), { ctx, paths: { dhcpLeases: '/tmp/dhcp.leases' } })
+  try {
+    const body = await (await fetch(`${base}/api/openbox/traffic/day?day=2026-09-03`)).json()
+    assert.equal(body.clientsCount, 2)
+    assert.deepEqual(body.clients[0], { key: '10.0.0.209', up: 60, down: 500, conns: 5, name: 'WIN11-VM' })
+    assert.equal(body.clients[1].name, '')
+  } finally {
+    await close()
+  }
+})
+
+test('parseDhcpLeases:主机名为 * 的不算', () => {
+  const m = parseDhcpLeases('1 m1 10.0.0.2 pc 01\n1 m2 10.0.0.3 * *\nbad line\n')
+  assert.deepEqual([...m.entries()], [['10.0.0.2', 'pc']])
 })

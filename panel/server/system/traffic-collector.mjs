@@ -22,6 +22,12 @@ export const localDay = (d = new Date()) => `${d.getFullYear()}-${pad2(d.getMont
 // sing-box 的 chains 是 [末端节点, ..., 顶层策略](和 clash 一样,tracker 里 Reverse 过)
 export const leafOf = (chains) => (Array.isArray(chains) && chains.length ? String(chains[0] ?? '') : '')
 
+// 访问终端:局域网里发起连接的设备,按来源 IP 记
+export const clientOf = (metadata) => {
+  const m = metadata && typeof metadata === 'object' ? metadata : {}
+  return String(m.sourceIP || '').trim()
+}
+
 // 有域名(SNI / HTTP Host / 反查)就记域名,没有就记目标 IP
 export const hostOf = (metadata) => {
   const m = metadata && typeof metadata === 'object' ? metadata : {}
@@ -39,7 +45,7 @@ const nextMonthOf = (month) => {
   return m === 12 ? `${y + 1}-01` : `${y}-${pad2(m + 1)}`
 }
 
-// sqlite 落地。表按 (day, kind, key) 唯一,kind ∈ total | node | host,total 的 key 是空串。
+// sqlite 落地。表按 (day, kind, key) 唯一,kind ∈ total | node | host | client,total 的 key 是空串。
 // 写入全是"加上增量"的 upsert,所以内存里只用攒增量,不用记绝对值。
 export const createTrafficStore = (db) => {
   db.exec(`
@@ -187,6 +193,7 @@ export const createTrafficCollector = ({
       bump(day, 'total', '', 0, 0, conns)
       bump(day, 'node', leafOf(c.chains), du, dd, conns)
       bump(day, 'host', hostOf(c.metadata), du, dd, conns)
+      bump(day, 'client', clientOf(c.metadata), du, dd, conns)
     }
     for (const id of seen.keys()) {
       if (!alive.has(id)) seen.delete(id)
