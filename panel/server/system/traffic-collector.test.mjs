@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { createTrafficCollector, createTrafficStore, hostOf, leafOf, localDay } from './traffic-collector.mjs'
+import { createTrafficCollector, createTrafficStore, hostOf, leafOf, localDay, pairKindFor } from './traffic-collector.mjs'
 
 const fakeStore = () => ({
   rows: [],
@@ -52,9 +52,24 @@ test('第一次快照只做基线不计数;之后按增量记 总量/节点/域�
   assert.deepEqual(p['2026-09-03|host|example.com'], { up: 50, down: 500, conns: 0 })
   assert.deepEqual(p['2026-09-03|node|直连'], { up: 20, down: 30, conns: 1 })
   assert.deepEqual(p['2026-09-03|host|10.0.0.8'], { up: 20, down: 30, conns: 1 })
-  // 访问终端:按来源 IP;b 没写 sourceIP,记到空串
+  // 终端设备:按来源 IP;b 没写 sourceIP,记到空串
   assert.deepEqual(p['2026-09-03|client|10.0.0.9'], { up: 50, down: 500, conns: 0 })
   assert.deepEqual(p['2026-09-03|client|'], { up: 20, down: 30, conns: 1 })
+  // 两维交叉:终端\t目标、终端\t节点、节点\t目标,给面板往下钻
+  assert.deepEqual(p['2026-09-03|client_host|10.0.0.9\texample.com'], { up: 50, down: 500, conns: 0 })
+  assert.deepEqual(p['2026-09-03|client_node|10.0.0.9\t节点A'], { up: 50, down: 500, conns: 0 })
+  assert.deepEqual(p['2026-09-03|node_host|节点A\texample.com'], { up: 50, down: 500, conns: 0 })
+  assert.deepEqual(p['2026-09-03|node_host|直连\t10.0.0.8'], { up: 20, down: 30, conns: 1 })
+  assert.deepEqual(p['2026-09-03|client_host|\t10.0.0.8'], { up: 20, down: 30, conns: 1 })
+})
+
+test('pairKindFor:三种交叉表覆盖六种「我是谁 / 按谁拆」组合,同维或未知返回 null', () => {
+  assert.deepEqual(pairKindFor('client', 'host'), ['client_host', 0])
+  assert.deepEqual(pairKindFor('host', 'client'), ['client_host', 1])
+  assert.deepEqual(pairKindFor('node', 'client'), ['client_node', 1])
+  assert.deepEqual(pairKindFor('node', 'host'), ['node_host', 0])
+  assert.equal(pairKindFor('node', 'node'), null)
+  assert.equal(pairKindFor('total', 'node'), null)
 })
 
 test('内核重启计数归零:总量按当前值算;消失的连接被遗忘,同 id 再出现当新连接', () => {
@@ -121,4 +136,36 @@ test('sqlite store:upsert 累加、按月/按天查询、清理', { skip: !sqlit
   store.prune('2026-09-01')
   assert.deepEqual(store.month('2026-08'), [])
   assert.equal(store.month('2026-09').length, 1)
+})
+
+test('sqlite store:交叉表按前一维 / 后一维查构成,含空串 key;交叉表单独清理', { skip: !sqlite && '本机 Node 没有 node:sqlite' }, () => {
+  const db = new sqlite.DatabaseSync(':memory:')
+  const store = createTrafficStore(db)
+  store.add([
+    { day: '2026-09-03', kind: 'client_host', key: '10.0.0.9\ta.com', up: 1, down: 10, conns: 1 },
+    { day: '2026-09-03', kind: 'client_host', key: '10.0.0.9\tb.com', up: 2, down: 30, conns: 1 },
+    { day: '2026-09-03', kind: 'client_host', key: '10.0.0.90\ta.com', up: 5, down: 50, conns: 1 },
+    { day: '2026-09-03', kind: 'client_host', key: '\ta.com', up: 7, down: 70, conns: 1 },
+    { day: '2026-09-03', kind: 'node_host', key: '香港 | 01\ta.com', up: 3, down: 3, conns: 1 },
+    { day: '2026-09-02', kind: 'client_host', key: '10.0.0.9\ta.com', up: 9, down: 9, conns: 1 },
+    { day: '2026-09-02', kind: 'client', key: '10.0.0.9', up: 9, down: 9, conns: 1 },
+  ])
+  // 终端 10.0.0.9 按访问目标拆:只拿它自己的两条(10.0.0.90 是别的终端),按总量倒序
+  assert.deepEqual(store.drill('2026-09-03', 'client', '10.0.0.9', 'host', 10), {
+    rows: [{ key: 'b.com', up: 2, down: 30, conns: 1 }, { key: 'a.com', up: 1, down: 10, conns: 1 }],
+    count: 2,
+  })
+  // 访问目标 a.com 按终端拆:后一维匹配,包括来源为空串的
+  const byClient = store.drill('2026-09-03', 'host', 'a.com', 'client', 10)
+  assert.deepEqual(byClient.rows.map((r) => r.key), ['', '10.0.0.90', '10.0.0.9'])
+  assert.equal(byClient.count, 3)
+  assert.deepEqual(store.drill('2026-09-03', 'host', 'a.com', 'node', 10).rows, [{ key: '香港 | 01', up: 3, down: 3, conns: 1 }])
+  // limit 只截行,count 还是全部
+  assert.deepEqual(store.drill('2026-09-03', 'host', 'a.com', 'client', 1).count, 3)
+  assert.equal(store.drill('2026-09-03', 'host', 'a.com', 'client', 1).rows.length, 1)
+  assert.deepEqual(store.drill('2026-09-03', 'node', 'node', 'node', 10), { rows: [], count: 0 })
+  // 交叉表单独清理,单维的不动
+  store.prunePairs('2026-09-03')
+  assert.deepEqual(store.drill('2026-09-02', 'client', '10.0.0.9', 'host', 10), { rows: [], count: 0 })
+  assert.deepEqual(store.day('2026-09-02', 'client', 10), [{ key: '10.0.0.9', up: 9, down: 9, conns: 1 }])
 })

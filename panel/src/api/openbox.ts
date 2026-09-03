@@ -770,6 +770,20 @@ export const fetchTrafficMonth = (month?: string) =>
   requestJson<OpenboxTrafficMonth>(`/api/openbox/traffic/month${month ? `?month=${encodeURIComponent(month)}` : ''}`)
 export const fetchTrafficDay = (day: string, limit = 500) =>
   requestJson<OpenboxTrafficDay>(`/api/openbox/traffic/day?day=${encodeURIComponent(day)}&limit=${limit}`)
+// 一条记录的构成:kind/key 定位点开的那条(终端 IP / 节点名 / 域名),by 是拆成哪一维
+export type OpenboxTrafficDim = 'client' | 'node' | 'host'
+export interface OpenboxTrafficDrill {
+  day: string
+  kind: OpenboxTrafficDim
+  key: string
+  by: OpenboxTrafficDim
+  count: number
+  rows: OpenboxTrafficRow[]
+}
+export const fetchTrafficDrill = (day: string, kind: OpenboxTrafficDim, key: string, by: OpenboxTrafficDim, limit = 200) =>
+  requestJson<OpenboxTrafficDrill>(
+    `/api/openbox/traffic/drill?day=${encodeURIComponent(day)}&kind=${kind}&key=${encodeURIComponent(key)}&by=${by}&limit=${limit}`,
+  )
 
 // 共享网络 · 保存前的端口检测(server/api/servers.mjs)
 export interface OpenboxPortCheck {

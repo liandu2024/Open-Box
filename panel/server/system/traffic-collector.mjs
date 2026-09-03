@@ -45,8 +45,23 @@ const nextMonthOf = (month) => {
   return m === 12 ? `${y + 1}-01` : `${y}-${pad2(m + 1)}`
 }
 
-// sqlite 落地。表按 (day, kind, key) 唯一,kind ∈ total | node | host | client,total 的 key 是空串。
+// 两维交叉的明细:kind 是 client_host | client_node | node_host,key 是「前一维\t后一维」。
+// 面板里点开一条终端/节点/访问目标,就按这三张交叉表查它由什么构成。
+export const PAIR_SEP = '\t'
+const PAIR_KINDS = {
+  client: { host: ['client_host', 0], node: ['client_node', 0] },
+  node: { client: ['client_node', 1], host: ['node_host', 0] },
+  host: { client: ['client_host', 1], node: ['node_host', 1] },
+}
+// 给定「我是哪一维、要按哪一维拆」,返回交叉表的 kind 和我在 key 里的位置(0 前 1 后)
+export const pairKindFor = (kind, by) => (PAIR_KINDS[kind] && PAIR_KINDS[kind][by]) || null
+export const PAIR_KIND_NAMES = ['client_host', 'client_node', 'node_host']
+
+// sqlite 落地。表按 (day, kind, key) 唯一,kind ∈ total | node | host | client | 上面三种交叉,total 的 key 是空串。
 // 写入全是"加上增量"的 upsert,所以内存里只用攒增量,不用记绝对值。
+// node:sqlite 查出来的是无原型对象,整理成普通对象再往外交(deepEqual、JSON 都省心)
+const plain = (row) => ({ ...row })
+
 export const createTrafficStore = (db) => {
   db.exec(`
     CREATE TABLE IF NOT EXISTS traffic_daily (
@@ -79,7 +94,30 @@ export const createTrafficStore = (db) => {
     SELECT COUNT(*) AS n, COALESCE(SUM(up), 0) AS up, COALESCE(SUM(down), 0) AS down
     FROM traffic_daily WHERE day = ? AND kind = ?
   `)
+  // 交叉表按前一维查:key 以「x\t」开头,用主键范围扫(\n 是紧挨着 \t 的下一个字符)
+  const selectPairHead = db.prepare(`
+    SELECT substr(key, length(?1) + 2) AS key, up, down, conns FROM traffic_daily
+    WHERE day = ?2 AND kind = ?3 AND key >= ?1 || char(9) AND key < ?1 || char(10)
+    ORDER BY (up + down) DESC, key LIMIT ?4
+  `)
+  const countPairHead = db.prepare(`
+    SELECT COUNT(*) AS n FROM traffic_daily
+    WHERE day = ?2 AND kind = ?3 AND key >= ?1 || char(9) AND key < ?1 || char(10)
+  `)
+  // 按后一维查:key 以「\tx」结尾
+  const selectPairTail = db.prepare(`
+    SELECT substr(key, 1, length(key) - length(?1) - 1) AS key, up, down, conns FROM traffic_daily
+    WHERE day = ?2 AND kind = ?3 AND substr(key, -length(?1) - 1) = char(9) || ?1
+    ORDER BY (up + down) DESC, key LIMIT ?4
+  `)
+  const countPairTail = db.prepare(`
+    SELECT COUNT(*) AS n FROM traffic_daily
+    WHERE day = ?2 AND kind = ?3 AND substr(key, -length(?1) - 1) = char(9) || ?1
+  `)
   const deleteBefore = db.prepare(`DELETE FROM traffic_daily WHERE day < ?`)
+  const deletePairsBefore = db.prepare(
+    `DELETE FROM traffic_daily WHERE day < ? AND kind IN (${PAIR_KIND_NAMES.map(() => '?').join(', ')})`,
+  )
 
   return {
     add(rows) {
@@ -94,19 +132,37 @@ export const createTrafficStore = (db) => {
       }
     },
     month(month) {
-      return selectMonth.all(`${month}-01`, `${nextMonthOf(month)}-01`)
+      return selectMonth.all(`${month}-01`, `${nextMonthOf(month)}-01`).map(plain)
     },
     dayTotal(day) {
-      return selectTotal.get(day) || null
+      const r = selectTotal.get(day)
+      return r ? plain(r) : null
     },
     day(day, kind, limit) {
-      return selectKind.all(day, kind, limit)
+      return selectKind.all(day, kind, limit).map(plain)
     },
     daySum(day, kind) {
-      return sumKind.get(day, kind) || { n: 0, up: 0, down: 0 }
+      const r = sumKind.get(day, kind)
+      return r ? plain(r) : { n: 0, up: 0, down: 0 }
+    },
+    // 一条记录的构成:kind/key 是点开的那条,by 是要拆成哪一维
+    drill(day, kind, key, by, limit) {
+      const pair = pairKindFor(kind, by)
+      if (!pair) return { rows: [], count: 0 }
+      const [pairKind, pos] = pair
+      const select = pos === 0 ? selectPairHead : selectPairTail
+      const count = pos === 0 ? countPairHead : countPairTail
+      return {
+        rows: select.all(key, day, pairKind, limit).map(plain),
+        count: Number((count.get(key, day, pairKind) || {}).n) || 0,
+      }
     },
     prune(beforeDay) {
       deleteBefore.run(beforeDay)
+    },
+    // 交叉表行数是单维的好几倍,留的天数短一些
+    prunePairs(beforeDay) {
+      deletePairsBefore.run(beforeDay, ...PAIR_KIND_NAMES)
     },
   }
 }
@@ -120,6 +176,7 @@ export const createTrafficCollector = ({
   retryMs = 10_000,
   flushMs = 60_000,
   keepDays = 400,
+  keepPairDays = 90,
   now = () => new Date(),
   log = () => {},
 }) => {
@@ -190,10 +247,16 @@ export const createTrafficCollector = ({
       seen.set(id, { up: cu, down: cd })
       const conns = isNew ? 1 : 0
       if (!du && !dd && !conns) continue
+      const node = leafOf(c.chains)
+      const host = hostOf(c.metadata)
+      const client = clientOf(c.metadata)
       bump(day, 'total', '', 0, 0, conns)
-      bump(day, 'node', leafOf(c.chains), du, dd, conns)
-      bump(day, 'host', hostOf(c.metadata), du, dd, conns)
-      bump(day, 'client', clientOf(c.metadata), du, dd, conns)
+      bump(day, 'node', node, du, dd, conns)
+      bump(day, 'host', host, du, dd, conns)
+      bump(day, 'client', client, du, dd, conns)
+      bump(day, 'client_host', client + PAIR_SEP + host, du, dd, conns)
+      bump(day, 'client_node', client + PAIR_SEP + node, du, dd, conns)
+      bump(day, 'node_host', node + PAIR_SEP + host, du, dd, conns)
     }
     for (const id of seen.keys()) {
       if (!alive.has(id)) seen.delete(id)
@@ -220,6 +283,11 @@ export const createTrafficCollector = ({
       const d = now()
       d.setDate(d.getDate() - keepDays)
       store.prune(localDay(d))
+      if (typeof store.prunePairs === 'function') {
+        const p = now()
+        p.setDate(p.getDate() - keepPairDays)
+        store.prunePairs(localDay(p))
+      }
     } catch (err) {
       log(`[traffic] 清理旧记录失败:${err instanceof Error ? err.message : err}`)
     }

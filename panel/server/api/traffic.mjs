@@ -59,6 +59,8 @@ const readLeaseNames = async (ctx, leasesPath) => {
   }
 }
 
+const DRILL_KINDS = new Set(['client', 'node', 'host'])
+
 export const registerTrafficRoutes = (app, { collector, ctx, paths, now = () => new Date() }) => {
   const router = express.Router()
 
@@ -107,6 +109,30 @@ export const registerTrafficRoutes = (app, { collector, ctx, paths, now = () => 
   })
 
   // GET /api/openbox/clients:终端分流选来源用。DHCP 租约里的设备 + 今天在流量里出现过的来源 IP
+  // 一条记录往下钻:day + kind(client|node|host)+ key 定位记录,by 是拆成哪一维
+  router.get('/traffic/drill', async (req, res) => {
+    const day = typeof req.query.day === 'string' ? req.query.day : ''
+    const kind = typeof req.query.kind === 'string' ? req.query.kind : ''
+    const by = typeof req.query.by === 'string' ? req.query.by : ''
+    const key = typeof req.query.key === 'string' ? req.query.key : ''
+    if (!DAY_RE.test(day)) {
+      res.status(400).json({ error: 'day 应为 YYYY-MM-DD' })
+      return
+    }
+    if (!DRILL_KINDS.has(kind) || !DRILL_KINDS.has(by) || kind === by) {
+      res.status(400).json({ error: 'kind/by 应为 client、node、host 中不同的两个' })
+      return
+    }
+    const limit = Math.min(1000, Math.max(1, Number(req.query.limit) || 200))
+    collector.flush()
+    const { rows, count } = collector.store.drill(day, kind, key, by, limit)
+    const names = by === 'client' ? await readLeaseNames(ctx, paths && paths.dhcpLeases) : null
+    res.json({
+      day, kind, key, by, count,
+      rows: names ? rows.map((r) => ({ ...r, name: names.get(r.key) || '' })) : rows,
+    })
+  })
+
   router.get('/clients', async (_req, res) => {
     const names = await readLeaseNames(ctx, paths && paths.dhcpLeases)
     const seen = new Map()

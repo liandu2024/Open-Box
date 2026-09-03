@@ -22,6 +22,7 @@ const fakeCollector = () => {
     },
   }
   let flushed = 0
+  const drills = []
   return {
     flushed: () => flushed,
     flush() { flushed += 1 },
@@ -35,7 +36,16 @@ const fakeCollector = () => {
         const rows = data[day]?.[kind] || []
         return { n: rows.length, up: rows.reduce((s, r) => s + r.up, 0), down: rows.reduce((s, r) => s + r.down, 0) }
       },
+      drill(day, kind, key, by, limit) {
+        drills.push({ day, kind, key, by, limit })
+        if (day !== '2026-09-03' || kind !== 'host' || key !== 'a.com') return { rows: [], count: 0 }
+        const rows = by === 'client'
+          ? [{ key: '10.0.0.209', up: 60, down: 500, conns: 5 }, { key: '10.0.0.7', up: 10, down: 100, conns: 1 }]
+          : [{ key: 'A', up: 70, down: 600, conns: 6 }]
+        return { rows: rows.slice(0, limit), count: rows.length }
+      },
     },
+    drills,
   }
 }
 
@@ -96,6 +106,31 @@ test('GET /traffic/day:访问终端按来源 IP,能从 DHCP 租约翻出主机�
     assert.equal(body.clientsCount, 2)
     assert.deepEqual(body.clients[0], { key: '10.0.0.209', up: 60, down: 500, conns: 5, name: 'WIN11-VM' })
     assert.equal(body.clients[1].name, '')
+  } finally {
+    await close()
+  }
+})
+
+test('GET /traffic/drill:一条记录按另一维拆;按终端拆时带主机名;参数校验 400', async () => {
+  const collector = fakeCollector()
+  const ctx = createMockContext({ files: { '/tmp/dhcp.leases': '1757000000 00:15:5d:03:0a:28 10.0.0.209 WIN11-VM 01:00:15:5d:03:0a:28\n' } })
+  const { base, close } = await startApp(collector, () => new Date(2026, 8, 3, 10), { ctx, paths: { dhcpLeases: '/tmp/dhcp.leases' } })
+  try {
+    const q = (s) => fetch(`${base}/api/openbox/traffic/drill?${s}`)
+    const byClient = await (await q('day=2026-09-03&kind=host&key=a.com&by=client')).json()
+    assert.equal(byClient.count, 2)
+    assert.deepEqual(byClient.rows[0], { key: '10.0.0.209', up: 60, down: 500, conns: 5, name: 'WIN11-VM' })
+    assert.equal(byClient.rows[1].name, '')
+    assert.equal(collector.flushed(), 1)
+    const byNode = await (await q('day=2026-09-03&kind=host&key=a.com&by=node&limit=1')).json()
+    assert.deepEqual(byNode.rows, [{ key: 'A', up: 70, down: 600, conns: 6 }])
+    assert.deepEqual(collector.drills.at(-1), { day: '2026-09-03', kind: 'host', key: 'a.com', by: 'node', limit: 1 })
+    // 空 key(来源不明的终端)也能查
+    assert.equal((await q('day=2026-09-03&kind=client&key=&by=host')).status, 200)
+    assert.equal((await q('day=2026-09-32&kind=host&key=a.com&by=client')).status, 400)
+    assert.equal((await q('day=2026-09-03&kind=host&key=a.com&by=host')).status, 400)
+    assert.equal((await q('day=2026-09-03&kind=total&key=&by=host')).status, 400)
+    assert.equal((await q('day=2026-09-03&kind=host&key=a.com')).status, 400)
   } finally {
     await close()
   }
