@@ -77,9 +77,11 @@
               >
                 <ClipboardDocumentIcon class="h-4 w-4" />
               </button>
+              <!-- 电源键按状态变色:启用中绿色,停用后灰色(和站点集 / 节点管理一致) -->
               <button
                 type="button"
                 class="btn btn-circle btn-sm"
+                :class="s.enabled === false ? 'text-base-content/40' : 'text-success'"
                 v-tip="$t(s.enabled === false ? 'groupEnable' : 'groupDisable')"
                 @click="toggle(s)"
               >
@@ -121,6 +123,7 @@ import { fetchProfile, saveProfile, type OpenboxServer, type OpenboxServerProtoc
 import StatusBadge from '@/components/common/StatusBadge.vue'
 import ServerEditDialog from '@/components/share/ServerEditDialog.vue'
 import { usePaddingForViews } from '@/composables/paddingViews'
+import { copyText as copyToClipboard } from '@/helper/clipboard'
 import { showNotification } from '@/helper/notification'
 import { buildShareLink } from '@/helper/shareLink'
 import {
@@ -202,12 +205,8 @@ const remove = (s: OpenboxServer) => {
 }
 const copyText = async (text: string) => {
   if (!text) return
-  try {
-    await navigator.clipboard.writeText(text)
-    showNotification({ content: 'copySuccess', type: 'alert-success' })
-  } catch {
-    showNotification({ content: 'copyFailed', type: 'alert-error' })
-  }
+  const ok = await copyToClipboard(text)
+  showNotification(ok ? { content: 'copySuccess', type: 'alert-success' } : { content: 'copyFailed', type: 'alert-error' })
 }
 
 onMounted(load)

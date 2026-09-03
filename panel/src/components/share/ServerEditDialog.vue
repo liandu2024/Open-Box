@@ -220,6 +220,7 @@
 <script setup lang="ts">
 import { checkServerPort, type OpenboxServer, type OpenboxServerProtocol } from '@/api/openbox'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
+import { copyText as copyToClipboard } from '@/helper/clipboard'
 import { showNotification } from '@/helper/notification'
 import {
   buildShareLink,
@@ -307,12 +308,8 @@ const shareLink = computed(() => buildShareLink(form))
 
 const copyText = async (text: string) => {
   if (!text) return
-  try {
-    await navigator.clipboard.writeText(text)
-    showNotification({ content: 'copySuccess', type: 'alert-success' })
-  } catch {
-    showNotification({ content: 'copyFailed', type: 'alert-error' })
-  }
+  const ok = await copyToClipboard(text)
+  showNotification(ok ? { content: 'copySuccess', type: 'alert-success' } : { content: 'copyFailed', type: 'alert-error' })
 }
 
 // 节点链接的二维码

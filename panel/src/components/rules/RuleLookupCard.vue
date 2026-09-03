@@ -96,6 +96,7 @@
 <script setup lang="ts">
 import { NOT_CONNECTED } from '@/constant'
 import { getColorForLatency } from '@/helper'
+import { copyText as copyToClipboard } from '@/helper/clipboard'
 import { showNotification } from '@/helper/notification'
 import { getLatencyByName, proxyMap } from '@/store/proxies'
 import { displayLatencyInRule, displayNowNodeInRule } from '@/store/settings'
@@ -138,36 +139,7 @@ const getLatencyClass = (proxyName: string) => {
 }
 
 const copyUrl = async (url: string) => {
-  try {
-    await navigator.clipboard.writeText(url)
-    showNotification({
-      content: 'copySuccess',
-      type: 'alert-success',
-      timeout: 1500,
-    })
-  } catch (error) {
-    console.warn('Failed to copy rule source url with navigator.clipboard, falling back', error)
-
-    const textArea = document.createElement('textarea')
-    textArea.value = url
-    textArea.setAttribute('readonly', 'readonly')
-    textArea.style.position = 'fixed'
-    textArea.style.opacity = '0'
-    document.body.appendChild(textArea)
-    textArea.select()
-
-    try {
-      document.execCommand('copy')
-      showNotification({
-        content: 'copySuccess',
-        type: 'alert-success',
-        timeout: 1500,
-      })
-    } catch (fallbackError) {
-      console.warn('Failed to copy rule source url with fallback', fallbackError)
-    } finally {
-      document.body.removeChild(textArea)
-    }
-  }
+  const ok = await copyToClipboard(url)
+  showNotification(ok ? { content: 'copySuccess', type: 'alert-success', timeout: 1500 } : { content: 'copyFailed', type: 'alert-error' })
 }
 </script>

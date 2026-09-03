@@ -200,6 +200,7 @@
 </template>
 
 <script setup lang="ts">
+import { copyText } from '@/helper/clipboard'
 import { nodeGroups, policyGroups } from '@/composables/proxies'
 import { fetchProxies, proxyGroupList, proxyMap } from '@/store/proxies'
 import { iconReflectList } from '@/store/settings'
@@ -347,12 +348,7 @@ const handleDrop = async (key: string, event: DragEvent, target: { icon: string 
 
 const copyIcon = async (icon: string) => {
   if (!icon) return
-
-  try {
-    await navigator.clipboard.writeText(icon)
-  } catch (error) {
-    console.warn('Failed to copy icon data', error)
-  }
+  await copyText(icon)
 }
 
 const updateIconFromInput = (key: string, target: { icon: string }, value: string) => {
