@@ -99,7 +99,7 @@ export const buildConfig = ({ nodes, profile, userGroups, systemDns, localSubnet
   }
   const { route } = buildRoute(sanitizedRouting, profile.rulesetDir, {
     dnsMode, directTag: builtin.direct, directHosts,
-    icmpDirect: profile.icmpDirect !== false,
+    icmpDirect: profile.icmpDirect === true,
     tunCidrs: profile.ipv6 ? [TUN_V4_NET, TUN_V6_NET] : [TUN_V4_NET],
     dnsmasqTag: dnsMode === 'dnsmasq' ? DNSMASQ_OUTBOUND_TAG : '',
     // 终端分流(engine/client-routes.mjs);出口只认配置里真有的 outbound

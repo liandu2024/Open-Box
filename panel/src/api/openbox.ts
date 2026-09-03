@@ -108,7 +108,7 @@ export interface OpenboxProfile {
   clientRoutes?: OpenboxClientRoute[]
   // 订阅链接和节点服务器的地址一律直连(默认开)
   directForNodes?: boolean
-  // ping(ICMP)一律直连:真实延迟;关掉则内核本地代答
+  // ping(ICMP)一律直连(默认关):关着时跟着分流走,直连目标真实延迟、代理目标内核代答
   icmpDirect?: boolean
   region: string
   ipv6: boolean

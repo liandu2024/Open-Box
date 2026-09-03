@@ -21,8 +21,9 @@ export const DEFAULT_PROFILE = {
   ipv6: false,
   // 订阅链接和节点服务器的地址一律直连,不看站点集(engine/direct-hosts.mjs)
   directForNodes: true,
-  // ping(ICMP)一律直连,返回真实延迟;关掉则由内核代答(代理目标恒 1ms)
-  icmpDirect: true,
+  // ping(ICMP)一律直连(默认关):开了之后被墙目标会超时、看起来像打不开。关着时 ICMP 跟着分流走,
+  // 直连目标(国内站、节点服务器)是真实延迟,代理目标由内核本地代答(没有代理协议能承载 ICMP)
+  icmpDirect: false,
   tun: { autoRedirect: true },
   // 共享网络:本机开的服务器入站(engine/servers.mjs),默认没有
   servers: [],
