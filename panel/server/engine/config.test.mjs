@@ -147,3 +147,14 @@ test('directForNodes 默认开:节点服务器和订阅主机名生成直连规�
   )
   assert.deepEqual(hosts, { domains: ['node.example.com', 'sub.example.com'], cidrs: ['5.6.7.8/32'] })
 })
+
+test('防回环:目标是 tun 自己网段的连接直接拒绝,且排在 ip_is_private 之前', () => {
+  const c = buildConfig({ nodes, regionGroups, profile })
+  const i = c.route.rules.findIndex((r) => Array.isArray(r.ip_cidr) && r.action === 'reject')
+  const j = c.route.rules.findIndex((r) => r.ip_is_private)
+  assert.ok(i >= 0 && j >= 0 && i < j, `reject=${i} ip_is_private=${j}`)
+  assert.ok(c.route.rules[i].ip_cidr.includes('172.19.0.0/30'))
+  const v6 = buildConfig({ nodes, regionGroups, profile: { ...profile, ipv6: true } })
+  const r6 = v6.route.rules.find((r) => Array.isArray(r.ip_cidr) && r.action === 'reject')
+  assert.deepEqual(r6.ip_cidr, ['172.19.0.0/30', 'fdfe:dcba:9876::/126'])
+})

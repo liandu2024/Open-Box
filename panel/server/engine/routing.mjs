@@ -29,6 +29,14 @@ export const buildRoute = (routing, rulesetDir, options = {}) => {
     // 仅劫持 dns-in 自身收到的查询,其余 DNS 流量按普通路由走(交给 dnsmasq 上游)。
     rules.push({ inbound: ['dns-in'], action: 'hijack-dns' })
   }
+  // 防回环:目标是 tun 自己的网段(172.19.0.0/30 等)的连接直接拒绝。tun 的对端地址
+  // 172.19.0.2 只是路由下一跳,没有任何合法流量会以它为目标;可一旦有(真机上出现过
+  // 对 172.19.0.2:53 的 TCP DNS 查询),ip_is_private 会把它交给直连出站,直连再拨
+  // 172.19.0.2 又会回到 tun,sing-box 自己喂自己,每一跳新开一个连接,几十秒就把
+  // 句柄和内存吃光、整机卡死。必须排在 ip_is_private 前面。
+  if (Array.isArray(options.tunCidrs) && options.tunCidrs.length) {
+    rules.push({ ip_cidr: options.tunCidrs, action: 'reject' })
+  }
   // 内置的直连出站可以改名,tag 从调用方传进来
   rules.push({ ip_is_private: true, outbound: options.directTag || 'direct' })
 

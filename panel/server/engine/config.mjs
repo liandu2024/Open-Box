@@ -11,6 +11,9 @@ export const PANEL_INBOUND_PORT = 7891
 
 const TUN_V4 = '172.19.0.1/30'
 const TUN_V6 = 'fdfe:dcba:9876::1/126'
+// 上面两个地址所在的网段,给路由规则做防回环用(见 routing.mjs)
+const TUN_V4_NET = '172.19.0.0/30'
+const TUN_V6_NET = 'fdfe:dcba:9876::/126'
 
 // systemDns:路由器 WAN 下发的 DNS 上游(部署时从 resolv.conf.auto 读,见
 // system/resolv.mjs)。只有 dnsmasq 接管模式用得上——那时不能让 sing-box 去问
@@ -61,7 +64,9 @@ export const buildConfig = ({ nodes, profile, userGroups, systemDns, subscriptio
   const sanitizedRouting = routingConf
 
   const dnsMode = (profile.dns && profile.dns.mode) || 'hijack'
-  const { route } = buildRoute(sanitizedRouting, profile.rulesetDir, { dnsMode, directTag: builtin.direct, directHosts })
+  const { route } = buildRoute(sanitizedRouting, profile.rulesetDir, {
+    dnsMode, directTag: builtin.direct, directHosts, tunCidrs: profile.ipv6 ? [TUN_V4_NET, TUN_V6_NET] : [TUN_V4_NET],
+  })
   // groupTags 传给 DNS:它要按"这个站点集默认走哪"决定用直连还是代理侧解析,
   // 而"默认走哪"在 default 为空时取决于成员表的第一项(见 effectiveOutbound)。
   const dns = buildDns(profile, { systemDns, groupTags, builtin, selections, directHosts })
