@@ -727,3 +727,42 @@ test('POST /penetration:策略的域名条件本地就能判定,不去 exec 内�
     await close()
   }
 })
+
+test('命中规则集时带回具体命中的条目(内核解码后逐条比),手写条件同样列出', async () => {
+  const srs = `${paths.rulesetDir}/geosite-google.srs`
+  const ctx = createMockContext({
+    files: {
+      ...withSingbox(srs),
+      [`${paths.dataDir}/tmp/geosite-google.json`]: JSON.stringify({
+        version: 1,
+        rules: [{ domain: ['www.google.com'], domain_suffix: ['google.com', 'gstatic.com'] }, { domain_keyword: 'youtube' }],
+      }),
+    },
+    execResults: {
+      [`${paths.singbox} rule-set match -f binary ${srs} mail.google.com`]: { code: 0, stderr: 'match rules.\n' },
+    },
+  })
+  const store = memStore()
+  store.setNodes(NODES)
+  store.setProfile({
+    routing: {
+      fallbackDefault: 'direct',
+      policies: [{ id: 'g', name: 'Google', rulesets: ['geosite-google'], domainSuffix: ['google.com'] }],
+    },
+  })
+  const { baseUrl, close } = await startApp({ ctx, store })
+  try {
+    const { res, body } = await post(baseUrl, 'mail.google.com')
+    assert.equal(res.status, 200)
+    assert.ok(body.matched, 'should match the Google policy rule')
+    assert.equal(body.matched.outbound, 'Google')
+    const entries = body.matched.entries
+    assert.ok(Array.isArray(entries) && entries.length >= 2, JSON.stringify(body.matched))
+    assert.ok(entries.some((e) => e.source === 'custom' && e.type === 'domain_suffix' && e.value === 'google.com'))
+    assert.ok(entries.some((e) => e.source === 'geosite-google' && e.type === 'domain_suffix' && e.value === 'google.com'))
+    assert.ok(!entries.some((e) => e.value === 'gstatic.com'))
+    assert.equal(body.matched.entriesTotal, entries.length)
+  } finally {
+    await close()
+  }
+})

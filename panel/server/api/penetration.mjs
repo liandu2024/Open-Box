@@ -1,4 +1,5 @@
 import express from 'express'
+import { loadEntries } from './rulesets.mjs'
 import { buildRoute } from '../engine/routing.mjs'
 import { normalizeRouting } from '../engine/routing-model.mjs'
 import { isPrivateOrLoopbackIp } from './net-guard.mjs'
@@ -111,6 +112,44 @@ export const matchLocalConditions = (rule, target) => {
   if (list(rule.domain_keyword).some((k) => host.includes(String(k).toLowerCase()))) return true
   if (list(rule.ip_cidr).some((c) => ipv4InCidr(host, c))) return true
   return false
+}
+
+// 单条条目(规则集解出来的,或站点集里手写的)是否命中目标——和 matchLocalConditions
+// 同一套语义,多认一个 domain_regex。给「命中了哪一条具体的域名/IP」用。
+export const entryMatches = (type, value, target) => {
+  const host = String(target).toLowerCase()
+  const v = String(value)
+  switch (type) {
+    case 'domain': return v.toLowerCase() === host
+    case 'domain_suffix': {
+      const suffix = v.toLowerCase()
+      return host === suffix || host.endsWith(suffix.startsWith('.') ? suffix : `.${suffix}`)
+    }
+    case 'domain_keyword': return host.includes(v.toLowerCase())
+    case 'domain_regex': try { return new RegExp(v).test(host) } catch { return false }
+    case 'ip_cidr': return ipv4InCidr(host, v)
+    default: return false
+  }
+}
+
+const MAX_MATCHED_ENTRIES = 20
+// 命中的那条规则里,具体是哪些域名/IP 条目匹配上了:手写条件直接比,规则集用内核解码
+// 后逐条比(rulesets.mjs 里有缓存)。解不开的规则集跳过——命中结论已经由 rule-set match
+// 定了,这里只是把"为什么命中"摆出来。
+const collectMatchedEntries = async (ctx, paths, rule, target, fetchImpl) => {
+  const out = []
+  let total = 0
+  const push = (type, value, source) => { total++; if (out.length < MAX_MATCHED_ENTRIES) out.push({ type, value, source }) }
+  const list = (v) => (Array.isArray(v) ? v : v === undefined ? [] : [v])
+  for (const type of LOCAL_CONDITION_KEYS) {
+    for (const value of list(rule[type])) if (entryMatches(type, value, target)) push(type, value, 'custom')
+  }
+  for (const tag of list(rule.rule_set)) {
+    let entries
+    try { entries = await loadEntries(ctx, paths, tag, fetchImpl) } catch { continue }
+    for (const e of entries) if (entryMatches(e.type, e.value, target)) push(e.type, e.value, tag)
+  }
+  return { entries: out, entriesTotal: total }
 }
 
 const errorMessage = (err) => (err instanceof Error ? err.message : String(err))
@@ -238,6 +277,9 @@ export const registerPenetrationRoutes = (app, { store, ctx, paths, fetchImpl = 
         matched = { index: i, rule }
         if (rule.outbound !== undefined) matched.outbound = rule.outbound
         if (rule.action !== undefined) matched.action = rule.action
+        if (!Object.prototype.hasOwnProperty.call(rule, 'ip_is_private')) {
+          Object.assign(matched, await collectMatchedEntries(ctx, paths, rule, target, fetchImpl))
+        }
         break
       }
     }

@@ -34,7 +34,7 @@ const flatten = (json) => {
   return out
 }
 
-const loadEntries = async (ctx, paths, tag, fetchImpl) => {
+export const loadEntries = async (ctx, paths, tag, fetchImpl) => {
   const hit = cache.get(tag)
   if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.entries
 

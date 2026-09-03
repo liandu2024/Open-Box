@@ -31,6 +31,28 @@
           </template>
         </div>
 
+        <!-- 具体命中的域名/IP 条目:规则集里的哪一条、或站点集里手写的哪一条 -->
+        <div
+          v-if="result.matched?.entries?.length"
+          class="flex flex-col gap-1"
+        >
+          <div
+            v-for="(e, i) in result.matched.entries"
+            :key="`${e.source}-${e.type}-${e.value}-${i}`"
+            class="flex flex-wrap items-center gap-2 text-xs"
+          >
+            <span class="badge badge-sm badge-ghost font-mono">{{ typeLabel(e.type) }}</span>
+            <span class="text-main font-mono">{{ e.value }}</span>
+            <span class="text-base-content/50">{{ e.source === 'custom' ? $t('ruleSourceCustom') : e.source }}</span>
+          </div>
+          <div
+            v-if="(result.matched.entriesTotal || 0) > result.matched.entries.length"
+            class="text-base-content/50 text-xs"
+          >
+            {{ $t('ruleLookupMoreEntries', { count: (result.matched.entriesTotal || 0) - result.matched.entries.length }) }}
+          </div>
+        </div>
+
         <!-- 出口:站点集 → 当前选的组 → 最终节点(实时,来自代理页同一份数据) -->
         <div
           v-if="!result.matchError"
@@ -110,6 +132,15 @@ watch(
   { immediate: true },
 )
 onBeforeUnmount(() => window.clearTimeout(timer))
+
+const TYPE_LABEL_KEY: Record<string, string> = {
+  domain: 'ruleTypeDomain',
+  domain_suffix: 'ruleTypeDomainSuffix',
+  domain_keyword: 'ruleTypeDomainKeyword',
+  domain_regex: 'ruleTypeDomainRegex',
+  ip_cidr: 'ruleTypeIpCidr',
+}
+const typeLabel = (type: string) => t(TYPE_LABEL_KEY[type] || 'ruleTypeOther')
 
 const outbound = computed(() => result.value?.finalOutbound || '')
 const isReject = computed(() => result.value?.matched?.action === 'reject')

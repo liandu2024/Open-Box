@@ -688,6 +688,7 @@ const en = {
   ruleLookupMatched: 'Matches rule #{index}',
   ruleLookupNoMatch: 'No rule matched, falls to the fallback site set',
   ruleLookupOutbound: 'Outbound:',
+  ruleLookupMoreEntries: '{count} more matching entries',
   penetrationNoRuleMatched: 'No rule matched — falls through to the default',
   penetrationRulePrivateIp: 'Private / local address',
   penetrationRuleMatched: 'Rule #{index} matched — {ruleset}',
