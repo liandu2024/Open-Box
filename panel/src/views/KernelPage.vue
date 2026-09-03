@@ -19,6 +19,13 @@
           @refresh="loadStatus"
         />
 
+        <!-- DNS 劫持方式:紧跟服务卡,切换后要重启内核 -->
+        <DnsModeCard
+          v-if="profile"
+          :profile="profile"
+          :patch-profile="patchProfile"
+        />
+
         <!-- Open-Box 自身更新 / Geo 规则集更新(各带自动更新计划) -->
         <template v-if="profile">
           <OpenboxUpdateCard
@@ -54,6 +61,7 @@
 <script setup lang="ts">
 import type { OpenboxKernelVersion, OpenboxProfile, OpenboxServiceStatus } from '@/api/openbox'
 import { fetchKernelVersion, fetchProfile, fetchServiceStatus, saveProfile } from '@/api/openbox'
+import DnsModeCard from '@/components/kernel/DnsModeCard.vue'
 import GeoUpdateCard from '@/components/kernel/GeoUpdateCard.vue'
 import KernelServiceCard from '@/components/kernel/KernelServiceCard.vue'
 import NodeDirectCard from '@/components/kernel/NodeDirectCard.vue'

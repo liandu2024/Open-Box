@@ -9,24 +9,29 @@ const extractHost = (url) => {
 }
 
 // 直连侧的 DNS。要求是"交回系统默认,不经过 Open-Box 的代理",但两种接管模式下
-// "系统默认"指的不是同一个东西:
-//   hijack   —— 路由器的 /etc/resolv.conf 指向 dnsmasq,dnsmasq 的上游是 WAN。
-//               直接用 sing-box 的 local 类型(走系统解析器)即可,没有回环。
-//   dnsmasq  —— 此时 dnsmasq 的上游**就是 sing-box 自己**。再用 local 就成了
-//               sing-box → dnsmasq → sing-box 的死循环,解析会直接超时。所以必须
-//               拿 WAN 下发的上游 IP(部署时从 resolv.conf.auto 读,见
-//               system/resolv.mjs),经 direct 出站去查。
+// 直连侧解析器:三种模式都不再用 sing-box 的 local(系统解析器 → dnsmasq → dnsmasq 的上游)。
+// 路由器 dnsmasq 的上游是局域网里的 AdGuard / Pi-hole 时,它们的查询会再次被劫持进
+// sing-box,形成 sing-box → dnsmasq → AdGuard → sing-box 的死循环(正式路由器上实测,
+// 直连域名全部超时);dnsmasq 转发模式下 dnsmasq 的上游更是 sing-box 自己。所以一律拿
+// WAN 下发的上游 IP(部署时从 resolv.conf.auto 读,见 system/resolv.mjs)经直连出站去查,
+// 读不到才退回档案里填的那台。
+// 不写 detour:不写就是走默认出站,而默认出站正是 direct。显式写 detour:'direct'
+// 会被内核在**启动时**拒绝——"detour to an empty direct outbound makes no sense",
+// 而 `sing-box check` 不查这一条,所以校验过了、一跑就 FATAL(真机上就是这样死循环的)。
 const directServerFor = (profile, options) => {
-  const dnsMode = (profile.dns && profile.dns.mode) || 'hijack'
-  if (dnsMode !== 'dnsmasq') return { type: 'local', tag: 'dns-direct' }
-
   const systemDns = Array.isArray(options.systemDns) ? options.systemDns.filter(Boolean) : []
-  const server = systemDns[0] || profile.dns.direct
-  // 不写 detour:不写就是走默认出站,而默认出站正是 direct。显式写 detour:'direct'
-  // 会被内核在**启动时**拒绝——"detour to an empty direct outbound makes no sense",
-  // 而 `sing-box check` 不查这一条,所以校验过了、一跑就 FATAL(真机上就是这样死循环的)。
+  const server = systemDns[0] || (profile.dns && profile.dns.direct) || '223.5.5.5'
   return { type: 'udp', tag: 'dns-direct', server }
 }
+
+// 劫持模式下局域网的查询根本到不了 dnsmasq,而本地主机名(DHCP 租约名、/etc/hosts、
+// *.lan)只有 dnsmasq 认得:这类名字交给 local(→ 路由器自己的 dnsmasq),其余一律不走
+// local。dnsmasq 转发模式不需要:客户端本来就先经过 dnsmasq。禁用模式 sing-box 不答 DNS。
+const LOCAL_SUFFIXES = ['.lan', '.local', '.home', '.internal', '.home.arpa']
+const localNameRules = (dnsMode) => (dnsMode === 'hijack'
+  ? [{ domain_suffix: LOCAL_SUFFIXES, server: 'dns-local' }, { domain_regex: ['^[^.]+$'], server: 'dns-local' }]
+  : [])
+const localServer = { type: 'local', tag: 'dns-local' }
 
 // 策略的域名类条件 → 一条 DNS 规则。ip_cidr 不进来:DNS 查询阶段还没有 IP,
 // 拿它当条件永远不会命中,写进去只会让人以为生效了。
@@ -44,10 +49,15 @@ const hasDomainCondition = (p) =>
 
 export const buildDns = (profile, options = {}) => {
   const strategy = profile.ipv6 ? 'prefer_ipv4' : 'ipv4_only'
+  const dnsMode = (profile.dns && profile.dns.mode) || 'hijack'
   const directServer = directServerFor(profile, options)
+  const localRules = localNameRules(dnsMode)
+  const localServers = localRules.length ? [localServer] : []
 
   if (!profile.dns.split) {
-    return { servers: [directServer], final: 'dns-direct', strategy }
+    const only = { servers: [directServer, ...localServers], final: 'dns-direct', strategy }
+    if (localRules.length) only.rules = localRules
+    return only
   }
 
   const conf = normalizeRouting(profile.routing)
@@ -56,8 +66,8 @@ export const buildDns = (profile, options = {}) => {
   // 就用哪条线路解析,和各站点集各自 detour 到自己的 selector 是同一个道理。
   const servers = [directServer, { type: 'https', tag: 'dns-proxy', server: proxyHost, detour: conf.fallback.name }]
 
-  const rules = []
-  // 订阅和节点站点直连:它们的域名也用本地解析,排在最前
+  // 本地主机名最前(劫持模式才有),然后是订阅和节点站点直连:它们的域名也用直连侧解析
+  const rules = [...localRules]
   const dh = options.directHosts
   if (dh && dh.domains && dh.domains.length) {
     rules.push({ domain: dh.domains, server: 'dns-direct' })
@@ -102,6 +112,7 @@ export const buildDns = (profile, options = {}) => {
     rules.push(policyDnsRule(policy, tag))
   })
 
+  servers.push(...localServers)
   return {
     servers,
     rules,

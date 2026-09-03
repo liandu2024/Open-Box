@@ -8,7 +8,7 @@ const isString = (v) => typeof v === 'string'
 const isBoolean = (v) => typeof v === 'boolean'
 const isStringArray = (v) => Array.isArray(v) && v.every(isString)
 
-const DNS_MODES = new Set(['hijack', 'dnsmasq'])
+const DNS_MODES = new Set(['off', 'hijack', 'dnsmasq'])
 const isHttpUrl = (v) => isString(v) && /^https?:\/\/[^\s]+$/.test(v.trim())
 
 // 规则集 tag(directRulesets[]/adRuleset/categories[].ruleset)最终会原样拼进生成配置的
@@ -83,7 +83,7 @@ export const validateProfilePatch = (patch) => {
     const dns = patch.dns
     if (!isPlainObject(dns)) return 'dns must be an object'
     if ('mode' in dns && !DNS_MODES.has(dns.mode)) {
-      return 'dns.mode must be one of hijack, dnsmasq'
+      return 'dns.mode must be one of off, hijack, dnsmasq'
     }
   }
 

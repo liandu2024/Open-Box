@@ -90,7 +90,9 @@ export const buildConfig = ({ nodes, profile, userGroups, systemDns, subscriptio
     type: 'tun', tag: 'tun-in', address: tunAddress,
     auto_route: true, strict_route: true, stack: 'mixed',
   }
-  if (profile.tun && profile.tun.autoRedirect) tunInbound.auto_redirect = true
+  // auto_redirect 自带 nft 层的 DNS 劫持(局域网发往任何 53 端口的查询都改写进 tun),
+  // 关不掉劫持只留 redirect;所以 DNS「禁用」模式只能把它一起关掉,流量靠 auto_route 进 tun。
+  if (profile.tun && profile.tun.autoRedirect && dnsMode !== 'off') tunInbound.auto_redirect = true
 
   // 面板「真实路由」测试用的回环入站:面板进程经它发请求,请求才会真的走内核的分流
   // (路由器自身发出的流量不一定进 tun)。只听 127.0.0.1,外面碰不到。

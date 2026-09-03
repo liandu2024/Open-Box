@@ -128,6 +128,15 @@ test('dns.mode=hijack(默认)生成 hijack-dns 路由规则', () => {
   assert.ok(!c.inbounds.some((i) => i.type === 'direct'))
 })
 
+test('dns.mode=off:不劫持 DNS、没有 dns-in,且即使开了 tun.autoRedirect 也不写 auto_redirect(它自带 DNS 劫持)', () => {
+  const c = buildConfig({ nodes, regionGroups, profile: { ...profile, tun: { autoRedirect: true }, dns: { ...profile.dns, mode: 'off' } } })
+  assert.ok(!c.route.rules.some((r) => r.action === 'hijack-dns'))
+  assert.ok(!c.inbounds.some((i) => i.type === 'direct'))
+  assert.equal(c.inbounds[0].auto_redirect, undefined)
+  assert.equal(c.inbounds[0].auto_route, true)
+  assert.ok(!c.outbounds.some((o) => o.tag === 'dnsmasq'))
+})
+
 test('dns.mode=dnsmasq: hijack 规则仅限 dns-in 入站(不自环),增 DNS 入站 127.0.0.1:7853', () => {
   const c = buildConfig({ nodes, regionGroups, profile: { ...profile, dns: { ...profile.dns, mode: 'dnsmasq' } } })
   const hijack = c.route.rules.find((r) => r.action === 'hijack-dns')

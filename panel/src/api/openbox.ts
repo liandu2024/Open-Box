@@ -56,9 +56,11 @@ export interface OpenboxProfileRouting {
   fallback?: string
 }
 
+// DNS 劫持方式:off 不碰 DNS / hijack 防火墙(nft)劫持 / dnsmasq 转发(默认)
+export type OpenboxDnsMode = 'off' | 'hijack' | 'dnsmasq'
 export interface OpenboxProfileDns {
   split?: boolean
-  mode?: 'hijack' | 'dnsmasq'
+  mode?: OpenboxDnsMode
   direct?: string
   proxy?: string
 }

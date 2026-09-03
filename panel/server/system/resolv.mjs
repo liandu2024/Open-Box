@@ -13,6 +13,8 @@ const ETC_RESOLV = '/etc/resolv.conf'
 // 127.0.0.1 / ::1 要排除:那就是 dnsmasq 自己,填进去等于把回环写死进配置。
 const isLoopback = (ip) => ip === '::1' || /^127\./.test(ip)
 
+// IPv4 排前面:OpenWrt 的 resolv.conf.auto 按接口分段,wan_6 段常常写在 wan 段前面,
+// 直接取第一个会拿到 IPv6 上游;内核默认 ipv4_only、IPv6 关着时那台根本拨不通。
 export const parseResolvConf = (text) => {
   const out = []
   for (const line of String(text || '').split('\n')) {
@@ -22,7 +24,8 @@ export const parseResolvConf = (text) => {
     if (isLoopback(ip) || out.includes(ip)) continue
     out.push(ip)
   }
-  return out
+  const isV4 = (ip) => /^\d+\.\d+\.\d+\.\d+$/.test(ip)
+  return [...out.filter(isV4), ...out.filter((ip) => !isV4(ip))]
 }
 
 export const readSystemDns = async (ctx) => {

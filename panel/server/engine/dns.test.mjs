@@ -4,15 +4,31 @@ import { buildDns } from './dns.mjs'
 
 const base = {
   ipv6: true,
-  dns: { split: true, mode: 'hijack', direct: '223.5.5.5', proxy: 'https://1.1.1.1/dns-query' },
+  // 站点集相关的用例与劫持方式无关,用默认的 dnsmasq 模式;hijack / off 的差异见前几条专门的用例
+  dns: { split: true, mode: 'dnsmasq', direct: '223.5.5.5', proxy: 'https://1.1.1.1/dns-query' },
   // fallbackDefault 写着就说明这份档案已经迁过地区了(见 engine/routing-model.mjs)
   routing: { proxyTag: 'PROXY', policies: [], fallbackDefault: 'proxy' },
 }
 const withRouting = (routing, over = {}) => ({ ...base, ...over, routing: { ...base.routing, ...routing } })
 
-test('直连侧走系统解析器:hijack 模式下用 local,不指定任何服务器地址', () => {
-  const dns = buildDns(base)
-  assert.deepEqual(dns.servers[0], { type: 'local', tag: 'dns-direct' })
+test('hijack 模式:直连侧也用 WAN 上游而不是 local(local 会经 dnsmasq 绕回局域网里的 AdGuard 形成回环);本地主机名单独交给 local', () => {
+  const dns = buildDns({ ...base, dns: { ...base.dns, mode: 'hijack' } }, { systemDns: ['192.168.1.1', '8.8.8.8'] })
+  assert.deepEqual(dns.servers[0], { type: 'udp', tag: 'dns-direct', server: '192.168.1.1' })
+  assert.ok(dns.servers.some((s) => s.type === 'local' && s.tag === 'dns-local'))
+  assert.deepEqual(dns.rules[0], { domain_suffix: ['.lan', '.local', '.home', '.internal', '.home.arpa'], server: 'dns-local' })
+  assert.deepEqual(dns.rules[1], { domain_regex: ['^[^.]+$'], server: 'dns-local' })
+})
+
+test('off 模式:直连侧同样用 WAN 上游,不再有 local 与本地主机名规则', () => {
+  const dns = buildDns({ ...base, dns: { ...base.dns, mode: 'off' } }, { systemDns: ['192.168.1.1'] })
+  assert.deepEqual(dns.servers[0], { type: 'udp', tag: 'dns-direct', server: '192.168.1.1' })
+  assert.ok(!dns.servers.some((s) => s.type === 'local'))
+  assert.ok(!dns.rules.some((r) => r.server === 'dns-local'))
+})
+
+test('hijack 模式读不到 WAN 上游时退回档案里填的那台', () => {
+  const dns = buildDns({ ...base, dns: { ...base.dns, mode: 'hijack' } })
+  assert.deepEqual(dns.servers[0], { type: 'udp', tag: 'dns-direct', server: '223.5.5.5' })
 })
 
 test('dnsmasq 模式不能用 local(会绕回 dnsmasq 死循环),改用 WAN 下发的上游', () => {

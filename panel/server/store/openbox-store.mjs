@@ -26,7 +26,8 @@ export const DEFAULT_PROFILE = {
   servers: [],
   // 终端分流:按局域网来源 IP 指定出口(engine/client-routes.mjs),默认没有
   clientRoutes: [],
-  dns: { split: true, mode: 'hijack', direct: '223.5.5.5', proxy: 'https://1.1.1.1/dns-query' },
+  // mode:off 不碰 DNS / hijack 防火墙劫持 / dnsmasq 转发(默认;见 engine/dns.mjs 与 system/dns-takeover.mjs)
+  dns: { split: true, mode: 'dnsmasq', direct: '223.5.5.5', proxy: 'https://1.1.1.1/dns-query' },
   // 测速地址。testUrl 给自动择优(url-test)组和面板的延迟测试用;directTestUrl 只给内置
   // 直连出站用——默认那个是 Google 的域名,从国内直连去测量出来的是"直连到 Google 有多远"。
   testUrl: 'https://www.gstatic.com/generate_204',

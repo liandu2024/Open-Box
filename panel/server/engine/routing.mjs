@@ -21,6 +21,8 @@ export const buildRoute = (routing, rulesetDir, options = {}) => {
 
   const dnsMode = options.dnsMode || 'hijack'
   const rules = [{ action: 'sniff' }]
+  // off:Open-Box 完全不碰 DNS——不劫持、不回交,局域网的 53 端口流量当普通 UDP 按规则走。
+  // 配合 config.mjs 里关掉 auto_redirect(它自带 nft 层的 DNS 劫持,关不掉)。
   if (dnsMode === 'hijack') {
     rules.push({ protocol: 'dns', action: 'hijack-dns' })
   } else if (dnsMode === 'dnsmasq') {

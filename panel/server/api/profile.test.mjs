@@ -57,9 +57,10 @@ test('validateProfilePatch dns.mode 非法值 → 报错', () => {
   assert.ok(validateProfilePatch({ dns: { mode: 'foo' } }))
 })
 
-test('validateProfilePatch dns.mode 合法值(hijack/dnsmasq)通过', () => {
+test('validateProfilePatch dns.mode 合法值(off/hijack/dnsmasq)通过', () => {
   assert.equal(validateProfilePatch({ dns: { mode: 'dnsmasq' } }), null)
   assert.equal(validateProfilePatch({ dns: { mode: 'hijack' } }), null)
+  assert.equal(validateProfilePatch({ dns: { mode: 'off' } }), null)
 })
 
 test('validateProfilePatch dns 非对象 → 报错', () => {
@@ -198,7 +199,7 @@ test('PUT 只碰 ipv6 的部分 patch 不因缺 dns 报错,且不影响 dns', as
     assert.equal(res.status, 200)
     const body = await res.json()
     assert.equal(body.profile.ipv6, false)
-    assert.equal(body.profile.dns.mode, 'hijack') // 未提及,保留默认
+    assert.equal(body.profile.dns.mode, 'dnsmasq') // 未提及,保留默认
   } finally {
     await close()
   }

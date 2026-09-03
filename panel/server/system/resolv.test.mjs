@@ -9,6 +9,13 @@ test('只取 nameserver 行,去重', () => {
   )
 })
 
+test('IPv4 上游排前面:resolv.conf.auto 里 wan_6 段常写在 wan 段前面', () => {
+  assert.deepEqual(
+    parseResolvConf('# Interface wan0_6\nnameserver 2409:806c:2000::1\n# Interface wan0\nnameserver 211.139.29.150\nnameserver 211.139.29.170\n'),
+    ['211.139.29.150', '211.139.29.170', '2409:806c:2000::1'],
+  )
+})
+
 test('排除回环:那就是 dnsmasq 自己,写进配置等于把死循环钉死', () => {
   assert.deepEqual(parseResolvConf('nameserver 127.0.0.1\nnameserver ::1\nnameserver 1.1.1.1\n'), ['1.1.1.1'])
 })
