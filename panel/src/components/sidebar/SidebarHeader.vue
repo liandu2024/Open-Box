@@ -1,7 +1,8 @@
 <template>
   <!-- 侧边栏顶部:左边产品名 + 版本号,右边收起/展开侧边栏。折叠时只剩那个图标。 -->
+  <!-- 不加左右内边距:标题左边、图标右边和菜单项、底部卡片对齐同一条线 -->
   <div
-    class="flex items-center px-2 pt-1"
+    class="flex items-center pt-1"
     :class="isSidebarCollapsed ? 'justify-center' : 'justify-between gap-2'"
   >
     <div
