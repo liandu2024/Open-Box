@@ -647,6 +647,10 @@ const zh: LANG_MESSAGE = {
   // --- 地区默认值卡片 ---
   edit: '编辑',
   kernelApplyHint: '启动/重启会用当前设置重新生成配置并应用;失败会自动回滚到直连。',
+  icmpTitle: 'Ping(ICMP)真实延迟',
+  icmpDescription: '局域网发出的 ping 一律从路由器直连出去,返回真实延迟;重启内核生效。',
+  icmpOnNote: '开启中:ping 的是目标本身,走代理的站点显示的是从本地直连过去的延迟,被墙的目标会超时——这才是真实情况。',
+  icmpOffNote: '关闭中:发往代理站点的 ping 由内核在本地代答,永远 1ms 左右,ping 一个不存在的地址也有回复,没有参考价值。',
   ipv6Title: 'IPv6',
   dnsModeTitle: 'DNS 劫持',
   dnsModeDescription: '局域网的 DNS 查询怎么交给内核分流解析;切换后重启内核生效。',

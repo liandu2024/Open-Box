@@ -53,6 +53,13 @@ export const buildRoute = (routing, rulesetDir, options = {}) => {
   if (Array.isArray(options.tunCidrs) && options.tunCidrs.length) {
     rules.push({ ip_cidr: options.tunCidrs, action: 'reject' })
   }
+  // ICMP(ping)一律直连(开关在后端设置,默认开):没有任何代理协议能承载 ICMP,进了 tun 的
+  // ping 若落到代理出站,sing-box 只能在本地代答——于是 ping google 永远 1ms、ping 一个不存在
+  // 的地址也有回复,毫无参考价值。sing-box 1.13 起 network 支持 icmp,交给直连就是路由器
+  // WAN 口真实发出去的 echo,回的是真实延迟(被墙的目标会超时,那也是真的)。
+  if (options.icmpDirect !== false) {
+    rules.push({ network: ['icmp'], outbound: options.directTag || 'direct' })
+  }
   // 内置的直连出站可以改名,tag 从调用方传进来
   rules.push({ ip_is_private: true, outbound: options.directTag || 'direct' })
 
