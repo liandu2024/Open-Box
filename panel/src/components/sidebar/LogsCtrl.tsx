@@ -22,8 +22,7 @@ import {
   PlayIcon,
   QuestionMarkCircleIcon,
   WrenchScrewdriverIcon,
-  XMarkIcon,
-} from '@heroicons/vue/24/outline'
+  XMarkIcon, SparklesIcon } from '@heroicons/vue/24/outline'
 import dayjs from 'dayjs'
 import { debounce } from 'lodash'
 import { computed, defineComponent, ref, watch } from 'vue'
@@ -154,7 +153,7 @@ export default defineComponent({
           <TextInput
             v-model={logFilter.value}
             beforeClose={true}
-            class="min-w-64 flex-1"
+            class={isLargeCtrlsBar.value ? 'min-w-64 flex-1' : 'min-w-0 flex-1'}
             placeholder={`${t('search')} | Regex`}
             clearable={true}
             menus={logSearchHistory.value}
@@ -162,11 +161,12 @@ export default defineComponent({
             onUpdate:menus={(val) => (logSearchHistory.value = val)}
           />
           <button
-            class="btn btn-sm shrink-0"
+            class="btn btn-circle btn-sm shrink-0"
             // 和连接页一样:整条 URL 整理成主机名(不带端口)再搜
             onClick={() => (logFilter.value = normalizeRuleTarget(logFilter.value).replace(/:\d+$/, ''))}
+            onMouseenter={(e) => showTip(e, t('ruleFormatQuery'))}
           >
-            {t('ruleFormatQuery')}
+            <SparklesIcon class="h-4 w-4" />
           </button>
         </div>
       )

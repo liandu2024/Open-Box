@@ -1,11 +1,12 @@
 import { useCtrlsBar } from '@/composables/useCtrlsBar'
+import { useTooltip } from '@/helper/tooltip'
 import { normalizeRuleTarget, rulesFilter } from '@/store/rules'
 import {
   disconnectOnRuleDisable,
   displayLatencyInRule,
   displayNowNodeInRule,
 } from '@/store/settings'
-import { WrenchScrewdriverIcon } from '@heroicons/vue/24/outline'
+import { WrenchScrewdriverIcon, SparklesIcon } from '@heroicons/vue/24/outline'
 import { defineComponent, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import DialogWrapper from '../common/DialogWrapper.vue'
@@ -17,6 +18,7 @@ export default defineComponent({
     const { t } = useI18n()
     const settingsModel = ref(false)
     const { isLargeCtrlsBar } = useCtrlsBar()
+    const { showTip } = useTooltip()
 
     return () => {
       const searchInput = (
@@ -28,10 +30,11 @@ export default defineComponent({
             clearable={true}
           />
           <button
-            class="btn btn-sm shrink-0"
+            class="btn btn-circle btn-sm shrink-0"
             onClick={() => (rulesFilter.value = normalizeRuleTarget(rulesFilter.value))}
+            onMouseenter={(e) => showTip(e, t('ruleFormatQuery'))}
           >
-            {t('ruleFormatQuery')}
+            <SparklesIcon class="h-4 w-4" />
           </button>
         </>
       )

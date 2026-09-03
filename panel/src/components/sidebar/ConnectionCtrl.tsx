@@ -23,8 +23,7 @@ import {
   PlayIcon,
   QuestionMarkCircleIcon,
   WrenchScrewdriverIcon,
-  XMarkIcon,
-} from '@heroicons/vue/24/outline'
+  XMarkIcon, SparklesIcon } from '@heroicons/vue/24/outline'
 import { defineComponent, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
@@ -164,11 +163,12 @@ export default defineComponent({
             class={isLargeCtrlsBar.value ? 'w-32 max-w-80 flex-1' : 'w-full'}
           />
           <button
-            class="btn btn-sm shrink-0"
+            class="btn btn-circle btn-sm shrink-0"
             // 连接表按主机名匹配,端口不要:board.ok1248.cn:4433 → board.ok1248.cn
             onClick={() => (connectionFilter.value = normalizeRuleTarget(connectionFilter.value).replace(/:\d+$/, ''))}
+            onMouseenter={(e) => showTip(e, t('ruleFormatQuery'))}
           >
-            {t('ruleFormatQuery')}
+            <SparklesIcon class="h-4 w-4" />
           </button>
         </div>
       )
