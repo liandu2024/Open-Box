@@ -19,12 +19,25 @@
           @refresh="loadStatus"
         />
 
-        <!-- DNS 劫持方式:紧跟服务卡,切换后要重启内核 -->
-        <DnsModeCard
-          v-if="profile"
-          :profile="profile"
-          :patch-profile="patchProfile"
-        />
+        <!-- 内核参数:DNS 劫持、直连、IPv6、测速地址。改动写进档案,重启内核后生效。 -->
+        <template v-if="profile">
+          <DnsModeCard
+            :profile="profile"
+            :patch-profile="patchProfile"
+          />
+          <NodeDirectCard
+            :profile="profile"
+            :patch-profile="patchProfile"
+          />
+          <Ipv6Card
+            :profile="profile"
+            :patch-profile="patchProfile"
+          />
+          <TestUrlCard
+            :profile="profile"
+            :patch-profile="patchProfile"
+          />
+        </template>
 
         <!-- Open-Box 自身更新 / Geo 规则集更新(各带自动更新计划) -->
         <template v-if="profile">
@@ -33,22 +46,6 @@
             :patch-profile="patchProfile"
           />
           <GeoUpdateCard
-            :profile="profile"
-            :patch-profile="patchProfile"
-          />
-        </template>
-
-        <!-- 内核参数:测速地址、IPv6。改动写进档案,重启内核后生效。 -->
-        <template v-if="profile">
-          <TestUrlCard
-            :profile="profile"
-            :patch-profile="patchProfile"
-          />
-          <Ipv6Card
-            :profile="profile"
-            :patch-profile="patchProfile"
-          />
-          <NodeDirectCard
             :profile="profile"
             :patch-profile="patchProfile"
           />

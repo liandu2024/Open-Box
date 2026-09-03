@@ -8,7 +8,7 @@
           <p class="text-base-content/60 text-xs">{{ $t('dnsModeDescription') }}</p>
         </div>
         <select
-          class="select select-sm shrink-0"
+          class="select select-sm w-40 shrink-0"
           :value="mode"
           :disabled="saving"
           @change="onChange"
