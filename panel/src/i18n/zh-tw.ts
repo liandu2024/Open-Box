@@ -755,6 +755,12 @@ const zhTW: LANG_MESSAGE = {
   // 侧边栏
   sidebarCollapse: '收起側邊欄',
   sidebarExpand: '展開側邊欄',
+  // 侧边栏 · 运行时长
+  kernelUptimeLabel: '運行時長',
+  unitDay: '天',
+  unitHour: '小時',
+  unitMinute: '分鐘',
+  uptimeUnderMinute: '不足 1 分鐘',
 }
 
 export default zhTW

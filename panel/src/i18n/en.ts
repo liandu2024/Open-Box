@@ -758,6 +758,12 @@ const en = {
   // 侧边栏
   sidebarCollapse: 'Collapse sidebar',
   sidebarExpand: 'Expand sidebar',
+  // 侧边栏 · 运行时长
+  kernelUptimeLabel: 'Uptime',
+  unitDay: 'd ',
+  unitHour: 'h ',
+  unitMinute: 'm',
+  uptimeUnderMinute: '< 1m',
 }
 
 export type LANG_MESSAGE = typeof en

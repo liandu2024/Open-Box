@@ -755,6 +755,12 @@ const zh: LANG_MESSAGE = {
   // 侧边栏
   sidebarCollapse: '收起侧边栏',
   sidebarExpand: '展开侧边栏',
+  // 侧边栏 · 运行时长
+  kernelUptimeLabel: '运行时长',
+  unitDay: '天',
+  unitHour: '小时',
+  unitMinute: '分钟',
+  uptimeUnderMinute: '不足 1 分钟',
 }
 
 export default zh

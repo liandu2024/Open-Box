@@ -470,6 +470,8 @@ export interface OpenboxServiceInfo {
   raw: string
   // 只有内核那份带:开机自启是否开着
   autostart?: boolean
+  // 只有内核那份带:进程运行时长(秒),没在跑或拿不到就是 null
+  uptimeSeconds?: number | null
 }
 
 // Only ever populated with services detectConflicts actually found running (see

@@ -279,3 +279,29 @@ test('GET /service/status:init 脚本 enabled 退出码非 0 → core.autostart=
     await close()
   }
 })
+
+test('GET /service/status:内核在跑时带 uptimeSeconds(pidof + /proc/<pid>/stat + /proc/uptime)', async () => {
+  const ctx = okCtx({ 'pidof sing-box': { code: 0, stdout: '4321\n' } })
+  // starttime = 100000 滴答 = 1000s;系统开机 4600s → 运行 3600s
+  ctx.files['/proc/4321/stat'] = '4321 (sing-box) S 1 4321 4321 0 -1 4194560 100 0 0 0 5 3 0 0 20 0 9 0 100000 1296640 15000 18446744073709551615 1 1 0 0 0 0 0 0 0 0 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0'
+  ctx.files['/proc/uptime'] = '4600.12 9000.00\n'
+  const { baseUrl, close } = await startApp(ctx)
+  try {
+    const body = await (await fetch(`${baseUrl}/api/openbox/service/status`)).json()
+    assert.equal(body.core.uptimeSeconds, 3600)
+  } finally {
+    await close()
+  }
+})
+
+test('GET /service/status:pidof 失败时 uptimeSeconds 为 null,接口不报错', async () => {
+  const ctx = okCtx({ 'pidof sing-box': { code: 1, stdout: '' } })
+  const { baseUrl, close } = await startApp(ctx)
+  try {
+    const body = await (await fetch(`${baseUrl}/api/openbox/service/status`)).json()
+    assert.equal(body.core.running, true)
+    assert.equal(body.core.uptimeSeconds, null)
+  } finally {
+    await close()
+  }
+})

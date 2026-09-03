@@ -1,5 +1,5 @@
 import express from 'express'
-import { serviceStatus, serviceEnabled, stopService, enableService, disableService } from '../system/service.mjs'
+import { serviceStatus, serviceEnabled, stopService, enableService, disableService, processUptime } from '../system/service.mjs'
 import { detectConflicts } from '../system/conflicts.mjs'
 import { runDeploy } from './deploy-runner.mjs'
 
@@ -20,7 +20,9 @@ export const registerServiceRoutes = (app, { store, ctx, paths } = {}) => {
     const autostart = await serviceEnabled(ctx, paths.initd.core)
     const panel = await serviceStatus(ctx, paths.initd.panel)
     const { conflicts } = await detectConflicts(ctx)
-    res.json({ core: { ...core, autostart }, panel, conflicts })
+    // 侧边栏底部要显示「运行时长」
+    const uptimeSeconds = core.running ? await processUptime(ctx, 'sing-box') : null
+    res.json({ core: { ...core, autostart, uptimeSeconds }, panel, conflicts })
   })
 
   // POST /api/openbox/service/core/:action

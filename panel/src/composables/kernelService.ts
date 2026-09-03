@@ -101,3 +101,20 @@ export const useKernelActions = () => {
 
   return { runKernelAction }
 }
+
+// 「1天2小时3分钟」:为 0 的高位不显示;不足一分钟单独说;没在跑显示 —
+export const formatUptime = (seconds: number | null | undefined, t: (key: string) => string) => {
+  if (seconds === null || seconds === undefined || !Number.isFinite(seconds)) return '—'
+  const total = Math.max(0, Math.floor(seconds))
+  const days = Math.floor(total / 86400)
+  const hours = Math.floor((total % 86400) / 3600)
+  const minutes = Math.floor((total % 3600) / 60)
+  const parts: string[] = []
+  if (days) parts.push(`${days}${t('unitDay')}`)
+  if (days || hours) parts.push(`${hours}${t('unitHour')}`)
+  parts.push(`${minutes}${t('unitMinute')}`)
+  if (!days && !hours && !minutes) return t('uptimeUnderMinute')
+  return parts.join('')
+}
+export const kernelUptimeText = (t: (key: string) => string) =>
+  serviceStatus.value?.core.running ? formatUptime(serviceStatus.value.core.uptimeSeconds, t) : '—'
