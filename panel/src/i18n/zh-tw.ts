@@ -732,6 +732,26 @@ const zhTW: LANG_MESSAGE = {
   penetrationChainHop: '\u7d93\u7531',
   penetrationChainError: '\u6c92\u80fd\u7e7c\u7e8c\u89e3\u6790:{message}',
   penetrationMatchError: '\u6c92\u80fd\u78ba\u5b9a\u662f\u5426\u547d\u4e2d\u898f\u5247:{message}',
+  // 概览 · 每日流量
+  dailyTraffic: '每日流量',
+  trafficMonthLabel: '{y}年{m}月',
+  trafficMonthSummary: '{month}共 {total},{conns} 個連線。',
+  trafficDailyAvg: '日均',
+  trafficIn: '入口',
+  trafficOut: '出口',
+  trafficTotal: '總流量',
+  trafficConns: '{n} 個連線',
+  trafficDirectionHint: '入口 = 從外網收到的位元組(下載),出口 = 發到外網的位元組(上傳)',
+  trafficByNode: '節點',
+  trafficByHost: '網域/IP',
+  trafficName: '名稱',
+  trafficShare: '佔比',
+  trafficOther: '未取樣到的短連線',
+  trafficOtherHint: '面板每 2 秒讀一次核心的連線表,存活不到一個取樣週期的連線歸不到節點/網域,只計入當天總量',
+  trafficEmptyDay: '這天沒有流量記錄',
+  trafficMoreRows: '還有 {n} 條沒顯示,輸入關鍵字縮小範圍',
+  trafficPickDay: '點一根柱子看這天的節點和網域明細',
+  trafficLoadError: '讀取流量記錄失敗:{message}',
 }
 
 export default zhTW

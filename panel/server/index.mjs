@@ -15,8 +15,10 @@ import { registerServiceRoutes } from './api/service.mjs'
 import { registerRulesetRoutes } from './api/rulesets.mjs'
 import { registerUpdateRoutes } from './api/updates.mjs'
 import { registerRouteTestRoutes } from './api/route-test.mjs'
+import { registerTrafficRoutes } from './api/traffic.mjs'
 import { runDeploy } from './api/deploy-runner.mjs'
 import { startScheduler } from './system/scheduler.mjs'
+import { createTrafficCollector, createTrafficStore } from './system/traffic-collector.mjs'
 import { registerSubscriptionRoutes } from './api/subscriptions.mjs'
 import { createStore } from './store/openbox-store.mjs'
 import { createRealContext } from './system/context-real.mjs'
@@ -923,6 +925,15 @@ registerNodeLatencyRoutes(app, { ctx: obCtx, paths: obPaths, fetchImpl: globalTh
 registerGroupRoutes(app, { store })
 registerUpdateRoutes(app, { store, ctx: obCtx, paths: obPaths, fetchImpl: globalThis.fetch })
 registerRouteTestRoutes(app, { store, ctx: obCtx, paths: obPaths, fetchImpl: globalThis.fetch })
+// 每日流量:面板常驻读内核连接表,按天/节点/域名把字节数记进 cache.db(system/traffic-collector.mjs);
+// 采集在 startServer 里才启动,单独 import 本模块(测试)不会去碰内核
+const trafficCollector = createTrafficCollector({
+  store: createTrafficStore(db),
+  fetchImpl: globalThis.fetch,
+  getSecret: () => store.getClashSecret(),
+  log: (m) => console.log(m),
+})
+registerTrafficRoutes(app, { collector: trafficCollector })
 // 自动更新计划:每分钟看一眼档案里的计划,到点就做(见 system/scheduler.mjs)
 startScheduler({ store, ctx: obCtx, paths: obPaths, fetchImpl: globalThis.fetch, runDeploy, log: (m) => console.log(m) })
 
@@ -1035,6 +1046,7 @@ server.on('upgrade', (request, socket, head) => {
 websocketServer.on('connection', relayControllerWebSocket)
 
 const startServer = async () => {
+  trafficCollector.start()
   if (server.listening) {
     return server
   }
@@ -1078,6 +1090,8 @@ const shutdownServer = async () => {
     })
   }
 
+  // 先把攒着没写的流量增量落盘,再关库
+  trafficCollector.stop()
   if (typeof db.close === 'function') {
     db.close()
   }

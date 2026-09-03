@@ -680,3 +680,39 @@ export interface OpenboxRouteTest {
 }
 export const testRoute = (target: string, port?: number) =>
   requestJson<OpenboxRouteTest>('/api/openbox/route-test', { method: 'POST', body: JSON.stringify({ target, port }) })
+
+// ---- 每日流量(server/api/traffic.mjs)。up = 发往外网的字节(出口),down = 收到的(入口)
+export interface OpenboxTrafficRow {
+  key: string
+  up: number
+  down: number
+  conns: number
+}
+export interface OpenboxTrafficDaySummary {
+  day: string
+  up: number
+  down: number
+  conns: number
+}
+export interface OpenboxTrafficMonth {
+  month: string
+  today: string
+  days: OpenboxTrafficDaySummary[]
+  total: { up: number; down: number; conns: number }
+  avg: { up: number; down: number }
+  avgDays: number
+}
+export interface OpenboxTrafficDay {
+  day: string
+  today: string
+  total: { up: number; down: number; conns: number }
+  nodes: OpenboxTrafficRow[]
+  hosts: OpenboxTrafficRow[]
+  hostsCount: number
+  // 总量减去各节点之和:没采样到的短连接
+  other: { up: number; down: number }
+}
+export const fetchTrafficMonth = (month?: string) =>
+  requestJson<OpenboxTrafficMonth>(`/api/openbox/traffic/month${month ? `?month=${encodeURIComponent(month)}` : ''}`)
+export const fetchTrafficDay = (day: string, limit = 500) =>
+  requestJson<OpenboxTrafficDay>(`/api/openbox/traffic/day?day=${encodeURIComponent(day)}&limit=${limit}`)

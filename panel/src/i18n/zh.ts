@@ -732,6 +732,26 @@ const zh: LANG_MESSAGE = {
   penetrationChainHop: '\u7ecf\u7531',
   penetrationChainError: '\u6ca1\u80fd\u7ee7\u7eed\u89e3\u6790:{message}',
   penetrationMatchError: '\u6ca1\u80fd\u786e\u5b9a\u662f\u5426\u547d\u4e2d\u89c4\u5219:{message}',
+  // 概览 · 每日流量
+  dailyTraffic: '每日流量',
+  trafficMonthLabel: '{y}年{m}月',
+  trafficMonthSummary: '{month}共 {total},{conns} 个连接。',
+  trafficDailyAvg: '日均',
+  trafficIn: '入口',
+  trafficOut: '出口',
+  trafficTotal: '总流量',
+  trafficConns: '{n} 个连接',
+  trafficDirectionHint: '入口 = 从外网收到的字节(下载),出口 = 发到外网的字节(上传)',
+  trafficByNode: '节点',
+  trafficByHost: '域名/IP',
+  trafficName: '名称',
+  trafficShare: '占比',
+  trafficOther: '未采样到的短连接',
+  trafficOtherHint: '面板每 2 秒读一次内核的连接表,存活不到一个采样周期的连接归不到节点/域名,只计入当天总量',
+  trafficEmptyDay: '这天没有流量记录',
+  trafficMoreRows: '还有 {n} 条没显示,输入关键字缩小范围',
+  trafficPickDay: '点一根柱子看这天的节点和域名明细',
+  trafficLoadError: '读取流量记录失败:{message}',
 }
 
 export default zh

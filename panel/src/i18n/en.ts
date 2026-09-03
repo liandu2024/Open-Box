@@ -735,6 +735,26 @@ const en = {
   penetrationChainHop: 'Via',
   penetrationChainError: "Couldn't resolve further: {message}",
   penetrationMatchError: "Couldn't check whether a rule matched: {message}",
+  // 概览 · 每日流量
+  dailyTraffic: 'Daily traffic',
+  trafficMonthLabel: '{y}-{mm}',
+  trafficMonthSummary: '{month}: {total} in total, {conns} connections.',
+  trafficDailyAvg: 'Daily avg',
+  trafficIn: 'Inbound',
+  trafficOut: 'Outbound',
+  trafficTotal: 'Total',
+  trafficConns: '{n} connections',
+  trafficDirectionHint: 'Inbound = bytes received from the internet (download); outbound = bytes sent out (upload)',
+  trafficByNode: 'By node',
+  trafficByHost: 'By host / IP',
+  trafficName: 'Name',
+  trafficShare: 'Share',
+  trafficOther: 'Short-lived connections not sampled',
+  trafficOtherHint: 'The panel reads the kernel connection table every 2 s. Connections that live less than one sampling period cannot be attributed to a node or host and only count towards the day total.',
+  trafficEmptyDay: 'No traffic recorded on this day',
+  trafficMoreRows: '{n} more rows hidden, narrow down with the search box',
+  trafficPickDay: "Click a bar to see that day's nodes and hosts",
+  trafficLoadError: 'Failed to load traffic records: {message}',
 }
 
 export type LANG_MESSAGE = typeof en
