@@ -320,6 +320,9 @@ for (const mode of ['hijack', 'off']) {
         assert.equal(config.inbounds[0].auto_redirect, undefined)
       }
       assert.ok(!config.inbounds.some((i) => i.tag === 'dns-in'))
+      // auto_redirect 只有 Linux(nftables)能初始化,本机 macOS 上 sing-box check 会直接
+      // FATAL "initialize auto-redirect: invalid argument";上面已经断言过它的取值,校验时去掉
+      delete config.inbounds[0].auto_redirect
       const { rulesetTags } = buildRoute(profile.routing, dir)
       for (const tag of rulesetTags) compileSrs(dir, tag)
       const cfgPath = path.join(dir, 'config.json')
