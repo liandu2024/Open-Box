@@ -81,11 +81,8 @@ const virtualScrollerStyle = computed(() => ({
 // 把命中的那条框出来。普通关键字仍按文本过滤。
 const matchedIndex = ref<number | null>(null)
 watch(lookupTarget, () => { matchedIndex.value = null })
-// 查询时只留命中的那一条规则(没命中或还没查完就什么都不列),其余无关的卡片不显示
-const displayRules = computed(() => {
-  if (!lookupTarget.value) return renderRules.value
-  return matchedIndex.value === null ? [] : rules.value.filter((_, i) => i === matchedIndex.value)
-})
+// 查询时只显示结果卡片(它已经带了命中的规则、站点集和出口),规则列表整个收起
+const displayRules = computed(() => (lookupTarget.value ? [] : renderRules.value))
 const isHighlighted = (rule: Rule) =>
   Boolean(lookupTarget.value) && matchedIndex.value !== null && rules.value.indexOf(rule) === matchedIndex.value
 

@@ -685,6 +685,7 @@ const zhTW: LANG_MESSAGE = {
   ruleLookupMatched: '命中第 {index} 條規則',
   ruleLookupNoMatch: '沒有規則命中,走兜底站點集',
   ruleLookupOutbound: '出口:',
+  ruleLookupSiteSet: '站點集',
   ruleLookupMoreEntries: '還有 {count} 條也命中',
   penetrationNoRuleMatched: '\u6c92\u6709\u898f\u5247\u547d\u4e2d\u2014\u2014\u843d\u5230\u9810\u8a2d\u7b56\u7565',
   penetrationRulePrivateIp: '\u79c1\u6709/\u672c\u6a5f\u4f4d\u5740',

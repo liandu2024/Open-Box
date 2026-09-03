@@ -24,7 +24,15 @@
           </template>
           <template v-else-if="result.matched">
             <span class="badge badge-sm badge-success badge-soft">{{ $t('ruleLookupMatched', { index: result.matched.index + 1 }) }}</span>
-            <span class="text-main font-mono">{{ conditionText }}</span>
+            <!-- 命中的是哪个站点集(带图标);拒绝/直连这类不是站点集就只显示名字 -->
+            <template v-if="outbound && !isReject">
+              <span class="text-base-content/60">{{ $t('ruleLookupSiteSet') }}</span>
+              <ProxyName
+                :name="outbound"
+                class="text-sm font-medium"
+              />
+            </template>
+            <span class="text-base-content/50 font-mono text-[11px]">{{ conditionText }}</span>
           </template>
           <template v-else>
             <span class="badge badge-sm badge-ghost">{{ $t('ruleLookupNoMatch') }}</span>
@@ -87,6 +95,7 @@
 import type { OpenboxPenetrationResult } from '@/api/openbox'
 import { queryPenetration } from '@/api/openbox'
 import ProxyGroupNow from '@/components/proxies/ProxyGroupNow.vue'
+import ProxyName from '@/components/proxies/ProxyName.vue'
 import { proxyMap } from '@/store/proxies'
 import { MagnifyingGlassIcon, NoSymbolIcon, QuestionMarkCircleIcon } from '@heroicons/vue/24/outline'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
