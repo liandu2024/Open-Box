@@ -1,5 +1,6 @@
 import express from 'express'
 import { loadEntries } from './rulesets.mjs'
+import { decideDnsServer } from './route-test.mjs'
 import { buildRoute } from '../engine/routing.mjs'
 import { normalizeRouting } from '../engine/routing-model.mjs'
 import { isPrivateOrLoopbackIp } from './net-guard.mjs'
@@ -302,6 +303,19 @@ export const registerPenetrationRoutes = (app, { store, ctx, paths, fetchImpl = 
     const body = { matched, chain, finalOutbound }
     if (chainError) body.chainError = chainError
     if (matchError) body.matchError = matchError
+
+    // 顺带按内核里正在跑的配置(etc/config.json)推一下这个域名会用哪台 DNS:
+    // 直连解析还是经某个站点集的 DoH。目标是 IP 就没有解析这一步。
+    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(target) || target.includes(':')) {
+      body.dns = { skipped: true }
+    } else {
+      try {
+        const config = JSON.parse(await ctx.readFile(paths.configPath))
+        body.dns = await decideDnsServer(ctx, paths, config, target.toLowerCase())
+      } catch (err) {
+        body.dns = { error: `还没有生成过配置,无法判断 DNS(${errorMessage(err)})` }
+      }
+    }
     res.json(body)
   })
 

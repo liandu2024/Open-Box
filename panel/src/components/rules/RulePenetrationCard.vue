@@ -15,78 +15,108 @@
         >{{ error }}</span>
       </div>
 
-      <template v-if="result && !loading">
-        <!-- 命中情况 -->
-        <div class="text-base-content/80 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-          <template v-if="result.matchError">
-            <QuestionMarkCircleIcon class="text-warning h-4 w-4 shrink-0" />
-            <span>{{ $t('penetrationMatchError', { message: result.matchError }) }}</span>
-          </template>
-          <template v-else-if="result.matched">
-            <span class="badge badge-sm badge-success badge-soft">{{ $t('ruleLookupMatched', { index: result.matched.index + 1 }) }}</span>
-            <!-- 命中的是哪个站点集(带图标);拒绝/直连这类不是站点集就只显示名字 -->
-            <template v-if="outbound && !isReject">
-              <span class="text-base-content/60">{{ $t('ruleLookupSiteSet') }}</span>
-              <ProxyName
-                :name="outbound"
-                class="text-sm font-medium"
-              />
+      <RouteFlow
+        v-if="result && !loading"
+        :nodes="flowNodes"
+      >
+        <!-- 出口:按规则推出来的链路(站点集 → 当前选的组 → 节点,实时) -->
+        <template #exit>
+          <div class="flex flex-wrap items-center gap-2">
+            <template v-if="result.matchError">
+              <span class="text-warning text-xs">{{ $t('penetrationMatchError', { message: result.matchError }) }}</span>
             </template>
-            <span class="text-base-content/50 font-mono text-[11px]">{{ conditionText }}</span>
-          </template>
-          <template v-else>
-            <span class="badge badge-sm badge-ghost">{{ $t('ruleLookupNoMatch') }}</span>
-          </template>
-        </div>
+            <template v-else-if="isReject">
+              <NoSymbolIcon class="text-error h-4 w-4" />
+              <span class="text-error">{{ $t('penetrationBlockedTitle') }}</span>
+            </template>
+            <ProxyGroupNow
+              v-else-if="outbound && proxyMap[outbound]"
+              :name="outbound"
+              include-self
+              force-full-route
+            />
+            <span
+              v-else-if="outbound"
+              class="font-medium"
+            >{{ outbound }}</span>
+            <span
+              v-if="result.chainError"
+              class="text-warning text-xs"
+            >{{ $t('penetrationChainError', { message: result.chainError }) }}</span>
+          </div>
+        </template>
 
-        <!-- 具体命中的域名/IP 条目:规则集里的哪一条、或站点集里手写的哪一条 -->
-        <div
-          v-if="result.matched?.entries?.length"
-          class="flex flex-col gap-1"
-        >
-          <div
-            v-for="(e, i) in result.matched.entries"
-            :key="`${e.source}-${e.type}-${e.value}-${i}`"
-            class="flex flex-wrap items-center gap-2 text-xs"
-          >
-            <span class="badge badge-sm badge-ghost font-mono">{{ typeLabel(e.type) }}</span>
-            <span class="text-main font-mono">{{ e.value }}</span>
-            <span class="text-base-content/50">{{ e.source === 'custom' ? $t('ruleSourceCustom') : e.source }}</span>
+        <!-- DNS:按内核当前配置里的 DNS 规则推出来的解析方式 -->
+        <template #dns>
+          <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <template v-if="!result.dns || 'skipped' in result.dns">
+              <span class="text-base-content/50 text-xs">{{ $t('routeTestDnsSkipped') }}</span>
+            </template>
+            <template v-else-if="'error' in result.dns">
+              <span class="text-warning text-xs">{{ result.dns.error }}</span>
+            </template>
+            <template v-else-if="dnsDecision?.rejected">
+              <span class="badge badge-sm badge-error badge-soft">{{ $t('penetrationBlockedTitle') }}</span>
+            </template>
+            <template v-else>
+              <StatusBadge
+                :on="!dnsDecision?.viaProxy"
+                :on-text="$t('routeTestDnsDirect')"
+                :off-text="$t('routeTestDnsProxy')"
+              />
+              <span class="font-mono text-xs">{{ dnsServerText }}</span>
+              <template v-if="dnsDecision?.server?.detour">
+                <span class="text-base-content/60 text-xs">{{ $t('penetrationChainHop') }}</span>
+                <ProxyName
+                  :name="dnsDecision.server.detour"
+                  class="text-xs"
+                />
+              </template>
+            </template>
+          </div>
+        </template>
+
+        <!-- 规则:命中第几条、哪个站点集、具体条目 -->
+        <template #rule>
+          <div class="text-base-content/80 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+            <template v-if="result.matchError">
+              <QuestionMarkCircleIcon class="text-warning h-4 w-4 shrink-0" />
+              <span>{{ $t('penetrationMatchError', { message: result.matchError }) }}</span>
+            </template>
+            <template v-else-if="result.matched">
+              <span class="badge badge-sm badge-success badge-soft">{{ $t('ruleLookupMatched', { index: result.matched.index + 1 }) }}</span>
+              <template v-if="outbound && !isReject">
+                <span class="text-base-content/60">{{ $t('ruleLookupSiteSet') }}</span>
+                <ProxyName
+                  :name="outbound"
+                  class="text-sm font-medium"
+                />
+              </template>
+              <span class="text-base-content/50 font-mono text-[11px]">{{ conditionText }}</span>
+            </template>
+            <template v-else>
+              <span class="badge badge-sm badge-ghost">{{ $t('ruleLookupNoMatch') }}</span>
+            </template>
           </div>
           <div
-            v-if="(result.matched.entriesTotal || 0) > result.matched.entries.length"
-            class="text-base-content/50 text-xs"
+            v-if="result.matched?.entries?.length"
+            class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs"
           >
-            {{ $t('ruleLookupMoreEntries', { count: (result.matched.entriesTotal || 0) - result.matched.entries.length }) }}
+            <template
+              v-for="(e, i) in result.matched.entries.slice(0, 4)"
+              :key="`${e.source}-${e.type}-${e.value}-${i}`"
+            >
+              <span class="badge badge-sm badge-ghost font-mono">{{ typeLabel(e.type) }}</span>
+              <span class="text-main font-mono">{{ e.value }}</span>
+              <span class="text-base-content/50">{{ e.source === 'custom' ? $t('ruleSourceCustom') : e.source }}</span>
+            </template>
+            <span
+              v-if="(result.matched.entriesTotal || 0) > 4"
+              class="text-base-content/50"
+            >{{ $t('ruleLookupMoreEntries', { count: (result.matched.entriesTotal || 0) - 4 }) }}</span>
           </div>
-        </div>
-
-        <!-- 出口:站点集 → 当前选的组 → 最终节点(实时,来自代理页同一份数据) -->
-        <div
-          v-if="!result.matchError"
-          class="flex flex-wrap items-center gap-2"
-        >
-          <span class="text-base-content/60 text-xs">{{ $t('ruleLookupOutbound') }}</span>
-          <template v-if="isReject">
-            <NoSymbolIcon class="text-error h-4 w-4" />
-            <span class="text-error">{{ $t('penetrationBlockedTitle') }}</span>
-          </template>
-          <ProxyGroupNow
-            v-else-if="outbound && proxyMap[outbound]"
-            :name="outbound"
-            include-self
-            force-full-route
-          />
-          <span
-            v-else-if="outbound"
-            class="font-medium"
-          >{{ outbound }}</span>
-          <span
-            v-if="result.chainError"
-            class="text-warning text-xs"
-          >{{ $t('penetrationChainError', { message: result.chainError }) }}</span>
-        </div>
-      </template>
+        </template>
+      </RouteFlow>
     </div>
   </div>
 </template>
@@ -96,6 +126,8 @@ import type { OpenboxPenetrationResult } from '@/api/openbox'
 import { queryPenetration } from '@/api/openbox'
 import ProxyGroupNow from '@/components/proxies/ProxyGroupNow.vue'
 import ProxyName from '@/components/proxies/ProxyName.vue'
+import RouteFlow from '@/components/rules/RouteFlow.vue'
+import StatusBadge from '@/components/common/StatusBadge.vue'
 import { proxyMap } from '@/store/proxies'
 import { MagnifyingGlassIcon, NoSymbolIcon, QuestionMarkCircleIcon } from '@heroicons/vue/24/outline'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
@@ -150,6 +182,23 @@ const TYPE_LABEL_KEY: Record<string, string> = {
   ip_cidr: 'ruleTypeIpCidr',
 }
 const typeLabel = (type: string) => t(TYPE_LABEL_KEY[type] || 'ruleTypeOther')
+
+const flowNodes = computed(() => [
+  { key: 'exit', label: t('routeTestExit') },
+  { key: 'dns', label: 'DNS' },
+  { key: 'rule', label: t('routeTestRuleNode'), sub: result.value?.matched ? `#${result.value.matched.index + 1}` : undefined },
+])
+const dnsDecision = computed(() => {
+  const d = result.value?.dns
+  return d && 'ruleIndex' in d ? d : null
+})
+const dnsServerText = computed(() => {
+  const d = dnsDecision.value
+  if (!d || !d.server) return ''
+  const s = d.server
+  const type = s.type === 'local' ? 'local' : s.type || ''
+  return [s.tag, type && s.server ? `${type} ${s.server}` : type || s.server].filter(Boolean).join(' · ')
+})
 
 const outbound = computed(() => result.value?.finalOutbound || '')
 const isReject = computed(() => result.value?.matched?.action === 'reject')

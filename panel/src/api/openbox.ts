@@ -547,6 +547,11 @@ export interface OpenboxPenetrationMatched {
 
 export interface OpenboxPenetrationResult {
   matched: OpenboxPenetrationMatched | null
+  // 按内核当前配置里的 DNS 规则推出来的解析方式(目标是 IP 时为 skipped)
+  dns?:
+    | { skipped: true }
+    | { error: string }
+    | { ruleIndex: number | null; rejected?: boolean; server?: { tag: string; type?: string; server?: string; detour?: string }; viaProxy?: boolean }
   // Starts with the resolved policy target (outbound) and drills down through clash_api's `now`
   // field to the leaf node; empty when the match was an outright reject (nothing to route).
   chain: string[]
