@@ -1,6 +1,6 @@
 <template>
   <div class="card">
-    <div class="app-card-padding flex flex-col gap-3 text-sm">
+    <div class="app-card-inset flex flex-col gap-3 text-sm">
       <div class="flex flex-wrap items-center gap-2">
         <span>{{ index }}.</span>
         <span class="text-main font-medium">

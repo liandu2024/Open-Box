@@ -1,5 +1,5 @@
 <template>
-  <div class="card hover:bg-base-200 app-card-padding block break-all text-sm">
+  <div class="card hover:bg-base-200 app-card-inset block break-all text-sm">
     <div class="app-inline-gap inline-flex items-center">
       <div :style="{ minWidth: `${(seqWithPadding.length + 1) * 0.62}em` }">
         {{ seqWithPadding }}.

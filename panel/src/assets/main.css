@@ -768,6 +768,17 @@ div::-webkit-scrollbar-thumb:hover {
   padding: var(--app-space, 0.5rem) !important;
 }
 
+/* 卡片内部的留白:全站统一 16px(和代理卡片的 collapse-title、设置卡片的 p-4 一致),
+   小屏 12px。app-card-padding(8px)只给工具栏、列表外框、表格外框这类"容器"用。 */
+.app-card-inset {
+  padding: 1rem !important;
+}
+@media (max-width: 767px) {
+  .app-card-inset {
+    padding: 0.75rem !important;
+  }
+}
+
 .app-inline-gap {
   gap: var(--app-space, 0.5rem) !important;
 }
