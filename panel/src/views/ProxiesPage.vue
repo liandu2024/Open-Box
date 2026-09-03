@@ -48,7 +48,7 @@
            Clash 的 provider 概念在 Open-Box 里不存在)。不走两列布局:订阅通常只有一两条,
            摊成两列反而稀疏。 -->
       <div
-        class="grid grid-cols-1 gap-2 p-2"
+        class="grid grid-cols-1 gap-2 px-2 md:py-2"
         v-else-if="proxiesTabShow === PROXY_TAB_TYPE.PROVIDER"
       >
         <p
@@ -67,7 +67,7 @@
         />
       </div>
       <div
-        class="grid grid-cols-1 gap-2 p-2"
+        class="grid grid-cols-1 gap-2 px-2 md:py-2"
         v-else
       >
         <component

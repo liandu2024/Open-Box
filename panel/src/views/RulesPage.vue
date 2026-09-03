@@ -6,7 +6,7 @@
         class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto"
         :style="padding"
       >
-        <div class="flex flex-col gap-2 p-2">
+        <div class="flex flex-col gap-2 px-2 md:py-2">
           <RulePenetrationCard
             v-if="lookupHost"
             :target="lookupHost"

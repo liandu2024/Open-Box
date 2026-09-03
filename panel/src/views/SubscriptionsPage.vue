@@ -4,7 +4,7 @@
       class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto"
       :style="padding"
     >
-      <div class="flex flex-col gap-2 p-2">
+      <div class="flex flex-col gap-2 px-2 md:py-2">
         <!-- 订阅管理 / 节点管理 是设置页的两个一级页签(由父组件通过 tab 属性告诉这里显示
              哪一半);操作按钮 Teleport 到顶部页签栏右上角(SettingsMenu 的
              #settings-header-actions),位置固定。 -->

@@ -6,7 +6,7 @@
       :style="padding"
     >
       <!-- 概览两张卡片:实时图表 + 每日流量。网络信息、连接拓扑、连接统计已去掉。 -->
-      <div class="flex flex-col gap-2 p-2">
+      <div class="flex flex-col gap-2 px-2 md:py-2">
         <ChartsCard />
         <!-- 手机屏太窄放不下 31 根柱子和明细表,每日流量只在桌面显示 -->
         <DailyTrafficCard v-if="!isMiddleScreen" />
