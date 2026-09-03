@@ -115,22 +115,6 @@
           </div>
         </template>
 
-        <!-- 规则:内核对这条连接实际命中的规则 -->
-        <template #rule>
-          <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-            <template v-if="result.exit.rule">
-              <span class="font-mono">{{ result.exit.rule }}</span>
-              <span
-                v-if="result.exit.rulePayload"
-                class="text-base-content/60 font-mono"
-              >{{ result.exit.rulePayload }}</span>
-            </template>
-            <span
-              v-else
-              class="text-base-content/50"
-            >{{ result.exit.error ? '—' : $t('routeTestRuleUnknown') }}</span>
-          </div>
-        </template>
       </RouteFlow>
     </div>
   </div>
@@ -192,7 +176,6 @@ const dnsDecision = computed(() => {
 const flowNodes = computed(() => [
   { key: 'exit', label: t('routeTestExit'), sub: result.value?.exit.ms !== undefined ? `${result.value.exit.ms}ms` : '—' },
   { key: 'dns', label: 'DNS', sub: result.value?.resolve ? `${result.value.resolve.ms}ms` : '—' },
-  { key: 'rule', label: t('routeTestRuleNode') },
 ])
 
 const dnsServerText = computed(() => {

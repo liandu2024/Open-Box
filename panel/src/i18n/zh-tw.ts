@@ -685,6 +685,7 @@ const zhTW: LANG_MESSAGE = {
   ruleLookupMatched: '命中第 {index} 條規則',
   ruleLookupNoMatch: '沒有規則命中,走兜底站點集',
   ruleLookupOutbound: '出口:',
+  ruleLookupTitle: '規則路由',
   routeTestTitle: '真實路由',
   routeTestRerun: '重新測試',
   routeTestDnsSkipped: '目標是 IP,不用解析',

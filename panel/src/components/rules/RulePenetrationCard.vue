@@ -4,6 +4,8 @@
     <div class="app-card-inset flex flex-col gap-2 text-sm">
       <div class="flex flex-wrap items-center gap-2">
         <MagnifyingGlassIcon class="text-base-content/60 h-4 w-4 shrink-0" />
+        <span class="font-medium">{{ $t('ruleLookupTitle') }}</span>
+        <span class="text-base-content/50">·</span>
         <span class="font-mono font-medium">{{ target }}</span>
         <span
           v-if="loading"
