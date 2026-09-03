@@ -1,5 +1,7 @@
 import { readSystemDns } from '../system/resolv.mjs'
 import { readLocalSubnets } from '../system/local-subnets.mjs'
+import { resolveHostsToCidrs } from '../system/resolve-hosts.mjs'
+import { collectDirectHosts } from '../engine/direct-hosts.mjs'
 import { buildConfig } from '../engine/config.mjs'
 import { deployConfig } from '../system/deploy.mjs'
 import { enableService, disableService } from '../system/service.mjs'
@@ -62,7 +64,7 @@ export const STATUS_BY_STAGE = {
 // systemDns 是路由器 WAN 下发的 DNS 上游(见 system/resolv.mjs):dnsmasq 接管模式下
 // 直连侧要用它,不能让 sing-box 去问系统解析器——那时系统解析器就是 dnsmasq,而 dnsmasq
 // 的上游又是 sing-box,一问就死循环。预览接口没有 ctx 也照样能出配置,回落到档案里的值。
-export const buildCurrentConfig = (store, systemDns, { cacheFilePath, selections, tlsCert, localSubnets = [] } = {}) => {
+export const buildCurrentConfig = (store, systemDns, { cacheFilePath, selections, tlsCert, localSubnets = [], directHostCidrs = [] } = {}) => {
   const profile = store.getProfile()
   const nodes = store.getNodes()
   const clashApiSecret = store.getClashSecret()
@@ -77,6 +79,8 @@ export const buildCurrentConfig = (store, systemDns, { cacheFilePath, selections
     systemDns,
     // 本机接口网段:tun 的私网排除表要把它们挖出来(见 engine/config.mjs)
     localSubnets,
+    // 节点 / 订阅域名此刻的解析结果,并进直连规则的 ip_cidr(见 system/resolve-hosts.mjs)
+    directHostCidrs,
   })
   return { config, profile }
 }
@@ -84,13 +88,23 @@ export const buildCurrentConfig = (store, systemDns, { cacheFilePath, selections
 // 「保存设置」与「让设置生效」之间只隔一次启动内核:各个设置页只管把自己那块写进档案,
 // 真正生成配置、下规则集、接管 DNS/防火墙、起内核、失败回滚,统一在这里做一次。
 // 所以启动/重启内核走的就是这条路径(server/api/service.mjs),不再有单独的"部署"动作。
-export const runDeploy = async ({ store, ctx, paths, fetchImpl = globalThis.fetch }) => {
+// 「订阅和节点站点直连」开着时,把它涉及的域名解析成 IP;关着就不解析
+const resolveDirectHostCidrs = async (store, lookup) => {
+  const profile = store.getProfile()
+  if (profile.directForNodes === false) return []
+  const { domains } = collectDirectHosts(store.getNodes(), store.getSubscriptions ? store.getSubscriptions() : [])
+  return resolveHostsToCidrs(domains, lookup ? { lookup } : {})
+}
+
+export const runDeploy = async ({ store, ctx, paths, fetchImpl = globalThis.fetch, lookup }) => {
   let result
   try {
-    const [systemDns, localSubnets] = await Promise.all([readSystemDns(ctx), readLocalSubnets(ctx)])
+    const [systemDns, localSubnets, directHostCidrs] = await Promise.all([
+      readSystemDns(ctx), readLocalSubnets(ctx), resolveDirectHostCidrs(store, lookup),
+    ])
     const selections = resolveSelections(store, await fetchSelections(fetchImpl, store.getClashSecret()))
     const { config, profile } = buildCurrentConfig(store, systemDns, {
-      cacheFilePath: paths.cacheDb, selections, tlsCert: { certPath: paths.tlsCert, keyPath: paths.tlsKey }, localSubnets,
+      cacheFilePath: paths.cacheDb, selections, tlsCert: { certPath: paths.tlsCert, keyPath: paths.tlsKey }, localSubnets, directHostCidrs,
     })
     result = await deployConfig(ctx, paths, { config, profile, userGroups: store.getGroups() })
     store.setDeployState({

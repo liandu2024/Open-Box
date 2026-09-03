@@ -122,6 +122,11 @@ test('分流 DNS 关掉时只剩一条直连通道', () => {
   assert.ok(!dns.rules)
 })
 
+test('reverse_mapping 恒开:按 IP 连的客户端也能命中域名规则', () => {
+  assert.equal(buildDns(base).reverse_mapping, true)
+  assert.equal(buildDns({ ...base, dns: { ...base.dns, split: false } }).reverse_mapping, true)
+})
+
 test('ipv6 关:strategy=ipv4_only', () => {
   assert.equal(buildDns({ ...base, ipv6: false }).strategy, 'ipv4_only')
 })

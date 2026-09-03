@@ -54,8 +54,11 @@ export const buildDns = (profile, options = {}) => {
   const localRules = localNameRules(dnsMode)
   const localServers = localRules.length ? [localServer] : []
 
+  // reverse_mapping:内核记住"这个 IP 是哪个域名解析出来的",客户端随后按 IP 去连时把域名
+  // 找回来再匹配规则。没有它,SSH / 游戏这类嗅不出域名的连接永远命中不了域名规则(比如
+  // 「订阅和节点站点直连」),全落到兜底走代理。
   if (!profile.dns.split) {
-    const only = { servers: [directServer, ...localServers], final: 'dns-direct', strategy }
+    const only = { servers: [directServer, ...localServers], final: 'dns-direct', strategy, reverse_mapping: true }
     if (localRules.length) only.rules = localRules
     return only
   }
@@ -119,5 +122,6 @@ export const buildDns = (profile, options = {}) => {
     // 兜底:上面都没命中的域名,按兜底站点集此刻走哪来定用哪边解析
     final: goesDirect(conf.fallback.name, conf.fallback.default) ? 'dns-direct' : 'dns-proxy',
     strategy,
+    reverse_mapping: true,
   }
 }

@@ -184,6 +184,16 @@ test('directForNodes 默认开:节点服务器和订阅主机名生成直连规�
   assert.deepEqual(hosts, { domains: ['node.example.com', 'sub.example.com'], cidrs: ['5.6.7.8/32'] })
 })
 
+test('directHostCidrs:部署时解析出来的节点 IP 并进直连规则的 ip_cidr(去重),关掉直连开关就不生成', () => {
+  const c = buildConfig({ nodes, regionGroups, profile, directHostCidrs: ['38.47.107.167/32', '38.47.107.167/32', '2001:db8::5/128'] })
+  const rule = c.route.rules.find((r) => r.outbound === '直连' && Array.isArray(r.domain))
+  assert.ok(rule, '应有节点站点直连规则')
+  assert.ok(rule.ip_cidr.includes('38.47.107.167/32'))
+  assert.equal(rule.ip_cidr.filter((x) => x === '38.47.107.167/32').length, 1)
+  const off = buildConfig({ nodes, regionGroups, profile: { ...profile, directForNodes: false }, directHostCidrs: ['38.47.107.167/32'] })
+  assert.ok(!off.route.rules.some((r) => Array.isArray(r.ip_cidr) && r.ip_cidr.includes('38.47.107.167/32')))
+})
+
 test('防回环:目标是 tun 自己网段的连接直接拒绝,且排在 ip_is_private 之前', () => {
   const c = buildConfig({ nodes, regionGroups, profile })
   const i = c.route.rules.findIndex((r) => Array.isArray(r.ip_cidr) && r.action === 'reject')

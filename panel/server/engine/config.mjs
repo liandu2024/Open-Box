@@ -42,9 +42,16 @@ const DNSMASQ_OUTBOUND_TAG = 'dnsmasq'
 // 系统解析器,会绕回 dnsmasq 形成死循环。预览/测试不传就回落到档案里填的那台。
 // regionGroups 参数已经退役(以前按国家自动分的 urltest 组 + 一个 PROXY 聚合 selector,
 // 那是节点组功能出现之前的东西);留着这个参数名只是让老调用方不报错。
-export const buildConfig = ({ nodes, profile, userGroups, systemDns, localSubnets = [], subscriptions = [], cacheFilePath = '/opt/open-box/data/cache.db', selections = {}, tlsCert = { certPath: '/opt/open-box/etc/certs/server.crt', keyPath: '/opt/open-box/etc/certs/server.key' } }) => {
+export const buildConfig = ({ nodes, profile, userGroups, systemDns, localSubnets = [], directHostCidrs = [], subscriptions = [], cacheFilePath = '/opt/open-box/data/cache.db', selections = {}, tlsCert = { certPath: '/opt/open-box/etc/certs/server.crt', keyPath: '/opt/open-box/etc/certs/server.key' } }) => {
   // 订阅和节点站点直连(默认开):见 engine/direct-hosts.mjs
-  const directHosts = profile.directForNodes === false ? null : collectDirectHosts(nodes, subscriptions)
+  // directHostCidrs:部署时把节点域名解析出来的 IP(见 system/resolve-hosts.mjs),让按裸 IP
+  // 直连节点服务器的客户端(SSH 等)也能命中直连规则;预览接口没有这份,只按域名匹配。
+  const directHosts = profile.directForNodes === false
+    ? null
+    : (() => {
+        const dh = collectDirectHosts(nodes, subscriptions)
+        return { ...dh, cidrs: [...new Set([...dh.cidrs, ...(Array.isArray(directHostCidrs) ? directHostCidrs : [])])] }
+      })()
   const wireguardNodes = nodes.filter((n) => n.type === 'wireguard')
   const outboundNodes = nodes.filter((n) => n.type !== 'wireguard')
 
