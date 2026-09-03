@@ -8,6 +8,13 @@ const mk = (name) => createNode({ tag: name, type: 'trojan', server: 'a.com', se
 test('matchRegion 覆盖缩写/中文/城市/emoji', () => {
   assert.equal(matchRegion('US-CA-01', DEFAULT_REGION_DICT).name, '美国')
   assert.equal(matchRegion('洛杉矶 03', DEFAULT_REGION_DICT).name, '美国')
+  // 中国(回国 / 中转)默认在词典里,且排最后:带地区词的 CN2 线路仍归原地区,纯 CN2 不算中国
+  assert.equal(matchRegion('回国 01', DEFAULT_REGION_DICT).name, '中国')
+  assert.equal(matchRegion('Back to China 02', DEFAULT_REGION_DICT).name, '中国')
+  assert.equal(matchRegion('CN01', DEFAULT_REGION_DICT).name, '中国')
+  assert.equal(matchRegion('美国 VM CN2 GIA 01', DEFAULT_REGION_DICT).name, '美国')
+  assert.equal(matchRegion('CN2 GIA 01', DEFAULT_REGION_DICT), null)
+  assert.equal(matchRegion('HK01', DEFAULT_REGION_DICT).name, '香港')
   assert.equal(matchRegion('🇺🇸 premium', DEFAULT_REGION_DICT).name, '美国')
   assert.equal(matchRegion('香港 IEPL', DEFAULT_REGION_DICT).name, '香港')
   assert.equal(matchRegion('unknown-place', DEFAULT_REGION_DICT), null)

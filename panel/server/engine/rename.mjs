@@ -31,7 +31,10 @@ export const keywordMatches = (lower, kw) => {
   const needle = normalizeForMatch(kw).trim()
   if (!needle) return false
   if (SHORT_ASCII_CODE.test(needle)) {
-    const boundary = new RegExp(`(^|[^a-z])${needle}([^a-z]|$)`, 'i')
+    // 短码前后不能是字母,但允许紧跟数字(HK01 / US02 这种写法很常见)。唯一的例外是
+    // cn2:那是"CN2 线路"(电信精品网),不是中国节点;cn01 / cn20 之类照常算中国。
+    const tail = needle === 'cn' ? '(?!2(?![0-9]))' : ''
+    const boundary = new RegExp(`(^|[^a-z])${needle}${tail}([^a-z]|$)`, 'i')
     return boundary.test(lower)
   }
   return lower.includes(needle)

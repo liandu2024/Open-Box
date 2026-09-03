@@ -7,6 +7,8 @@ export const DEFAULT_REGION_DICT = [
   { code: 'KR', name: '韩国', keywords: ['kr', 'korea', '韩国', '韓國', '首尔', '首爾'] },
   { code: 'GB', name: '英国', keywords: ['uk', 'gb', 'united kingdom', 'britain', '英国', '英國', '伦敦', '倫敦'] },
   { code: 'DE', name: '德国', keywords: ['de', 'germany', '德国', '德國', '法兰克福', '法蘭克福'] },
+  // 回国 / 中转类节点。排最后:带地区词的节点(「美国 CN2 GIA」)先命中前面的地区
+  { code: 'CN', name: '中国', keywords: ['cn', 'china', '中国', '中國', '回国', '回國', 'back to china'] },
 ]
 
 // 特征不再是「标签 + 一堆同义词」两层结构,而是一条扁平关键词表:命中哪个关键词就把
