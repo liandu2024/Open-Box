@@ -2,7 +2,7 @@ import express from 'express'
 import { runDeploy } from './deploy-runner.mjs'
 import { serviceStatus } from '../system/service.mjs'
 import {
-  cancelUpdate, compareVersions, fetchLatestVersion, readChannel, readJsonFile, readMeta, readUpdateLogTail,
+  cancelUpdate, checkGeoUpdate, compareVersions, fetchLatestVersion, readChannel, readJsonFile, readMeta, readUpdateLogTail,
   readUpdateStatus, refreshRulesets, startUpdate, writeJsonFile,
 } from '../system/updater.mjs'
 
@@ -58,10 +58,24 @@ export const registerUpdateRoutes = (app, { store, ctx, paths, fetchImpl = globa
     res.json(await cancelUpdate(ctx, paths))
   })
 
-  // Geo 规则集:立即刷新(刷完若内核在跑就重启让它生效)
-  router.post('/rulesets/refresh', async (_req, res) => {
+  // GET /api/openbox/rulesets/check?channel= —— 探 Geo 规则集上游有没有新版
+  router.get('/rulesets/check', async (req, res) => {
+    const channel = String(req.query.channel || 'auto')
+    if (!CHANNELS.has(channel)) return res.status(400).json({ message: `channel must be one of ${[...CHANNELS].join(', ')}` })
     try {
-      const result = await refreshRulesets(ctx, paths, { fetchImpl })
+      res.json(await checkGeoUpdate(ctx, paths, { fetchImpl, channel }))
+    } catch (error) {
+      res.status(503).json({ message: error instanceof Error ? error.message : String(error) })
+    }
+  })
+
+  // Geo 规则集:立即刷新 {channel}(刷完若内核在跑就重启让它生效)
+  router.post('/rulesets/refresh', async (req, res) => {
+    const channel = String((req.body || {}).channel || 'auto')
+    if (!CHANNELS.has(channel)) return res.status(400).json({ message: `channel must be one of ${[...CHANNELS].join(', ')}` })
+    try {
+      const previous = await readJsonFile(ctx, paths.geoUpdateStatePath, {})
+      const result = await refreshRulesets(ctx, paths, { fetchImpl, channel })
       let restarted = false
       let restartMessage = ''
       if (result.updated.length && (await serviceStatus(ctx, paths.initd.core)).running) {
@@ -69,9 +83,11 @@ export const registerUpdateRoutes = (app, { store, ctx, paths, fetchImpl = globa
         restarted = deployed.ok
         if (!deployed.ok) restartMessage = deployed.message || `deploy failed at stage: ${deployed.stage}`
       }
-      const record = { lastAt: new Date().toISOString(), updated: result.updated, failed: result.failed, restarted, source: 'manual' }
+      // 没下到新文件(全失败 / 没配置)就沿用上次记的版本
+      const versions = result.updated.length ? { ...(previous.versions || {}), ...result.versions } : previous.versions || {}
+      const record = { lastAt: new Date().toISOString(), updated: result.updated, failed: result.failed, restarted, source: 'manual', channel, versions }
       await writeJsonFile(ctx, paths.geoUpdateStatePath, record)
-      res.json({ ok: result.failed.length === 0 && !restartMessage, ...result, restarted, restartMessage })
+      res.json({ ok: result.failed.length === 0 && !restartMessage, ...result, versions, restarted, restartMessage })
     } catch (error) {
       res.status(503).json({ message: error instanceof Error ? error.message : String(error) })
     }
@@ -84,7 +100,10 @@ export const registerUpdateRoutes = (app, { store, ctx, paths, fetchImpl = globa
       const config = JSON.parse(await ctx.readFile(paths.configPath))
       count = ((config.route && config.route.rule_set) || []).filter((e) => e && e.type === 'local').length
     } catch { /* 没生成过配置 */ }
-    res.json({ count, lastAt: state.lastAt || '', updated: state.updated || [], failed: state.failed || [], restarted: Boolean(state.restarted) })
+    res.json({
+      count, lastAt: state.lastAt || '', updated: state.updated || [], failed: state.failed || [], restarted: Boolean(state.restarted),
+      versions: state.versions || {},
+    })
   })
 
   app.use('/api/openbox', router)

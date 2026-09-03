@@ -47,17 +47,18 @@ export const rulesetRepo = (tag) => {
 
 // tag 里可能含 `!`(如 geosite-geolocation-!cn)。它在 URL 路径里是合法的 sub-delim,
 // raw.githubusercontent.com 对原样和 %21 两种形式都返回 200(实测),这里原样传。
-export const rulesetUrls = (tag) => {
+// mirrors:来源前缀列表,按顺序试;空串是直连。默认全部来源,更新时按用户选的通道传入
+export const rulesetUrls = (tag, mirrors = RULESET_MIRRORS) => {
   const repo = rulesetRepo(tag)
   if (!repo) return []
   const path = `https://raw.githubusercontent.com/${repo}/rule-set/${tag}.srs`
-  return RULESET_MIRRORS.map((mirror) => (mirror ? `${mirror}${path}` : path))
+  return mirrors.map((mirror) => (mirror ? `${mirror}${path}` : path))
 }
 
 // 单个规则集的下载(多来源依次重试)。除了部署时补齐,「详情」也要用它:用户可能
 // 想看一个还没部署过、本地根本没有的分类里有什么。
-export const downloadRuleset = async (fetchImpl, tag) => {
-  const urls = rulesetUrls(tag)
+export const downloadRuleset = async (fetchImpl, tag, { mirrors = RULESET_MIRRORS } = {}) => {
+  const urls = rulesetUrls(tag, mirrors)
   if (!urls.length) {
     throw new Error(`未知或不合法的规则集名 ${tag}:只认得 geoip-/geosite- 开头的官方规则集`)
   }

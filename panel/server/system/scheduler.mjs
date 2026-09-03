@@ -1,8 +1,9 @@
 // 自动更新计划:面板进程自己每分钟看一眼档案里的计划,到点就做;不依赖 cron。
-// 两件事:Open-Box 自身升级(先探最新版,有新版才升)、Geo 规则集刷新(刷完重启内核
-// 让新文件生效)。每件事一天最多做一次,记录在 data/schedule-state.json。
+// 两件事:Open-Box 自身升级(先探最新版,有新版才升)、Geo 规则集刷新(同样先探上游
+// tag,有新版才下,下完重启内核让新文件生效)。每件事一天最多做一次,记录在
+// data/schedule-state.json。
 import { fetchSelections, resolveSelections } from '../api/deploy-runner.mjs'
-import { readJsonFile, writeJsonFile, readMeta, fetchLatestVersion, compareVersions, startUpdate, refreshRulesets, readUpdateStatus } from './updater.mjs'
+import { readJsonFile, writeJsonFile, readMeta, fetchLatestVersion, compareVersions, startUpdate, refreshRulesets, readUpdateStatus, checkGeoUpdate } from './updater.mjs'
 import { serviceStatus } from './service.mjs'
 
 const dayKey = (d = new Date()) => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
@@ -30,15 +31,26 @@ export const runScheduledTasks = async ({ store, ctx, paths, fetchImpl = globalT
     state.geoDay = today
     changed = true
     if (due) {
+      const channel = geo.channel || 'auto'
       try {
-        const result = await refreshRulesets(ctx, paths, { fetchImpl })
-        let restarted = false
-        if (result.updated.length && runDeploy && (await serviceStatus(ctx, paths.initd.core)).running) {
-          restarted = (await runDeploy({ store, ctx, paths })).ok
+        const check = await checkGeoUpdate(ctx, paths, { fetchImpl, channel })
+        if (!check.hasUpdate) {
+          state.geoLastAt = now.toISOString()
+          log(`[schedule] geo rulesets up to date (${Object.values(check.latest).join(', ')})`)
+        } else {
+          const previous = await readJsonFile(ctx, paths.geoUpdateStatePath, {})
+          const result = await refreshRulesets(ctx, paths, { fetchImpl, channel, latest: check.latest })
+          let restarted = false
+          if (result.updated.length && runDeploy && (await serviceStatus(ctx, paths.initd.core)).running) {
+            restarted = (await runDeploy({ store, ctx, paths })).ok
+          }
+          state.geoLastAt = now.toISOString()
+          const versions = result.updated.length ? { ...(previous.versions || {}), ...result.versions } : previous.versions || {}
+          await writeJsonFile(ctx, paths.geoUpdateStatePath, {
+            lastAt: state.geoLastAt, updated: result.updated, failed: result.failed, restarted, source: 'schedule', channel, versions,
+          })
+          log(`[schedule] geo rulesets: ${result.updated.length} updated, ${result.failed.length} failed`)
         }
-        state.geoLastAt = now.toISOString()
-        await writeJsonFile(ctx, paths.geoUpdateStatePath, { lastAt: state.geoLastAt, updated: result.updated, failed: result.failed, restarted, source: 'schedule' })
-        log(`[schedule] geo rulesets: ${result.updated.length} updated, ${result.failed.length} failed`)
       } catch (err) {
         log(`[schedule] geo rulesets failed: ${err instanceof Error ? err.message : err}`)
       }

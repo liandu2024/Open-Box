@@ -44,11 +44,12 @@
           <option value="direct">{{ $t('obUpdateChannelDirect') }}</option>
           <option value="mirror">{{ $t('obUpdateChannelMirror') }}</option>
         </select>
+        <!-- 先检查、探到新版才能点:没新版就没有东西可更,点了也只会把同一版再装一遍 -->
         <button
           v-if="!progress?.running"
           type="button"
           class="btn btn-primary btn-sm"
-          :disabled="starting"
+          :disabled="starting || !latest?.hasUpdate"
           @click="start"
         >
           <span

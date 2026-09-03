@@ -110,19 +110,85 @@ test('POST /rulesets/refresh:按配置里的本地规则集重新下载,记录�
   }
 })
 
-test('定时器:到点且未做过 → 刷新规则集并记录;同一天不重复', async () => {
+// Geo 上游:HEAD releases/latest 给 302 + tag;.srs 下载给字节。记下所有 GET 过的地址
+const geoFetch = (tags = { 'sing-geosite': '20260831141734', 'sing-geoip': '20260812' }, urls = []) => async (url, init = {}) => {
+  if (init.method === 'HEAD') {
+    const repo = /SagerNet\/(sing-[a-z]+)\/releases/.exec(url)?.[1]
+    if (!repo || !tags[repo]) throw new Error('offline')
+    return { status: 302, headers: new Map([['location', `https://github.com/SagerNet/${repo}/releases/tag/${tags[repo]}`]]), url: '' }
+  }
+  urls.push(url)
+  return { ok: true, status: 200, arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer }
+}
+
+test('GET /rulesets/check:本地没记过版本 → 有新版;记过且相同 → 已是最新;只看配置用到的仓库', async () => {
+  const config = { route: { rule_set: [{ type: 'local', tag: 'geosite-cn', path: `${paths.rulesetDir}/geosite-cn.srs` }] } }
+  const ctx = createMockContext({ files: { [paths.configPath]: JSON.stringify(config) } })
+  const { base, close } = await startApp(ctx, { getProfile: () => ({}) }, geoFetch())
+  try {
+    let r = await (await fetch(`${base}/api/openbox/rulesets/check`)).json()
+    assert.equal(r.hasUpdate, true)
+    assert.deepEqual(r.latest, { geosite: '20260831141734' })
+    assert.deepEqual(r.used, ['geosite'])
+    await ctx.writeFile(paths.geoUpdateStatePath, JSON.stringify({ versions: { geosite: '20260831141734' } }))
+    r = await (await fetch(`${base}/api/openbox/rulesets/check`)).json()
+    assert.equal(r.hasUpdate, false)
+    assert.deepEqual(r.current, { geosite: '20260831141734' })
+    const bad = await fetch(`${base}/api/openbox/rulesets/check?channel=x`)
+    assert.equal(bad.status, 400)
+  } finally {
+    await close()
+  }
+})
+
+test('POST /rulesets/refresh {channel:mirror}:只走镜像下载,并把上游 tag 记成当前版本', async () => {
+  const config = { route: { rule_set: [
+    { type: 'local', tag: 'geosite-cn', path: `${paths.rulesetDir}/geosite-cn.srs` },
+    { type: 'local', tag: 'geoip-cn', path: `${paths.rulesetDir}/geoip-cn.srs` },
+  ] } }
+  const ctx = createMockContext({
+    files: { [paths.configPath]: JSON.stringify(config), [paths.channelPath]: 'mirror\nhttps://gh-proxy.com/\n' },
+    execResults: { '/etc/init.d/openbox status': { code: 1, stdout: 'inactive' } },
+  })
+  const urls = []
+  const { base, close } = await startApp(ctx, { getProfile: () => ({}) }, geoFetch(undefined, urls))
+  try {
+    const r = await (await fetch(`${base}/api/openbox/rulesets/refresh`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ channel: 'mirror' }) })).json()
+    assert.equal(r.ok, true)
+    assert.deepEqual(r.updated, ['geosite-cn', 'geoip-cn'])
+    assert.deepEqual(r.versions, { geosite: '20260831141734', geoip: '20260812' })
+    // 安装时用的镜像排最前,且没有直连
+    assert.ok(urls.every((u) => u.startsWith('https://gh-proxy.com/https://raw.githubusercontent.com/')), urls.join('\n'))
+    const st = await (await fetch(`${base}/api/openbox/rulesets/refresh/status`)).json()
+    assert.deepEqual(st.versions, { geosite: '20260831141734', geoip: '20260812' })
+    const check = await (await fetch(`${base}/api/openbox/rulesets/check`)).json()
+    assert.equal(check.hasUpdate, false)
+  } finally {
+    await close()
+  }
+})
+
+test('定时器:到点且未做过 → 先探上游,有新版才下并记录;同一天不重复;已是最新就不下', async () => {
   const config = { route: { rule_set: [{ type: 'local', tag: 'geosite-cn', path: `${paths.rulesetDir}/geosite-cn.srs` }] } }
   const ctx = createMockContext({
     files: { [paths.configPath]: JSON.stringify(config) },
     execResults: { '/etc/init.d/openbox status': { code: 1, stdout: 'inactive' } },
   })
-  let downloads = 0
-  const fetchImpl = async () => { downloads++; return { ok: true, status: 200, arrayBuffer: async () => new Uint8Array([1]).buffer } }
-  const store = { getProfile: () => ({ updates: { geo: { auto: true, hour: 4, days: 7 }, openbox: { auto: false } } }) }
+  const urls = []
+  const fetchImpl = geoFetch(undefined, urls)
+  const store = { getProfile: () => ({ updates: { geo: { auto: true, hour: 4, days: 7, channel: 'direct' }, openbox: { auto: false } } }) }
   const now = new Date(2026, 8, 3, 4, 5)
   await runScheduledTasks({ store, ctx, paths, fetchImpl, now })
   await runScheduledTasks({ store, ctx, paths, fetchImpl, now })
-  assert.equal(downloads, 1)
+  assert.equal(urls.length, 1)
+  assert.ok(urls[0].startsWith('https://raw.githubusercontent.com/'))
   const state = JSON.parse(await ctx.readFile(paths.scheduleStatePath))
   assert.ok(state.geoLastAt)
+  const geo = JSON.parse(await ctx.readFile(paths.geoUpdateStatePath))
+  assert.deepEqual(geo.versions, { geosite: '20260831141734' })
+  // 8 天后再到点:上游没变 → 不下载,但 lastAt 前移
+  const later = new Date(2026, 8, 11, 4, 5)
+  await runScheduledTasks({ store, ctx, paths, fetchImpl, now: later })
+  assert.equal(urls.length, 1)
+  assert.equal(JSON.parse(await ctx.readFile(paths.scheduleStatePath)).geoLastAt, later.toISOString())
 })

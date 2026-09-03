@@ -6,6 +6,21 @@
         <p class="text-base-content/60 text-xs">{{ $t('geoUpdateDescription') }}</p>
       </div>
 
+      <!-- 版本一行:当前 / 最新。版本 = 上游两个仓库的发布 tag -->
+      <div class="flex flex-wrap items-center gap-x-4 gap-y-1">
+        <span class="text-base-content/70">{{ $t('geoUpdateCurrent') }}:</span>
+        <span class="font-mono">{{ versionText(status?.versions) }}</span>
+        <template v-if="latest">
+          <span class="text-base-content/70">{{ $t('geoUpdateLatest') }}:</span>
+          <span class="font-mono">{{ versionText(latest.latest) }}</span>
+          <StatusBadge
+            :on="!latest.hasUpdate"
+            :on-text="$t('geoUpdateUpToDate')"
+            :off-text="$t('geoUpdateAvailable')"
+          />
+        </template>
+      </div>
+
       <div class="flex flex-wrap items-center gap-x-4 gap-y-1">
         <span class="text-base-content/70">{{ $t('geoUpdateCount') }}:</span>
         <span>{{ status?.count ?? '—' }}</span>
@@ -19,11 +34,33 @@
         />
       </div>
 
+      <!-- 操作:检查 → 选通道 → 更新。与 Open-Box 更新卡一致,没探到新版就不能点 -->
       <div class="flex flex-wrap items-center gap-2">
         <button
           type="button"
-          class="btn btn-primary btn-sm"
+          class="btn btn-sm"
+          :disabled="checking || refreshing"
+          @click="check"
+        >
+          <span
+            v-if="checking"
+            class="loading loading-spinner loading-xs"
+          />
+          {{ $t('geoUpdateCheck') }}
+        </button>
+        <select
+          v-model="channel"
+          class="select select-sm"
           :disabled="refreshing"
+        >
+          <option value="auto">{{ $t('obUpdateChannelAuto') }}</option>
+          <option value="direct">{{ $t('obUpdateChannelDirect') }}</option>
+          <option value="mirror">{{ $t('obUpdateChannelMirror') }}</option>
+        </select>
+        <button
+          type="button"
+          class="btn btn-primary btn-sm"
+          :disabled="refreshing || !latest?.hasUpdate"
           @click="refresh"
         >
           <span
@@ -70,6 +107,15 @@
               :value="h - 1"
             >{{ String(h - 1).padStart(2, '0') }}:00</option>
           </select>
+          <select
+            class="select select-sm"
+            :value="plan.channel"
+            @change="savePlan({ channel: ($event.target as HTMLSelectElement).value as OpenboxUpdateChannel })"
+          >
+            <option value="auto">{{ $t('obUpdateChannelAuto') }}</option>
+            <option value="direct">{{ $t('obUpdateChannelDirect') }}</option>
+            <option value="mirror">{{ $t('obUpdateChannelMirror') }}</option>
+          </select>
         </template>
         <span class="text-base-content/50 text-xs">{{ $t('geoUpdateAutoHint') }}</span>
       </div>
@@ -78,26 +124,39 @@
 </template>
 
 <script setup lang="ts">
-import type { OpenboxProfile } from '@/api/openbox'
-import { fetchRulesetsRefreshStatus, refreshRulesets } from '@/api/openbox'
+import type { OpenboxGeoVersions, OpenboxProfile, OpenboxUpdateChannel } from '@/api/openbox'
+import { checkGeoUpdate, fetchRulesetsRefreshStatus, refreshRulesets } from '@/api/openbox'
 import StatusBadge from '@/components/common/StatusBadge.vue'
 import { showNotification } from '@/helper/notification'
 import dayjs from 'dayjs'
 import { computed, onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{
   profile: OpenboxProfile
   patchProfile: (patch: Record<string, unknown>) => Promise<OpenboxProfile>
 }>()
 
+const { t } = useI18n()
 const status = ref<Awaited<ReturnType<typeof fetchRulesetsRefreshStatus>> | null>(null)
+const latest = ref<Awaited<ReturnType<typeof checkGeoUpdate>> | null>(null)
+const checking = ref(false)
 const refreshing = ref(false)
+const channel = ref<OpenboxUpdateChannel>('auto')
 const plan = computed(() => ({
   auto: props.profile.updates?.geo?.auto === true,
   hour: props.profile.updates?.geo?.hour ?? 4,
   days: props.profile.updates?.geo?.days ?? 7,
+  channel: props.profile.updates?.geo?.channel ?? 'auto',
 }))
 const lastText = computed(() => (status.value?.lastAt ? dayjs(status.value.lastAt).fromNow() : '—'))
+
+const GEO_REPOS = ['geosite', 'geoip'] as const
+// 「geosite 20260831141734 · geoip 20260812」;一个都没有就是未知(老安装没记过)
+const versionText = (v?: OpenboxGeoVersions | null) => {
+  const parts = GEO_REPOS.filter((k) => v?.[k]).map((k) => `${k} ${v?.[k]}`)
+  return parts.length ? parts.join(' · ') : t('geoUpdateUnknown')
+}
 
 const load = async () => {
   try {
@@ -105,12 +164,31 @@ const load = async () => {
   } catch {
     // 读不到就留空
   }
+  // 刚更新完:按新记下的版本重新判断还有没有新版
+  if (latest.value) {
+    const current = status.value?.versions || {}
+    latest.value = { ...latest.value, current, hasUpdate: latest.value.used.some((k) => latest.value?.latest[k] && latest.value.latest[k] !== current[k]) }
+  }
+}
+
+const check = async () => {
+  checking.value = true
+  try {
+    const r = await checkGeoUpdate(channel.value)
+    latest.value = r
+    const shown = versionText(r.latest)
+    showNotification({ content: r.hasUpdate ? 'geoUpdateAvailableToast' : 'geoUpdateUpToDateToast', params: { latest: shown }, type: r.hasUpdate ? 'alert-info' : 'alert-success' })
+  } catch (err) {
+    showNotification({ content: 'geoUpdateCheckFailed', params: { message: err instanceof Error ? err.message : String(err) }, type: 'alert-error' })
+  } finally {
+    checking.value = false
+  }
 }
 
 const refresh = async () => {
   refreshing.value = true
   try {
-    const r = await refreshRulesets()
+    const r = await refreshRulesets(channel.value)
     if (r.ok) {
       showNotification({ content: r.restarted ? 'geoUpdateDoneRestarted' : 'geoUpdateDone', params: { count: String(r.updated.length) }, type: 'alert-success' })
     } else {
@@ -125,7 +203,7 @@ const refresh = async () => {
   }
 }
 
-const savePlan = async (patch: Partial<{ auto: boolean; hour: number; days: number }>) => {
+const savePlan = async (patch: Partial<{ auto: boolean; hour: number; days: number; channel: OpenboxUpdateChannel }>) => {
   try {
     await props.patchProfile({ updates: { geo: { ...plan.value, ...patch } } })
     showNotification({ content: 'obUpdatePlanSaved', type: 'alert-success' })
