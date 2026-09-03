@@ -209,7 +209,7 @@
                 <th class="text-right">{{ $t('trafficOut') }}</th>
                 <th class="text-right">{{ $t('trafficTotal') }}</th>
                 <th class="w-44">{{ $t('trafficShare') }}</th>
-                <th class="w-20" />
+                <th class="w-24" />
               </tr>
             </thead>
             <tbody>
@@ -265,7 +265,7 @@
                 <td class="text-right">
                   <button
                     type="button"
-                    class="btn btn-ghost btn-xs"
+                    class="btn btn-ghost btn-xs whitespace-nowrap"
                     @click="restExpanded = !restExpanded"
                   >
                     {{ $t(restExpanded ? 'trafficCollapseRest' : 'trafficExpandRest') }}
