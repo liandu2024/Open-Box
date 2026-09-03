@@ -83,8 +83,11 @@ export const probeViaKernel = (host, { port = 443, proxyPort = PANEL_INBOUND_POR
           if (i === -1) return
           const m = /^HTTP\/\d(?:\.\d)? (\d{3})/.exec(head.slice(0, i))
           clearTimeout(timer)
-          finish(m ? { ok: true, status: Number(m[1]) } : { ok: false, error: `bad response: ${head.slice(0, i)}` })
-          stream.destroy()
+          // 先不断开:调用方要趁连接还在的时候去内核连接表里找它,找完再 close()。
+          // 兜底 15 秒后自动断,免得调用方忘了。
+          const close = () => { try { stream.destroy() } catch { /* ignore */ } try { socket.destroy() } catch { /* ignore */ } }
+          setTimeout(close, 15000).unref?.()
+          finish(m ? { ok: true, status: Number(m[1]), close } : { ok: false, error: `bad response: ${head.slice(0, i)}`, close })
         })
         stream.once('error', (err) => { clearTimeout(timer); finish({ ok: false, error: err.message }) })
         stream.once('close', () => { clearTimeout(timer); finish({ ok: false, error: 'connection closed' }) })
@@ -164,6 +167,8 @@ export const registerRouteTestRoutes = (app, { store, ctx, paths, fetchImpl = gl
       }
     } catch (err) {
       exit.connectionsError = errorMessage(err)
+    } finally {
+      if (typeof r.close === 'function') r.close()
     }
     out.exit = exit
     res.json(out)
