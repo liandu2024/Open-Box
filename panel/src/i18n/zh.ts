@@ -827,6 +827,7 @@ const zh: LANG_MESSAGE = {
   outboundPickerNoSubscription: '无订阅',
   outboundPickerTestAll: '测速当前页签下全部',
   outboundPickerTestOne: '测速',
+  outboundPickerTestGroupNow: '测速该组当前选中的节点',
 }
 
 export default zh

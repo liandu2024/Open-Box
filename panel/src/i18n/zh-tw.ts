@@ -827,6 +827,7 @@ const zhTW: LANG_MESSAGE = {
   outboundPickerNoSubscription: '無訂閱',
   outboundPickerTestAll: '測速目前頁籤下全部',
   outboundPickerTestOne: '測速',
+  outboundPickerTestGroupNow: '測速該組目前選中的節點',
 }
 
 export default zhTW

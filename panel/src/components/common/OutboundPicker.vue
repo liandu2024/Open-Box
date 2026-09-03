@@ -127,7 +127,7 @@
                   <button
                     type="button"
                     class="btn btn-ghost btn-square btn-xs shrink-0"
-                    v-tip="$t('outboundPickerTestOne')"
+                    v-tip="$t(g.builtin ? 'outboundPickerTestOne' : 'outboundPickerTestGroupNow')"
                     :disabled="testing.has(g.name)"
                     @click.stop="testOne(g.name, g.builtin ? 'node' : 'group')"
                   >
@@ -153,7 +153,7 @@
 import TextInput from '@/components/common/TextInput.vue'
 import LatencyTag from '@/components/proxies/LatencyTag.vue'
 import { useAnchoredDropdown } from '@/composables/anchoredDropdown'
-import { fetchProxies, proxyGroupLatencyTest, proxyLatencyTest, proxyMap } from '@/store/proxies'
+import { fetchProxies, getNowProxyNodeName, proxyLatencyTest, proxyMap } from '@/store/proxies'
 import { BoltIcon, ChevronDownIcon } from '@heroicons/vue/24/outline'
 import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -197,12 +197,16 @@ const testable = (name: string) => {
   const type = String(p.type || '').toLowerCase()
   return type !== 'block' && type !== 'reject'
 }
+// 节点组只测它当前选中的那个节点(顺着 now 找到末端),不把成员全测一遍——
+// 延迟标签对组显示的也正是这个节点的延迟,测的和看的是同一个
+const targetOf = (name: string, kind: 'node' | 'group') => (kind === 'group' ? getNowProxyNodeName(name) : name)
 const testOne = async (name: string, kind: 'node' | 'group') => {
   if (testing.has(name)) return
+  const target = targetOf(name, kind)
+  if (!testable(target)) return
   testing.add(name)
   try {
-    if (kind === 'group') await proxyGroupLatencyTest(name)
-    else await proxyLatencyTest(name)
+    await proxyLatencyTest(target)
   } catch {
     // 失败的提示由 store 里的测速函数自己发
   } finally {
@@ -220,10 +224,20 @@ const testAll = async () => {
         await Promise.all(names.slice(i, i + 5).map((n) => testOne(n, 'node')))
       }
     } else {
-      // 组测速本身就是并发测成员,组之间串行
+      // 每个组只测当前选中的节点,几个组指向同一个节点时也只测一次
+      const seen = new Set<string>()
+      const jobs: Array<Promise<void>> = []
       for (const g of visibleGroups.value) {
-        if (testable(g.name)) await testOne(g.name, g.builtin ? 'node' : 'group')
+        if (!testable(g.name)) continue
+        const target = targetOf(g.name, g.builtin ? 'node' : 'group')
+        if (seen.has(target)) continue
+        seen.add(target)
+        jobs.push(testOne(g.name, g.builtin ? 'node' : 'group'))
+        if (jobs.length >= 5) {
+          await Promise.all(jobs.splice(0))
+        }
       }
+      await Promise.all(jobs)
     }
   } finally {
     testingAll.value = false

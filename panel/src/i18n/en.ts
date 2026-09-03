@@ -830,6 +830,7 @@ const en = {
   outboundPickerNoSubscription: 'No subscription',
   outboundPickerTestAll: 'Test latency of everything in this tab',
   outboundPickerTestOne: 'Test latency',
+  outboundPickerTestGroupNow: 'Test the group\'s current node',
 }
 
 export type LANG_MESSAGE = typeof en
