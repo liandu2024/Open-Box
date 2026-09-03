@@ -1,4 +1,5 @@
 import { readSystemDns } from '../system/resolv.mjs'
+import { readLocalSubnets } from '../system/local-subnets.mjs'
 import { buildConfig } from '../engine/config.mjs'
 import { deployConfig } from '../system/deploy.mjs'
 import { enableService, disableService } from '../system/service.mjs'
@@ -61,7 +62,7 @@ export const STATUS_BY_STAGE = {
 // systemDns 是路由器 WAN 下发的 DNS 上游(见 system/resolv.mjs):dnsmasq 接管模式下
 // 直连侧要用它,不能让 sing-box 去问系统解析器——那时系统解析器就是 dnsmasq,而 dnsmasq
 // 的上游又是 sing-box,一问就死循环。预览接口没有 ctx 也照样能出配置,回落到档案里的值。
-export const buildCurrentConfig = (store, systemDns, { cacheFilePath, selections, tlsCert } = {}) => {
+export const buildCurrentConfig = (store, systemDns, { cacheFilePath, selections, tlsCert, localSubnets = [] } = {}) => {
   const profile = store.getProfile()
   const nodes = store.getNodes()
   const clashApiSecret = store.getClashSecret()
@@ -74,6 +75,8 @@ export const buildCurrentConfig = (store, systemDns, { cacheFilePath, selections
     subscriptions: store.getSubscriptions ? store.getSubscriptions() : [],
     profile: { ...profile, clashApiSecret },
     systemDns,
+    // 本机接口网段:tun 的私网排除表要把它们挖出来(见 engine/config.mjs)
+    localSubnets,
   })
   return { config, profile }
 }
@@ -84,10 +87,10 @@ export const buildCurrentConfig = (store, systemDns, { cacheFilePath, selections
 export const runDeploy = async ({ store, ctx, paths, fetchImpl = globalThis.fetch }) => {
   let result
   try {
-    const systemDns = await readSystemDns(ctx)
+    const [systemDns, localSubnets] = await Promise.all([readSystemDns(ctx), readLocalSubnets(ctx)])
     const selections = resolveSelections(store, await fetchSelections(fetchImpl, store.getClashSecret()))
     const { config, profile } = buildCurrentConfig(store, systemDns, {
-      cacheFilePath: paths.cacheDb, selections, tlsCert: { certPath: paths.tlsCert, keyPath: paths.tlsKey },
+      cacheFilePath: paths.cacheDb, selections, tlsCert: { certPath: paths.tlsCert, keyPath: paths.tlsKey }, localSubnets,
     })
     result = await deployConfig(ctx, paths, { config, profile, userGroups: store.getGroups() })
     store.setDeployState({

@@ -124,6 +124,16 @@ test('tun:私网 / 链路本地 / 组播目标排除在 TUN 之外(ipv6 开时�
   assert.ok(c6.inbounds[0].route_exclude_address.includes('fe80::/10'))
 })
 
+test('tun:本机接口网段从私网排除表里挖出来,局域网发给路由器的 DNS 仍会被劫持进内核', async () => {
+  const { cidrContains } = await import('../system/local-subnets.mjs')
+  const c = buildConfig({ nodes, regionGroups, profile: { ...profile, ipv6: false }, localSubnets: ['192.168.3.0/24', '172.17.0.0/16', '172.19.0.0/30'] })
+  const ex = c.inbounds[0].route_exclude_address
+  assert.ok(!ex.some((x) => cidrContains(x, '192.168.3.1')), '路由器自己的 LAN 网段不能被排除')
+  assert.ok(!ex.some((x) => cidrContains(x, '172.19.0.2')), 'tun 网关不能被排除')
+  assert.ok(ex.some((x) => cidrContains(x, '10.0.0.9')), '其它私网仍然排除')
+  assert.ok(ex.some((x) => cidrContains(x, '192.168.9.9')), '同属 192.168/16 但不是本机网段的仍然排除')
+})
+
 test('tun.autoRedirect 默认关闭,可开启', () => {
   const c1 = buildConfig({ nodes, regionGroups, profile })
   assert.equal(c1.inbounds[0].auto_redirect, undefined)

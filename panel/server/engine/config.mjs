@@ -7,6 +7,7 @@ import { buildServerInbounds } from './servers.mjs'
 import { normalizeClientRoutes } from './client-routes.mjs'
 import { buildDns } from './dns.mjs'
 import { collectDirectHosts } from './direct-hosts.mjs'
+import { subtractCidrs } from '../system/local-subnets.mjs'
 
 // 面板专用回环入站的端口(见下方 inbounds 注释)
 export const PANEL_INBOUND_PORT = 7891
@@ -22,8 +23,10 @@ const TUN_V6_NET = 'fdfe:dcba:9876::/126'
 // 按 ip_is_private 交给直连去拨:TCP 每条等 5 秒,UDP 会话默认挂 5 分钟。正式路由器实测:
 // AnyDesk 打洞向 10.0.0.x 并发探测几千个地址,sing-box 攒下几万个会话,内核 slab 涨 270MB、
 // 自身涨到 200MB,直接被 OOM 杀掉;OpenClash 下同样的包在内核里静默丢掉,毫无影响。
-// tun 自己的网段(172.19.0.0/30、fdfe:dcba:9876::/126)在这些范围里,但它有接口直连路由,
-// DNS 劫持改写到 172.19.0.2 的包仍能进 tun(开发路由器实测)。
+// 排除时要把路由器自己各接口所在的网段挖出来(options.localSubnets,部署时从 ip addr 读,见
+// system/local-subnets.mjs):sing-box 生成的 nft 里排除表的 return 排在 DNS 劫持规则之前,
+// 把路由器所在网段也排除的话,局域网发给路由器的 DNS 查询就进不了内核,劫持模式的分流解析就废了。
+// tun 自己的网段(172.19.0.0/30)也是接口网段,同样被挖出来,DNS 劫持改写到 172.19.0.2 的包照常进 tun。
 const TUN_EXCLUDE_V4 = ['10.0.0.0/8', '100.64.0.0/10', '169.254.0.0/16', '172.16.0.0/12', '192.168.0.0/16', '224.0.0.0/4']
 const TUN_EXCLUDE_V6 = ['fc00::/7', 'fe80::/10', 'ff00::/8']
 // UDP 会话空闲超时:sing-box 默认 5 分钟,Clash 系默认 60 秒。打洞 / 探测类的一次性 UDP 包
@@ -37,7 +40,7 @@ const DNSMASQ_OUTBOUND_TAG = 'dnsmasq'
 // 系统解析器,会绕回 dnsmasq 形成死循环。预览/测试不传就回落到档案里填的那台。
 // regionGroups 参数已经退役(以前按国家自动分的 urltest 组 + 一个 PROXY 聚合 selector,
 // 那是节点组功能出现之前的东西);留着这个参数名只是让老调用方不报错。
-export const buildConfig = ({ nodes, profile, userGroups, systemDns, subscriptions = [], cacheFilePath = '/opt/open-box/data/cache.db', selections = {}, tlsCert = { certPath: '/opt/open-box/etc/certs/server.crt', keyPath: '/opt/open-box/etc/certs/server.key' } }) => {
+export const buildConfig = ({ nodes, profile, userGroups, systemDns, localSubnets = [], subscriptions = [], cacheFilePath = '/opt/open-box/data/cache.db', selections = {}, tlsCert = { certPath: '/opt/open-box/etc/certs/server.crt', keyPath: '/opt/open-box/etc/certs/server.key' } }) => {
   // 订阅和节点站点直连(默认开):见 engine/direct-hosts.mjs
   const directHosts = profile.directForNodes === false ? null : collectDirectHosts(nodes, subscriptions)
   const wireguardNodes = nodes.filter((n) => n.type === 'wireguard')
@@ -102,7 +105,7 @@ export const buildConfig = ({ nodes, profile, userGroups, systemDns, subscriptio
   const tunInbound = {
     type: 'tun', tag: 'tun-in', address: tunAddress,
     auto_route: true, strict_route: true, stack: 'mixed',
-    route_exclude_address: profile.ipv6 ? [...TUN_EXCLUDE_V4, ...TUN_EXCLUDE_V6] : TUN_EXCLUDE_V4,
+    route_exclude_address: subtractCidrs(profile.ipv6 ? [...TUN_EXCLUDE_V4, ...TUN_EXCLUDE_V6] : TUN_EXCLUDE_V4, localSubnets),
     udp_timeout: TUN_UDP_TIMEOUT,
   }
   // auto_redirect 自带 nft 层的 DNS 劫持(局域网发往任何 53 端口的查询都改写进 tun),
