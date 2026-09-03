@@ -56,6 +56,11 @@
 
 set -eu
 
+# 在 macOS 上打包时,BSD tar 会把 com.apple.provenance 之类的扩展属性写成 PAX 头,
+# 路由器上的 GNU/busybox tar 解包时每个文件都报一句 "Ignoring unknown extended header
+# keyword"。无害,但满屏警告吓人,关掉。
+export COPYFILE_DISABLE=1
+
 NODE_VERSION="24.18.0"
 SINGBOX_VERSION="1.13.14"
 
