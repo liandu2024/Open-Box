@@ -46,9 +46,8 @@
 
 <script setup lang="ts">
 import { useCtrlsBar } from '@/composables/useCtrlsBar'
-import { useSwipe } from '@vueuse/core'
 import type { Component } from 'vue'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 
 // key 故意放宽成 string:这个条形菜单原本只服务于面板设置内部的分组
 // (SETTINGS_MENU_KEY),现在改为驱动设置页的一级页签(SETTINGS_TAB)。两者是不同
@@ -82,41 +81,23 @@ const setMenuItemRef = (el: HTMLButtonElement | null, key: string) => {
   menuItemRefs.value.set(key, el)
 }
 
-const { isSwiping } = useSwipe(menuRef, {
-  passive: false,
-  onSwipe(e: TouchEvent) {
-    if (!menuRef.value) return
-    const targetKey = getMenuItemAtPosition(e.touches[0].clientX)
-    if (targetKey && targetKey !== props.activeMenuKey) {
-      emit('menu-click', targetKey)
-    }
-  },
-})
-
+// 页签一多(手机上七个图标 + 右上角按钮)一屏放不下,靠 ul 的 overflow-x-auto 横向滑动。
+// 原来这里用 useSwipe 做"手指划过哪个页签就切到哪个",它的 passive:false 会把 touchmove
+// preventDefault 掉,原生横向滚动就被吞了,后面的页签永远划不出来——两者只能留一个,
+// 留滚动。外层的 @touchstart/@touchmove .stop 仍然保留:别让页面级的左右滑动切页抢走手势。
 const handleMenuClick = (key: string) => {
-  if (isSwiping.value) return
   emit('menu-click', key)
 }
 
-const getMenuItemAtPosition = (x: number): string | null => {
-  if (!menuRef.value) return null
-
-  const menuRect = menuRef.value.getBoundingClientRect()
-  const relativeX = x - menuRect.left
-
-  // 找到触摸位置对应的菜单项
-  for (const itemEl of menuItemRefs.value.values()) {
-    const itemRect = itemEl.getBoundingClientRect()
-    const itemRelativeX = itemRect.left - menuRect.left
-    const itemWidth = itemRect.width
-
-    if (relativeX >= itemRelativeX && relativeX <= itemRelativeX + itemWidth) {
-      return itemEl.dataset.key as string
-    }
-  }
-
-  return null
-}
+// 当前页签滚进可视区(手机上从别处跳过来时,页签可能在屏幕外)
+watch(
+  () => props.activeMenuKey,
+  (key) => {
+    const el = menuItemRefs.value.get(key)
+    el?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' })
+  },
+  { flush: 'post' },
+)
 
 const getMenuHeight = () => {
   return menuRef.value?.offsetHeight || 0
