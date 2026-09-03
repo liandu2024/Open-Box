@@ -133,7 +133,8 @@
         </div>
 
         <!-- The hero: original -> renamed mapping table -->
-        <div class="border-base-content/10 min-h-0 flex-1 overflow-hidden rounded-lg border">
+        <!-- app-plain-table:关掉连接表那层 tbody::before 毛玻璃,否则整张表的文字都会被糊掉 -->
+        <div class="app-plain-table border-base-content/10 min-h-0 flex-1 overflow-hidden rounded-lg border">
           <div
             v-if="rows.length === 0"
             class="text-base-content/50 p-4 text-center text-sm"
