@@ -518,7 +518,7 @@ const zhTW: LANG_MESSAGE = {
   subscriptionNameLabel: '\u540d\u7a31',
   subscriptionNamePlaceholder: '\u4f8b\u5982\u300c\u6211\u7684\u8a02\u95b1\u300d',
   subscriptionUrlLabel: '\u8a02\u95b1\u9023\u7d50',
-  subscriptionUrlHint: '儲存時需要;服務端會去抓取(內網/本機位址會被拒絕)。自簽憑證的 https 位址可在結尾加 #insecure=1 略過憑證驗證。',
+  subscriptionUrlHint: '儲存時需要;服務端會去抓取(內網/本機位址會被拒絕)。不驗證 https 憑證,自簽憑證的位址也能用。',
   subscriptionContentLabel: '節點內容',
   subscriptionContentHint: '一行一個節點連結(ss:// / trojan:// / vless:// 等);也支援整段 Clash / sing-box 設定。',
   subscriptionContentPlaceholder: '\u8cbc\u4e0a ss:// / trojan:// / hysteria2:// \u7b49\u9023\u7d50,\u6216 Clash/sing-box \u8a2d\u5b9a\u2026',

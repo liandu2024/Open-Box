@@ -1,38 +1,21 @@
-// 订阅拉取用的 fetch:地址带 #insecure=1 时跳过 TLS 证书校验。
+// 订阅拉取用的 fetch:不校验 TLS 证书——只要地址能访问就能订阅。
 //
-// 自建订阅服务(Caddy 本地 CA、自签证书、IP 直连的 https)在 Node 的 fetch 下一律
-// "fetch failed"(UNABLE_TO_GET_ISSUER_CERT_LOCALLY 之类),而机场客户端普遍认
-// `#insecure=1` / `#allowInsecure=1` 这类片段作为"我知道这是自签,放行"的开关。片段
-// 本来就不会发给服务器,拿来当本地开关正合适;不带开关的地址照旧走系统 fetch,证书
-// 该拒绝还是拒绝——这个开关只对用户明确标记的那一条订阅生效,不是全局关校验。
+// 自建订阅服务用 Caddy 本地 CA、自签证书、IP 直连 https 的情况非常普遍,Node 自带的
+// fetch 一律 "fetch failed"(UNABLE_TO_GET_ISSUER_CERT_LOCALLY 之类)。订阅内容本身
+// 不是机密(拉回来的是节点配置,连的对不对由节点那边的 TLS 自己保证),所以这里干脆
+// 不校验:体验对齐各家客户端"填上就能用"。
 //
 // Node 自带的 fetch(undici)没法按请求关证书校验(要 undici 的 Agent,而 undici 并不
-// 作为模块暴露),所以 insecure 这条路用 node:https 直接发请求,再包成标准 Response
-// 交回去——调用方(subscriptions.mjs)读的是 status / headers.get / body 流,和真 fetch
-// 一样。redirect 由调用方手动处理(它本来就传 redirect:'manual' 逐跳做 SSRF 校验),
-// 这里遇到 3xx 原样返回即可。
+// 作为模块暴露),所以用 node:https / node:http 直接发请求,再包成标准 Response 交回去
+// ——调用方(subscriptions.mjs)读的是 status / headers.get / body 流,和真 fetch 一样。
+// 不自动跟随重定向:调用方本来就传 redirect:'manual' 逐跳做 SSRF 校验,3xx 原样返回。
+// 只给订阅拉取用;规则集 / 升级包下载等仍走系统 fetch,证书照常校验。
 import http from 'node:http'
 import https from 'node:https'
 import net from 'node:net'
 import { Readable } from 'node:stream'
 
-const INSECURE_KEYS = new Set(['insecure', 'allowinsecure', 'allow_insecure', 'allow-insecure', 'skip-cert-verify', 'skipcertverify'])
 const NULL_BODY_STATUS = new Set([204, 205, 304])
-
-// #insecure=1 / #insecure / #allowInsecure=true …(不区分大小写)
-export const hasInsecureFlag = (url) => {
-  let hash = ''
-  try {
-    hash = new URL(String(url)).hash
-  } catch {
-    return false
-  }
-  if (!hash) return false
-  for (const [key, value] of new URLSearchParams(hash.slice(1))) {
-    if (INSECURE_KEYS.has(key.toLowerCase()) && (value === '' || value === '1' || /^true$/i.test(value))) return true
-  }
-  return false
-}
 
 export const insecureFetch = (url, init = {}) => new Promise((resolve, reject) => {
   let target
@@ -40,6 +23,10 @@ export const insecureFetch = (url, init = {}) => new Promise((resolve, reject) =
     target = new URL(String(url))
   } catch (err) {
     reject(err)
+    return
+  }
+  if (target.protocol !== 'https:' && target.protocol !== 'http:') {
+    reject(new Error(`unsupported protocol: ${target.protocol}`))
     return
   }
   const mod = target.protocol === 'https:' ? https : http
@@ -71,12 +58,4 @@ export const insecureFetch = (url, init = {}) => new Promise((resolve, reject) =
   req.end()
 })
 
-// 按 URL(或 init.insecure,跟随重定向时由调用方传下来)分派:标了 insecure 的走
-// 上面那条,其余走系统 fetch。init.insecure 不会传给系统 fetch。
-export const createSubscriptionFetch = ({ secure = (u, i) => globalThis.fetch(u, i), insecure = insecureFetch } = {}) =>
-  (url, init = {}) => {
-    const { insecure: wantInsecure, ...rest } = init
-    return wantInsecure || hasInsecureFlag(url) ? insecure(url, rest) : secure(url, rest)
-  }
-
-export const subscriptionFetch = createSubscriptionFetch()
+export const subscriptionFetch = insecureFetch

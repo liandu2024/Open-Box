@@ -5,7 +5,7 @@ import { parseSubscription } from '../engine/subscription.mjs'
 import { renameNodes, previewRename, excludeNodes } from '../engine/rename.mjs'
 import { groupNodesByRegion } from '../engine/groups.mjs'
 import { assertPublicUrl } from './net-guard.mjs'
-import { hasInsecureFlag, subscriptionFetch } from '../system/insecure-fetch.mjs'
+import { subscriptionFetch } from '../system/insecure-fetch.mjs'
 
 // 面板本身跑在网关上,订阅拉取又是"服务端发起、URL 客户端可控"的经典 SSRF 面——
 // 不加限制的话可以拿它当跳板探测回环/内网端口。P4a 复审证明了仅做"字面 IP"层面拒绝远远
@@ -91,19 +91,16 @@ export const dedupeNodeTags = (nodes) => {
 
 const errorMessage = (err) => (err instanceof Error ? err.message : String(err))
 
-// Node 的 fetch 把底层原因藏在 err.cause 里,面上只有一句 "fetch failed"——把 cause 带出来,
-// 证书问题再补一句怎么办(自建订阅服务用自签证书很常见)。
-const TLS_CERT_CODES = new Set([
-  'UNABLE_TO_GET_ISSUER_CERT_LOCALLY', 'UNABLE_TO_GET_ISSUER_CERT', 'SELF_SIGNED_CERT_IN_CHAIN', 'DEPTH_ZERO_SELF_SIGNED_CERT',
-  'CERT_HAS_EXPIRED', 'CERT_NOT_YET_VALID', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE', 'ERR_TLS_CERT_ALTNAME_INVALID', 'CERT_UNTRUSTED',
-])
+// 系统 fetch 把底层原因藏在 err.cause 里,面上只有一句 "fetch failed"——把 cause 带出来。
+// node:http 的错误(ECONNREFUSED、ETIMEDOUT…)本身带 code,也一并带上。
 const describeFetchError = (err) => {
   let message = errorMessage(err)
+  const code = err && typeof err === 'object' && err.code ? String(err.code) : ''
+  if (code && !message.includes(code)) message = `${code}: ${message}`
   const cause = err && typeof err === 'object' ? err.cause : null
-  const code = cause && typeof cause === 'object' ? String(cause.code || '') : ''
+  const causeCode = cause && typeof cause === 'object' ? String(cause.code || '') : ''
   const causeMessage = cause && typeof cause === 'object' && cause.message ? String(cause.message) : ''
-  if (causeMessage && causeMessage !== message) message += ` (${code ? `${code}: ` : ''}${causeMessage})`
-  if (TLS_CERT_CODES.has(code)) message += ';证书校验没通过(自签或过期证书)。确认来源可信的话,在订阅地址末尾加 #insecure=1 跳过校验'
+  if (causeMessage && causeMessage !== message) message += ` (${causeCode ? `${causeCode}: ` : ''}${causeMessage})`
   return message
 }
 
@@ -114,8 +111,6 @@ const describeFetchError = (err) => {
 const fetchSubscriptionResponse = async (initialUrl, fetchImpl, lookup, userAgent) => {
   let currentUrl = initialUrl
   let redirectsFollowed = 0
-  // #insecure=1 只在首跳地址上;跟重定向时片段没了,靠 init.insecure 把开关带下去
-  const insecure = hasInsecureFlag(initialUrl)
 
   for (;;) {
     await assertPublicUrl(currentUrl, { lookup })
@@ -126,7 +121,6 @@ const fetchSubscriptionResponse = async (initialUrl, fetchImpl, lookup, userAgen
         redirect: 'manual',
         headers: { 'User-Agent': userAgent },
         signal: AbortSignal.timeout(SUBSCRIPTION_FETCH_TIMEOUT_MS),
-        ...(insecure ? { insecure: true } : {}),
       })
     } catch (err) {
       throw new Error(`failed to fetch subscription: ${describeFetchError(err)}`)
