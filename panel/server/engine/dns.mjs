@@ -1,4 +1,4 @@
-import { normalizeRouting } from './routing-model.mjs'
+import { DEFAULT_BUILTIN, effectiveOutbound, normalizeRouting, policyOutboundOptions } from './routing-model.mjs'
 
 const extractHost = (url) => {
   // "https://1.1.1.1/dns-query" -> "1.1.1.1";裸 host 原样返回
@@ -61,13 +61,37 @@ export const buildDns = (profile, options = {}) => {
     rules.push({ rule_set: conf.adRuleset, action: 'reject' })
   }
 
-  // 每个站点集一台自己的 DoH 服务器,detour 指向同名 selector:用户在代理页把站点集切到
-  // 哪条线路,这个站点集的域名解析就走哪条——切到直连就经直连出站去问 DoH,切到代理就经
-  // 代理去问。以前按"默认走哪"在生成配置时二选一(直连的用本地解析),但默认值和代理页
-  // 上的实际选择经常不一致(默认是直连、用户切到了代理),结果解析还走本地上游,答案被
-  // 污染/劫持;现在解析和流量永远同一条路,不用重启内核就跟着变。
+  // 每个站点集的域名怎么解析,看它此刻实际走哪:
+  //   · 走直连 → dns-direct(本地/直连解析,国内站点才拿得到就近的 CDN 地址)
+  //   · 走代理 → 一台专属 DoH,detour 指向同名 selector,解析和流量同一条路
+  // "此刻走哪"优先用内核里当前的选择(options.selections:生成配置时从跑着的内核读
+  // 出来的各 selector 的 now,顺着 now 一路下钻到叶子),内核没在跑时才退回档案里的默认。
+  // 这样重启内核会按用户在代理页选好的线路重新生成 DNS 规则;两次重启之间切换了
+  // 直连/代理,DNS 侧要等下次重启才跟上——这是配置层的取舍。
+  const builtin = options.builtin || DEFAULT_BUILTIN
+  const members = policyOutboundOptions(conf.outboundOptions, options.groupTags || [], builtin)
+  const selections = options.selections && typeof options.selections === 'object' ? options.selections : {}
+  const leafOf = (name) => {
+    let current = name
+    const seen = new Set()
+    for (let i = 0; i < 16 && Object.prototype.hasOwnProperty.call(selections, current) && !seen.has(current); i++) {
+      seen.add(current)
+      current = selections[current]
+    }
+    return current
+  }
+  const goesDirect = (name, fallbackDefault) => {
+    const chosen = Object.prototype.hasOwnProperty.call(selections, name)
+      ? leafOf(name)
+      : effectiveOutbound(fallbackDefault, members, builtin)
+    return chosen === builtin.direct
+  }
   conf.activePolicies.forEach((policy, index) => {
     if (!hasDomainCondition(policy)) return
+    if (goesDirect(policy.name, policy.default)) {
+      rules.push(policyDnsRule(policy, 'dns-direct'))
+      return
+    }
     const tag = `dns-policy-${index}`
     servers.push({ type: 'https', tag, server: proxyHost, detour: policy.name })
     rules.push(policyDnsRule(policy, tag))
@@ -76,8 +100,8 @@ export const buildDns = (profile, options = {}) => {
   return {
     servers,
     rules,
-    // 兜底:上面都没命中的域名经兜底站点集 detour 去问 DoH,同样跟着它在代理页的选择走
-    final: 'dns-proxy',
+    // 兜底:上面都没命中的域名,按兜底站点集此刻走哪来定用哪边解析
+    final: goesDirect(conf.fallback.name, conf.fallback.default) ? 'dns-direct' : 'dns-proxy',
     strategy,
   }
 }

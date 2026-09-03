@@ -31,22 +31,22 @@
       >
         <!-- 左栏:自下而上的流程线。两行固定等高(h-24),线从箭头下方一直画到 DNS 圈的圆心,
              圆圈在线上层(z-10、实底)把线遮住,看起来就是"线穿过两个节点"。 -->
-        <div class="relative w-16 shrink-0">
+        <div class="relative w-16 shrink-0 pb-4">
           <div
             class="border-x-transparent absolute left-1/2 top-0 -translate-x-1/2 border-x-[6px] border-b-[10px]"
             style="border-bottom-color: var(--color-primary)"
           />
           <div
             class="absolute left-1/2 w-0.5 -translate-x-1/2 rounded-full"
-            style="top: 0.55rem; height: 8.5rem; background: color-mix(in srgb, var(--color-primary) 55%, transparent)"
+            style="top: 0.55rem; bottom: 0; background: color-mix(in srgb, var(--color-primary) 55%, transparent)"
           />
-          <div class="flex h-24 items-center justify-center">
+          <div class="flex h-16 items-center justify-center">
             <div class="border-primary bg-base-100 text-primary relative z-10 flex h-14 w-14 flex-col items-center justify-center rounded-full border-2 shadow-sm">
               <span class="text-xs leading-none font-medium">{{ $t('routeTestExit') }}</span>
               <span class="mt-1 text-[10px] leading-none opacity-80">{{ result.exit.ms !== undefined ? `${result.exit.ms}ms` : '—' }}</span>
             </div>
           </div>
-          <div class="flex h-24 items-center justify-center">
+          <div class="flex h-16 items-center justify-center">
             <div class="border-primary bg-base-100 text-primary relative z-10 flex h-14 w-14 flex-col items-center justify-center rounded-full border-2 shadow-sm">
               <span class="text-xs leading-none font-medium">DNS</span>
               <span class="mt-1 text-[10px] leading-none opacity-80">{{ result.resolve ? `${result.resolve.ms}ms` : '—' }}</span>
@@ -57,7 +57,7 @@
         <!-- 右栏:两行和左边的两个圈同高、垂直居中 -->
         <div class="flex min-w-0 flex-1 flex-col">
           <!-- 出口 -->
-          <div class="flex h-24 flex-col justify-center gap-1.5">
+          <div class="flex h-16 flex-col justify-center gap-1">
             <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
               <template v-if="result.exit.error">
                 <span class="text-error text-xs">{{ $t('routeTestRequestFailed', { message: result.exit.error }) }}</span>
@@ -94,7 +94,7 @@
           </div>
 
           <!-- DNS -->
-          <div class="flex h-24 flex-col justify-center gap-1.5">
+          <div class="flex h-16 flex-col justify-center gap-1">
             <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
               <template v-if="'skipped' in result.dns">
                 <span class="text-base-content/50 text-xs">{{ $t('routeTestDnsSkipped') }}</span>

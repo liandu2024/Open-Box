@@ -16,7 +16,7 @@ const TUN_V6 = 'fdfe:dcba:9876::1/126'
 // 系统解析器,会绕回 dnsmasq 形成死循环。预览/测试不传就回落到档案里填的那台。
 // regionGroups 参数已经退役(以前按国家自动分的 urltest 组 + 一个 PROXY 聚合 selector,
 // 那是节点组功能出现之前的东西);留着这个参数名只是让老调用方不报错。
-export const buildConfig = ({ nodes, profile, userGroups, systemDns, cacheFilePath = '/opt/open-box/data/cache.db' }) => {
+export const buildConfig = ({ nodes, profile, userGroups, systemDns, cacheFilePath = '/opt/open-box/data/cache.db', selections = {} }) => {
   const wireguardNodes = nodes.filter((n) => n.type === 'wireguard')
   const outboundNodes = nodes.filter((n) => n.type !== 'wireguard')
 
@@ -61,7 +61,7 @@ export const buildConfig = ({ nodes, profile, userGroups, systemDns, cacheFilePa
   const { route } = buildRoute(sanitizedRouting, profile.rulesetDir, { dnsMode, directTag: builtin.direct })
   // groupTags 传给 DNS:它要按"这个站点集默认走哪"决定用直连还是代理侧解析,
   // 而"默认走哪"在 default 为空时取决于成员表的第一项(见 effectiveOutbound)。
-  const dns = buildDns(profile, { systemDns, groupTags, builtin })
+  const dns = buildDns(profile, { systemDns, groupTags, builtin, selections })
 
   const tunAddress = profile.ipv6 ? [TUN_V4, TUN_V6] : [TUN_V4]
 

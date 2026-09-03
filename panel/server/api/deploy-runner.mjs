@@ -2,6 +2,31 @@ import { readSystemDns } from '../system/resolv.mjs'
 import { buildConfig } from '../engine/config.mjs'
 import { deployConfig } from '../system/deploy.mjs'
 import { enableService, disableService } from '../system/service.mjs'
+import { CLASH_API_BASE } from './penetration.mjs'
+
+// 生成配置前问一下正在跑的内核:每个 selector 现在选的是谁。DNS 规则按它判各站点集
+// 此刻走直连还是代理(见 engine/dns.mjs)。内核没在跑就是空表,退回档案默认。
+export const fetchSelections = async (fetchImpl, secret) => {
+  try {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 3000)
+    let res
+    try {
+      res = await fetchImpl(`${CLASH_API_BASE}/proxies`, { headers: secret ? { Authorization: `Bearer ${secret}` } : {}, signal: controller.signal })
+    } finally {
+      clearTimeout(timer)
+    }
+    if (!res || !res.ok) return {}
+    const body = await res.json()
+    const out = {}
+    for (const [name, p] of Object.entries((body && body.proxies) || {})) {
+      if (p && typeof p.now === 'string' && p.now) out[name] = p.now
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
 
 // deployConfig 对 start/verify/error 三个阶段都会自行调用 rollbackToDirect 回到直连,
 // 但 rollbackToDirect 只管停服务/还原 DNS/撤防火墙,不动"开机自启"标志位——
@@ -26,12 +51,13 @@ export const STATUS_BY_STAGE = {
 // systemDns 是路由器 WAN 下发的 DNS 上游(见 system/resolv.mjs):dnsmasq 接管模式下
 // 直连侧要用它,不能让 sing-box 去问系统解析器——那时系统解析器就是 dnsmasq,而 dnsmasq
 // 的上游又是 sing-box,一问就死循环。预览接口没有 ctx 也照样能出配置,回落到档案里的值。
-export const buildCurrentConfig = (store, systemDns, { cacheFilePath } = {}) => {
+export const buildCurrentConfig = (store, systemDns, { cacheFilePath, selections } = {}) => {
   const profile = store.getProfile()
   const nodes = store.getNodes()
   const clashApiSecret = store.getClashSecret()
   const config = buildConfig({
     cacheFilePath,
+    selections,
     nodes,
     userGroups: store.getGroups(),
     profile: { ...profile, clashApiSecret },
@@ -43,11 +69,12 @@ export const buildCurrentConfig = (store, systemDns, { cacheFilePath } = {}) => 
 // 「保存设置」与「让设置生效」之间只隔一次启动内核:各个设置页只管把自己那块写进档案,
 // 真正生成配置、下规则集、接管 DNS/防火墙、起内核、失败回滚,统一在这里做一次。
 // 所以启动/重启内核走的就是这条路径(server/api/service.mjs),不再有单独的"部署"动作。
-export const runDeploy = async ({ store, ctx, paths }) => {
+export const runDeploy = async ({ store, ctx, paths, fetchImpl = globalThis.fetch }) => {
   let result
   try {
     const systemDns = await readSystemDns(ctx)
-    const { config, profile } = buildCurrentConfig(store, systemDns, { cacheFilePath: paths.cacheDb })
+    const selections = await fetchSelections(fetchImpl, store.getClashSecret())
+    const { config, profile } = buildCurrentConfig(store, systemDns, { cacheFilePath: paths.cacheDb, selections })
     result = await deployConfig(ctx, paths, { config, profile, userGroups: store.getGroups() })
     store.setDeployState({
       stage: result.stage,

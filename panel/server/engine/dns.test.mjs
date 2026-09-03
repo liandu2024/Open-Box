@@ -38,8 +38,7 @@ test('兜底走代理时,没被站点集挑走的域名用代理侧解析', () =
 
 test('兜底直连时,兜底的解析也回到本地', () => {
   const dns = buildDns(withRouting({ fallbackDefault: 'direct' }), GROUPS)
-  // 兜底同样经「其他」selector 去问 DoH:它在代理页切到哪,解析就走哪
-  assert.equal(dns.final, 'dns-proxy')
+  assert.equal(dns.final, 'dns-direct')
 })
 
 test('走代理的站点集各有一台自己的 DNS,detour 指向同名 selector', () => {
@@ -57,19 +56,34 @@ test('走代理的站点集各有一台自己的 DNS,detour 指向同名 selecto
   })
 })
 
-test('站点集不管默认走哪,都有自己的 DoH,detour 指向同名 selector——解析跟着代理页的选择走', () => {
+test('走直连的站点集用本地解析(国内站点才拿得到就近地址),不给专属 DoH', () => {
   const dns = buildDns(
     withRouting({
       policies: [{ id: 'p1', name: '中国', default: 'direct', rulesets: ['geosite-cn'] }],
     }),
   )
-  assert.deepEqual(dns.rules[0], { server: 'dns-policy-0', rule_set: ['geosite-cn'] })
-  assert.deepEqual(dns.servers[2], { type: 'https', tag: 'dns-policy-0', server: '1.1.1.1', detour: '中国' })
+  assert.deepEqual(dns.rules[0], { server: 'dns-direct', rule_set: ['geosite-cn'] })
+  assert.equal(dns.servers.length, 2)
 })
 
-test('default 空着时同样给专属 DoH(不再按成员表第一项猜直连/代理)', () => {
+test('default 空着、内核没在跑时按成员表第一项算(直连)', () => {
   const dns = buildDns(withRouting({ policies: [{ id: 'p1', name: 'x', rulesets: ['geosite-x'] }] }))
-  assert.deepEqual(dns.rules[0], { server: 'dns-policy-0', rule_set: ['geosite-x'] })
+  assert.deepEqual(dns.rules[0], { server: 'dns-direct', rule_set: ['geosite-x'] })
+})
+
+test('内核里当前的选择优先于档案默认:默认直连但代理页切到了节点组 → 专属 DoH;反之 → 本地解析', () => {
+  const routing = {
+    fallbackDefault: 'direct',
+    policies: [
+      { id: 'p1', name: '谷歌', default: 'direct', rulesets: ['geosite-google'] },
+      { id: 'p2', name: '中国', default: 'block', rulesets: ['geosite-cn'] },
+    ],
+  }
+  const selections = { 谷歌: '香港-自动', '香港-自动': 'HK-01', 中国: 'direct', 其他: '香港-自动' }
+  const dns = buildDns(withRouting(routing), { ...GROUPS, selections })
+  assert.deepEqual(dns.rules[0], { server: 'dns-policy-0', rule_set: ['geosite-google'] })
+  assert.deepEqual(dns.rules[1], { server: 'dns-direct', rule_set: ['geosite-cn'] })
+  assert.equal(dns.final, 'dns-proxy')
 })
 
 test('只有 IP 条件的站点集不进 DNS 规则:解析阶段还没有 IP,写进去只会让人以为生效了', () => {
@@ -97,8 +111,7 @@ test('ipv6 关:strategy=ipv4_only', () => {
 })
 
 
-test('分流 DNS 开着时兜底永远是 dns-proxy(detour 兜底 selector,那个 selector 一定存在)', () => {
+test('一个节点组都没有时,兜底的「走代理」只能落回直连:不能指向内核里不存在的出站', () => {
   const dns = buildDns(base)
-  assert.equal(dns.final, 'dns-proxy')
-  assert.equal(dns.servers[1].detour, '其他')
+  assert.equal(dns.final, 'dns-direct')
 })
