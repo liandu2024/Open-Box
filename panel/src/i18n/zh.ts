@@ -692,7 +692,7 @@ const zh: LANG_MESSAGE = {
   routeTestDnsProxy: '代理 DNS',
   routeTestResolve: '解析',
   routeTestNoAnswer: '没有解析结果',
-  routeTestExit: '实际出口',
+  routeTestExit: '出口',
   routeTestRequestFailed: '访问失败:{message}',
   routeTestNotSeen: '访问完成,但在内核连接表里没找到这条连接(可能没经过内核)',
   routeTestRule: '命中规则',

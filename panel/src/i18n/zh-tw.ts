@@ -692,7 +692,7 @@ const zhTW: LANG_MESSAGE = {
   routeTestDnsProxy: '代理 DNS',
   routeTestResolve: '解析',
   routeTestNoAnswer: '沒有解析結果',
-  routeTestExit: '實際出口',
+  routeTestExit: '出口',
   routeTestRequestFailed: '訪問失敗:{message}',
   routeTestNotSeen: '訪問完成,但在核心連線表裡沒找到這條連線(可能沒經過核心)',
   routeTestRule: '命中規則',

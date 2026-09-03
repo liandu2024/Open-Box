@@ -41,13 +41,13 @@
             style="top: 0.55rem; bottom: 0; background: color-mix(in srgb, var(--color-primary) 55%, transparent)"
           />
           <div class="flex h-16 items-center justify-center">
-            <div class="border-primary bg-base-100 text-primary relative z-10 flex h-14 w-14 flex-col items-center justify-center rounded-full border-2 shadow-sm">
+            <div class="route-node border-primary/70 text-base-content relative z-10 flex h-14 w-14 flex-col items-center justify-center rounded-full border shadow-sm">
               <span class="text-xs leading-none font-medium">{{ $t('routeTestExit') }}</span>
               <span class="mt-1 text-[10px] leading-none opacity-80">{{ result.exit.ms !== undefined ? `${result.exit.ms}ms` : '—' }}</span>
             </div>
           </div>
           <div class="flex h-16 items-center justify-center">
-            <div class="border-primary bg-base-100 text-primary relative z-10 flex h-14 w-14 flex-col items-center justify-center rounded-full border-2 shadow-sm">
+            <div class="route-node border-primary/70 text-base-content relative z-10 flex h-14 w-14 flex-col items-center justify-center rounded-full border shadow-sm">
               <span class="text-xs leading-none font-medium">DNS</span>
               <span class="mt-1 text-[10px] leading-none opacity-80">{{ result.resolve ? `${result.resolve.ms}ms` : '—' }}</span>
             </div>
@@ -206,3 +206,10 @@ const dnsServerText = computed(() => {
   return [s.tag, type && s.server ? `${type} ${s.server}` : type || s.server].filter(Boolean).join(' · ')
 })
 </script>
+
+<style scoped>
+/* 圆圈必须是实底:主线从它背后穿过,半透明的话线会透出来 */
+.route-node {
+  background-color: var(--color-base-100) !important;
+}
+</style>
