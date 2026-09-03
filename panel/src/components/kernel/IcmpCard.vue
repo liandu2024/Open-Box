@@ -10,12 +10,12 @@
         <input
           type="checkbox"
           class="toggle shrink-0"
-          :checked="profile.icmpDirect === true"
+          :checked="profile.icmpDirect !== false"
           @change="onToggle"
         />
       </div>
       <p class="text-base-content/50 text-xs">
-        {{ profile.icmpDirect === true ? $t('icmpOnNote') : $t('icmpOffNote') }}
+        {{ profile.icmpDirect !== false ? $t('icmpOnNote') : $t('icmpOffNote') }}
       </p>
     </div>
   </div>
