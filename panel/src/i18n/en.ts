@@ -816,7 +816,6 @@ const en = {
   clientRouteOutboundLabel: 'Outbound',
   clientRouteOutboundBuiltin: 'Built-in',
   clientRouteOutboundGroups: 'Node groups',
-  clientRouteOutboundPolicies: 'Site sets',
   clientRouteHint: 'All traffic from these clients goes to the chosen outbound, ahead of site-set rules. LAN destinations still go direct. Restart the kernel after saving.',
   clientRouteErrName: 'Name is required',
   clientRouteErrSources: 'Invalid IP / CIDR: {value}',
@@ -824,6 +823,11 @@ const en = {
   clientRouteErrOutbound: 'Pick an outbound',
   clientRouteOutboundMissing: 'Outbound "{name}" no longer exists',
   clientRouteSaved: 'Saved; takes effect after restarting the kernel.',
+  clientRouteOutboundNodes: 'Nodes',
+  outboundPickerSearch: 'Search',
+  outboundPickerNoMatch: 'No match',
+  outboundPickerPlaceholder: 'Pick an outbound',
+  outboundPickerNoSubscription: 'No subscription',
 }
 
 export type LANG_MESSAGE = typeof en

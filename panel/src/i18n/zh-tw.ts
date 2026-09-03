@@ -813,7 +813,6 @@ const zhTW: LANG_MESSAGE = {
   clientRouteOutboundLabel: '出口',
   clientRouteOutboundBuiltin: '內建',
   clientRouteOutboundGroups: '節點組',
-  clientRouteOutboundPolicies: '站點集',
   clientRouteHint: '這些終端的全部流量都走這裡選的出口,優先級高於站點集;區域網路目標仍直連。儲存後重啟核心生效。',
   clientRouteErrName: '名稱不能為空',
   clientRouteErrSources: '無效的 IP / 網段:{value}',
@@ -821,6 +820,11 @@ const zhTW: LANG_MESSAGE = {
   clientRouteErrOutbound: '請選擇出口',
   clientRouteOutboundMissing: '出口「{name}」已不存在',
   clientRouteSaved: '已儲存;重啟核心後生效。',
+  clientRouteOutboundNodes: '節點',
+  outboundPickerSearch: '搜尋',
+  outboundPickerNoMatch: '沒有符合項',
+  outboundPickerPlaceholder: '選擇出口',
+  outboundPickerNoSubscription: '無訂閱',
 }
 
 export default zhTW

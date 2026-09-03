@@ -123,6 +123,7 @@ const { padding } = usePaddingForViews({ offsetTop: 0, offsetBottom: 0 })
 
 const profile = ref<OpenboxProfile | null>(null)
 const groups = ref<OpenboxUserGroup[]>([])
+const availableNodes = ref<Array<{ name: string; subscription: string }>>([])
 const knownClients = ref<Array<{ ip: string; name: string }>>([])
 const loading = ref(true)
 const dialogOpen = ref(false)
@@ -130,17 +131,15 @@ const editing = ref<OpenboxClientRoute | null>(null)
 
 const routes = computed(() => profile.value?.clientRoutes || [])
 
-// 出口候选:内置直连 / 拒绝(用它们当前的名字)、启用的节点组、站点集 + 兜底「其他」
+// 出口候选:内置直连 / 拒绝(用它们当前的名字)、启用的节点组、单个节点(带订阅名)
 const outboundOptions = computed(() => {
   const builtin = groups.value.filter((g) => g.kind && g.enabled !== false).map((g) => g.name)
   const userGroups = groups.value.filter((g) => !g.kind && g.enabled !== false).map((g) => g.name)
-  const policies = (profile.value?.routing?.policies || []).filter((p) => p.enabled !== false).map((p) => p.name)
-  const fallback = profile.value?.routing?.fallbackName || '其他'
-  return { builtin, groups: userGroups, policies: [...policies, fallback] }
+  return { builtin, groups: userGroups, nodes: availableNodes.value }
 })
 const outboundExists = (name: string) => {
   const o = outboundOptions.value
-  return o.builtin.includes(name) || o.groups.includes(name) || o.policies.includes(name)
+  return o.builtin.includes(name) || o.groups.includes(name) || o.nodes.some((n) => n.name === name)
 }
 const labelOf = (src: string) => {
   const ip = src.replace(/\/(32|128)$/, '')
@@ -154,6 +153,7 @@ const load = async () => {
     const [p, g] = await Promise.all([fetchProfile(), fetchNodeGroups()])
     profile.value = p
     groups.value = g.groups || []
+    availableNodes.value = g.availableNodes || []
   } catch (error) {
     showNotification({
       content: 'routingLoadFailed',

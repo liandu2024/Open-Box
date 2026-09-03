@@ -45,42 +45,11 @@
 
       <div class="flex flex-col gap-1">
         <label class="text-xs font-medium">{{ $t('clientRouteOutboundLabel') }}</label>
-        <select
+        <OutboundPicker
           v-model="form.outbound"
-          class="select select-sm w-full"
-        >
-          <option value="">—</option>
-          <optgroup
-            v-if="options.builtin.length"
-            :label="$t('clientRouteOutboundBuiltin')"
-          >
-            <option
-              v-for="o in options.builtin"
-              :key="o"
-              :value="o"
-            >{{ o }}</option>
-          </optgroup>
-          <optgroup
-            v-if="options.groups.length"
-            :label="$t('clientRouteOutboundGroups')"
-          >
-            <option
-              v-for="o in options.groups"
-              :key="o"
-              :value="o"
-            >{{ o }}</option>
-          </optgroup>
-          <optgroup
-            v-if="options.policies.length"
-            :label="$t('clientRouteOutboundPolicies')"
-          >
-            <option
-              v-for="o in options.policies"
-              :key="o"
-              :value="o"
-            >{{ o }}</option>
-          </optgroup>
-        </select>
+          :options="options"
+          :placeholder="$t('outboundPickerPlaceholder')"
+        />
         <p class="text-base-content/50 text-xs">{{ $t('clientRouteHint') }}</p>
       </div>
 
@@ -107,6 +76,7 @@
 <script setup lang="ts">
 import type { OpenboxClientRoute } from '@/api/openbox'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
+import OutboundPicker, { type OutboundPickerOptions } from '@/components/common/OutboundPicker.vue'
 import { showNotification } from '@/helper/notification'
 import { computed, reactive, watch } from 'vue'
 
@@ -114,7 +84,7 @@ const props = defineProps<{
   modelValue: boolean
   route: OpenboxClientRoute | null
   knownClients: Array<{ ip: string; name: string }>
-  options: { builtin: string[]; groups: string[]; policies: string[] }
+  options: OutboundPickerOptions
 }>()
 
 const emit = defineEmits<{

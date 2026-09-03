@@ -813,7 +813,6 @@ const zh: LANG_MESSAGE = {
   clientRouteOutboundLabel: '出口',
   clientRouteOutboundBuiltin: '内置',
   clientRouteOutboundGroups: '节点组',
-  clientRouteOutboundPolicies: '站点集',
   clientRouteHint: '这些终端的全部流量都走这里选的出口,优先级高于站点集;局域网目标仍直连。保存后重启内核生效。',
   clientRouteErrName: '名称不能为空',
   clientRouteErrSources: '无效的 IP / 网段:{value}',
@@ -821,6 +820,11 @@ const zh: LANG_MESSAGE = {
   clientRouteErrOutbound: '请选择出口',
   clientRouteOutboundMissing: '出口「{name}」已不存在',
   clientRouteSaved: '已保存;重启内核后生效。',
+  clientRouteOutboundNodes: '节点',
+  outboundPickerSearch: '搜索',
+  outboundPickerNoMatch: '没有匹配项',
+  outboundPickerPlaceholder: '选择出口',
+  outboundPickerNoSubscription: '无订阅',
 }
 
 export default zh
