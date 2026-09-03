@@ -88,20 +88,20 @@ export const buildCurrentConfig = (store, systemDns, { cacheFilePath, selections
 // 「保存设置」与「让设置生效」之间只隔一次启动内核:各个设置页只管把自己那块写进档案,
 // 真正生成配置、下规则集、接管 DNS/防火墙、起内核、失败回滚,统一在这里做一次。
 // 所以启动/重启内核走的就是这条路径(server/api/service.mjs),不再有单独的"部署"动作。
-// 「订阅和节点站点直连」开着时,把它涉及的域名解析成 IP;关着就不解析
-const resolveDirectHostCidrs = async (store, lookup) => {
+// 「订阅和节点站点直连」开着时,把它涉及的域名解析成 IP;关着就不解析。
+// 直接问 WAN 上游(systemDns),不走路由器自己的 resolver(见 system/resolve-hosts.mjs)。
+const resolveDirectHostCidrs = async (store, systemDns, lookup) => {
   const profile = store.getProfile()
   if (profile.directForNodes === false) return []
   const { domains } = collectDirectHosts(store.getNodes(), store.getSubscriptions ? store.getSubscriptions() : [])
-  return resolveHostsToCidrs(domains, lookup ? { lookup } : {})
+  return resolveHostsToCidrs(domains, lookup ? { lookup } : { servers: systemDns })
 }
 
 export const runDeploy = async ({ store, ctx, paths, fetchImpl = globalThis.fetch, lookup }) => {
   let result
   try {
-    const [systemDns, localSubnets, directHostCidrs] = await Promise.all([
-      readSystemDns(ctx), readLocalSubnets(ctx), resolveDirectHostCidrs(store, lookup),
-    ])
+    const [systemDns, localSubnets] = await Promise.all([readSystemDns(ctx), readLocalSubnets(ctx)])
+    const directHostCidrs = await resolveDirectHostCidrs(store, systemDns, lookup)
     const selections = resolveSelections(store, await fetchSelections(fetchImpl, store.getClashSecret()))
     const { config, profile } = buildCurrentConfig(store, systemDns, {
       cacheFilePath: paths.cacheDb, selections, tlsCert: { certPath: paths.tlsCert, keyPath: paths.tlsKey }, localSubnets, directHostCidrs,

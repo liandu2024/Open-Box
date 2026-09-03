@@ -16,3 +16,11 @@ test('resolveHostsToCidrs:v4 → /32、v6 → /128,去重;失败 / 超时的域�
 test('resolveHostsToCidrs:没有域名 → 空数组', async () => {
   assert.deepEqual(await resolveHostsToCidrs([], { lookup: async () => { throw new Error('no') } }), [])
 })
+
+test('resolveHostsToCidrs:传了 lookup 就用它;servers 里非 IP 的项被丢掉,不影响解析', async () => {
+  const seen = []
+  const lookup = async (host) => { seen.push(host); return [{ address: '9.9.9.9', family: 4 }] }
+  const r = await resolveHostsToCidrs(['x.test'], { servers: ['not-an-ip', '211.139.29.150'], lookup, timeoutMs: 100 })
+  assert.deepEqual(r, ['9.9.9.9/32'])
+  assert.deepEqual(seen, ['x.test'])
+})
