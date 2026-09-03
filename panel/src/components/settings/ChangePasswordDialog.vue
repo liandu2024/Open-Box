@@ -119,10 +119,10 @@ const handleSubmit = async () => {
       return
     }
 
+    // 改完就关:提示已经在右上角弹了,留着空表单只会让人以为没成功
     showNotification({ content: 'passwordChanged', type: 'alert-success' })
-    currentPassword.value = ''
-    newPassword.value = ''
-    confirmPassword.value = ''
+    resetForm()
+    isOpen.value = false
   } catch {
     showNotification({ content: 'changePasswordFailed', type: 'alert-error' })
   } finally {
