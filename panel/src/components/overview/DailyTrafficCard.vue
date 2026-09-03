@@ -71,15 +71,13 @@
       </i18n-t>
 
       <!-- 柱状图:每天一根,下段入口(primary)、上段出口(secondary);虚线是日均 -->
+      <!-- 不做横向滚动:31 根柱子平分卡片宽度,窄屏只藏掉柱顶数值。
+           滚动容器在 Windows 上会冒出横竖两条占位的滚动条,很难看 -->
       <div
         v-if="days.length"
-        class="overflow-x-auto"
+        class="relative px-2 pt-6"
       >
-        <!-- 左右留 16px,边上那根柱子的数值标签才不会被滚动容器裁掉 -->
-        <div
-          class="relative px-4 pt-6"
-          :style="{ minWidth: `${days.length * 44 + 32}px` }"
-        >
+        <div class="relative">
           <div
             v-if="avgTotal > 0"
             class="border-warning pointer-events-none absolute right-0 left-0 z-10 border-t border-dashed"
@@ -96,18 +94,18 @@
             <div
               v-for="d in days"
               :key="d.day"
-              class="group flex h-full min-w-0 flex-1 flex-col items-center justify-end"
+              class="group flex h-full min-w-0 flex-1 flex-col items-center justify-end px-px"
               :class="d.future ? 'cursor-default' : 'cursor-pointer'"
               @click="pick(d)"
             >
               <span
-                class="mb-1 text-[10px] leading-none whitespace-nowrap tabular-nums"
+                class="mb-1 hidden text-[10px] leading-none whitespace-nowrap tabular-nums md:block"
                 :class="labelClass(d)"
               >
                 {{ fmtShort(d.total) }}
               </span>
               <div
-                class="flex w-6 flex-col justify-end overflow-hidden rounded-t transition-opacity"
+                class="flex w-full max-w-6 flex-col justify-end overflow-hidden rounded-t transition-opacity"
                 :class="barClass(d)"
                 :style="{ height: `${d.hUp + d.hDown}px` }"
               >
@@ -121,7 +119,7 @@
                 />
               </div>
               <span
-                class="mt-2 text-xs leading-none tabular-nums"
+                class="mt-2 text-[10px] leading-none tabular-nums md:text-xs"
                 :class="dayClass(d)"
               >
                 {{ d.n }}
@@ -191,7 +189,7 @@
             :clearable="true"
           />
         </div>
-        <div class="overflow-x-auto">
+        <div class="bg-base-200/50 overflow-x-auto rounded-lg">
           <table class="table-sm table">
             <thead>
               <tr>

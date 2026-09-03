@@ -4,12 +4,12 @@
     <div class="card-title px-4 pt-4">
       {{ $t('overview') }}
     </div>
-    <div class="card-body gap-4">
+    <div class="card-body gap-2">
       <StatisticsStats type="overview" />
       <div class="grid grid-cols-1 gap-2 lg:grid-cols-3">
-        <SpeedCharts class="xl:h-64" />
-        <MemoryCharts class="xl:h-64" />
-        <ConnectionsCharts class="xl:h-64" />
+        <SpeedCharts class="xl:h-32" />
+        <MemoryCharts class="xl:h-32" />
+        <ConnectionsCharts class="xl:h-32" />
       </div>
     </div>
   </div>
