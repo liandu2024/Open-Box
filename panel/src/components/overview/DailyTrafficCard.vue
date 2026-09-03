@@ -75,9 +75,10 @@
         v-if="days.length"
         class="overflow-x-auto"
       >
+        <!-- 左右留 16px,边上那根柱子的数值标签才不会被滚动容器裁掉 -->
         <div
-          class="relative pt-6"
-          :style="{ minWidth: `${days.length * 36}px` }"
+          class="relative px-4 pt-6"
+          :style="{ minWidth: `${days.length * 44 + 32}px` }"
         >
           <div
             v-if="avgTotal > 0"
@@ -344,8 +345,12 @@ const monthLabel = (m: string) => {
 }
 
 const fmt = (n?: number) => prettyBytesHelper(Math.max(0, Math.round(n || 0)), { maximumFractionDigits: 1 })
-const fmtShort = (n: number) =>
-  prettyBytesHelper(Math.max(0, Math.round(n)), { maximumFractionDigits: 1, space: false })
+// 柱顶的数值标签,越短越好:三位数以上就不要小数了(930MB 而不是 930.2MB)
+const fmtShort = (n: number) => {
+  const v = Math.max(0, Math.round(n))
+  const s = prettyBytesHelper(v, { maximumFractionDigits: 1, space: false })
+  return parseFloat(s) >= 100 ? prettyBytesHelper(v, { maximumFractionDigits: 0, space: false }) : s
+}
 
 const maxTotal = computed(() => Math.max(0, ...(monthData.value?.days.map((d) => d.up + d.down) ?? [0])))
 const px = (v: number) => (maxTotal.value > 0 ? Math.round((v / maxTotal.value) * CHART_H) : 0)
