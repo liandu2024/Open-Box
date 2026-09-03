@@ -165,7 +165,8 @@ export default defineComponent({
           />
           <button
             class="btn btn-sm shrink-0"
-            onClick={() => (connectionFilter.value = normalizeRuleTarget(connectionFilter.value))}
+            // 连接表按主机名匹配,端口不要:board.ok1248.cn:4433 → board.ok1248.cn
+            onClick={() => (connectionFilter.value = normalizeRuleTarget(connectionFilter.value).replace(/:\d+$/, ''))}
           >
             {t('ruleFormatQuery')}
           </button>
