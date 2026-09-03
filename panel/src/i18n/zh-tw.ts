@@ -794,6 +794,9 @@ const zhTW: LANG_MESSAGE = {
   serverErrPortUsed: '連接埠 {port} 已被另一台伺服器佔用',
   serverErrCredential: '密碼 / UUID 不能為空',
   copyFailed: '複製失敗',
+  serverPortReserved: '連接埠 {port} 是面板 / 核心自用連接埠',
+  serverPortListening: '連接埠 {port} 已被路由器上其它服務佔用',
+  serverPortCheckFailed: '連接埠檢測失敗:{message}',
 }
 
 export default zhTW

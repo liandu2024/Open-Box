@@ -192,13 +192,6 @@
         alt="QR"
       />
 
-      <p
-        v-if="error"
-        class="text-error text-xs"
-      >
-        {{ error }}
-      </p>
-
       <div class="flex justify-end gap-2">
         <button
           type="button"
@@ -210,8 +203,13 @@
         <button
           type="button"
           class="btn btn-primary btn-sm"
+          :disabled="checking"
           @click="submit"
         >
+          <span
+            v-if="checking"
+            class="loading loading-spinner loading-xs"
+          />
           {{ $t('save') }}
         </button>
       </div>
@@ -220,7 +218,7 @@
 </template>
 
 <script setup lang="ts">
-import type { OpenboxServer, OpenboxServerProtocol } from '@/api/openbox'
+import { checkServerPort, type OpenboxServer, type OpenboxServerProtocol } from '@/api/openbox'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import { showNotification } from '@/helper/notification'
 import {
@@ -234,7 +232,6 @@ import {
 import { ArrowPathIcon, ClipboardDocumentIcon } from '@heroicons/vue/24/outline'
 import QRCode from 'qrcode'
 import { computed, reactive, ref, watch } from 'vue'
-import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{
   modelValue: boolean
@@ -248,8 +245,6 @@ const emit = defineEmits<{
   'update:modelValue': [value: boolean]
   saved: [server: OpenboxServer]
 }>()
-
-const { t } = useI18n()
 
 const PROTOCOLS: { value: OpenboxServerProtocol; label: string }[] = [
   { value: 'shadowsocks', label: 'Shadowsocks' },
@@ -280,13 +275,12 @@ const blank = (): OpenboxServer => ({
 })
 
 const form = reactive<OpenboxServer>(blank())
-const error = ref('')
+const checking = ref(false)
 
 watch(
   () => props.modelValue,
   (open) => {
     if (!open) return
-    error.value = ''
     Object.assign(form, blank(), props.server ? { ...props.server } : {})
     // 老记录没填过地址的,也按当前页面补上默认值
     if (!form.address) form.address = defaultHost()
@@ -339,20 +333,18 @@ watch(
   { immediate: true },
 )
 
-const submit = () => {
+// 校验失败一律右上角提示(全局统一),不在弹窗里放红字
+const fail = (content: string, params?: Record<string, string>) => {
+  showNotification({ content, params, type: 'alert-error' })
+}
+
+const submit = async () => {
+  if (checking.value) return
   const name = form.name.trim()
-  if (!name) {
-    error.value = t('serverErrName')
-    return
-  }
-  if (!Number.isInteger(form.port) || form.port < 1 || form.port > 65535) {
-    error.value = t('serverErrPort')
-    return
-  }
-  if (props.usedPorts.includes(form.port)) {
-    error.value = t('serverErrPortUsed', { port: form.port })
-    return
-  }
+  if (!name) return fail('serverErrName')
+  if (!Number.isInteger(form.port) || form.port < 1 || form.port > 65535) return fail('serverErrPort')
+  if (props.usedPorts.includes(form.port)) return fail('serverErrPortUsed', { port: String(form.port) })
+
   const out: OpenboxServer = {
     id: form.id,
     enabled: form.enabled !== false,
@@ -377,9 +369,22 @@ const submit = () => {
     out.password = (form.password || '').trim()
     if ((form.obfs || '').trim()) out.obfs = (form.obfs || '').trim()
   }
-  if ((out.password !== undefined && !out.password) || (out.uuid !== undefined && !out.uuid)) {
-    error.value = t('serverErrCredential')
-    return
+  if ((out.password !== undefined && !out.password) || (out.uuid !== undefined && !out.uuid)) return fail('serverErrCredential')
+
+  // 保存前问后端:端口有没有被面板/内核自用、被别的服务器占、被路由器上其它服务监听
+  checking.value = true
+  try {
+    const r = await checkServerPort(out.port, out.id)
+    if (!r.ok) {
+      if (r.reason === 'reserved') return fail('serverPortReserved', { port: String(out.port) })
+      if (r.reason === 'server') return fail('serverErrPortUsed', { port: String(out.port) })
+      if (r.reason === 'listening') return fail('serverPortListening', { port: String(out.port) })
+      return fail('serverErrPort')
+    }
+  } catch (e) {
+    return fail('serverPortCheckFailed', { message: e instanceof Error ? e.message : String(e) })
+  } finally {
+    checking.value = false
   }
   emit('saved', out)
   isOpen.value = false

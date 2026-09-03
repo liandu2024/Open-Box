@@ -16,6 +16,7 @@ import { registerRulesetRoutes } from './api/rulesets.mjs'
 import { registerUpdateRoutes } from './api/updates.mjs'
 import { registerRouteTestRoutes } from './api/route-test.mjs'
 import { registerTrafficRoutes } from './api/traffic.mjs'
+import { registerServerRoutes } from './api/servers.mjs'
 import { runDeploy } from './api/deploy-runner.mjs'
 import { startScheduler } from './system/scheduler.mjs'
 import { createTrafficCollector, createTrafficStore } from './system/traffic-collector.mjs'
@@ -934,6 +935,7 @@ const trafficCollector = createTrafficCollector({
   log: (m) => console.log(m),
 })
 registerTrafficRoutes(app, { collector: trafficCollector, ctx: obCtx, paths: obPaths })
+registerServerRoutes(app, { store, ctx: obCtx })
 // 自动更新计划:每分钟看一眼档案里的计划,到点就做(见 system/scheduler.mjs)
 startScheduler({ store, ctx: obCtx, paths: obPaths, fetchImpl: globalThis.fetch, runDeploy, log: (m) => console.log(m) })
 

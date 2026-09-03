@@ -797,6 +797,9 @@ const en = {
   serverErrPortUsed: 'Port {port} is already used by another server',
   serverErrCredential: 'Password / UUID is required',
   copyFailed: 'Copy failed',
+  serverPortReserved: 'Port {port} is used by the panel or the kernel itself',
+  serverPortListening: 'Port {port} is already in use by another service on the router',
+  serverPortCheckFailed: 'Port check failed: {message}',
 }
 
 export type LANG_MESSAGE = typeof en

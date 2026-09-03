@@ -794,6 +794,9 @@ const zh: LANG_MESSAGE = {
   serverErrPortUsed: '端口 {port} 已被另一台服务器占用',
   serverErrCredential: '密码 / UUID 不能为空',
   copyFailed: '复制失败',
+  serverPortReserved: '端口 {port} 是面板 / 内核自用端口',
+  serverPortListening: '端口 {port} 已被路由器上其它服务占用',
+  serverPortCheckFailed: '端口检测失败:{message}',
 }
 
 export default zh

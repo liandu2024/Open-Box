@@ -742,3 +742,12 @@ export const fetchTrafficMonth = (month?: string) =>
   requestJson<OpenboxTrafficMonth>(`/api/openbox/traffic/month${month ? `?month=${encodeURIComponent(month)}` : ''}`)
 export const fetchTrafficDay = (day: string, limit = 500) =>
   requestJson<OpenboxTrafficDay>(`/api/openbox/traffic/day?day=${encodeURIComponent(day)}&limit=${limit}`)
+
+// 共享网络 · 保存前的端口检测(server/api/servers.mjs)
+export interface OpenboxPortCheck {
+  ok: boolean
+  reason?: 'invalid' | 'reserved' | 'server' | 'listening'
+  name?: string
+}
+export const checkServerPort = (port: number, id: string) =>
+  requestJson<OpenboxPortCheck>(`/api/openbox/servers/port-check?port=${port}&id=${encodeURIComponent(id)}`)
