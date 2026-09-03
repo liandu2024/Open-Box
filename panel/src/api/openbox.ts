@@ -668,6 +668,7 @@ export interface OpenboxRouteTest {
     destinationIP?: string
     notSeen?: boolean
     connectionsError?: string
+    debug?: { connections: number; sample: string[] }
   }
 }
 export const testRoute = (target: string) =>

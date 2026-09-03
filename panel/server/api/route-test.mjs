@@ -74,7 +74,9 @@ export const probeViaKernel = (host, { port = 443, proxyPort = PANEL_INBOUND_POR
       socket.removeListener('data', onConnectData)
       const line = buf.slice(0, buf.indexOf('\r\n'))
       if (!/^HTTP\/1\.[01] 200/.test(line)) { clearTimeout(timer); finish({ ok: false, error: `CONNECT: ${line}` }); socket.destroy(); return }
-      const request = `HEAD / HTTP/1.1\r\nHost: ${host}\r\nUser-Agent: open-box-route-test\r\nConnection: close\r\n\r\n`
+      // keep-alive:带 Connection: close 的话对端一答完就关,内核随即把它从连接表里删掉,
+      // 后面就查不到了。连接由调用方 close() 收尾。
+      const request = `HEAD / HTTP/1.1\r\nHost: ${host}\r\nUser-Agent: open-box-route-test\r\nConnection: keep-alive\r\n\r\n`
       const readStatus = (stream) => {
         let head = ''
         stream.on('data', (c) => {
@@ -150,13 +152,27 @@ export const registerRouteTestRoutes = (app, { store, ctx, paths, fetchImpl = gl
     exit = { ...exit, ok: r.ok, status: r.status, ms: r.ms }
     if (!r.ok) exit.error = r.error
     try {
-      const c = await fetchWithTimeout(fetchImpl, `${CLASH_API_BASE}/connections`, { headers: clashHeaders(secret) }, 5000)
-      const body = await c.json()
-      const list = (body && body.connections) || []
-      const mine = list
-        .filter((x) => x && x.metadata && (String(x.metadata.host || '').toLowerCase() === target || x.metadata.destinationIP === target))
-        .sort((a, b) => String(b.start || '').localeCompare(String(a.start || '')))
-      const hit = mine[0]
+      const resolvedIps = new Set(((out.resolve && out.resolve.answers) || []).map(String))
+      let hit = null
+      let total = 0
+      let sample = []
+      for (let attempt = 0; attempt < 4 && !hit; attempt++) {
+        if (attempt) await new Promise((resolve) => setTimeout(resolve, 200))
+        const c = await fetchWithTimeout(fetchImpl, `${CLASH_API_BASE}/connections`, { headers: clashHeaders(secret) }, 5000)
+        const body = await c.json()
+        const list = (body && body.connections) || []
+        total = list.length
+        sample = list.slice(-5).map((x) => (x && x.metadata ? `${x.metadata.host || ''}|${x.metadata.destinationIP || ''}` : '?'))
+        const mine = list
+          .filter((x) => x && x.metadata && (
+            String(x.metadata.host || '').toLowerCase() === target ||
+            x.metadata.destinationIP === target ||
+            // 对端不带域名(或内核没记 host)时,退一步按解析到的 IP 对
+            (resolvedIps.size > 0 && resolvedIps.has(String(x.metadata.destinationIP || '')))
+          ))
+          .sort((a, b) => String(b.start || '').localeCompare(String(a.start || '')))
+        hit = mine[0] || null
+      }
       if (hit) {
         exit.chains = Array.isArray(hit.chains) ? hit.chains.slice().reverse() : []
         exit.rule = hit.rule || ''
@@ -164,6 +180,7 @@ export const registerRouteTestRoutes = (app, { store, ctx, paths, fetchImpl = gl
         exit.destinationIP = hit.metadata.destinationIP || ''
       } else if (r.ok) {
         exit.notSeen = true
+        exit.debug = { connections: total, sample }
       }
     } catch (err) {
       exit.connectionsError = errorMessage(err)

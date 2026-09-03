@@ -95,7 +95,7 @@
           <span
             v-else-if="result.exit.notSeen"
             class="text-warning text-xs"
-          >{{ $t('routeTestNotSeen') }}</span>
+          >{{ $t('routeTestNotSeen') }}<template v-if="result.exit.debug">(连接表 {{ result.exit.debug.connections }} 条:{{ result.exit.debug.sample.join(', ') }})</template></span>
           <span
             v-else-if="result.exit.connectionsError"
             class="text-warning text-xs"
