@@ -1,4 +1,5 @@
 import { isSingBox } from '@/api'
+import { normalizeRuleTarget } from '@/store/rules'
 import { useCtrlsBar } from '@/composables/useCtrlsBar'
 import { LOG_LEVEL } from '@/constant'
 import { useTooltip } from '@/helper/tooltip'
@@ -149,16 +150,25 @@ export default defineComponent({
         </select>
       )
       const searchInput = (
-        <TextInput
-          v-model={logFilter.value}
-          beforeClose={true}
-          class="flex-1"
-          placeholder={`${t('search')} | Regex`}
-          clearable={true}
-          menus={logSearchHistory.value}
-          menusDeleteable={true}
-          onUpdate:menus={(val) => (logSearchHistory.value = val)}
-        />
+        <div class="flex min-w-0 flex-1 items-center gap-2">
+          <TextInput
+            v-model={logFilter.value}
+            beforeClose={true}
+            class="flex-1"
+            placeholder={`${t('search')} | Regex`}
+            clearable={true}
+            menus={logSearchHistory.value}
+            menusDeleteable={true}
+            onUpdate:menus={(val) => (logSearchHistory.value = val)}
+          />
+          <button
+            class="btn btn-sm shrink-0"
+            // 和连接页一样:整条 URL 整理成主机名(不带端口)再搜
+            onClick={() => (logFilter.value = normalizeRuleTarget(logFilter.value).replace(/:\d+$/, ''))}
+          >
+            {t('ruleFormatQuery')}
+          </button>
+        </div>
       )
 
       const logTypeSelect = (
