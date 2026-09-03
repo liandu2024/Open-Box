@@ -209,6 +209,7 @@
                 <th class="text-right">{{ $t('trafficOut') }}</th>
                 <th class="text-right">{{ $t('trafficTotal') }}</th>
                 <th class="w-44">{{ $t('trafficShare') }}</th>
+                <th class="w-20" />
               </tr>
             </thead>
             <tbody>
@@ -240,7 +241,77 @@
                     <span class="w-10 text-xs tabular-nums">{{ share(row) }}%</span>
                   </div>
                 </td>
+                <td />
               </tr>
+              <!-- 访问目标 / 访问终端:前 10 条之外合并成「其他」,行尾展开/收起 -->
+              <tr
+                v-if="restRows.length"
+                class="text-base-content/70"
+              >
+                <td>{{ $t('trafficOthersCount', { n: restRows.length }) }}</td>
+                <td class="text-right tabular-nums">{{ fmt(restSummary.down) }}</td>
+                <td class="text-right tabular-nums">{{ fmt(restSummary.up) }}</td>
+                <td class="text-right tabular-nums">{{ fmt(restSummary.up + restSummary.down) }}</td>
+                <td>
+                  <div class="flex items-center gap-2">
+                    <progress
+                      class="progress w-24"
+                      :value="share(restSummary)"
+                      max="100"
+                    />
+                    <span class="w-10 text-xs tabular-nums">{{ share(restSummary) }}%</span>
+                  </div>
+                </td>
+                <td class="text-right">
+                  <button
+                    type="button"
+                    class="btn btn-ghost btn-xs"
+                    @click="restExpanded = !restExpanded"
+                  >
+                    {{ $t(restExpanded ? 'trafficCollapseRest' : 'trafficExpandRest') }}
+                    <ChevronUpIcon
+                      v-if="restExpanded"
+                      class="h-3.5 w-3.5"
+                    />
+                    <ChevronDownIcon
+                      v-else
+                      class="h-3.5 w-3.5"
+                    />
+                  </button>
+                </td>
+              </tr>
+              <template v-if="restExpanded">
+                <tr
+                  v-for="row in restRows"
+                  :key="'rest-' + row.key"
+                  class="hover"
+                >
+                  <td
+                    class="max-w-[28rem] truncate"
+                    :title="row.key"
+                  >
+                    {{ row.key || '—' }}
+                    <span
+                      v-if="row.name"
+                      class="text-base-content/60 ml-1"
+                    >{{ row.name }}</span>
+                  </td>
+                  <td class="text-right tabular-nums">{{ fmt(row.down) }}</td>
+                  <td class="text-right tabular-nums">{{ fmt(row.up) }}</td>
+                  <td class="text-right tabular-nums">{{ fmt(row.up + row.down) }}</td>
+                  <td>
+                    <div class="flex items-center gap-2">
+                      <progress
+                        class="progress progress-primary w-24"
+                        :value="share(row)"
+                        max="100"
+                      />
+                      <span class="w-10 text-xs tabular-nums">{{ share(row) }}%</span>
+                    </div>
+                  </td>
+                  <td />
+                </tr>
+              </template>
               <tr
                 v-if="tab === 'nodes' && otherTotal > 0"
                 class="text-base-content/60"
@@ -267,10 +338,11 @@
                     <span class="w-10 text-xs tabular-nums">{{ share(detail.other) }}%</span>
                   </div>
                 </td>
+                <td />
               </tr>
               <tr v-if="!visibleRows.length && !(tab === 'nodes' && otherTotal > 0)">
                 <td
-                  colspan="5"
+                  colspan="6"
                   class="text-base-content/50 text-center"
                 >
                   {{ $t('trafficEmptyDay') }}
@@ -305,15 +377,22 @@ import {
 } from '@/api/openbox'
 import TextInput from '@/components/common/TextInput.vue'
 import { prettyBytesHelper } from '@/helper/utils'
-import { ChevronLeftIcon, ChevronRightIcon, InformationCircleIcon } from '@heroicons/vue/24/outline'
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import {
+  ChevronDownIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  ChevronUpIcon,
+  InformationCircleIcon,
+} from '@heroicons/vue/24/outline'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 // 柱子区高度、柱顶数值行高、底部日期行高(px),日均线的定位要和这几个数对齐
 const CHART_H = 160
 const LABEL_H = 18
 const AXIS_H = 20
-const ROW_LIMIT = 100
+// 访问目标 / 访问终端默认只展示前 10 条,其余合并成「其他」,点开才展开
+const TOP_N = 10
 
 interface DayBar {
   day: string
@@ -469,9 +548,21 @@ const rows = computed(() => {
   const q = filter.value.trim().toLowerCase()
   return q ? list.filter((r) => r.key.toLowerCase().includes(q) || (r.name || '').toLowerCase().includes(q)) : list
 })
-const visibleRows = computed(() => rows.value.slice(0, ROW_LIMIT))
+const restExpanded = ref(false)
+// 换页签、换日期、改搜索词都收回去
+watch([tab, selectedDay, filter], () => {
+  restExpanded.value = false
+})
+const visibleRows = computed(() => (tab.value === 'nodes' ? rows.value : rows.value.slice(0, TOP_N)))
+const restRows = computed(() => (tab.value === 'nodes' ? [] : rows.value.slice(TOP_N)))
+const restSummary = computed(() =>
+  restRows.value.reduce(
+    (acc, r) => ({ up: acc.up + r.up, down: acc.down + r.down, conns: acc.conns + r.conns }),
+    { up: 0, down: 0, conns: 0 },
+  ),
+)
 const hiddenRows = computed(() => {
-  const clientHidden = Math.max(0, rows.value.length - ROW_LIMIT)
+  const clientHidden = 0
   const d = detail.value
   const serverHidden =
     d && !filter.value.trim()
