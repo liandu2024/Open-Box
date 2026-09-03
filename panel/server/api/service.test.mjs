@@ -30,10 +30,10 @@ const okCtx = (over = {}) => createMockContext({
   },
 })
 
-const startApp = async (ctx, storeOverride) => {
+const startApp = async (ctx, storeOverride, opts = {}) => {
   const store = storeOverride || memStore()
   const app = express()
-  registerServiceRoutes(app, { store, ctx, paths })
+  registerServiceRoutes(app, { store, ctx, paths, ...opts })
   const server = app.listen(0)
   await new Promise((resolve, reject) => {
     server.once('listening', resolve)
@@ -123,7 +123,7 @@ test('应用失败时启动不谎报成功,原因原样带出去', async () => {
 })
 
 test('POST /api/openbox/service/core/stop → {ok,code,stderr}', async () => {
-  const ctx = okCtx()
+  const ctx = okCtx({ '/etc/init.d/openbox status': { code: 1, stdout: 'inactive' } })
   const { baseUrl, close } = await startApp(ctx)
   try {
     const res = await fetch(`${baseUrl}/api/openbox/service/core/stop`, { method: 'POST' })
@@ -152,7 +152,7 @@ test('停止失败时不应关闭自启(内核还在跑,关自启只会让状态
 })
 
 test('停止成功但关自启失败时,如实把原因带回来', async () => {
-  const ctx = okCtx({ '/etc/init.d/openbox disable': { code: 1, stdout: '', stderr: 'no rc.d' } })
+  const ctx = okCtx({ '/etc/init.d/openbox disable': { code: 1, stdout: '', stderr: 'no rc.d' }, '/etc/init.d/openbox status': { code: 1, stdout: 'inactive' } })
   const { baseUrl, close } = await startApp(ctx)
   try {
     const res = await fetch(`${baseUrl}/api/openbox/service/core/stop`, { method: 'POST' })
@@ -301,6 +301,22 @@ test('GET /service/status:pidof 失败时 uptimeSeconds 为 null,接口不报错
     const body = await (await fetch(`${baseUrl}/api/openbox/service/status`)).json()
     assert.equal(body.core.running, true)
     assert.equal(body.core.uptimeSeconds, null)
+  } finally {
+    await close()
+  }
+})
+
+test('停止后内核迟迟不退出 → ok:false 并说明,不再谎报已停止', async () => {
+  // status 一直 running(okCtx 默认),等待窗口给 300ms 让用例跑得快
+  const ctx = okCtx()
+  const { baseUrl, close } = await startApp(ctx, undefined, { stopWaitMs: 300 })
+  try {
+    const res = await fetch(`${baseUrl}/api/openbox/service/core/stop`, { method: 'POST' })
+    const body = await res.json()
+    assert.equal(body.ok, false)
+    assert.match(body.stderr, /没有退出/)
+    assert.ok(!cmds(ctx).includes('/etc/init.d/openbox disable'))
+    assert.ok(cmds(ctx).filter((c) => c === '/etc/init.d/openbox status').length >= 2, '应该轮询过 status')
   } finally {
     await close()
   }

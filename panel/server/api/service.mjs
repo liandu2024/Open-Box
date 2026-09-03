@@ -1,5 +1,5 @@
 import express from 'express'
-import { serviceStatus, serviceEnabled, stopService, enableService, disableService, processUptime } from '../system/service.mjs'
+import { serviceStatus, serviceEnabled, stopService, enableService, disableService, processUptime, waitForServiceState } from '../system/service.mjs'
 import { detectConflicts } from '../system/conflicts.mjs'
 import { runDeploy } from './deploy-runner.mjs'
 
@@ -9,7 +9,7 @@ import { runDeploy } from './deploy-runner.mjs'
 // 校验 → 落盘 → DNS 接管 → 防火墙 → 启动 → 验证,失败自动回滚到直连。
 const failureDetail = (result) => result.message || `deploy failed at stage: ${result.stage}`
 
-export const registerServiceRoutes = (app, { store, ctx, paths } = {}) => {
+export const registerServiceRoutes = (app, { store, ctx, paths, stopWaitMs = 8000 } = {}) => {
   const router = express.Router({ caseSensitive: true })
   router.use(express.json({ limit: '1mb' }))
 
@@ -50,6 +50,14 @@ export const registerServiceRoutes = (app, { store, ctx, paths } = {}) => {
       // 若把 disable 塞进 stop_service,每次重启(含部署流程里的那次)都会顺手
       // 关掉自启。
       result = await stopService(ctx, paths.initd.core)
+      if (result.ok) {
+        // init 脚本的 stop 是异步收尾,等内核真的退出再回复,否则面板马上刷新状态还是「运行中」,
+        // 用户得点两遍(正式路由器上实测)。等不到就如实报失败。
+        const waited = await waitForServiceState(ctx, paths.initd.core, false, { timeoutMs: stopWaitMs })
+        if (!waited.reached) {
+          result = { ok: false, code: 1, stderr: `内核在 ${Math.round(stopWaitMs / 1000)} 秒内没有退出(${waited.status.raw.trim() || 'running'})` }
+        }
+      }
       if (result.ok) {
         const disabled = await disableService(ctx, paths.initd.core)
         if (!disabled.ok) {

@@ -94,8 +94,27 @@ export const useKernelActions = () => {
         type: 'alert-error',
       })
     } finally {
+      // 动作返回后状态可能还在切换(stop 由 procd 异步收尾、start 后 status 需要片刻),
+      // 轮询到目标状态为止(最多 6 秒)再放开按钮,否则用户看到「运行中」会再点一遍。
+      await waitForState(action)
       pendingAction.value = null
+    }
+  }
+
+  const EXPECTED: Partial<Record<OpenboxServiceAction, (s: OpenboxServiceStatus) => boolean>> = {
+    start: (s) => s.core.running,
+    restart: (s) => s.core.running,
+    stop: (s) => !s.core.running,
+    enable: (s) => s.core.autostart === true,
+    disable: (s) => s.core.autostart === false,
+  }
+  const waitForState = async (action: OpenboxServiceAction) => {
+    const expect = EXPECTED[action]
+    const deadline = Date.now() + 6000
+    for (;;) {
       await refreshServiceStatus()
+      if (!expect || (serviceStatus.value && expect(serviceStatus.value)) || Date.now() >= deadline) return
+      await new Promise((resolve) => window.setTimeout(resolve, 400))
     }
   }
 

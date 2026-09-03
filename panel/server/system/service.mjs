@@ -43,3 +43,16 @@ export const processUptime = async (ctx, name) => {
     return null
   }
 }
+
+// `/etc/init.d/openbox stop` 是 procd 异步收尾:命令返回时 sing-box 往往还没退出,紧接着查
+// status 仍是 running——面板据此把「停止」按钮留着,用户以为没生效再点一次。这里轮询到
+// 进入目标状态为止(默认最多 8 秒),没到就如实返回 reached:false。
+export const waitForServiceState = async (ctx, initdPath, running, { timeoutMs = 8000, intervalMs = 250 } = {}) => {
+  const deadline = Date.now() + timeoutMs
+  let status = await serviceStatus(ctx, initdPath)
+  while (status.running !== running && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, intervalMs))
+    status = await serviceStatus(ctx, initdPath)
+  }
+  return { reached: status.running === running, status }
+}
