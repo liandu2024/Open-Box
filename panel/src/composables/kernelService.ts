@@ -41,9 +41,14 @@ export const isDisableDisabled = computed(
   () => pendingAction.value !== null || serviceStatus.value?.core.autostart === false,
 )
 
+// 只采纳最后一次发出的刷新:定时刷新和动作后的刷新会交错,先发后回的旧响应不能把新状态盖回去
+let refreshSeq = 0
 export const refreshServiceStatus = async () => {
+  const mine = ++refreshSeq
   try {
-    serviceStatus.value = await fetchServiceStatus()
+    const next = await fetchServiceStatus()
+    if (mine !== refreshSeq) return
+    serviceStatus.value = next
   } catch {
     // 拿不到就保持上一次的值;按钮的可用性按已知状态算
   }
