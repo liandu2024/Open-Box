@@ -33,7 +33,7 @@
         <template #exit>
           <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
             <template v-if="result.exit.error">
-              <span class="text-error text-xs">{{ $t('routeTestRequestFailed', { message: result.exit.error }) }}</span>
+              <span class="text-error text-xs">{{ $t('routeTestRequestFailed', { message: errorText(result.exit.error) }) }}</span>
             </template>
             <template v-else-if="result.exit.chains?.length">
               <template
@@ -62,7 +62,7 @@
           >
             <span class="font-mono">{{ result.exit.url }}</span>
             <span v-if="result.exit.destinationIP">{{ $t('routeTestDestination') }}: <span class="font-mono">{{ result.exit.destinationIP }}</span></span>
-            <span v-if="result.exit.status !== undefined">HTTP {{ result.exit.status }}</span>
+            <span v-if="result.exit.status !== undefined">HTTP {{ result.exit.status }} · {{ statusText(result.exit.status) }}</span>
           </div>
         </template>
 
@@ -173,6 +173,23 @@ const dnsDecision = computed(() => {
   const d = result.value?.dns
   return d && 'ruleIndex' in d ? d : null
 })
+
+// HTTP 状态码翻译成人话:2xx 正常;3xx 跳转;4xx 站点能到但拒了请求;5xx 站点能到但它自己出错
+const statusText = (code: number) => {
+  const exact = t(`httpStatus_${code}`)
+  if (exact !== `httpStatus_${code}`) return exact
+  const family = `httpStatus_${Math.floor(code / 100)}xx`
+  const text = t(family)
+  return text === family ? '' : text
+}
+// 访问失败的原因翻译成人话
+const errorText = (raw: string) => {
+  if (/timeout/i.test(raw)) return t('routeTestErrTimeout')
+  if (/^inbound:/i.test(raw)) return t('routeTestErrInbound')
+  if (/^CONNECT:/i.test(raw)) return t('routeTestErrConnect', { detail: raw.replace(/^CONNECT:\s*/i, '') })
+  if (/connection closed/i.test(raw)) return t('routeTestErrClosed')
+  return raw
+}
 
 const flowNodes = computed(() => [
   { key: 'exit', label: t('routeTestExit'), sub: result.value?.exit.ms !== undefined ? `${result.value.exit.ms}ms` : '—' },
