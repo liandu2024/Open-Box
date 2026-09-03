@@ -1,4 +1,4 @@
-import { DEFAULT_BUILTIN, effectiveOutbound, normalizeRouting, policyOutboundOptions } from './routing-model.mjs'
+import { normalizeRouting } from './routing-model.mjs'
 
 const extractHost = (url) => {
   // "https://1.1.1.1/dns-query" -> "1.1.1.1";裸 host 原样返回
@@ -61,17 +61,13 @@ export const buildDns = (profile, options = {}) => {
     rules.push({ rule_set: conf.adRuleset, action: 'reject' })
   }
 
-  // 每个站点集一台自己的 DNS 服务器,detour 指向同名 selector——「代理的 DNS 要到具体
-  // 指定的节点」就是靠这个:用户在代理页把它切到哪条线路,域名解析也跟着走那条。
-  // 默认就选直连的集合不给专属服务器:直连的东西该用本地解析,绕一圈代理没有意义。
-  const builtin = options.builtin || DEFAULT_BUILTIN
-  const members = policyOutboundOptions(conf.outboundOptions, options.groupTags || [], builtin)
+  // 每个站点集一台自己的 DoH 服务器,detour 指向同名 selector:用户在代理页把站点集切到
+  // 哪条线路,这个站点集的域名解析就走哪条——切到直连就经直连出站去问 DoH,切到代理就经
+  // 代理去问。以前按"默认走哪"在生成配置时二选一(直连的用本地解析),但默认值和代理页
+  // 上的实际选择经常不一致(默认是直连、用户切到了代理),结果解析还走本地上游,答案被
+  // 污染/劫持;现在解析和流量永远同一条路,不用重启内核就跟着变。
   conf.activePolicies.forEach((policy, index) => {
     if (!hasDomainCondition(policy)) return
-    if (effectiveOutbound(policy.default, members, builtin) === builtin.direct) {
-      rules.push(policyDnsRule(policy, 'dns-direct'))
-      return
-    }
     const tag = `dns-policy-${index}`
     servers.push({ type: 'https', tag, server: proxyHost, detour: policy.name })
     rules.push(policyDnsRule(policy, tag))
@@ -80,8 +76,8 @@ export const buildDns = (profile, options = {}) => {
   return {
     servers,
     rules,
-    // 兜底:上面都没命中的域名,按兜底站点集默认走哪来定用哪边解析
-    final: effectiveOutbound(conf.fallback.default, members, builtin) === builtin.direct ? 'dns-direct' : 'dns-proxy',
+    // 兜底:上面都没命中的域名经兜底站点集 detour 去问 DoH,同样跟着它在代理页的选择走
+    final: 'dns-proxy',
     strategy,
   }
 }
