@@ -646,7 +646,7 @@ const zhTW: LANG_MESSAGE = {
 
   // --- 地區預設值卡片 ---
   edit: '編輯',
-  kernelApplyHint: '啟動/重新啟動會用目前設定重新產生設定檔並套用;失敗會自動回復成直連。',
+  kernelApplyHint: '啟動/重啟會用目前設定重新生成設定並套用,成功後開啟開機自啟;停止會同時關閉開機自啟;失敗會自動回滾到直連。',
   ipv6Title: 'IPv6',
   dnsModeTitle: 'DNS 劫持',
   dnsModeDescription: '區域網路的 DNS 查詢怎麼交給核心分流解析;切換後重啟核心生效。',

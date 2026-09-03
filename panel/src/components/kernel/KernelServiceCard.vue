@@ -60,9 +60,9 @@
            所以界面上没有单独的「部署」按钮:各设置页保存完,来这里启动一下就生效。 -->
       <p class="text-base-content/60 text-xs">{{ $t('kernelApplyHint') }}</p>
 
-      <!-- 一行:[启动] [停止] [重启] | 开机自启:[开启] [关闭]。按钮用全局统一的 btn btn-sm;
-           互斥:内核在跑就不能再「启动」,没在跑就不能「停止/重启」,自启已开就不能再「开启」,
-           以此类推;有动作进行中时全部禁用,进行中的那个转圈。 -->
+      <!-- 一行:[启动] [停止] [重启]。开机自启不单独给按钮:启动 / 重启成功即打开自启,停止即关闭
+           (server/api/service.mjs 与 deploy-runner.mjs),上面的状态标签只是展示。
+           互斥:内核在跑就不能再「启动」,没在跑就不能「停止/重启」;有动作进行中时全部禁用。 -->
       <div class="flex flex-wrap items-center gap-2">
         <button
           type="button"
@@ -113,34 +113,6 @@
           />
           {{ $t('kernelActionRestart') }}
         </button>
-
-        <div class="bg-base-content/15 mx-1 h-6 w-px" />
-
-        <span class="text-base-content/60 text-xs">{{ $t('kernelAutostartLabel') }}:</span>
-        <button
-          type="button"
-          class="btn btn-sm"
-          :disabled="isEnableDisabled"
-          @click="runKernelAction('enable')"
-        >
-          <span
-            v-if="pendingAction === 'enable'"
-            class="loading loading-spinner loading-xs"
-          />
-          {{ $t('kernelAutostartOn') }}
-        </button>
-        <button
-          type="button"
-          class="btn btn-sm"
-          :disabled="isDisableDisabled"
-          @click="runKernelAction('disable')"
-        >
-          <span
-            v-if="pendingAction === 'disable'"
-            class="loading loading-spinner loading-xs"
-          />
-          {{ $t('kernelAutostartOff') }}
-        </button>
       </div>
     </div>
   </div>
@@ -150,8 +122,6 @@
 import type { OpenboxKernelVersion, OpenboxServiceStatus } from '@/api/openbox'
 import StatusBadge from '@/components/common/StatusBadge.vue'
 import {
-  isDisableDisabled,
-  isEnableDisabled,
   isRestartDisabled,
   isStartDisabled,
   isStopDisabled,

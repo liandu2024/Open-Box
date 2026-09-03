@@ -649,7 +649,7 @@ const en = {
 
   // --- Region defaults card ---
   edit: 'Edit',
-  kernelApplyHint: 'Start/restart regenerates the config from the current settings and applies it; on failure it rolls back to direct.',
+  kernelApplyHint: 'Start / restart regenerates the config from current settings and applies it, enabling autostart on success; stop also disables autostart; a failure rolls back to direct.',
   ipv6Title: 'IPv6',
   dnsModeTitle: 'DNS hijack',
   dnsModeDescription: 'How LAN DNS queries reach the kernel for split resolution; restart the kernel after changing.',

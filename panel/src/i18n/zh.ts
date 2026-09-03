@@ -646,7 +646,7 @@ const zh: LANG_MESSAGE = {
 
   // --- 地区默认值卡片 ---
   edit: '编辑',
-  kernelApplyHint: '启动/重启会用当前设置重新生成配置并应用;失败会自动回滚到直连。',
+  kernelApplyHint: '启动/重启会用当前设置重新生成配置并应用,成功后打开开机自启;停止会同时关闭开机自启;失败会自动回滚到直连。',
   ipv6Title: 'IPv6',
   dnsModeTitle: 'DNS 劫持',
   dnsModeDescription: '局域网的 DNS 查询怎么交给内核分流解析;切换后重启内核生效。',
