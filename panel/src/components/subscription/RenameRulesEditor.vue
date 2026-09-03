@@ -327,7 +327,8 @@ const tokenOrder = ref<string[]>(orderFromTemplate(init?.template || DEFAULT_REN
 const template = computed(() => tokenOrder.value.join('-'))
 
 // 用订阅名做前缀(「机场名称 | 香港-01」),一眼看出节点来自哪个订阅。
-const usePrefix = ref(init?.usePrefix === true)
+// 默认打开;只有明确存过 false(用户关过)才关
+const usePrefix = ref(init?.usePrefix !== false)
 
 const options = computed<OpenboxRenameOptions>(() => ({
   template: template.value || DEFAULT_RENAME_TEMPLATE,
@@ -375,7 +376,7 @@ const resetToDefaults = () => {
   unknownLabel.value = DEFAULT_UNKNOWN_LABEL
   seqPad.value = DEFAULT_SEQ_PAD
   regionRows.value = toRegionRows(DEFAULT_REGION_DICT)
-  usePrefix.value = false
+  usePrefix.value = true
   featureKeywordsText.value = DEFAULT_FEATURE_KEYWORDS.join(',')
   excludeKeywordsText.value = DEFAULT_EXCLUDE_KEYWORDS.join(',')
 }
