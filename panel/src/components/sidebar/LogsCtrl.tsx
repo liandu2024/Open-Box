@@ -135,7 +135,7 @@ export default defineComponent({
     return () => {
       const levelSelect = (
         <select
-          class={['join-item select select-sm min-w-30']}
+          class={['join-item select select-sm w-24 shrink-0']}
           v-model={logLevel.value}
           onChange={initLogs}
         >
