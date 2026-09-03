@@ -1,4 +1,5 @@
 import { disconnectAllAPI, disconnectByIdAPI } from '@/api'
+import { normalizeRuleTarget } from '@/store/rules'
 import { useCtrlsBar } from '@/composables/useCtrlsBar'
 import { ROUTE_NAME, SETTINGS_MENU_KEY, SORT_DIRECTION, SORT_TYPE } from '@/constant'
 import { useTooltip } from '@/helper/tooltip'
@@ -154,13 +155,21 @@ export default defineComponent({
       )
 
       const searchInput = (
-        <TextInput
-          v-model={connectionFilter.value}
-          placeholder={`${t('search')} | ${t('searchMultiple')}`}
-          clearable={true}
-          before-close={true}
-          class={isLargeCtrlsBar.value ? 'w-32 max-w-80 flex-1' : 'w-full'}
-        />
+        <div class="flex min-w-0 flex-1 items-center gap-2">
+          <TextInput
+            v-model={connectionFilter.value}
+            placeholder={`${t('search')} | ${t('searchMultiple')}`}
+            clearable={true}
+            before-close={true}
+            class={isLargeCtrlsBar.value ? 'w-32 max-w-80 flex-1' : 'w-full'}
+          />
+          <button
+            class="btn btn-sm shrink-0"
+            onClick={() => (connectionFilter.value = normalizeRuleTarget(connectionFilter.value))}
+          >
+            {t('ruleFormatQuery')}
+          </button>
+        </div>
       )
 
       const buttons = (
