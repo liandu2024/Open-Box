@@ -285,3 +285,48 @@ for (const fallbackDefault of ['direct', 'proxy']) {
     }
   })
 }
+
+// hijack / off 两种 DNS 劫持方式也要过 sing-box check:直连侧用 WAN 上游 + (hijack)本地主机名交 local;
+// (off)不劫持、不写 auto_redirect
+for (const mode of ['hijack', 'off']) {
+  test(`生成的配置通过 sing-box check(dns.mode=${mode})`, { skip: hasBin ? false : 'sing-box 二进制缺失' }, () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), `openbox-check-${mode}-`))
+    try {
+      const sub = [
+        'ss://YWVzLTI1Ni1nY206c2VjcmV0cHc=@us.example.com:8388#US-01',
+        'trojan://pw@jp.example.com:443?sni=jp.example.com#JP-01',
+      ].join('\n')
+      const { nodes } = parseSubscription(sub)
+      const renamed = renameNodes(nodes)
+      const { groups } = groupNodesByRegion(renamed)
+      const profile = {
+        ipv6: false,
+        tun: { autoRedirect: true },
+        dns: { split: true, mode, direct: '223.5.5.5', proxy: 'https://1.1.1.1/dns-query' },
+        routing: { proxyTag: 'PROXY', categories: [{ ruleset: 'geosite-geolocation-!cn', target: groups[0]?.name || 'PROXY' }], directRulesets: ['geosite-cn', 'geoip-cn'], adBlock: true, adRuleset: 'geosite-category-ads-all', fallback: 'PROXY' },
+        rulesetDir: dir,
+        clashApiSecret: 'testsecret',
+      }
+      const config = buildConfig({ nodes: renamed, regionGroups: groups, profile, systemDns: ['211.139.29.150', '2409:806c:2000::1'] })
+      assert.deepEqual(config.dns.servers[0], { type: 'udp', tag: 'dns-direct', server: '211.139.29.150' })
+      if (mode === 'hijack') {
+        assert.ok(config.route.rules.some((r) => r.protocol === 'dns' && r.action === 'hijack-dns'))
+        assert.ok(config.dns.servers.some((s) => s.tag === 'dns-local' && s.type === 'local'))
+        assert.equal(config.dns.rules[0].server, 'dns-local')
+        assert.equal(config.inbounds[0].auto_redirect, true)
+      } else {
+        assert.ok(!config.route.rules.some((r) => r.action === 'hijack-dns'))
+        assert.ok(!config.dns.servers.some((s) => s.tag === 'dns-local'))
+        assert.equal(config.inbounds[0].auto_redirect, undefined)
+      }
+      assert.ok(!config.inbounds.some((i) => i.tag === 'dns-in'))
+      const { rulesetTags } = buildRoute(profile.routing, dir)
+      for (const tag of rulesetTags) compileSrs(dir, tag)
+      const cfgPath = path.join(dir, 'config.json')
+      fs.writeFileSync(cfgPath, JSON.stringify(config))
+      execFileSync(sbBin, ['check', '-c', cfgPath])
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+}
