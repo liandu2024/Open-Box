@@ -10,7 +10,13 @@ import {
   selectProxyAPI,
 } from '@/api'
 import { iconUrlFor } from '@/helper/iconUrl'
-import { managedOutbounds, nodeProviders, siteSetIcons } from '@/store/openboxSiteSets'
+import {
+  loadOpenboxNodeGroups,
+  loadOpenboxSiteSets,
+  managedOutbounds,
+  nodeProviders,
+  siteSetIcons,
+} from '@/store/openboxSiteSets'
 import {
   GLOBAL,
   IPV6_TEST_URL,
@@ -223,11 +229,26 @@ export const getIPv6ByName = (proxyName: string) => {
 
 let fetchTime = 0
 
+let openboxMetaPromise: Promise<unknown> | null = null
+const ensureOpenboxMeta = () => {
+  if (siteSetIcons.value.size && managedOutbounds.value.length) return Promise.resolve()
+  if (!openboxMetaPromise) {
+    openboxMetaPromise = Promise.allSettled([loadOpenboxSiteSets(), loadOpenboxNodeGroups()]).finally(() => {
+      openboxMetaPromise = null
+    })
+  }
+  return openboxMetaPromise
+}
+
 export const fetchProxies = async () => {
   const nowTime = Date.now()
 
   fetchTime = nowTime
 
+  // 站点集图标 / 节点管理图标 / 节点归属这几份 Open-Box 自己的数据要先到,下面注入图标
+  // 才有东西可注入。代理页、订阅页会自己刷新它们;规则页、连接页这类只调 fetchProxies 的
+  // 页面靠这里兜底加载一次,否则那些页面上的站点集/组就没有图标。
+  await ensureOpenboxMeta()
   const [proxyRes, providerRes] = await Promise.all([fetchProxiesAPI(), fetchProxyProviderAPI()])
   const proxyData = proxyRes.data
   const providerData = providerRes.data
