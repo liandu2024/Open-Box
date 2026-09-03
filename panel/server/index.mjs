@@ -22,6 +22,7 @@ import { runDeploy } from './api/deploy-runner.mjs'
 import { startScheduler } from './system/scheduler.mjs'
 import { createTrafficCollector, createTrafficStore } from './system/traffic-collector.mjs'
 import { registerSubscriptionRoutes } from './api/subscriptions.mjs'
+import { subscriptionFetch } from './system/insecure-fetch.mjs'
 import { createStore } from './store/openbox-store.mjs'
 import { createRealContext } from './system/context-real.mjs'
 import { createPaths } from './system/paths.mjs'
@@ -924,7 +925,8 @@ app.delete('/api/background-image', (_req, res) => {
 
 // Open-Box 业务路由:全部挂在守卫中间件之后、静态资源/SPA fallback 之前,
 // 因此天然继承"未设密一律 403、已设密未认证一律 401"的保护,无需各自重复鉴权。
-registerSubscriptionRoutes(app, { store, fetchImpl: globalThis.fetch })
+// 订阅拉取用不校验证书的 fetch(自签 / 过期证书的自建订阅也能加),不能传系统 fetch 把它盖掉
+registerSubscriptionRoutes(app, { store, fetchImpl: subscriptionFetch })
 registerProfileRoutes(app, { store })
 registerDeployRoutes(app, { store, ctx: obCtx, paths: obPaths })
 registerServiceRoutes(app, { store, ctx: obCtx, paths: obPaths })
