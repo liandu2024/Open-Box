@@ -266,6 +266,7 @@ test('POST /api/openbox/penetration 合法域名/IPv4/IPv6 target 仍然通过(�
 test('按序首个命中生效:前一条 rule_set 命中时,后一条同样会命中的规则不会被求值(shadow)', async () => {
   const store = memStore()
   store.setProfile({
+    directForNodes: false,
     routing: {
       proxyTag: 'PROXY',
       // 香港澳门那一档:除策略之外全部直连,所以这里只会有这两条策略规则
@@ -310,6 +311,7 @@ test('按序首个命中生效:前一条 rule_set 命中时,后一条同样会�
 test('无命中 → 落到 route.final,matched 为 null', async () => {
   const store = memStore()
   store.setProfile({
+    directForNodes: false,
     routing: {
       proxyTag: 'PROXY',
       // 中国大陆那一档:中国站点直连、其余走代理(所以兜底是 PROXY)
@@ -361,9 +363,10 @@ test('私有/回环 IP:ip_is_private 规则命中 outbound=direct,不触发任�
       assert.equal(res.status, 200)
       assert.ok(body.matched)
       assert.equal(body.matched.rule.ip_is_private, true)
-      assert.equal(body.matched.outbound, 'direct')
-      assert.equal(body.finalOutbound, 'direct')
-      assert.deepEqual(body.chain, ['direct'])
+      // 内置直连出站的实际 tag 是节点管理里的名字(默认「直连」),和内核配置里一致
+      assert.equal(body.matched.outbound, '直连')
+      assert.equal(body.finalOutbound, '直连')
+      assert.deepEqual(body.chain, ['直连'])
     }
     assert.equal(ctx.calls.length, 0) // ip_is_private 是纯 JS 判定,不 exec
     assert.equal(fetchCalls, 0) // direct 不是策略组,不查 clash_api
@@ -399,6 +402,7 @@ test('策略组下钻:outbound 为策略组时经 clash_api 沿 now 字段逐层
   const store = memStore()
   store.setNodes(NODES)
   store.setProfile({
+    directForNodes: false,
     routing: {
       proxyTag: 'PROXY',
       fallbackDefault: 'direct',
@@ -448,6 +452,7 @@ test('clash_api 不可达时降级:只返回组名 + chainError,不整体失败'
   const store = memStore()
   store.setNodes(NODES)
   store.setProfile({
+    directForNodes: false,
     routing: {
       proxyTag: 'PROXY',
       fallbackDefault: 'direct',
@@ -480,6 +485,7 @@ test('clash_api 返回非 2xx 时同样降级为 chainError', async () => {
   const store = memStore()
   store.setNodes(NODES)
   store.setProfile({
+    directForNodes: false,
     routing: {
       proxyTag: 'PROXY',
       fallbackDefault: 'direct',
@@ -508,6 +514,7 @@ test('clash_api 返回非 2xx 时同样降级为 chainError', async () => {
 test('ad-block reject 规则命中:matched.action=reject,无 outbound,不下钻', async () => {
   const store = memStore()
   store.setProfile({
+    directForNodes: false,
     routing: {
       proxyTag: 'PROXY',
       categories: [],
@@ -547,6 +554,7 @@ test('ad-block reject 规则命中:matched.action=reject,无 outbound,不下钻'
 test('POST /penetration:.srs 文件缺失 → 200 + matchError,matched 为 null,finalOutbound 也不敢冒充 route.final', async () => {
   const store = memStore()
   store.setProfile({
+    directForNodes: false,
     routing: {
       proxyTag: 'PROXY',
       fallbackDefault: 'proxy',
@@ -579,6 +587,7 @@ test('POST /penetration:.srs 文件缺失 → 200 + matchError,matched 为 null,
 test('POST /penetration:sing-box 异常退出且无输出 → 200 + matchError,不是"确认不命中"', async () => {
   const store = memStore()
   store.setProfile({
+    directForNodes: false,
     routing: {
       proxyTag: 'PROXY',
       fallbackDefault: 'proxy',
@@ -612,6 +621,7 @@ test('POST /penetration:sing-box 异常退出且无输出 → 200 + matchError,�
 test('POST /penetration:could-not-check 命中后立刻停止求值——后面同样会命中的规则不会被拿来冒充确定结果', async () => {
   const store = memStore()
   store.setProfile({
+    directForNodes: false,
     routing: {
       proxyTag: 'PROXY',
       fallbackDefault: 'direct',
@@ -648,6 +658,7 @@ test('POST /penetration:could-not-check 命中后立刻停止求值——后面�
 test('POST /penetration:更早的确定命中(ip_is_private)优先于后面失效的 rule_set——不应该出现 matchError', async () => {
   const store = memStore()
   store.setProfile({
+    directForNodes: false,
     routing: {
       proxyTag: 'PROXY',
       fallbackDefault: 'proxy',
@@ -665,7 +676,7 @@ test('POST /penetration:更早的确定命中(ip_is_private)优先于后面失�
     assert.equal(res.status, 200)
     assert.ok(body.matched)
     assert.equal(body.matched.rule.ip_is_private, true)
-    assert.equal(body.finalOutbound, 'direct')
+    assert.equal(body.finalOutbound, '直连')
     assert.equal(body.matchError, undefined)
     assert.equal(ctx.calls.length, 0) // 从未走到 rule_set 那条规则
   } finally {
@@ -708,6 +719,7 @@ test('同一条规则里多个条件是"或"的关系', () => {
 test('POST /penetration:策略的域名条件本地就能判定,不去 exec 内核', async () => {
   const store = memStore()
   store.setProfile({
+    directForNodes: false,
     routing: {
       proxyTag: 'PROXY',
       fallbackDefault: 'direct',
@@ -762,6 +774,23 @@ test('命中规则集时带回具体命中的条目(内核解码后逐条比),�
     assert.ok(entries.some((e) => e.source === 'geosite-google' && e.type === 'domain_suffix' && e.value === 'google.com'))
     assert.ok(!entries.some((e) => e.value === 'gstatic.com'))
     assert.equal(body.matched.entriesTotal, entries.length)
+  } finally {
+    await close()
+  }
+})
+
+test('订阅和节点站点直连(默认开):目标是某个节点的服务器域名 → 直连,排在站点集之前', async () => {
+  const store = memStore()
+  store.setNodes(NODES)
+  store.setProfile({ routing: { fallbackDefault: 'proxy', policies: [{ id: 'hk', name: 'HK', rulesets: ['geosite-hk'] }] } })
+  const ctx = createMockContext({ files: withSingbox('/opt/open-box/data/rulesets/geosite-hk.srs') })
+  const { baseUrl, close } = await startApp({ ctx, store, fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({}) }) })
+  try {
+    const { body } = await post(baseUrl, 'hk.example.com')
+    assert.ok(body.matched)
+    assert.deepEqual(body.matched.rule.domain, ['hk.example.com', 'us.example.com'])
+    assert.equal(body.matched.outbound, '直连')
+    assert.equal(ctx.calls.length, 0) // 本地域名比对,不用 exec 内核
   } finally {
     await close()
   }

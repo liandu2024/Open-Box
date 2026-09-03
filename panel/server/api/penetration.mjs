@@ -235,7 +235,8 @@ export const registerPenetrationRoutes = (app, { store, ctx, paths, fetchImpl = 
     // 选的是哪个节点;而"一条都没命中"落到的正是兜底那个 selector。
     const routingConf = normalizeRouting(profile.routing)
     const groupTags = new Set([
-      ...(store.getGroups() || []).map((g) => g.name).filter(Boolean),
+      // 内置的直连/拒绝是出站不是 selector,没有 now 可下钻,不算策略组
+      ...(store.getGroups() || []).filter((g) => !g.kind).map((g) => g.name).filter(Boolean),
       ...routingConf.activePolicies.map((p) => p.name),
       routingConf.fallback.name,
     ])
