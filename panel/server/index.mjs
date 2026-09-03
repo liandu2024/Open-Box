@@ -17,6 +17,7 @@ import { registerUpdateRoutes } from './api/updates.mjs'
 import { registerRouteTestRoutes } from './api/route-test.mjs'
 import { registerTrafficRoutes } from './api/traffic.mjs'
 import { registerServerRoutes } from './api/servers.mjs'
+import { seedDefaultStorage } from './system/seed-defaults.mjs'
 import { runDeploy } from './api/deploy-runner.mjs'
 import { startScheduler } from './system/scheduler.mjs'
 import { createTrafficCollector, createTrafficStore } from './system/traffic-collector.mjs'
@@ -129,6 +130,13 @@ const deleteStorageValueStatement = db.prepare(`
   DELETE FROM app_storage
   WHERE key = ?
 `)
+
+// 全新安装(还没有任何 config/*)时写入随包的默认面板设置和背景图(system/seed-defaults.mjs)
+seedDefaultStorage({
+  countConfigEntries: () => db.prepare(`SELECT COUNT(*) AS c FROM app_storage WHERE key LIKE 'config/%'`).get().c,
+  insert: (key, value) => upsertStorageValueStatement.run(key, value),
+  log: (m) => console.log(m),
+})
 
 // openbox-store 复用同一张 app_storage KV 表;controller 代理靠它拿本机 clash_api 的 secret。
 const store = createStore({
