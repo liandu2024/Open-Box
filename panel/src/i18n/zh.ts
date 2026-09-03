@@ -825,6 +825,8 @@ const zh: LANG_MESSAGE = {
   outboundPickerNoMatch: '没有匹配项',
   outboundPickerPlaceholder: '选择出口',
   outboundPickerNoSubscription: '无订阅',
+  outboundPickerTestAll: '测速当前页签下全部',
+  outboundPickerTestOne: '测速',
 }
 
 export default zh

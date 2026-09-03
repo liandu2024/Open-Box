@@ -825,6 +825,8 @@ const zhTW: LANG_MESSAGE = {
   outboundPickerNoMatch: '沒有符合項',
   outboundPickerPlaceholder: '選擇出口',
   outboundPickerNoSubscription: '無訂閱',
+  outboundPickerTestAll: '測速目前頁籤下全部',
+  outboundPickerTestOne: '測速',
 }
 
 export default zhTW

@@ -828,6 +828,8 @@ const en = {
   outboundPickerNoMatch: 'No match',
   outboundPickerPlaceholder: 'Pick an outbound',
   outboundPickerNoSubscription: 'No subscription',
+  outboundPickerTestAll: 'Test latency of everything in this tab',
+  outboundPickerTestOne: 'Test latency',
 }
 
 export type LANG_MESSAGE = typeof en
