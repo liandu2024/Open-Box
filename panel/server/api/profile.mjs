@@ -1,5 +1,6 @@
 import express from 'express'
 import { RESERVED_PORTS, SERVER_PROTOCOLS, SS_METHODS } from '../engine/servers.mjs'
+import { shareTokenFor } from '../engine/share-link.mjs'
 import { FALLBACK_TAG, normalizeRouting } from '../engine/routing-model.mjs'
 
 const isPlainObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v)
@@ -161,6 +162,7 @@ export const validateServers = (servers) => {
     if (ports.has(s.port)) return `servers[].port duplicated: ${s.port}`
     ports.add(s.port)
     if ('address' in s && !isString(s.address)) return 'servers[].address must be a string'
+    if ('scheme' in s && !['http', 'https'].includes(s.scheme)) return 'servers[].scheme must be http or https'
     if ('tls' in s && !isBoolean(s.tls)) return 'servers[].tls must be a boolean'
     if ('obfs' in s && !isString(s.obfs)) return 'servers[].obfs must be a string'
     const needPassword = s.protocol === 'shadowsocks' || s.protocol === 'tuic' || s.protocol === 'hysteria2'
@@ -246,18 +248,34 @@ export const registerProfileRoutes = (app, { store } = {}) => {
     })
   }
 
+  // 共享网络的订阅令牌不落库,读档案时按当前凭据现算(engine/share-link.mjs)
+  const withShareTokens = (profile) => {
+    if (!Array.isArray(profile.servers) || !profile.servers.length) return profile
+    const secret = store.getClashSecret()
+    return { ...profile, servers: profile.servers.map((s) => ({ ...s, shareToken: shareTokenFor(secret, s) })) }
+  }
+
   router.get('/', (_req, res) => {
-    res.json({ profile: migrateOnce() })
+    res.json({ profile: withShareTokens(migrateOnce()) })
   })
 
   router.put('/', (req, res) => {
     const patch = req.body || {}
+    // 前端会把读到的 shareToken 原样送回来,存之前剥掉
+    if (Array.isArray(patch.servers)) {
+      patch.servers = patch.servers.map((s) => {
+        if (!s || typeof s !== 'object') return s
+        const { shareToken, ...rest } = s
+        void shareToken
+        return rest
+      })
+    }
     const error = validateProfilePatch(patch)
     if (error) {
       res.status(400).json({ error })
       return
     }
-    res.json({ profile: store.setProfile(patch) })
+    res.json({ profile: withShareTokens(store.setProfile(patch)) })
   })
 
   app.use('/api/openbox/profile', router)

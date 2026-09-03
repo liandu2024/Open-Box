@@ -775,8 +775,8 @@ const zhTW: LANG_MESSAGE = {
   serverNamePlaceholder: '例如:家裡',
   serverProtocolLabel: '協定',
   serverPortLabel: '連接埠',
-  serverAddressLabel: '連線位址',
-  serverAddressPlaceholder: '公網 IP 或網域,只用來產生分享連結',
+  serverAddressLabel: '網域 / IP',
+  serverAddressPlaceholder: '網域或 IP',
   serverMethodLabel: '加密',
   serverPasswordLabel: '密碼',
   serverObfsLabel: '混淆密碼',
@@ -794,6 +794,12 @@ const zhTW: LANG_MESSAGE = {
   serverErrPortUsed: '連接埠 {port} 已被另一台伺服器佔用',
   serverErrCredential: '密碼 / UUID 不能為空',
   copyFailed: '複製失敗',
+  serverSubscribeLinkLabel: '訂閱連結',
+  serverSubscribeNeedSave: '儲存一次後才有訂閱連結',
+  serverSubscribeHint: '由本面板免登入提供,用戶端能存取面板連接埠即可;改密碼或 UUID 後舊連結失效。',
+  serverQrShare: '節點連結',
+  serverQrSubscribe: '訂閱連結',
+  serverCopySubscribe: '複製訂閱連結',
 }
 
 export default zhTW

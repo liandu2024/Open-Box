@@ -775,8 +775,8 @@ const zh: LANG_MESSAGE = {
   serverNamePlaceholder: '例如:家里',
   serverProtocolLabel: '协议',
   serverPortLabel: '端口',
-  serverAddressLabel: '连接地址',
-  serverAddressPlaceholder: '公网 IP 或域名,只用来生成分享链接',
+  serverAddressLabel: '域名 / IP',
+  serverAddressPlaceholder: '域名或 IP',
   serverMethodLabel: '加密',
   serverPasswordLabel: '密码',
   serverObfsLabel: '混淆密码',
@@ -794,6 +794,12 @@ const zh: LANG_MESSAGE = {
   serverErrPortUsed: '端口 {port} 已被另一台服务器占用',
   serverErrCredential: '密码 / UUID 不能为空',
   copyFailed: '复制失败',
+  serverSubscribeLinkLabel: '订阅链接',
+  serverSubscribeNeedSave: '保存一次后才有订阅链接',
+  serverSubscribeHint: '由本面板免登录提供,客户端能访问到面板端口即可;改密码或 UUID 后旧链接失效。',
+  serverQrShare: '节点链接',
+  serverQrSubscribe: '订阅链接',
+  serverCopySubscribe: '复制订阅链接',
 }
 
 export default zh

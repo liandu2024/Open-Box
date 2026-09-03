@@ -46,6 +46,7 @@
     "prettier-plugin-organize-imports": "^4.3.0",
     "prettier-plugin-tailwindcss": "^0.7.2",
     "pretty-bytes": "^7.1.0",
+    "qrcode": "1.5.4",
     "reconnectingwebsocket": "^1.0.0",
     "sort-package-json": "^3.6.1",
     "subsetted-fonts": "^1.0.4",

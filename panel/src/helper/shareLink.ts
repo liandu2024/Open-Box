@@ -63,3 +63,15 @@ export const randomSs2022Key = () => {
 }
 
 export const randomServerId = () => `s${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`
+
+// 默认取当前打开面板用的协议和主机名
+export const defaultScheme = (): 'http' | 'https' => (location.protocol === 'https:' ? 'https' : 'http')
+export const defaultHost = () => location.hostname
+
+// 订阅链接:面板自己提供(server/api/share.mjs),端口沿用当前打开面板的端口
+export const buildSubscriptionUrl = (s: OpenboxServer): string => {
+  const address = (s.address || '').trim()
+  if (!address || !s.shareToken) return ''
+  const port = location.port ? `:${location.port}` : ''
+  return `${s.scheme || defaultScheme()}://${hostPart(address)}${port}/api/openbox/share/${encodeURIComponent(s.id)}/${s.shareToken}`
+}

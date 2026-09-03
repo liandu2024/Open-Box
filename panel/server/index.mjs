@@ -16,6 +16,7 @@ import { registerRulesetRoutes } from './api/rulesets.mjs'
 import { registerUpdateRoutes } from './api/updates.mjs'
 import { registerRouteTestRoutes } from './api/route-test.mjs'
 import { registerTrafficRoutes } from './api/traffic.mjs'
+import { registerShareRoutes } from './api/share.mjs'
 import { runDeploy } from './api/deploy-runner.mjs'
 import { startScheduler } from './system/scheduler.mjs'
 import { createTrafficCollector, createTrafficStore } from './system/traffic-collector.mjs'
@@ -824,6 +825,13 @@ app.use((req, res, next) => {
     return
   }
 
+  // 共享网络的订阅链接要给别的设备/客户端直接拉,不能要求登录;它自己靠 URL 里的
+  // 令牌保护(api/share.mjs),猜不中令牌只会得到 404。
+  if (normalizedPath.startsWith('/api/openbox/share/')) {
+    next()
+    return
+  }
+
   const { password } = readAccessAuthConfig()
 
   if (!password) {
@@ -934,6 +942,7 @@ const trafficCollector = createTrafficCollector({
   log: (m) => console.log(m),
 })
 registerTrafficRoutes(app, { collector: trafficCollector, ctx: obCtx, paths: obPaths })
+registerShareRoutes(app, { store })
 // 自动更新计划:每分钟看一眼档案里的计划,到点就做(见 system/scheduler.mjs)
 startScheduler({ store, ctx: obCtx, paths: obPaths, fetchImpl: globalThis.fetch, runDeploy, log: (m) => console.log(m) })
 

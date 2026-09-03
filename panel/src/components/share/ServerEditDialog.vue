@@ -43,15 +43,26 @@
             class="input input-sm w-full"
           />
         </div>
+        <!-- 访问协议 + 域名/IP:默认取当前打开面板的地址。域名/IP 进节点分享链接,
+             协议只给订阅链接用(订阅链接是面板自己提供的 http 接口)。 -->
         <div class="flex flex-col gap-1">
           <label class="text-xs font-medium">{{ $t('serverAddressLabel') }}</label>
-          <input
-            v-model="form.address"
-            type="text"
-            class="input input-sm w-full"
-            :placeholder="$t('serverAddressPlaceholder')"
-            autocomplete="off"
-          />
+          <div class="join w-full">
+            <select
+              v-model="form.scheme"
+              class="select select-sm join-item w-28 shrink-0"
+            >
+              <option value="http">http</option>
+              <option value="https">https</option>
+            </select>
+            <input
+              v-model="form.address"
+              type="text"
+              class="input input-sm join-item w-full"
+              :placeholder="$t('serverAddressPlaceholder')"
+              autocomplete="off"
+            />
+          </div>
         </div>
 
         <div
@@ -163,7 +174,8 @@
 
       <p class="text-base-content/60 text-xs">{{ $t(needsTls ? 'serverTlsHint' : 'serverPlainHint') }}</p>
 
-      <!-- 分享链接预览:填了连接地址才有 -->
+      <!-- 分享链接(节点 URI)和订阅链接(面板提供的 http 接口),各自可复制;
+           下面是二维码,可切换扫哪一个。订阅链接要保存过一次才有令牌。 -->
       <div class="flex flex-col gap-1">
         <label class="text-xs font-medium">{{ $t('serverShareLinkLabel') }}</label>
         <div class="join w-full">
@@ -178,11 +190,61 @@
             class="btn btn-sm join-item"
             :disabled="!shareLink"
             v-tip="$t('copyLink')"
-            @click="copyShareLink"
+            @click="copyText(shareLink)"
           >
             <ClipboardDocumentIcon class="h-4 w-4" />
           </button>
         </div>
+      </div>
+      <div class="flex flex-col gap-1">
+        <label class="text-xs font-medium">{{ $t('serverSubscribeLinkLabel') }}</label>
+        <div class="join w-full">
+          <input
+            :value="subscribeUrl || $t(shareLink ? 'serverSubscribeNeedSave' : 'serverShareLinkNeedAddress')"
+            type="text"
+            readonly
+            class="input input-sm join-item w-full font-mono text-xs"
+          />
+          <button
+            type="button"
+            class="btn btn-sm join-item"
+            :disabled="!subscribeUrl"
+            v-tip="$t('copyLink')"
+            @click="copyText(subscribeUrl)"
+          >
+            <ClipboardDocumentIcon class="h-4 w-4" />
+          </button>
+        </div>
+        <p class="text-base-content/50 text-xs">{{ $t('serverSubscribeHint') }}</p>
+      </div>
+
+      <div
+        v-if="shareLink"
+        class="flex flex-col items-start gap-2"
+      >
+        <div
+          role="tablist"
+          class="tabs-box tabs tabs-xs"
+        >
+          <a
+            role="tab"
+            class="tab"
+            :class="qrTarget === 'share' && 'tab-active'"
+            @click="qrTarget = 'share'"
+          >{{ $t('serverQrShare') }}</a>
+          <a
+            role="tab"
+            class="tab"
+            :class="[qrTarget === 'subscribe' && 'tab-active', !subscribeUrl && 'tab-disabled']"
+            @click="subscribeUrl && (qrTarget = 'subscribe')"
+          >{{ $t('serverQrSubscribe') }}</a>
+        </div>
+        <img
+          v-if="qrDataUrl"
+          :src="qrDataUrl"
+          class="h-44 w-44 rounded-lg bg-white p-1"
+          alt="QR"
+        />
       </div>
 
       <p
@@ -218,12 +280,16 @@ import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import { showNotification } from '@/helper/notification'
 import {
   buildShareLink,
+  buildSubscriptionUrl,
+  defaultHost,
+  defaultScheme,
   randomPassword,
   randomServerId,
   randomSs2022Key,
   randomUuid,
 } from '@/helper/shareLink'
 import { ArrowPathIcon, ClipboardDocumentIcon } from '@heroicons/vue/24/outline'
+import QRCode from 'qrcode'
 import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -262,7 +328,8 @@ const blank = (): OpenboxServer => ({
   name: '',
   protocol: 'shadowsocks',
   port: DEFAULT_PORT.shadowsocks,
-  address: '',
+  scheme: defaultScheme(),
+  address: defaultHost(),
   password: randomPassword(),
   method: 'aes-256-gcm',
   uuid: randomUuid(),
@@ -279,6 +346,10 @@ watch(
     if (!open) return
     error.value = ''
     Object.assign(form, blank(), props.server ? { ...props.server } : {})
+    // 老记录没填过地址/协议的,也按当前页面补上默认值
+    if (!form.address) form.address = defaultHost()
+    if (!form.scheme) form.scheme = defaultScheme()
+    qrTarget.value = 'share'
   },
 )
 
@@ -299,15 +370,37 @@ const onProtocolChange = () => {
 }
 
 const shareLink = computed(() => buildShareLink(form))
+const subscribeUrl = computed(() => buildSubscriptionUrl(form))
 
-const copyShareLink = async () => {
+const copyText = async (text: string) => {
+  if (!text) return
   try {
-    await navigator.clipboard.writeText(shareLink.value)
+    await navigator.clipboard.writeText(text)
     showNotification({ content: 'copySuccess', type: 'alert-success' })
   } catch {
     showNotification({ content: 'copyFailed', type: 'alert-error' })
   }
 }
+
+// 二维码:扫节点链接或订阅链接
+const qrTarget = ref<'share' | 'subscribe'>('share')
+const qrDataUrl = ref('')
+watch(
+  [shareLink, subscribeUrl, qrTarget],
+  async ([link, sub, target]) => {
+    const text = target === 'subscribe' ? sub : link
+    if (!text) {
+      qrDataUrl.value = ''
+      return
+    }
+    try {
+      qrDataUrl.value = await QRCode.toDataURL(text, { margin: 1, width: 352 })
+    } catch {
+      qrDataUrl.value = ''
+    }
+  },
+  { immediate: true },
+)
 
 const submit = () => {
   const name = form.name.trim()
@@ -330,6 +423,7 @@ const submit = () => {
     protocol: form.protocol,
     port: form.port,
     address: (form.address || '').trim(),
+    scheme: form.scheme === 'https' ? 'https' : 'http',
   }
   if (form.protocol === 'shadowsocks') {
     out.method = form.method || 'aes-256-gcm'
