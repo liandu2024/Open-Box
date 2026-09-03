@@ -14,6 +14,7 @@ import { registerProfileRoutes } from './api/profile.mjs'
 import { registerServiceRoutes } from './api/service.mjs'
 import { registerRulesetRoutes } from './api/rulesets.mjs'
 import { registerUpdateRoutes } from './api/updates.mjs'
+import { registerRouteTestRoutes } from './api/route-test.mjs'
 import { runDeploy } from './api/deploy-runner.mjs'
 import { startScheduler } from './system/scheduler.mjs'
 import { registerSubscriptionRoutes } from './api/subscriptions.mjs'
@@ -921,6 +922,7 @@ registerPenetrationRoutes(app, { store, ctx: obCtx, paths: obPaths, fetchImpl: g
 registerNodeLatencyRoutes(app, { ctx: obCtx, paths: obPaths, fetchImpl: globalThis.fetch })
 registerGroupRoutes(app, { store })
 registerUpdateRoutes(app, { store, ctx: obCtx, paths: obPaths, fetchImpl: globalThis.fetch })
+registerRouteTestRoutes(app, { store, ctx: obCtx, paths: obPaths, fetchImpl: globalThis.fetch })
 // 自动更新计划:每分钟看一眼档案里的计划,到点就做(见 system/scheduler.mjs)
 startScheduler({ store, ctx: obCtx, paths: obPaths, fetchImpl: globalThis.fetch, runDeploy, log: (m) => console.log(m) })
 

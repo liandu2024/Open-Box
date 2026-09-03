@@ -5,7 +5,7 @@ import { normalizeRouting } from '../engine/routing-model.mjs'
 import { isPrivateOrLoopbackIp } from './net-guard.mjs'
 
 // Open-Box 只管理本机唯一的 sing-box,clash_api 固定监听 127.0.0.1:9095(见 engine/config.mjs)。
-const CLASH_API_BASE = 'http://127.0.0.1:9095'
+export const CLASH_API_BASE = 'http://127.0.0.1:9095'
 
 // 字面 IP 私有/回环/链路本地/CGNAT 判定抽到 net-guard.mjs,和 subscriptions.mjs 共用同一份
 // 范围表与 IPv4-mapped IPv6 归一化逻辑(P4a 复审 Important 1:两处判定曾经各自维护,

@@ -647,3 +647,28 @@ export const fetchRulesetsRefreshStatus = () =>
   requestJson<{ count: number; lastAt: string; updated: string[]; failed: Array<{ tag: string; message: string }>; restarted: boolean }>(
     '/api/openbox/rulesets/refresh/status',
   )
+
+// 「真实路由」:DNS 决策 + 内核解析 + 真实访问一次并从连接表里读实际链路
+export interface OpenboxRouteTest {
+  target: string
+  dns:
+    | { skipped: true }
+    | { error: string }
+    | { ruleIndex: number | null; rejected?: boolean; server?: { tag: string; type?: string; server?: string; detour?: string }; viaProxy?: boolean }
+  resolve?: { ok: boolean; status?: number; answers: string[]; ms: number; error?: string }
+  exit: {
+    url: string
+    ok?: boolean
+    status?: number
+    ms?: number
+    error?: string
+    chains?: string[]
+    rule?: string
+    rulePayload?: string
+    destinationIP?: string
+    notSeen?: boolean
+    connectionsError?: string
+  }
+}
+export const testRoute = (target: string) =>
+  requestJson<OpenboxRouteTest>('/api/openbox/route-test', { method: 'POST', body: JSON.stringify({ target }) })

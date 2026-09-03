@@ -12,6 +12,10 @@
             :target="lookupTarget"
             @matched="matchedIndex = $event"
           />
+          <RouteTestCard
+            v-if="lookupTarget"
+            :target="lookupTarget"
+          />
           <div
             v-for="rule in displayRules"
             :key="`${rule.type}-${rule.payload}-${rule.proxy}`"
@@ -41,6 +45,10 @@
             :target="lookupTarget"
             @matched="matchedIndex = $event"
           />
+          <RouteTestCard
+            :target="lookupTarget"
+            class="mt-2"
+          />
         </div>
       </template>
       <template #default="{ item: rule }: { item: Rule }">
@@ -62,6 +70,7 @@ import RuleCard from '@/components/rules/RuleCard.vue'
 import RulesCtrl from '@/components/sidebar/RulesCtrl.tsx'
 import { usePaddingForViews } from '@/composables/paddingViews'
 import { fetchProxies } from '@/store/proxies'
+import RouteTestCard from '@/components/rules/RouteTestCard.vue'
 import RulePenetrationCard from '@/components/rules/RulePenetrationCard.vue'
 import { fetchRules, lookupTarget, renderRules, rules } from '@/store/rules'
 import type { Rule } from '@/types'
