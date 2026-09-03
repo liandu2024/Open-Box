@@ -77,6 +77,19 @@ test('广告拦截排在所有站点集之前', () => {
   assert.equal(route.rules[4].outbound, '谷歌')
 })
 
+test('dnsmasq 模式:被 auto_redirect 改写到 tun 网段:53 的局域网 DNS 交回本机 dnsmasq,排在防回环 reject 之前', () => {
+  const { route } = build({ policies: [] }, { dnsMode: 'dnsmasq', tunCidrs: ['172.19.0.0/30'], dnsmasqTag: 'dnsmasq' })
+  assert.deepEqual(route.rules[1], { inbound: ['dns-in'], action: 'hijack-dns' })
+  assert.deepEqual(route.rules[2], {
+    ip_cidr: ['172.19.0.0/30'], port: [53], action: 'route', outbound: 'dnsmasq', override_address: '127.0.0.1',
+  })
+  assert.deepEqual(route.rules[3], { ip_cidr: ['172.19.0.0/30'], action: 'reject' })
+  assert.ok(route.rules[4].ip_is_private)
+  // hijack 模式靠 protocol:dns 接住,不需要这条
+  const h = build({ policies: [] }, { dnsMode: 'hijack', tunCidrs: ['172.19.0.0/30'], dnsmasqTag: 'dnsmasq' })
+  assert.ok(!h.route.rules.some((r) => r.override_address))
+})
+
 test('dnsMode=dnsmasq 时只劫持 dns-in,避免 tun→dns-in 自环', () => {
   const { route } = build({ policies: [] }, { dnsMode: 'dnsmasq' })
   assert.deepEqual(route.rules[1], { inbound: ['dns-in'], action: 'hijack-dns' })

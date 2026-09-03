@@ -28,6 +28,20 @@ export const buildRoute = (routing, rulesetDir, options = {}) => {
     // 匹配 {protocol:'dns'},被劫持回同一个 dns-in 入站,形成自环导致解析超时。
     // 仅劫持 dns-in 自身收到的查询,其余 DNS 流量按普通路由走(交给 dnsmasq 上游)。
     rules.push({ inbound: ['dns-in'], action: 'hijack-dns' })
+    // sing-box 开了 auto_redirect 时会自带一条 nft DNAT:局域网发给任何 53 端口的查询
+    // (包括发给路由器自己 dnsmasq 的)统统改写到 tun 对端 172.19.0.2:53 送进 tun。
+    // hijack 模式靠 {protocol:'dns'} 把它们接住;dnsmasq 模式只劫持 dns-in,这些查询会
+    // 落到 ip_is_private → 直连 → 再拨 172.19.0.2 → 又进 tun,自环(真机上就是这么卡死的)。
+    // 这里把它们交回本机 dnsmasq(override 到 127.0.0.1:53),dnsmasq 再按它的上游配置
+    // 转给 dns-in,局域网客户端仍然走 dnsmasq 这一层(本地主机名、按域名分流都保留)。
+    // 出站必须是绑定 lo 的专用直连(见 config.mjs):全局 auto_detect_interface 会把
+    // 普通直连绑到 WAN 口,拨 127.0.0.1 不通。
+    if (Array.isArray(options.tunCidrs) && options.tunCidrs.length && options.dnsmasqTag) {
+      rules.push({
+        ip_cidr: options.tunCidrs, port: [53], action: 'route',
+        outbound: options.dnsmasqTag, override_address: '127.0.0.1',
+      })
+    }
   }
   // 防回环:目标是 tun 自己的网段(172.19.0.0/30 等)的连接直接拒绝。tun 的对端地址
   // 172.19.0.2 只是路由下一跳,没有任何合法流量会以它为目标;可一旦有(真机上出现过

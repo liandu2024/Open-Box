@@ -14,6 +14,8 @@ const TUN_V6 = 'fdfe:dcba:9876::1/126'
 // 上面两个地址所在的网段,给路由规则做防回环用(见 routing.mjs)
 const TUN_V4_NET = '172.19.0.0/30'
 const TUN_V6_NET = 'fdfe:dcba:9876::/126'
+// dnsmasq 模式下把被 auto_redirect 改写进 tun 的局域网 DNS 交回本机 dnsmasq 用的专用出站
+const DNSMASQ_OUTBOUND_TAG = 'dnsmasq'
 
 // systemDns:路由器 WAN 下发的 DNS 上游(部署时从 resolv.conf.auto 读,见
 // system/resolv.mjs)。只有 dnsmasq 接管模式用得上——那时不能让 sing-box 去问
@@ -64,8 +66,14 @@ export const buildConfig = ({ nodes, profile, userGroups, systemDns, subscriptio
   const sanitizedRouting = routingConf
 
   const dnsMode = (profile.dns && profile.dns.mode) || 'hijack'
+  if (dnsMode === 'dnsmasq') {
+    // 绑定 lo 才拨得通 127.0.0.1(auto_detect_interface 对写了 bind_interface 的出站不生效)
+    outbounds.push({ type: 'direct', tag: DNSMASQ_OUTBOUND_TAG, bind_interface: 'lo' })
+  }
   const { route } = buildRoute(sanitizedRouting, profile.rulesetDir, {
-    dnsMode, directTag: builtin.direct, directHosts, tunCidrs: profile.ipv6 ? [TUN_V4_NET, TUN_V6_NET] : [TUN_V4_NET],
+    dnsMode, directTag: builtin.direct, directHosts,
+    tunCidrs: profile.ipv6 ? [TUN_V4_NET, TUN_V6_NET] : [TUN_V4_NET],
+    dnsmasqTag: dnsMode === 'dnsmasq' ? DNSMASQ_OUTBOUND_TAG : '',
   })
   // groupTags 传给 DNS:它要按"这个站点集默认走哪"决定用直连还是代理侧解析,
   // 而"默认走哪"在 default 为空时取决于成员表的第一项(见 effectiveOutbound)。

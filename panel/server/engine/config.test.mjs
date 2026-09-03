@@ -158,3 +158,16 @@ test('防回环:目标是 tun 自己网段的连接直接拒绝,且排在 ip_is_
   const r6 = v6.route.rules.find((r) => Array.isArray(r.ip_cidr) && r.action === 'reject')
   assert.deepEqual(r6.ip_cidr, ['172.19.0.0/30', 'fdfe:dcba:9876::/126'])
 })
+
+test('dnsmasq 模式:多一个绑定 lo 的 dnsmasq 专用直连出站,局域网 DNS 回交规则指向它;hijack 模式没有', () => {
+  const c = buildConfig({ nodes, regionGroups, profile: { ...profile, dns: { ...profile.dns, mode: 'dnsmasq' } } })
+  const ob = c.outbounds.find((o) => o.tag === 'dnsmasq')
+  assert.deepEqual(ob, { type: 'direct', tag: 'dnsmasq', bind_interface: 'lo' })
+  const back = c.route.rules.findIndex((r) => r.override_address === '127.0.0.1')
+  const reject = c.route.rules.findIndex((r) => Array.isArray(r.ip_cidr) && r.action === 'reject')
+  assert.ok(back >= 0 && back < reject, `back=${back} reject=${reject}`)
+  assert.equal(c.route.rules[back].outbound, 'dnsmasq')
+  const h = buildConfig({ nodes, regionGroups, profile })
+  assert.ok(!h.outbounds.some((o) => o.tag === 'dnsmasq'))
+  assert.ok(!h.route.rules.some((r) => r.override_address))
+})
