@@ -375,7 +375,16 @@ STABLE_NAME="open-box-linux-${ARCH}.tar.gz"
 VERSIONED_PATH="$OUTDIR/$VERSIONED_NAME"
 STABLE_PATH="$OUTDIR/$STABLE_NAME"
 log "打包 $VERSIONED_NAME..."
-(cd "$STAGE" && tar -czf "$VERSIONED_PATH" node panel bin openwrt meta.json uninstall.sh update.sh)
+# macOS 上的 bsdtar 会把扩展属性(com.apple.provenance 等)写成 PAX 头,路由器上的 tar
+# 每解一个文件就报一句 "Ignoring unknown extended header keyword",无害但满屏都是。
+# COPYFILE_DISABLE 只能挡 ._ 文件,挡不住这种头,要显式关掉 xattr / mac metadata。
+TAR_NO_XATTR=""
+if tar --version 2>/dev/null | grep -qi bsdtar; then
+  TAR_NO_XATTR="--no-xattrs --no-mac-metadata"
+elif tar --version 2>/dev/null | grep -qi "gnu tar"; then
+  TAR_NO_XATTR="--no-xattrs"
+fi
+(cd "$STAGE" && tar $TAR_NO_XATTR -czf "$VERSIONED_PATH" node panel bin openwrt meta.json uninstall.sh update.sh)
 cp "$VERSIONED_PATH" "$STABLE_PATH"
 
 # ---- 11. sha256(分别对两个文件名各算一份,sha256sum -c 依赖文件名匹配)----
