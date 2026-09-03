@@ -85,6 +85,18 @@
           @change="savePlan({ auto: ($event.target as HTMLInputElement).checked })"
         />
         <template v-if="plan.auto">
+          <span class="text-base-content/70">{{ $t('geoUpdateEvery') }}</span>
+          <select
+            class="select select-sm w-24"
+            :value="plan.days"
+            @change="savePlan({ days: Number(($event.target as HTMLSelectElement).value) })"
+          >
+            <option
+              v-for="d in [1, 3, 7, 14, 30]"
+              :key="d"
+              :value="d"
+            >{{ $t('geoUpdateDays', { days: d }) }}</option>
+          </select>
           <span class="text-base-content/70">{{ $t('obUpdateAutoAt') }}</span>
           <select
             class="select select-sm w-24"
@@ -188,6 +200,7 @@ const progress = computed(() => info.value?.status)
 const plan = computed(() => ({
   auto: props.profile.updates?.openbox?.auto === true,
   hour: props.profile.updates?.openbox?.hour ?? 4,
+  days: props.profile.updates?.openbox?.days ?? 1,
   channel: props.profile.updates?.openbox?.channel ?? 'auto',
 }))
 
@@ -280,7 +293,7 @@ const cancel = async () => {
     showNotification({ content: 'obUpdateStartFailed', params: { message: err instanceof Error ? err.message : String(err) }, type: 'alert-error' })
   }
 }
-const savePlan = async (patch: Partial<{ auto: boolean; hour: number; channel: 'auto' | 'direct' | 'mirror' }>) => {
+const savePlan = async (patch: Partial<{ auto: boolean; hour: number; days: number; channel: 'auto' | 'direct' | 'mirror' }>) => {
   try {
     await props.patchProfile({ updates: { openbox: { ...plan.value, ...patch } } })
     showNotification({ content: 'obUpdatePlanSaved', type: 'alert-success' })

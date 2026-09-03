@@ -304,7 +304,7 @@ const en = {
   obUpdateInstalledChannel: 'Installed via: {channel}',
   obUpdateAuto: 'Auto update',
   obUpdateAutoAt: 'daily at',
-  obUpdateAutoHint: 'Checks for a newer release at that hour and upgrades only if there is one; at most once a day.',
+  obUpdateAutoHint: 'Checks for a new version on schedule and only upgrades when there is one; at the chosen interval, at most once a day.',
   obUpdateStage_starting: 'Starting…',
   obUpdateStage_probing: 'Probing download channel…',
   obUpdateStage_downloading: 'Downloading…',

@@ -192,3 +192,23 @@ test('定时器:到点且未做过 → 先探上游,有新版才下并记录;同
   assert.equal(urls.length, 1)
   assert.equal(JSON.parse(await ctx.readFile(paths.scheduleStatePath)).geoLastAt, later.toISOString())
 })
+
+test('定时器:Open-Box 自身更新按「每隔几天」探,间隔内不重复探;到期探到已是最新也记 lastAt', async () => {
+  const ctx = createMockContext({ files: { [paths.metaPath]: JSON.stringify({ version: 'v0.1.60' }), [paths.updateScript]: '' } })
+  let probes = 0
+  const fetchImpl = async (url, init = {}) => {
+    if (init.method === 'HEAD') { probes++; return { status: 302, headers: new Map([['location', 'https://github.com/liandu2024/Open-Box/releases/tag/v0.1.60']]), url: '' } }
+    throw new Error('unexpected')
+  }
+  const store = { getProfile: () => ({ updates: { geo: { auto: false }, openbox: { auto: true, hour: 4, days: 7, channel: 'auto' } } }) }
+  await runScheduledTasks({ store, ctx, paths, fetchImpl, now: new Date(2026, 8, 3, 4, 5) })
+  assert.equal(probes, 1)
+  const state = JSON.parse(await ctx.readFile(paths.scheduleStatePath))
+  assert.ok(state.openboxLastAt)
+  // 第 3 天到点:未到 7 天间隔,不探
+  await runScheduledTasks({ store, ctx, paths, fetchImpl, now: new Date(2026, 8, 6, 4, 5) })
+  assert.equal(probes, 1)
+  // 第 8 天到点:再探
+  await runScheduledTasks({ store, ctx, paths, fetchImpl, now: new Date(2026, 8, 11, 4, 5) })
+  assert.equal(probes, 2)
+})

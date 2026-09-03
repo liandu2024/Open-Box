@@ -57,26 +57,32 @@ export const runScheduledTasks = async ({ store, ctx, paths, fetchImpl = globalT
     }
   }
 
-  // Open-Box 自身
+  // Open-Box 自身:和 Geo 一样按「每隔几天」到点探一次,有新版才升;openboxLastAt 记的是
+  // 上次真正探过的时间(不管有没有新版),间隔从它算
   const ob = updates.openbox || {}
   if (ob.auto && Number(ob.hour) === hour && state.openboxDay !== today) {
+    const days = Math.max(1, Number(ob.days) || 1)
+    const last = state.openboxLastAt ? new Date(state.openboxLastAt) : null
+    const due = !last || now - last >= (days - 0.5) * 24 * 3600 * 1000
     state.openboxDay = today
     changed = true
-    try {
-      const status = await readUpdateStatus(ctx, paths)
-      if (!status.running) {
-        const meta = await readMeta(ctx, paths)
-        const { latest } = await fetchLatestVersion(fetchImpl)
-        if (compareVersions(latest, meta.version) > 0) {
-          const r = await startUpdate(ctx, paths, ob.channel || 'auto')
-          log(`[schedule] open-box update ${meta.version} -> ${latest}: ${r.ok ? 'started' : r.output}`)
+    if (due) {
+      try {
+        const status = await readUpdateStatus(ctx, paths)
+        if (!status.running) {
+          const meta = await readMeta(ctx, paths)
+          const { latest } = await fetchLatestVersion(fetchImpl)
           state.openboxLastAt = now.toISOString()
-        } else {
-          log(`[schedule] open-box up to date (${meta.version})`)
+          if (compareVersions(latest, meta.version) > 0) {
+            const r = await startUpdate(ctx, paths, ob.channel || 'auto')
+            log(`[schedule] open-box update ${meta.version} -> ${latest}: ${r.ok ? 'started' : r.output}`)
+          } else {
+            log(`[schedule] open-box up to date (${meta.version})`)
+          }
         }
+      } catch (err) {
+        log(`[schedule] open-box update check failed: ${err instanceof Error ? err.message : err}`)
       }
-    } catch (err) {
-      log(`[schedule] open-box update check failed: ${err instanceof Error ? err.message : err}`)
     }
   }
 

@@ -47,7 +47,7 @@ export const validateProfilePatch = (patch) => {
     if (key in patch && !isHttpUrl(patch[key])) return `${key} must be an http(s) URL`
   }
 
-  // 自动更新计划:openbox {auto, hour, channel} / geo {auto, hour, days, channel}
+  // 自动更新计划:openbox {auto, hour, days, channel} / geo {auto, hour, days, channel}
   if ('updates' in patch) {
     const u = patch.updates
     if (!isPlainObject(u)) return 'updates must be an object'
@@ -58,6 +58,7 @@ export const validateProfilePatch = (patch) => {
       if ('auto' in o && !isBoolean(o.auto)) return 'updates.openbox.auto must be a boolean'
       if ('hour' in o && !isHour(o.hour)) return 'updates.openbox.hour must be an integer 0-23'
       if ('channel' in o && !['auto', 'direct', 'mirror'].includes(o.channel)) return 'updates.openbox.channel must be auto, direct or mirror'
+      if ('days' in o && !(Number.isInteger(o.days) && o.days >= 1 && o.days <= 30)) return 'updates.openbox.days must be an integer 1-30'
     }
     if ('geo' in u) {
       const g = u.geo

@@ -53,6 +53,12 @@ test('validateProfilePatch 只碰 ipv6 不要求提供 dns(部分 patch 只校�
   assert.equal(validateProfilePatch({ ipv6: false }), null)
 })
 
+test('validateProfilePatch updates.openbox.days 必须是 1-30 的整数', () => {
+  assert.ok(validateProfilePatch({ updates: { openbox: { days: 0 } } }))
+  assert.ok(validateProfilePatch({ updates: { openbox: { days: 31 } } }))
+  assert.equal(validateProfilePatch({ updates: { openbox: { days: 7 } } }), null)
+})
+
 test('validateProfilePatch dns.mode 非法值 → 报错', () => {
   assert.ok(validateProfilePatch({ dns: { mode: 'foo' } }))
 })

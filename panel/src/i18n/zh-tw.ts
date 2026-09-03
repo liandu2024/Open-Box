@@ -301,7 +301,7 @@ const zhTW: LANG_MESSAGE = {
   obUpdateInstalledChannel: '安裝時通道:{channel}',
   obUpdateAuto: '自動更新',
   obUpdateAutoAt: '每天',
-  obUpdateAutoHint: '到點先探最新版,有新版才升級;一天最多一次。',
+  obUpdateAutoHint: '到點先探最新版,有新版才升級;按設定的間隔探,一天最多一次。',
   obUpdateStage_starting: '正在啟動…',
   obUpdateStage_probing: '正在探測下載通道…',
   obUpdateStage_downloading: '正在下載升級包…',

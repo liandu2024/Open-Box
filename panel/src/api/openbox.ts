@@ -69,7 +69,7 @@ export interface OpenboxProfileDns {
 // profile is always fully populated — no field is ever missing on GET.
 // 自动更新计划(面板进程内的定时器)
 export interface OpenboxUpdatePlans {
-  openbox?: { auto?: boolean; hour?: number; channel?: 'auto' | 'direct' | 'mirror' }
+  openbox?: { auto?: boolean; hour?: number; days?: number; channel?: 'auto' | 'direct' | 'mirror' }
   geo?: { auto?: boolean; hour?: number; days?: number; channel?: 'auto' | 'direct' | 'mirror' }
 }
 
