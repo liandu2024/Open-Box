@@ -136,6 +136,7 @@ const deleteStorageValueStatement = db.prepare(`
 seedDefaultStorage({
   countConfigEntries: () => db.prepare(`SELECT COUNT(*) AS c FROM app_storage WHERE key LIKE 'config/%'`).get().c,
   insert: (key, value) => upsertStorageValueStatement.run(key, value),
+  hasKey: (key) => Boolean(getStorageValueStatement.get(key)),
   log: (m) => console.log(m),
 })
 

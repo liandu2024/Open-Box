@@ -31,8 +31,25 @@ export const loadStorageDefaults = (dir = DEFAULTS_DIR) => {
   return { entries, background }
 }
 
-export const seedDefaultStorage = ({ countConfigEntries, insert, log = () => {}, dir = DEFAULTS_DIR }) => {
-  if (countConfigEntries() > 0) return { seeded: 0 }
+// 随包的默认档案(server/defaults/profile-defaults.json):目前只带 routing——一套现成的
+// 目标分流(AI / Youtube / Google / Microsoft / Apple / Games / 国内 + 兜底「其他」),取自
+// 开发路由器上调好的那份,新装用户加完订阅、启动内核就能用。只在全新安装时写入
+// (还没有任何 config/*,也没有 openbox/profile),已经在用的安装一律不动。
+export const PROFILE_KEY = 'openbox/profile'
+
+export const loadProfileDefaults = (dir = DEFAULTS_DIR) => {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(path.join(dir, 'profile-defaults.json'), 'utf8'))
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+    if (!parsed.routing || typeof parsed.routing !== 'object' || !Array.isArray(parsed.routing.policies)) return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+export const seedDefaultStorage = ({ countConfigEntries, insert, hasKey = () => false, log = () => {}, dir = DEFAULTS_DIR }) => {
+  if (countConfigEntries() > 0) return { seeded: 0, profile: false }
   const { entries, background } = loadStorageDefaults(dir)
   let seeded = 0
   for (const [k, v] of Object.entries(entries)) {
@@ -43,6 +60,12 @@ export const seedDefaultStorage = ({ countConfigEntries, insert, log = () => {},
     insert(BACKGROUND_IMAGE_KEY, background)
     seeded += 1
   }
-  if (seeded) log(`[defaults] 全新安装:写入 ${seeded} 项默认面板设置${background ? '(含背景图)' : ''}`)
-  return { seeded }
+  let profile = false
+  const profileDefaults = loadProfileDefaults(dir)
+  if (profileDefaults && !hasKey(PROFILE_KEY)) {
+    insert(PROFILE_KEY, JSON.stringify(profileDefaults))
+    profile = true
+  }
+  if (seeded || profile) log(`[defaults] 全新安装:写入 ${seeded} 项默认面板设置${background ? '(含背景图)' : ''}${profile ? `,以及默认目标分流(${profileDefaults.routing.policies.length} 个站点集)` : ''}`)
+  return { seeded, profile }
 }

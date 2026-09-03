@@ -1,0 +1,138 @@
+{
+  "routing": {
+    "proxyTag": "PROXY",
+    "regions": [
+      {
+        "id": "cn",
+        "name": "中国大陆",
+        "rulesets": [
+          "geosite-cn",
+          "geoip-cn"
+        ],
+        "target": "direct",
+        "fallback": "proxy"
+      },
+      {
+        "id": "hkmo",
+        "name": "香港澳门",
+        "rulesets": [],
+        "target": "direct",
+        "fallback": "direct"
+      },
+      {
+        "id": "other",
+        "name": "其他地区",
+        "rulesets": [
+          "geosite-cn",
+          "geoip-cn"
+        ],
+        "target": "proxy",
+        "fallback": "direct"
+      }
+    ],
+    "regionMode": "CN",
+    "outboundOptions": {
+      "direct": true,
+      "reject": true,
+      "groups": true
+    },
+    "policies": [
+      {
+        "id": "policy-1788339689004",
+        "name": "AI",
+        "icon": "brand:openai-light",
+        "default": "",
+        "rulesets": [
+          "geosite-category-ai-!cn"
+        ],
+        "domain": [],
+        "domainSuffix": [],
+        "domainKeyword": [],
+        "ipCidr": []
+      },
+      {
+        "id": "policy-1788349674530",
+        "name": "Youtube",
+        "icon": "brand:youtube",
+        "rulesets": [
+          "geosite-youtube"
+        ],
+        "domain": [],
+        "domainSuffix": [],
+        "domainKeyword": [],
+        "ipCidr": []
+      },
+      {
+        "id": "policy-1788338176669",
+        "name": "Google",
+        "icon": "brand:google",
+        "default": "",
+        "rulesets": [
+          "geosite-google"
+        ],
+        "domain": [],
+        "domainSuffix": [],
+        "domainKeyword": [],
+        "ipCidr": []
+      },
+      {
+        "id": "policy-1788339749192",
+        "name": "Microsoft",
+        "icon": "brand:microsoft",
+        "default": "",
+        "rulesets": [
+          "geosite-microsoft"
+        ],
+        "domain": [],
+        "domainSuffix": [],
+        "domainKeyword": [],
+        "ipCidr": []
+      },
+      {
+        "id": "policy-1788367850896",
+        "name": "Apple",
+        "icon": "brand:apple-light",
+        "rulesets": [
+          "geosite-apple"
+        ],
+        "domain": [],
+        "domainSuffix": [],
+        "domainKeyword": [],
+        "ipCidr": []
+      },
+      {
+        "id": "policy-1788368131895",
+        "name": "Games",
+        "icon": "misc:game-soft",
+        "rulesets": [
+          "geosite-steam",
+          "geosite-sony"
+        ],
+        "domain": [],
+        "domainSuffix": [],
+        "domainKeyword": [],
+        "ipCidr": []
+      },
+      {
+        "id": "policy-1788341212171",
+        "name": "国内",
+        "icon": "misc:shield",
+        "default": "",
+        "rulesets": [
+          "geosite-cn",
+          "geoip-cn"
+        ],
+        "domain": [],
+        "domainSuffix": [],
+        "domainKeyword": [],
+        "ipCidr": []
+      }
+    ],
+    "adBlock": false,
+    "adRuleset": "geosite-category-ads-all",
+    "regionId": "cn",
+    "fallbackDefault": "proxy",
+    "fallbackName": "其他",
+    "fallbackIcon": "globe:generic"
+  }
+}
