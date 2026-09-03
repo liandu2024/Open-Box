@@ -26,7 +26,9 @@ const TUN_V6_NET = 'fdfe:dcba:9876::/126'
 // 排除时要把路由器自己各接口所在的网段挖出来(options.localSubnets,部署时从 ip addr 读,见
 // system/local-subnets.mjs):sing-box 生成的 nft 里排除表的 return 排在 DNS 劫持规则之前,
 // 把路由器所在网段也排除的话,局域网发给路由器的 DNS 查询就进不了内核,劫持模式的分流解析就废了。
-// tun 自己的网段(172.19.0.0/30)也是接口网段,同样被挖出来,DNS 劫持改写到 172.19.0.2 的包照常进 tun。
+// tun 自己的网段(172.19.0.0/30 / fdfe:dcba:9876::/126)必须无条件挖出来:内核停着的时候(开机、
+// 升级后首次启动)tun0 还不存在,从 ip addr 读不到它;若把它连同 172.16/12 一起排除,内核起来后
+// 自己的 DNS 交换全部超时、什么都不通(v0.1.64 在开发路由器上升级后实测)。
 const TUN_EXCLUDE_V4 = ['10.0.0.0/8', '100.64.0.0/10', '169.254.0.0/16', '172.16.0.0/12', '192.168.0.0/16', '224.0.0.0/4']
 const TUN_EXCLUDE_V6 = ['fc00::/7', 'fe80::/10', 'ff00::/8']
 // UDP 会话空闲超时:sing-box 默认 5 分钟,Clash 系默认 60 秒。打洞 / 探测类的一次性 UDP 包
@@ -105,7 +107,7 @@ export const buildConfig = ({ nodes, profile, userGroups, systemDns, localSubnet
   const tunInbound = {
     type: 'tun', tag: 'tun-in', address: tunAddress,
     auto_route: true, strict_route: true, stack: 'mixed',
-    route_exclude_address: subtractCidrs(profile.ipv6 ? [...TUN_EXCLUDE_V4, ...TUN_EXCLUDE_V6] : TUN_EXCLUDE_V4, localSubnets),
+    route_exclude_address: subtractCidrs(profile.ipv6 ? [...TUN_EXCLUDE_V4, ...TUN_EXCLUDE_V6] : TUN_EXCLUDE_V4, [...localSubnets, TUN_V4_NET, TUN_V6_NET]),
     udp_timeout: TUN_UDP_TIMEOUT,
   }
   // auto_redirect 自带 nft 层的 DNS 劫持(局域网发往任何 53 端口的查询都改写进 tun),

@@ -115,13 +115,21 @@ test('内置直连改名后,内网直连规则和空组占位都跟着新名字'
   assert.deepEqual(c.outbounds.find((o) => o.tag === '空组').outbounds, ['国内直出'])
 })
 
-test('tun:私网 / 链路本地 / 组播目标排除在 TUN 之外(ipv6 开时含 v6 范围),UDP 会话 60 秒超时', () => {
+test('tun:私网 / 链路本地 / 组播目标排除在 TUN 之外(ipv6 开时含 v6 范围),UDP 会话 60 秒超时', async () => {
   const c4 = buildConfig({ nodes, regionGroups, profile: { ...profile, ipv6: false } })
-  assert.deepEqual(c4.inbounds[0].route_exclude_address, ['10.0.0.0/8', '100.64.0.0/10', '169.254.0.0/16', '172.16.0.0/12', '192.168.0.0/16', '224.0.0.0/4'])
+  const ex4 = c4.inbounds[0].route_exclude_address
+  for (const p of ['10.0.0.0/8', '100.64.0.0/10', '169.254.0.0/16', '192.168.0.0/16', '224.0.0.0/4']) assert.ok(ex4.includes(p), p)
+  // 没读到接口网段时(内核停着、tun0 不存在),tun 自己的网段也必须挖出来,不能整段排除 172.16/12
+  assert.ok(!ex4.includes('172.16.0.0/12'))
+  assert.ok(ex4.includes('172.16.0.0/15') && ex4.includes('172.19.0.4/30'))
   assert.equal(c4.inbounds[0].udp_timeout, '60s')
   const c6 = buildConfig({ nodes, regionGroups, profile: { ...profile, ipv6: true } })
-  assert.ok(c6.inbounds[0].route_exclude_address.includes('fc00::/7'))
-  assert.ok(c6.inbounds[0].route_exclude_address.includes('fe80::/10'))
+  const ex6 = c6.inbounds[0].route_exclude_address
+  assert.ok(!ex6.includes('fc00::/7'), 'fc00::/7 要挖掉 tun 的 v6 网段')
+  assert.ok(ex6.includes('fe80::/10'))
+  const { cidrContains } = await import('../system/local-subnets.mjs')
+  assert.ok(!ex6.some((x) => cidrContains(x, 'fdfe:dcba:9876::2')))
+  assert.ok(ex6.some((x) => cidrContains(x, 'fd00::1')))
 })
 
 test('tun:本机接口网段从私网排除表里挖出来,局域网发给路由器的 DNS 仍会被劫持进内核', async () => {
