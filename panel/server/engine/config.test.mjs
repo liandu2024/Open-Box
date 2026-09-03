@@ -134,12 +134,27 @@ test('tun:私网 / 链路本地 / 组播目标排除在 TUN 之外(ipv6 开时�
 
 test('tun:本机接口网段从私网排除表里挖出来,局域网发给路由器的 DNS 仍会被劫持进内核', async () => {
   const { cidrContains } = await import('../system/local-subnets.mjs')
-  const c = buildConfig({ nodes, regionGroups, profile: { ...profile, ipv6: false }, localSubnets: ['192.168.3.0/24', '172.17.0.0/16', '172.19.0.0/30'] })
+  // 有 auto_redirect 才挖本机网段(见下一条用例)
+  const c = buildConfig({ nodes, regionGroups, profile: { ...profile, ipv6: false, tun: { autoRedirect: true } }, localSubnets: ['192.168.3.0/24', '172.17.0.0/16', '172.19.0.0/30'] })
   const ex = c.inbounds[0].route_exclude_address
   assert.ok(!ex.some((x) => cidrContains(x, '192.168.3.1')), '路由器自己的 LAN 网段不能被排除')
   assert.ok(!ex.some((x) => cidrContains(x, '172.19.0.2')), 'tun 网关不能被排除')
   assert.ok(ex.some((x) => cidrContains(x, '10.0.0.9')), '其它私网仍然排除')
   assert.ok(ex.some((x) => cidrContains(x, '192.168.9.9')), '同属 192.168/16 但不是本机网段的仍然排除')
+})
+
+test('tun:没有 auto_redirect(禁用模式 / 关掉 autoRedirect)时本机接口网段必须整段排除,否则路由器回包被吞、整机失联', async () => {
+  const { cidrContains } = await import('../system/local-subnets.mjs')
+  const subnets = ['192.168.3.0/24', '172.17.0.0/16', '172.19.0.0/30']
+  const off = buildConfig({ nodes, regionGroups, profile: { ...profile, ipv6: false, tun: { autoRedirect: true }, dns: { ...profile.dns, mode: 'off' } }, localSubnets: subnets })
+  assert.equal(off.inbounds[0].auto_redirect, undefined)
+  assert.ok(off.inbounds[0].route_exclude_address.some((x) => cidrContains(x, '192.168.3.1')), '禁用模式:LAN 网段要在排除表里')
+  assert.ok(!off.inbounds[0].route_exclude_address.some((x) => cidrContains(x, '172.19.0.2')), 'tun 网关永远挖出来')
+  const noRedirect = buildConfig({ nodes, regionGroups, profile: { ...profile, ipv6: false, tun: { autoRedirect: false } }, localSubnets: subnets })
+  assert.ok(noRedirect.inbounds[0].route_exclude_address.some((x) => cidrContains(x, '192.168.3.1')), '关掉 autoRedirect 同理')
+  const hijack = buildConfig({ nodes, regionGroups, profile: { ...profile, ipv6: false, tun: { autoRedirect: true } }, localSubnets: subnets })
+  assert.equal(hijack.inbounds[0].auto_redirect, true)
+  assert.ok(!hijack.inbounds[0].route_exclude_address.some((x) => cidrContains(x, '192.168.3.1')), '有 auto_redirect 才挖本机网段')
 })
 
 test('tun.autoRedirect 默认关闭,可开启', () => {
