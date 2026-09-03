@@ -115,6 +115,15 @@ test('内置直连改名后,内网直连规则和空组占位都跟着新名字'
   assert.deepEqual(c.outbounds.find((o) => o.tag === '空组').outbounds, ['国内直出'])
 })
 
+test('tun:私网 / 链路本地 / 组播目标排除在 TUN 之外(ipv6 开时含 v6 范围),UDP 会话 60 秒超时', () => {
+  const c4 = buildConfig({ nodes, regionGroups, profile: { ...profile, ipv6: false } })
+  assert.deepEqual(c4.inbounds[0].route_exclude_address, ['10.0.0.0/8', '100.64.0.0/10', '169.254.0.0/16', '172.16.0.0/12', '192.168.0.0/16', '224.0.0.0/4'])
+  assert.equal(c4.inbounds[0].udp_timeout, '60s')
+  const c6 = buildConfig({ nodes, regionGroups, profile: { ...profile, ipv6: true } })
+  assert.ok(c6.inbounds[0].route_exclude_address.includes('fc00::/7'))
+  assert.ok(c6.inbounds[0].route_exclude_address.includes('fe80::/10'))
+})
+
 test('tun.autoRedirect 默认关闭,可开启', () => {
   const c1 = buildConfig({ nodes, regionGroups, profile })
   assert.equal(c1.inbounds[0].auto_redirect, undefined)
