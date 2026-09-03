@@ -10,6 +10,7 @@
           <RulePenetrationCard
             v-if="lookupHost"
             :target="lookupHost"
+            :display="lookupTarget"
             @matched="matchedIndex = $event"
           />
           <RouteTestCard
@@ -44,6 +45,7 @@
         >
           <RulePenetrationCard
             :target="lookupHost"
+            :display="lookupTarget"
             @matched="matchedIndex = $event"
           />
           <RouteTestCard

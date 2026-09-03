@@ -6,7 +6,7 @@
         <MagnifyingGlassIcon class="text-base-content/60 h-4 w-4 shrink-0" />
         <span class="font-medium">{{ $t('ruleLookupTitle') }}</span>
         <span class="text-base-content/50">·</span>
-        <span class="font-mono font-medium">{{ target }}</span>
+        <span class="font-mono font-medium">{{ display || target }}</span>
         <span
           v-if="loading"
           class="loading loading-spinner loading-xs"
@@ -135,7 +135,8 @@ import { MagnifyingGlassIcon, NoSymbolIcon, QuestionMarkCircleIcon } from '@hero
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-const props = defineProps<{ target: string }>()
+// target 是拿去查规则/DNS 的主机名;display 是搜索框里的原样(可能带端口),标题显示它
+const props = defineProps<{ target: string; display?: string }>()
 const emit = defineEmits<{ matched: [index: number | null] }>()
 const { t } = useI18n()
 

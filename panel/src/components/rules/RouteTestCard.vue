@@ -60,6 +60,7 @@
             v-if="!result.exit.error"
             class="text-base-content/60 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs"
           >
+            <span class="font-mono">{{ result.exit.url }}</span>
             <span v-if="result.exit.destinationIP">{{ $t('routeTestDestination') }}: <span class="font-mono">{{ result.exit.destinationIP }}</span></span>
             <span v-if="result.exit.status !== undefined">HTTP {{ result.exit.status }}</span>
           </div>
