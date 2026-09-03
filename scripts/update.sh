@@ -1103,14 +1103,16 @@ info "启动面板..."
 /etc/init.d/openbox-panel enable || warn "设置面板开机自启失败,可稍后在 LuCI → 服务 → Open-Box 中手动开启。"
 /etc/init.d/openbox-panel start || warn "面板启动命令返回了非零状态,请稍后访问面板地址确认;如不可用可到 LuCI → 服务 → Open-Box 中重试。"
 
-# 升级前内核在跑 → 现在按新版本重新生成配置并启动。优先走面板同款流水线(panel/server/cli/
-# deploy.mjs:冲突检测 → 规则集 → 校验 → 落盘 → DNS 接管 → 防火墙 → 启动 → 验证),新版本的
-# 配置改动立刻生效;目标版本还没有这个脚本时退回 init 脚本直接起旧配置。
+# 升级前内核在跑 → 现在按新版本重新生成配置并启动,走面板同款流水线(panel/server/cli/
+# deploy.mjs:冲突检测 → 规则集 → 校验 → 落盘 → DNS 接管 → 防火墙 → 启动 → 验证)。
+# 绝不能退回 init 脚本直接起旧配置:停内核时 DNS 接管已被还原,不经流水线重新接管就把内核
+# 拉起来,dnsmasq 模式下路由器自己的 DNS 会在 dnsmasq 和内核之间打环、什么都解析不了
+# (开发路由器实测)。目标版本没有这个脚本(只会是降级到老版本)就保持停止,提示去面板点启动。
 CORE_MSG="内核未自动重启——如之前配置并运行着代理服务,请到面板重新启动它。"
 if [ "$CORE_WAS_RUNNING" = "1" ]; then
-  info "升级前内核在运行,重新生成配置并启动内核..."
   DEPLOY_CLI="$INSTALL_ROOT/panel/server/cli/deploy.mjs"
   if [ -x "$INSTALL_ROOT/node/bin/node" ] && [ -f "$DEPLOY_CLI" ]; then
+    info "升级前内核在运行,按新版本重新生成配置并启动内核..."
     if OPENBOX_ROOT="$INSTALL_ROOT" ZASHBOARD_DB_PATH="$INSTALL_ROOT/data/openbox.sqlite" \
        LD_LIBRARY_PATH="$INSTALL_ROOT/node/lib" "$INSTALL_ROOT/node/bin/node" "$DEPLOY_CLI" >/dev/null 2>&1; then
       CORE_MSG="内核已按新版本重新生成配置并启动。"
@@ -1118,10 +1120,9 @@ if [ "$CORE_WAS_RUNNING" = "1" ]; then
       warn "内核启动失败(配置生成或校验没通过),请到面板查看原因后重新启动。"
       CORE_MSG="内核启动失败,请到面板查看原因后重新启动。"
     fi
-  elif [ -x /etc/init.d/openbox ] && /etc/init.d/openbox start >/dev/null 2>&1; then
-    CORE_MSG="内核已重新启动(沿用原配置;到面板重启一次可让新版本的配置改动生效)。"
   else
-    warn "内核未能重新启动,请到面板重新启动它。"
+    warn "这个版本没有自动启动内核的脚本,请到面板重新启动内核。"
+    CORE_MSG="这个版本没有自动启动内核的脚本,请到面板重新启动内核。"
   fi
 fi
 
