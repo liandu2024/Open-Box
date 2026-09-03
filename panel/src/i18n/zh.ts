@@ -518,7 +518,7 @@ const zh: LANG_MESSAGE = {
   subscriptionNameLabel: '\u540d\u79f0',
   subscriptionNamePlaceholder: '\u6bd4\u5982"\u6211\u7684\u8ba2\u9605"',
   subscriptionUrlLabel: '\u8ba2\u9605\u94fe\u63a5',
-  subscriptionUrlHint: '\u4fdd\u5b58\u65f6\u9700\u8981;\u670d\u52a1\u7aef\u4f1a\u53bb\u6293\u53d6(\u5185\u7f51/\u672c\u5730\u5730\u5740\u4f1a\u88ab\u62d2\u7edd)\u3002',
+  subscriptionUrlHint: '保存时需要;服务端会去抓取(内网/本地地址会被拒绝)。自签证书的 https 地址可在末尾加 #insecure=1 跳过证书校验。',
   subscriptionContentLabel: '节点内容',
   subscriptionContentHint: '一行一个节点链接(ss:// / trojan:// / vless:// 等);也支持整段 Clash / sing-box 配置。',
   subscriptionContentPlaceholder: '\u7c98\u8d34 ss:// / trojan:// / hysteria2:// \u7b49\u94fe\u63a5,\u6216 Clash/sing-box \u914d\u7f6e\u2026',

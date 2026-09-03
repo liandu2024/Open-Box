@@ -895,3 +895,42 @@ test('url 和 content 都没有 → 400', async () => {
     await close()
   }
 })
+
+test('证书校验失败(fetch failed + cause)→ 400,错误里带上原因和 #insecure=1 的提示', async () => {
+  const fetchImpl = async () => {
+    throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY', message: 'unable to get local issuer certificate' } })
+  }
+  const { baseUrl, close } = await startApp(fetchImpl)
+  try {
+    const res = await postJson(baseUrl, '/api/openbox/subscriptions/preview', { url: 'https://121.43.244.161/sub/x' })
+    assert.equal(res.status, 400)
+    const body = await res.json()
+    assert.match(body.error, /UNABLE_TO_GET_ISSUER_CERT_LOCALLY/)
+    assert.match(body.error, /#insecure=1/)
+  } finally {
+    await close()
+  }
+})
+
+test('地址带 #insecure=1 → 每一跳(含 302 之后)都以 insecure:true 调 fetchImpl;不带则不传', async () => {
+  const calls = []
+  const fetchImpl = async (url, init) => {
+    calls.push([url, init.insecure === true])
+    if (url.startsWith('https://first.test/')) {
+      return { status: 302, ok: false, headers: new Map([['location', 'https://second.test/real']]), text: async () => '' }
+    }
+    return { status: 200, ok: true, headers: new Map(), text: async () => SHARELINK_MULTI }
+  }
+  const { baseUrl, close } = await startApp(fetchImpl)
+  try {
+    let res = await postJson(baseUrl, '/api/openbox/subscriptions/preview', { url: 'https://first.test/sub#insecure=1' })
+    assert.equal(res.status, 200)
+    assert.deepEqual(calls, [['https://first.test/sub#insecure=1', true], ['https://second.test/real', true]])
+    calls.length = 0
+    res = await postJson(baseUrl, '/api/openbox/subscriptions/preview', { url: 'https://first.test/sub' })
+    assert.equal(res.status, 200)
+    assert.ok(calls.length >= 2 && calls.every((c) => c[1] === false))
+  } finally {
+    await close()
+  }
+})

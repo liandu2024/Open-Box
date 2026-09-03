@@ -5,6 +5,7 @@ import { parseSubscription } from '../engine/subscription.mjs'
 import { renameNodes, previewRename, excludeNodes } from '../engine/rename.mjs'
 import { groupNodesByRegion } from '../engine/groups.mjs'
 import { assertPublicUrl } from './net-guard.mjs'
+import { hasInsecureFlag, subscriptionFetch } from '../system/insecure-fetch.mjs'
 
 // 面板本身跑在网关上,订阅拉取又是"服务端发起、URL 客户端可控"的经典 SSRF 面——
 // 不加限制的话可以拿它当跳板探测回环/内网端口。P4a 复审证明了仅做"字面 IP"层面拒绝远远
@@ -90,6 +91,22 @@ export const dedupeNodeTags = (nodes) => {
 
 const errorMessage = (err) => (err instanceof Error ? err.message : String(err))
 
+// Node 的 fetch 把底层原因藏在 err.cause 里,面上只有一句 "fetch failed"——把 cause 带出来,
+// 证书问题再补一句怎么办(自建订阅服务用自签证书很常见)。
+const TLS_CERT_CODES = new Set([
+  'UNABLE_TO_GET_ISSUER_CERT_LOCALLY', 'UNABLE_TO_GET_ISSUER_CERT', 'SELF_SIGNED_CERT_IN_CHAIN', 'DEPTH_ZERO_SELF_SIGNED_CERT',
+  'CERT_HAS_EXPIRED', 'CERT_NOT_YET_VALID', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE', 'ERR_TLS_CERT_ALTNAME_INVALID', 'CERT_UNTRUSTED',
+])
+const describeFetchError = (err) => {
+  let message = errorMessage(err)
+  const cause = err && typeof err === 'object' ? err.cause : null
+  const code = cause && typeof cause === 'object' ? String(cause.code || '') : ''
+  const causeMessage = cause && typeof cause === 'object' && cause.message ? String(cause.message) : ''
+  if (causeMessage && causeMessage !== message) message += ` (${code ? `${code}: ` : ''}${causeMessage})`
+  if (TLS_CERT_CODES.has(code)) message += ';证书校验没通过(自签或过期证书)。确认来源可信的话,在订阅地址末尾加 #insecure=1 跳过校验'
+  return message
+}
+
 // 拉取订阅内容,手动处理重定向:默认 fetch 会自动跟随 3xx,首跳校验通过后就对
 // Location 完全不设防——P4a 复审的 PoC 正是靠一个"看起来公网"的地址 302 到回环端口
 // 拿到命中。这里用 redirect:'manual' 拿到原始 3xx 响应,每一跳(含首跳)都先跑
@@ -97,6 +114,8 @@ const errorMessage = (err) => (err instanceof Error ? err.message : String(err))
 const fetchSubscriptionResponse = async (initialUrl, fetchImpl, lookup, userAgent) => {
   let currentUrl = initialUrl
   let redirectsFollowed = 0
+  // #insecure=1 只在首跳地址上;跟重定向时片段没了,靠 init.insecure 把开关带下去
+  const insecure = hasInsecureFlag(initialUrl)
 
   for (;;) {
     await assertPublicUrl(currentUrl, { lookup })
@@ -107,9 +126,10 @@ const fetchSubscriptionResponse = async (initialUrl, fetchImpl, lookup, userAgen
         redirect: 'manual',
         headers: { 'User-Agent': userAgent },
         signal: AbortSignal.timeout(SUBSCRIPTION_FETCH_TIMEOUT_MS),
+        ...(insecure ? { insecure: true } : {}),
       })
     } catch (err) {
-      throw new Error(`failed to fetch subscription: ${errorMessage(err)}`)
+      throw new Error(`failed to fetch subscription: ${describeFetchError(err)}`)
     }
 
     if (!res) {
@@ -251,7 +271,7 @@ const rebuildNodePool = (existingNodes, subscriptionsInOrder, subscriptionId, ne
 
 const nodeSummary = (n) => ({ tag: n.tag, originalTag: n.originalTag, type: n.type, server: n.server, regionCode: n.regionCode || '' })
 
-export const registerSubscriptionRoutes = (app, { store, fetchImpl = globalThis.fetch, lookup = dns.lookup } = {}) => {
+export const registerSubscriptionRoutes = (app, { store, fetchImpl = subscriptionFetch, lookup = dns.lookup } = {}) => {
   const router = express.Router({ caseSensitive: true })
   router.use(express.json({ limit: '10mb' }))
 

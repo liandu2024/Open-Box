@@ -521,7 +521,7 @@ const en = {
   subscriptionNameLabel: 'Name',
   subscriptionNamePlaceholder: 'e.g. "My subscription"',
   subscriptionUrlLabel: 'Subscription link',
-  subscriptionUrlHint: 'Needed to save — the server fetches it (private/local addresses are rejected).',
+  subscriptionUrlHint: 'Required to save; the server fetches it (private / local addresses are rejected). For an https URL with a self-signed certificate, append #insecure=1 to skip certificate verification.',
   subscriptionContentLabel: 'Nodes',
   subscriptionContentHint: 'One node link per line (ss:// / trojan:// / vless:// …); a whole Clash or sing-box config also works.',
   subscriptionContentPlaceholder: 'Paste ss:// / trojan:// / hysteria2:// lines, or a Clash/sing-box config…',
