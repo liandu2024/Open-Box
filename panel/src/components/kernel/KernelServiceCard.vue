@@ -68,7 +68,7 @@
           type="button"
           class="btn btn-sm"
           :disabled="isStartDisabled"
-          @click="runAction('start')"
+          @click="runKernelAction('start')"
         >
           <span
             v-if="pendingAction === 'start'"
@@ -85,7 +85,7 @@
           class="btn btn-sm"
           :disabled="isStopDisabled"
           v-tip="$t('kernelActionStopHint')"
-          @click="runAction('stop')"
+          @click="runKernelAction('stop')"
         >
           <span
             v-if="pendingAction === 'stop'"
@@ -101,7 +101,7 @@
           type="button"
           class="btn btn-sm"
           :disabled="isRestartDisabled"
-          @click="runAction('restart')"
+          @click="runKernelAction('restart')"
         >
           <span
             v-if="pendingAction === 'restart'"
@@ -121,7 +121,7 @@
           type="button"
           class="btn btn-sm"
           :disabled="isEnableDisabled"
-          @click="runAction('enable')"
+          @click="runKernelAction('enable')"
         >
           <span
             v-if="pendingAction === 'enable'"
@@ -133,7 +133,7 @@
           type="button"
           class="btn btn-sm"
           :disabled="isDisableDisabled"
-          @click="runAction('disable')"
+          @click="runKernelAction('disable')"
         >
           <span
             v-if="pendingAction === 'disable'"
@@ -147,17 +147,20 @@
 </template>
 
 <script setup lang="ts">
-import {
-  runServiceAction,
-  type OpenboxKernelVersion,
-  type OpenboxServiceAction,
-  type OpenboxServiceStatus,
-} from '@/api/openbox'
+import type { OpenboxKernelVersion, OpenboxServiceStatus } from '@/api/openbox'
 import StatusBadge from '@/components/common/StatusBadge.vue'
-import { showNotification } from '@/helper/notification'
+import {
+  isDisableDisabled,
+  isEnableDisabled,
+  isRestartDisabled,
+  isStartDisabled,
+  isStopDisabled,
+  pendingAction,
+  serviceStatus,
+  useKernelActions,
+} from '@/composables/kernelService'
 import { ArrowPathIcon, CpuChipIcon, ExclamationTriangleIcon, PlayIcon, StopIcon } from '@heroicons/vue/24/outline'
-import { computed, ref } from 'vue'
-import { useI18n } from 'vue-i18n'
+import { watch } from 'vue'
 
 const props = defineProps<{
   status: OpenboxServiceStatus | null
@@ -168,51 +171,18 @@ const emit = defineEmits<{
   refresh: []
 }>()
 
-const { t } = useI18n()
-
-
-const pendingAction = ref<OpenboxServiceAction | null>(null)
-const ACTION_LABEL_KEYS: Record<OpenboxServiceAction, string> = {
-  start: 'kernelActionStart',
-  stop: 'kernelActionStop',
-  restart: 'kernelActionRestart',
-  enable: 'kernelActionEnable',
-  disable: 'kernelActionDisable',
-}
-
-const isStartDisabled = computed(
-  () => pendingAction.value !== null || Boolean(props.status?.core.running) || Boolean(props.status?.conflicts.length),
+// 页面拿到的状态同步进共享状态,侧边栏的按钮也跟着变
+watch(
+  () => props.status,
+  (v) => {
+    if (v) serviceStatus.value = v
+  },
+  { immediate: true },
 )
-const isStopDisabled = computed(() => pendingAction.value !== null || !props.status?.core.running)
-const isRestartDisabled = computed(
-  () => pendingAction.value !== null || !props.status?.core.running || Boolean(props.status?.conflicts.length),
-)
-const isEnableDisabled = computed(() => pendingAction.value !== null || props.status?.core.autostart === true)
-const isDisableDisabled = computed(() => pendingAction.value !== null || props.status?.core.autostart === false)
 
-const runAction = async (action: OpenboxServiceAction) => {
-  if (pendingAction.value) return
-
-  pendingAction.value = action
-  const actionLabel = t(ACTION_LABEL_KEYS[action])
-  try {
-    const result = await runServiceAction(action)
-    if (result.ok) {
-      showNotification({ content: 'kernelActionSucceeded', params: { action: actionLabel }, type: 'alert-success' })
-    } else {
-      // 这台开发机没有 /etc/init.d,ok:false 且 stderr 为空是常态:没细节时至少给个退出码
-      const detail = result.stderr.trim() || t('kernelActionNoDetail', { code: String(result.code) })
-      showNotification({ content: 'kernelActionFailed', params: { action: actionLabel, detail }, type: 'alert-error' })
-    }
-  } catch (error) {
-    showNotification({
-      content: 'kernelActionRequestFailed',
-      params: { message: error instanceof Error ? error.message : String(error) },
-      type: 'alert-error',
-    })
-  } finally {
-    pendingAction.value = null
-    emit('refresh')
-  }
+const { runKernelAction: run } = useKernelActions()
+const runKernelAction = async (action: Parameters<typeof run>[0]) => {
+  await run(action)
+  emit('refresh')
 }
 </script>

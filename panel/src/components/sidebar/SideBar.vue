@@ -4,6 +4,7 @@
     :class="isSidebarCollapsed ? 'w-18 px-0' : 'w-64'"
   >
     <div :class="twMerge('flex h-full flex-col gap-2', isSidebarCollapsed ? 'w-18 px-0' : 'w-60')">
+      <SidebarHeader />
       <ul class="menu w-full flex-1">
         <li
           v-for="r in renderRoutes"
@@ -30,9 +31,9 @@
       </ul>
       <template v-if="isSidebarCollapsed">
         <VerticalInfos v-if="showStatisticsWhenSidebarCollapsed">
-          <SidebarButtons vertical />
+          <KernelActionButtons vertical />
         </VerticalInfos>
-        <SidebarButtons
+        <KernelActionButtons
           v-else
           vertical
         />
@@ -58,7 +59,8 @@ import { twMerge } from 'tailwind-merge'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import OverviewCarousel from './OverviewCarousel.vue'
-import SidebarButtons from './SidebarButtons.vue'
+import KernelActionButtons from './KernelActionButtons.vue'
+import SidebarHeader from './SidebarHeader.vue'
 import VerticalInfos from './VerticalInfos.vue'
 
 const { showTip } = useTooltip()

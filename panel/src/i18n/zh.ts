@@ -752,6 +752,9 @@ const zh: LANG_MESSAGE = {
   trafficMoreRows: '还有 {n} 条没显示,输入关键字缩小范围',
   trafficPickDay: '点一根柱子看这天的节点和域名明细',
   trafficLoadError: '读取流量记录失败:{message}',
+  // 侧边栏
+  sidebarCollapse: '收起侧边栏',
+  sidebarExpand: '展开侧边栏',
 }
 
 export default zh

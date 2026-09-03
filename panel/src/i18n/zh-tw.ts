@@ -752,6 +752,9 @@ const zhTW: LANG_MESSAGE = {
   trafficMoreRows: '還有 {n} 條沒顯示,輸入關鍵字縮小範圍',
   trafficPickDay: '點一根柱子看這天的節點和網域明細',
   trafficLoadError: '讀取流量記錄失敗:{message}',
+  // 侧边栏
+  sidebarCollapse: '收起側邊欄',
+  sidebarExpand: '展開側邊欄',
 }
 
 export default zhTW

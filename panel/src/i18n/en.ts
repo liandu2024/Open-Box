@@ -755,6 +755,9 @@ const en = {
   trafficMoreRows: '{n} more rows hidden, narrow down with the search box',
   trafficPickDay: "Click a bar to see that day's nodes and hosts",
   trafficLoadError: 'Failed to load traffic records: {message}',
+  // 侧边栏
+  sidebarCollapse: 'Collapse sidebar',
+  sidebarExpand: 'Expand sidebar',
 }
 
 export type LANG_MESSAGE = typeof en
