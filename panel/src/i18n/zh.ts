@@ -245,7 +245,7 @@ const zh: LANG_MESSAGE = {
   setupPasswordDescription: '此面板可以完全控制你的路由器，请先设置密码保护它，然后再继续。',
   newPassword: '新密码',
   confirmNewPassword: '确认新密码',
-  passwordMinLengthHint: '密码至少 8 位。',
+  passwordMinLengthHint: '密码至少 4 位。',
   passwordsDoNotMatch: '两次输入的密码不一致。',
   setupPasswordButton: '设置密码并继续',
   setupPasswordFailed: '设置密码失败，请重试。',

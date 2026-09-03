@@ -67,7 +67,7 @@ import { ref, watch } from 'vue'
 
 const isOpen = defineModel<boolean>({ required: true })
 
-const MIN_PASSWORD_LENGTH = 8
+const MIN_PASSWORD_LENGTH = 4
 
 
 const currentPassword = ref('')

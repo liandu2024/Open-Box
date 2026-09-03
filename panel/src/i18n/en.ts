@@ -248,7 +248,7 @@ const en = {
     'This panel has full control over your router. Set a password to protect it before continuing.',
   newPassword: 'New password',
   confirmNewPassword: 'Confirm new password',
-  passwordMinLengthHint: 'Must be at least 8 characters.',
+  passwordMinLengthHint: 'Must be at least 4 characters.',
   passwordsDoNotMatch: "Passwords don't match.",
   setupPasswordButton: 'Set password and continue',
   setupPasswordFailed: "Couldn't set the password. Try again.",

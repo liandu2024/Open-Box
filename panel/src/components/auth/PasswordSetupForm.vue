@@ -72,7 +72,7 @@ const emit = defineEmits<{
   success: []
 }>()
 
-const MIN_PASSWORD_LENGTH = 8
+const MIN_PASSWORD_LENGTH = 4
 
 
 const newPassword = ref('')

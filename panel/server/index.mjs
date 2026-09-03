@@ -42,7 +42,7 @@ const ACCESS_PASSWORD_INVALID_CODE = 'ACCESS_PASSWORD_INVALID'
 const PASSWORD_SETUP_REQUIRED_CODE = 'PASSWORD_SETUP_REQUIRED'
 const PASSWORD_ALREADY_SET_CODE = 'PASSWORD_ALREADY_SET'
 const PASSWORD_TOO_SHORT_CODE = 'PASSWORD_TOO_SHORT'
-const MIN_ACCESS_PASSWORD_LENGTH = 8
+const MIN_ACCESS_PASSWORD_LENGTH = 4
 // 首次访问强制设密:密码尚未设置前,除这三条(健康检查 + 查询状态 + 设密本身)外,
 // 一切 /api/* 一律拒绝 —— 面板对路由器有 root 级权限,不能裸奔。
 const PASSWORD_SETUP_EXEMPT_PATHS = new Set(['/api/health', '/api/auth/status', '/api/auth/setup'])

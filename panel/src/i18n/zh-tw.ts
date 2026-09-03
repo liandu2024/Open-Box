@@ -245,7 +245,7 @@ const zhTW: LANG_MESSAGE = {
   setupPasswordDescription: '此面板可以完全控制你的路由器，請先設定密碼保護它，然後再繼續。',
   newPassword: '新密碼',
   confirmNewPassword: '確認新密碼',
-  passwordMinLengthHint: '密碼至少 8 位。',
+  passwordMinLengthHint: '密碼至少 4 位。',
   passwordsDoNotMatch: '兩次輸入的密碼不一致。',
   setupPasswordButton: '設定密碼並繼續',
   setupPasswordFailed: '設定密碼失敗，請重試。',
