@@ -9,17 +9,10 @@
         class="relative flex-1 overflow-hidden"
         ref="swiperRef"
       >
+        <!-- 手机端不做页面切换过场:直接换内容。之前的左右滑入动画在低端机上会掉帧,
+             而且和顶部工具栏 / 底部导航的固定位置打架。 -->
         <div :class="['absolute flex h-full w-full flex-col overflow-y-auto', SCROLLABLE_PARENT_CLASS]">
-          <Transition
-            :name="(route.meta.transition as string) || 'fade'"
-            v-if="isMiddleScreen"
-          >
-            <Component :is="Component" />
-          </Transition>
-          <Component
-            v-else
-            :is="Component"
-          />
+          <Component :is="Component" />
         </div>
 
         <template v-if="isMiddleScreen">

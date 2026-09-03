@@ -24,8 +24,10 @@ import { logFilter, logFilterEnabled, logFilterRegex, logTypeFilter, logs } from
 import type { LogWithSeq } from '@/types'
 import { computed } from 'vue'
 
+// 列表里每一条外面已经包了一层 8px(VirtualScroller 的 app-card-padding),这里把公共
+// 逻辑给的 8px 安全边距抵掉,第一条卡片离工具栏正好 8px,和其它页面一致
 const { paddingTop } = usePaddingForViews({
-  offsetTop: 0,
+  offsetTop: -8,
   offsetBottom: 0,
 })
 const virtualScrollerStyle = computed(() => ({
