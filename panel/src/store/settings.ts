@@ -37,7 +37,8 @@ export const theme = computed(() => {
 })
 
 export const language = useStorage<LANG>('config/language', detectDefaultLanguage(navigator.language))
-export const isSidebarCollapsedConfig = useStorage('config/is-sidebar-collapsed', true)
+// 首次进面板侧边栏默认展开(窄屏仍强制折叠,见下方 isMiddleScreen)
+export const isSidebarCollapsedConfig = useStorage('config/is-sidebar-collapsed', false)
 export const isSidebarCollapsed = computed({
   get: () => {
     if (isMiddleScreen.value) {
