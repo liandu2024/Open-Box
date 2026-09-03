@@ -16,7 +16,7 @@ const TUN_V6 = 'fdfe:dcba:9876::1/126'
 // 系统解析器,会绕回 dnsmasq 形成死循环。预览/测试不传就回落到档案里填的那台。
 // regionGroups 参数已经退役(以前按国家自动分的 urltest 组 + 一个 PROXY 聚合 selector,
 // 那是节点组功能出现之前的东西);留着这个参数名只是让老调用方不报错。
-export const buildConfig = ({ nodes, profile, userGroups, systemDns }) => {
+export const buildConfig = ({ nodes, profile, userGroups, systemDns, cacheFilePath = '/opt/open-box/data/cache.db' }) => {
   const wireguardNodes = nodes.filter((n) => n.type === 'wireguard')
   const outboundNodes = nodes.filter((n) => n.type !== 'wireguard')
 
@@ -86,6 +86,10 @@ export const buildConfig = ({ nodes, profile, userGroups, systemDns }) => {
     route,
     experimental: {
       clash_api: { external_controller: '127.0.0.1:9095', secret: profile.clashApiSecret },
+      // 记住每个 selector 的选择:没有它,内核每次重启(包括面板里的「重启」)都会把站点集
+      // 和手动组重置回配置里的默认项,用户在代理页选好的线路全部丢掉。文件放在 data/ 下,
+      // 重新部署面板不会碰它。
+      cache_file: { enabled: true, path: cacheFilePath, store_fakeip: false },
     },
   }
   if (endpoints.length) config.endpoints = endpoints

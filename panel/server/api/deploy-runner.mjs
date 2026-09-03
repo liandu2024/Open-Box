@@ -26,11 +26,12 @@ export const STATUS_BY_STAGE = {
 // systemDns 是路由器 WAN 下发的 DNS 上游(见 system/resolv.mjs):dnsmasq 接管模式下
 // 直连侧要用它,不能让 sing-box 去问系统解析器——那时系统解析器就是 dnsmasq,而 dnsmasq
 // 的上游又是 sing-box,一问就死循环。预览接口没有 ctx 也照样能出配置,回落到档案里的值。
-export const buildCurrentConfig = (store, systemDns) => {
+export const buildCurrentConfig = (store, systemDns, { cacheFilePath } = {}) => {
   const profile = store.getProfile()
   const nodes = store.getNodes()
   const clashApiSecret = store.getClashSecret()
   const config = buildConfig({
+    cacheFilePath,
     nodes,
     userGroups: store.getGroups(),
     profile: { ...profile, clashApiSecret },
@@ -46,7 +47,7 @@ export const runDeploy = async ({ store, ctx, paths }) => {
   let result
   try {
     const systemDns = await readSystemDns(ctx)
-    const { config, profile } = buildCurrentConfig(store, systemDns)
+    const { config, profile } = buildCurrentConfig(store, systemDns, { cacheFilePath: paths.cacheDb })
     result = await deployConfig(ctx, paths, { config, profile, userGroups: store.getGroups() })
     store.setDeployState({
       stage: result.stage,

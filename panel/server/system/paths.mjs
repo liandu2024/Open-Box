@@ -6,6 +6,8 @@ export const createPaths = (root = '/opt/open-box') => ({
   configPath: `${root}/etc/config.json`,
   dataDir: `${root}/data`,
   rulesetDir: `${root}/data/rulesets`,
+  // 内核的 cache_file:记住各 selector 的选择,重启不丢
+  cacheDb: `${root}/data/cache.db`,
   metaPath: `${root}/meta.json`,
   updateScript: `${root}/update.sh`,
   channelPath: `${root}/data/channel`,
