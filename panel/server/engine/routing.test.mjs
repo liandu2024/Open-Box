@@ -151,3 +151,13 @@ test('更老的档案:始终直连里非中国的规则集变成一个默认直�
   const { route } = build({ directRulesets: ['geosite-cn', 'geosite-private'], fallback: 'PROXY' })
   assert.ok(route.rules.some((r) => r.outbound === '始终直连'))
 })
+
+test('订阅/节点站点直连:紧跟在 ip_is_private 之后,域名进 domain、IP 进 ip_cidr', () => {
+  const { route } = buildRoute({ policies: [{ id: 'a', name: 'A', rulesets: ['geosite-google'] }], fallbackDefault: 'direct' }, '/r', {
+    directTag: '直连',
+    directHosts: { domains: ['hiddfy.example.xyz', 'sub.example.com'], cidrs: ['1.2.3.4/32'] },
+  })
+  const i = route.rules.findIndex((r) => r.ip_is_private)
+  assert.deepEqual(route.rules[i + 1], { outbound: '直连', domain: ['hiddfy.example.xyz', 'sub.example.com'], ip_cidr: ['1.2.3.4/32'] })
+  assert.equal(route.rules[i + 2].outbound, 'A')
+})

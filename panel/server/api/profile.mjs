@@ -33,6 +33,9 @@ export const validateProfilePatch = (patch) => {
   if ('ipv6' in patch && !isBoolean(patch.ipv6)) {
     return 'ipv6 must be a boolean'
   }
+  if ('directForNodes' in patch && !isBoolean(patch.directForNodes)) {
+    return 'directForNodes must be a boolean'
+  }
 
   if ('rulesetDir' in patch && !isValidRulesetDir(patch.rulesetDir)) {
     return 'rulesetDir must be an absolute path without ".."'

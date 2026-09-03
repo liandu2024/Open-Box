@@ -41,6 +41,10 @@
             :profile="profile"
             :patch-profile="patchProfile"
           />
+          <NodeDirectCard
+            :profile="profile"
+            :patch-profile="patchProfile"
+          />
         </template>
       </div>
     </div>
@@ -52,6 +56,7 @@ import type { OpenboxKernelVersion, OpenboxProfile, OpenboxServiceStatus } from 
 import { fetchKernelVersion, fetchProfile, fetchServiceStatus, saveProfile } from '@/api/openbox'
 import GeoUpdateCard from '@/components/kernel/GeoUpdateCard.vue'
 import KernelServiceCard from '@/components/kernel/KernelServiceCard.vue'
+import NodeDirectCard from '@/components/kernel/NodeDirectCard.vue'
 import OpenboxUpdateCard from '@/components/kernel/OpenboxUpdateCard.vue'
 import Ipv6Card from '@/components/routing/Ipv6Card.vue'
 import TestUrlCard from '@/components/routing/TestUrlCard.vue'

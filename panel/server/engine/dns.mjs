@@ -57,6 +57,11 @@ export const buildDns = (profile, options = {}) => {
   const servers = [directServer, { type: 'https', tag: 'dns-proxy', server: proxyHost, detour: conf.fallback.name }]
 
   const rules = []
+  // 订阅和节点站点直连:它们的域名也用本地解析,排在最前
+  const dh = options.directHosts
+  if (dh && dh.domains && dh.domains.length) {
+    rules.push({ domain: dh.domains, server: 'dns-direct' })
+  }
   if (conf.adBlock) {
     rules.push({ rule_set: conf.adRuleset, action: 'reject' })
   }

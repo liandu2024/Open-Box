@@ -60,6 +60,7 @@ export const buildCurrentConfig = (store, systemDns, { cacheFilePath, selections
     selections,
     nodes,
     userGroups: store.getGroups(),
+    subscriptions: store.getSubscriptions ? store.getSubscriptions() : [],
     profile: { ...profile, clashApiSecret },
     systemDns,
   })

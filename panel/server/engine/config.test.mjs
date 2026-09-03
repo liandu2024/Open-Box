@@ -138,3 +138,12 @@ test('dns.mode=dnsmasq: hijack 规则仅限 dns-in 入站(不自环),增 DNS 入
   assert.equal(dnsIn.listen, '127.0.0.1')
   assert.equal(dnsIn.listen_port, 7853)
 })
+
+test('directForNodes 默认开:节点服务器和订阅主机名生成直连规则与本地解析规则;关掉就没有', async () => {
+  const { collectDirectHosts } = await import('./direct-hosts.mjs')
+  const hosts = collectDirectHosts(
+    [{ tag: 'a', type: 'shadowsocks', server: 'node.example.com' }, { tag: 'b', type: 'shadowsocks', server: '5.6.7.8' }],
+    [{ url: 'https://sub.example.com/x?token=1' }, { url: '' }],
+  )
+  assert.deepEqual(hosts, { domains: ['node.example.com', 'sub.example.com'], cidrs: ['5.6.7.8/32'] })
+})

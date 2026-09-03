@@ -73,6 +73,8 @@ export interface OpenboxUpdatePlans {
 
 export interface OpenboxProfile {
   updates?: OpenboxUpdatePlans
+  // 订阅链接和节点服务器的地址一律直连(默认开)
+  directForNodes?: boolean
   region: string
   ipv6: boolean
   tun?: { autoRedirect?: boolean }

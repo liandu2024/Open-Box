@@ -32,6 +32,15 @@ export const buildRoute = (routing, rulesetDir, options = {}) => {
   // 内置的直连出站可以改名,tag 从调用方传进来
   rules.push({ ip_is_private: true, outbound: options.directTag || 'direct' })
 
+  // 订阅和节点站点直连(开关在后端设置):排在所有站点集之前,不受它们影响
+  const dh = options.directHosts
+  if (dh && ((dh.domains && dh.domains.length) || (dh.cidrs && dh.cidrs.length))) {
+    const rule = { outbound: options.directTag || 'direct' }
+    if (dh.domains && dh.domains.length) rule.domain = dh.domains
+    if (dh.cidrs && dh.cidrs.length) rule.ip_cidr = dh.cidrs
+    rules.push(rule)
+  }
+
   if (conf.adBlock) {
     addTag(conf.adRuleset)
     rules.push({ rule_set: conf.adRuleset, action: 'reject' })

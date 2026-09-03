@@ -1,4 +1,6 @@
 import express from 'express'
+import { collectDirectHosts } from '../engine/direct-hosts.mjs'
+import { builtinTags } from '../engine/user-groups.mjs'
 import { loadEntries } from './rulesets.mjs'
 import { decideDnsServer } from './route-test.mjs'
 import { buildRoute } from '../engine/routing.mjs'
@@ -214,7 +216,13 @@ export const registerPenetrationRoutes = (app, { store, ctx, paths, fetchImpl = 
     }
 
     const profile = store.getProfile()
-    const { route } = buildRoute(profile.routing, profile.rulesetDir)
+    // 和生成配置同一套规则表:内置直连的实际 tag、订阅/节点站点直连那条都要带上,
+    // 否则这里数出来的"第几条"和内核里的对不上
+    const builtin = builtinTags(store.getGroups ? store.getGroups() : [])
+    const directHosts = profile.directForNodes === false
+      ? null
+      : collectDirectHosts(store.getNodes ? store.getNodes() : [], store.getSubscriptions ? store.getSubscriptions() : [])
+    const { route } = buildRoute(profile.routing, profile.rulesetDir, { dnsMode: profile.dns && profile.dns.mode, directTag: builtin.direct, directHosts })
 
     // tag → 本地 .srs 路径:直接复用 buildRoute 已经算好的 rule_set 映射,
     // 不再重复拼接(避免与 buildRoute 内部拼接规则出现两处不一致)。
