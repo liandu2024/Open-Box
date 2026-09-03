@@ -4,23 +4,6 @@
        下面这几行通过插槽排进同一个网格,行距才一致 -->
   <ZashboardSettings>
     <div
-      v-if="isVisibleAutoDisconnectIdleUDP"
-      class="setting-item"
-    >
-      <div class="setting-item-label">
-        {{ $t('autoDisconnectIdleUDP') }}
-        <QuestionMarkCircleIcon
-          class="h-4 w-4 cursor-pointer"
-          @mouseenter="showTip($event, $t('autoDisconnectIdleUDPTip'))"
-        />
-      </div>
-      <input
-        type="checkbox"
-        v-model="autoDisconnectIdleUDP"
-        class="toggle"
-      />
-    </div>
-    <div
       v-if="isVisibleChangePassword"
       class="setting-item"
     >
@@ -34,20 +17,6 @@
       >
         {{ $t('changePassword') }}
       </button>
-    </div>
-    <div
-      v-if="autoDisconnectIdleUDP && isVisibleAutoDisconnectIdleUDPTime"
-      class="setting-item"
-    >
-      <div class="setting-item-label">
-        {{ $t('autoDisconnectIdleUDPTime') }}
-      </div>
-      <input
-        type="number"
-        class="input input-sm w-20"
-        v-model="autoDisconnectIdleUDPTime"
-      />
-      mins
     </div>
     <div
       v-if="isVisibleIPInfoAPI"
@@ -139,8 +108,6 @@ import { GENERAL_ITEM_KEYS } from '@/config/settingsItems'
 import { IP_INFO_API } from '@/constant'
 import { useTooltip } from '@/helper/tooltip'
 import {
-  autoDisconnectIdleUDP,
-  autoDisconnectIdleUDPTime,
   disablePullToRefresh,
   IPInfoAPI,
   scrollAnimationEffect,
@@ -155,9 +122,7 @@ import ZashboardSettings from './ZashboardSettings.vue'
 const { showTip } = useTooltip()
 
 const k = GENERAL_ITEM_KEYS
-const isVisibleAutoDisconnectIdleUDP = useIsSettingVisible(k.autoDisconnectIdleUDP)
 const isVisibleChangePassword = useIsSettingVisible(k.changePassword)
-const isVisibleAutoDisconnectIdleUDPTime = useIsSettingVisible(k.autoDisconnectIdleUDPTime)
 const isVisibleIPInfoAPI = useIsSettingVisible(k.IPInfoAPI)
 const isVisibleScrollAnimationEffect = useIsSettingVisible(k.scrollAnimationEffect)
 const isVisibleSwipeInPages = useIsSettingVisible(k.swipeInPages)
