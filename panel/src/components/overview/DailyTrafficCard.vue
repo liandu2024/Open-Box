@@ -8,38 +8,41 @@
         v-if="loading"
         class="loading loading-spinner loading-xs"
       />
+      <!-- 月份切换:和明细页签同一套 tabs-box 样式(圆角高亮块),两侧箭头用圆形幽灵按钮 -->
       <div
         v-if="month"
-        class="join ml-auto"
+        class="ml-auto flex items-center gap-1"
       >
         <button
           type="button"
-          class="btn btn-ghost btn-sm join-item px-2"
+          class="btn btn-ghost btn-circle btn-sm"
           @click="shiftMonth(-1)"
         >
           <ChevronLeftIcon class="h-4 w-4" />
         </button>
-        <button
-          type="button"
-          class="btn btn-ghost btn-sm join-item font-normal"
-          @click="shiftMonth(-1)"
+        <div
+          role="tablist"
+          class="tabs-box tabs tabs-sm"
         >
-          {{ monthLabel(prevMonth) }}
-        </button>
-        <span class="btn btn-ghost btn-sm join-item no-animation pointer-events-none font-semibold">
-          {{ monthLabel(month) }}
-        </span>
+          <a
+            role="tab"
+            class="tab"
+            @click="shiftMonth(-1)"
+          >{{ monthLabel(prevMonth) }}</a>
+          <a
+            role="tab"
+            class="tab tab-active font-semibold"
+          >{{ monthLabel(month) }}</a>
+          <a
+            role="tab"
+            class="tab"
+            :class="!canGoNext && 'tab-disabled'"
+            @click="canGoNext && shiftMonth(1)"
+          >{{ monthLabel(nextMonth) }}</a>
+        </div>
         <button
           type="button"
-          class="btn btn-ghost btn-sm join-item font-normal"
-          :disabled="!canGoNext"
-          @click="shiftMonth(1)"
-        >
-          {{ monthLabel(nextMonth) }}
-        </button>
-        <button
-          type="button"
-          class="btn btn-ghost btn-sm join-item px-2"
+          class="btn btn-ghost btn-circle btn-sm"
           :disabled="!canGoNext"
           @click="shiftMonth(1)"
         >
