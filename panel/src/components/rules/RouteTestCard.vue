@@ -27,23 +27,37 @@
 
       <div
         v-if="result && !loading"
-        class="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-x-3"
+        class="flex gap-4"
       >
-        <!-- 左列:一根自下而上的线,顶上箭头,两个圆圈节点(和右边两行同高) -->
-        <div class="relative row-span-2">
-          <div class="bg-base-content/60 absolute top-3 bottom-0 left-1/2 w-px -translate-x-1/2" />
-          <ChevronUpIcon class="text-base-content/70 absolute -top-1 left-1/2 h-5 w-5 -translate-x-1/2" />
-        </div>
-
-        <!-- 上行:出口 -->
-        <div class="flex min-h-20 items-center gap-3 py-2">
-          <div class="-ml-[4.5rem] flex w-[4.5rem] shrink-0 justify-center">
-            <div class="bg-base-100 border-base-content/70 flex h-14 w-14 flex-col items-center justify-center rounded-full border-2 text-xs leading-tight">
-              <span>{{ $t('routeTestExit') }}</span>
-              <span class="text-base-content/70">{{ result.exit.ms !== undefined ? `${result.exit.ms}ms` : '—' }}</span>
+        <!-- 左栏:自下而上的流程线。两行固定等高(h-24),线从箭头下方一直画到 DNS 圈的圆心,
+             圆圈在线上层(z-10、实底)把线遮住,看起来就是"线穿过两个节点"。 -->
+        <div class="relative w-16 shrink-0">
+          <div
+            class="border-x-transparent absolute left-1/2 top-0 -translate-x-1/2 border-x-[6px] border-b-[10px]"
+            style="border-bottom-color: var(--color-primary)"
+          />
+          <div
+            class="absolute left-1/2 w-0.5 -translate-x-1/2 rounded-full"
+            style="top: 0.55rem; height: 8.5rem; background: color-mix(in srgb, var(--color-primary) 55%, transparent)"
+          />
+          <div class="flex h-24 items-center justify-center">
+            <div class="border-primary bg-base-100 text-primary relative z-10 flex h-14 w-14 flex-col items-center justify-center rounded-full border-2 shadow-sm">
+              <span class="text-xs leading-none font-medium">{{ $t('routeTestExit') }}</span>
+              <span class="mt-1 text-[10px] leading-none opacity-80">{{ result.exit.ms !== undefined ? `${result.exit.ms}ms` : '—' }}</span>
             </div>
           </div>
-          <div class="flex min-w-0 flex-1 flex-col gap-1">
+          <div class="flex h-24 items-center justify-center">
+            <div class="border-primary bg-base-100 text-primary relative z-10 flex h-14 w-14 flex-col items-center justify-center rounded-full border-2 shadow-sm">
+              <span class="text-xs leading-none font-medium">DNS</span>
+              <span class="mt-1 text-[10px] leading-none opacity-80">{{ result.resolve ? `${result.resolve.ms}ms` : '—' }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 右栏:两行和左边的两个圈同高、垂直居中 -->
+        <div class="flex min-w-0 flex-1 flex-col">
+          <!-- 出口 -->
+          <div class="flex h-24 flex-col justify-center gap-1.5">
             <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
               <template v-if="result.exit.error">
                 <span class="text-error text-xs">{{ $t('routeTestRequestFailed', { message: result.exit.error }) }}</span>
@@ -78,17 +92,9 @@
               <span v-if="result.exit.status !== undefined">HTTP {{ result.exit.status }}</span>
             </div>
           </div>
-        </div>
 
-        <!-- 下行:DNS -->
-        <div class="flex min-h-20 items-center gap-3 py-2">
-          <div class="-ml-[4.5rem] flex w-[4.5rem] shrink-0 justify-center">
-            <div class="bg-base-100 border-base-content/70 flex h-14 w-14 flex-col items-center justify-center rounded-full border-2 text-xs leading-tight">
-              <span>DNS</span>
-              <span class="text-base-content/70">{{ result.resolve ? `${result.resolve.ms}ms` : '—' }}</span>
-            </div>
-          </div>
-          <div class="flex min-w-0 flex-1 flex-col gap-1">
+          <!-- DNS -->
+          <div class="flex h-24 flex-col justify-center gap-1.5">
             <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
               <template v-if="'skipped' in result.dns">
                 <span class="text-base-content/50 text-xs">{{ $t('routeTestDnsSkipped') }}</span>
@@ -117,7 +123,7 @@
             </div>
             <div
               v-if="result.resolve"
-              class="flex flex-wrap items-center gap-x-2 gap-y-1"
+              class="flex flex-wrap items-center gap-x-1.5 gap-y-1"
             >
               <template v-if="result.resolve.answers.length">
                 <span
@@ -143,7 +149,7 @@ import type { OpenboxRouteTest } from '@/api/openbox'
 import { testRoute } from '@/api/openbox'
 import StatusBadge from '@/components/common/StatusBadge.vue'
 import ProxyName from '@/components/proxies/ProxyName.vue'
-import { ArrowPathIcon, ArrowRightCircleIcon, BoltIcon, ChevronUpIcon } from '@heroicons/vue/24/outline'
+import { ArrowPathIcon, ArrowRightCircleIcon, BoltIcon } from '@heroicons/vue/24/outline'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
 const props = defineProps<{ target: string }>()
