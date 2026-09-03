@@ -55,3 +55,24 @@ test('removeOpenBoxRules 清两条(含面板放行)+ reload,仅供卸载使用',
   assert.ok(c.includes('uci -q delete firewall.openbox_v6block'))
   assert.ok(c.includes('/etc/init.d/firewall reload'))
 })
+
+test('共享网络放行:先清掉旧的 openbox_srv_*,再按启用的服务器逐条加,SS 放 tcp udp', async () => {
+  const { applyServerPortRules, removeProxyRules } = await import('./firewall.mjs')
+  const { createMockContext } = await import('./context.mjs')
+  const ctx = createMockContext({ execResults: { 'uci show firewall': { code: 0, stdout: 'firewall.openbox_srv_old=rule\nfirewall.openbox_srv_old.name=x\nfirewall.@rule[0]=rule\n' } } })
+  await applyServerPortRules(ctx, [
+    { id: 'ab-1', name: 'SS', protocol: 'shadowsocks', port: 8388 },
+    { id: 'hy', name: 'HY', protocol: 'hysteria2', port: 8446 },
+  ])
+  const cmds = ctx.calls.map((c) => [c.cmd, ...c.args].join(' '))
+  assert.ok(cmds.includes('uci -q delete firewall.openbox_srv_old'))
+  assert.ok(cmds.includes('uci set firewall.openbox_srv_ab_1=rule'))
+  assert.ok(cmds.includes('uci set firewall.openbox_srv_ab_1.proto=tcp udp'))
+  assert.ok(cmds.includes('uci set firewall.openbox_srv_ab_1.dest_port=8388'))
+  assert.ok(cmds.includes('uci set firewall.openbox_srv_hy.proto=udp'))
+  assert.ok(cmds.includes('uci set firewall.openbox_srv_hy.src=wan'))
+  assert.equal(cmds.filter((c) => c === 'uci commit firewall').length, 1)
+  ctx.calls.length = 0
+  await removeProxyRules(ctx)
+  assert.ok(ctx.calls.map((c) => [c.cmd, ...c.args].join(' ')).includes('uci -q delete firewall.openbox_srv_old'))
+})

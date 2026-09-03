@@ -4,6 +4,10 @@ export const createPaths = (root = '/opt/open-box') => ({
   singbox: `${root}/bin/sing-box`,
   etc: `${root}/etc`,
   configPath: `${root}/etc/config.json`,
+  // 共享网络的自签证书(system/tls-keypair.mjs)
+  certsDir: `${root}/etc/certs`,
+  tlsCert: `${root}/etc/certs/server.crt`,
+  tlsKey: `${root}/etc/certs/server.key`,
   dataDir: `${root}/data`,
   rulesetDir: `${root}/data/rulesets`,
   // 内核的 cache_file:记住各 selector 的选择,重启不丢

@@ -456,3 +456,15 @@ test('PUT 校验:测速地址必须是 http(s) URL', async () => {
     await close()
   }
 })
+
+test('servers 校验:协议/端口/凭据/重复端口/保留端口', async () => {
+  const { validateServers } = await import('./profile.mjs')
+  const ok = [{ id: 'a', enabled: true, name: 'SS', protocol: 'shadowsocks', port: 8388, method: 'aes-256-gcm', password: 'pw' }]
+  assert.equal(validateServers(ok), null)
+  assert.match(validateServers([{ ...ok[0], port: 2026 }]), /reserved/)
+  assert.match(validateServers([ok[0], { ...ok[0], id: 'b' }]), /duplicated/)
+  assert.match(validateServers([{ ...ok[0], protocol: 'vmess' }]), /protocol/)
+  assert.match(validateServers([{ ...ok[0], password: '' }]), /password/)
+  assert.match(validateServers([{ id: 'v', name: 'V', protocol: 'vless', port: 8443, uuid: 'nope' }]), /uuid/)
+  assert.match(validateServers([{ id: 'bad id', name: 'x', protocol: 'vless', port: 8443, uuid: '11111111-1111-4111-8111-111111111111' }]), /id/)
+})

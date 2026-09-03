@@ -4,7 +4,9 @@ import { restartService, stopService, serviceStatus } from './service.mjs'
 import { applyDnsTakeover, restoreDnsTakeover, dnsTakeoverBackupPath } from './dns-takeover.mjs'
 import { dnsmasqForwardDomains, normalizeRouting } from '../engine/routing-model.mjs'
 import { builtinTags } from '../engine/user-groups.mjs'
-import { applyPanelLanRule, applyIpv6Block, removeProxyRules } from './firewall.mjs'
+import { applyPanelLanRule, applyIpv6Block, removeProxyRules, applyServerPortRules } from './firewall.mjs'
+import { ensureTlsKeypair } from './tls-keypair.mjs'
+import { configNeedsTlsKeypair, enabledServers } from '../engine/servers.mjs'
 import { ensureRulesets } from './rulesets.mjs'
 
 export const rollbackToDirect = async (ctx, paths) => {
@@ -55,6 +57,14 @@ export const deployConfig = async (ctx, paths, { config, profile, userGroups, fe
   // mkdirp 必须在写 candidate 文件之前:全新安装时 paths.etc 尚不存在,
   // 之前 mkdirp 排在步骤 3 会让这里的 writeFile 在真实 fs 上 ENOENT(mock 掩盖了此问题)。
   await ctx.mkdirp(paths.etc)
+  // 共享网络里有要 TLS 的入站时,先把自签证书备好:sing-box check 会真的去读证书文件
+  if (configNeedsTlsKeypair(config)) {
+    try {
+      await ensureTlsKeypair(ctx, paths)
+    } catch (error) {
+      return { ok: false, stage: 'validate', message: String((error && error.message) || error) }
+    }
+  }
   const candidatePath = `${paths.etc}/config.candidate.json`
   const validation = await validateConfigObject(ctx, paths, config, candidatePath)
   if (!validation.ok) {
@@ -91,6 +101,8 @@ export const deployConfig = async (ctx, paths, { config, profile, userGroups, fe
     // 6. 防火墙
     await applyPanelLanRule(ctx, { port: 2026 })
     await applyIpv6Block(ctx, { enabled: profile.ipv6 === false })
+    // 共享网络:从 WAN 放行各服务器的端口(局域网本来就能到路由器)
+    await applyServerPortRules(ctx, enabledServers(profile.servers))
 
     // 7. 重启内核前预检:procd 的 rc_procd 包装(procd_open_service; "$@"; procd_close_service)
     // 会吞掉 start_service 的返回码,二进制/配置缺失时 start 仍可能退出 0 且以零实例注册——

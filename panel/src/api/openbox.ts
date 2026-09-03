@@ -71,8 +71,28 @@ export interface OpenboxUpdatePlans {
   geo?: { auto?: boolean; hour?: number; days?: number }
 }
 
+// 「共享网络」里的一台服务器:本机开的一个入站(server/engine/servers.mjs)
+export type OpenboxServerProtocol = 'shadowsocks' | 'vless' | 'tuic' | 'hysteria2'
+export interface OpenboxServer {
+  id: string
+  enabled: boolean
+  name: string
+  protocol: OpenboxServerProtocol
+  port: number
+  // 客户端连接用的地址(公网 IP 或域名),只用来生成分享链接
+  address?: string
+  password?: string
+  method?: string
+  uuid?: string
+  // 仅 VLESS:是否套自签 TLS
+  tls?: boolean
+  // 仅 Hysteria2:salamander 混淆密码
+  obfs?: string
+}
+
 export interface OpenboxProfile {
   updates?: OpenboxUpdatePlans
+  servers?: OpenboxServer[]
   // 订阅链接和节点服务器的地址一律直连(默认开)
   directForNodes?: boolean
   region: string

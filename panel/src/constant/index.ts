@@ -298,6 +298,7 @@ export enum SETTINGS_TAB {
   groups = 'groups',
   routing = 'routing',
   kernel = 'kernel',
+  share = 'share',
 }
 
 export enum SETTINGS_MENU_KEY {

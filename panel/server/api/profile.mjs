@@ -1,4 +1,5 @@
 import express from 'express'
+import { RESERVED_PORTS, SERVER_PROTOCOLS, SS_METHODS } from '../engine/servers.mjs'
 import { FALLBACK_TAG, normalizeRouting } from '../engine/routing-model.mjs'
 
 const isPlainObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v)
@@ -64,6 +65,11 @@ export const validateProfilePatch = (patch) => {
       if ('hour' in g && !isHour(g.hour)) return 'updates.geo.hour must be an integer 0-23'
       if ('days' in g && !(Number.isInteger(g.days) && g.days >= 1 && g.days <= 30)) return 'updates.geo.days must be an integer 1-30'
     }
+  }
+
+  if ('servers' in patch) {
+    const error = validateServers(patch.servers)
+    if (error) return error
   }
 
   if ('dns' in patch) {
@@ -132,6 +138,37 @@ export const validateProfilePatch = (patch) => {
     }
   }
 
+  return null
+}
+
+// 共享网络的服务器。id 会拼进入站 tag 和 uci 段名,限定字符;端口不能撞面板/内核自用的,
+// 也不能互相重复;各协议缺了凭据就开不起来,直接挡在保存这一步。
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+export const validateServers = (servers) => {
+  if (!Array.isArray(servers)) return 'servers must be an array'
+  const ports = new Set()
+  const ids = new Set()
+  for (const s of servers) {
+    if (!isPlainObject(s)) return 'servers entries must be objects'
+    if (!isString(s.id) || !/^[A-Za-z0-9_-]{1,40}$/.test(s.id)) return 'servers[].id must match /^[A-Za-z0-9_-]{1,40}$/'
+    if (ids.has(s.id)) return `servers[].id duplicated: ${s.id}`
+    ids.add(s.id)
+    if ('enabled' in s && !isBoolean(s.enabled)) return 'servers[].enabled must be a boolean'
+    if (!isString(s.name) || !s.name.trim() || s.name.length > 40) return 'servers[].name must be a non-empty string (<= 40 chars)'
+    if (!SERVER_PROTOCOLS.includes(s.protocol)) return `servers[].protocol must be one of ${SERVER_PROTOCOLS.join(', ')}`
+    if (!Number.isInteger(s.port) || s.port < 1 || s.port > 65535) return 'servers[].port must be an integer 1-65535'
+    if (RESERVED_PORTS.has(s.port)) return `servers[].port ${s.port} is reserved`
+    if (ports.has(s.port)) return `servers[].port duplicated: ${s.port}`
+    ports.add(s.port)
+    if ('address' in s && !isString(s.address)) return 'servers[].address must be a string'
+    if ('tls' in s && !isBoolean(s.tls)) return 'servers[].tls must be a boolean'
+    if ('obfs' in s && !isString(s.obfs)) return 'servers[].obfs must be a string'
+    const needPassword = s.protocol === 'shadowsocks' || s.protocol === 'tuic' || s.protocol === 'hysteria2'
+    if (needPassword && (!isString(s.password) || !s.password)) return `servers[].password is required for ${s.protocol}`
+    const needUuid = s.protocol === 'vless' || s.protocol === 'tuic'
+    if (needUuid && (!isString(s.uuid) || !UUID_RE.test(s.uuid))) return `servers[].uuid must be a UUID for ${s.protocol}`
+    if (s.protocol === 'shadowsocks' && !SS_METHODS.includes(s.method)) return `servers[].method must be one of ${SS_METHODS.join(', ')}`
+  }
   return null
 }
 

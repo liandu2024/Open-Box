@@ -20,6 +20,8 @@ export const DEFAULT_PROFILE = {
   // 订阅链接和节点服务器的地址一律直连,不看站点集(engine/direct-hosts.mjs)
   directForNodes: true,
   tun: { autoRedirect: true },
+  // 共享网络:本机开的服务器入站(engine/servers.mjs),默认没有
+  servers: [],
   dns: { split: true, mode: 'hijack', direct: '223.5.5.5', proxy: 'https://1.1.1.1/dns-query' },
   // 测速地址。testUrl 给自动择优(url-test)组和面板的延迟测试用;directTestUrl 只给内置
   // 直连出站用——默认那个是 Google 的域名,从国内直连去测量出来的是"直连到 Google 有多远"。
