@@ -65,13 +65,21 @@
           </div>
         </div>
 
-        <div class="ml-auto hidden w-96 max-w-[38vw] shrink-0 justify-end md:flex">
+        <div class="ml-auto hidden w-[30rem] max-w-[46vw] shrink-0 items-center justify-end gap-2 md:flex">
           <TextInput
-            class="w-full"
+            class="min-w-0 flex-1"
             v-model="penetrationDialogSearch"
             :placeholder="$t('domainPenetrationSearchPlaceholder')"
             :clearable="true"
           />
+          <!-- 和连接页同一套:整条 URL 整理成主机名(不带端口)再搜 -->
+          <button
+            type="button"
+            class="btn btn-sm shrink-0"
+            @click="formatSearch"
+          >
+            {{ $t('ruleFormatQuery') }}
+          </button>
         </div>
       </div>
 
@@ -203,6 +211,7 @@ import {
   type PenetrationTab,
 } from '@/store/proxyGroupRulePenetration'
 import { proxyMap } from '@/store/proxies'
+import { normalizeRuleTarget } from '@/store/rules'
 import { ArrowDownCircleIcon, ArrowUpCircleIcon } from '@heroicons/vue/24/outline'
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -249,6 +258,10 @@ const columns = computed(
       { key: 'source', label: t('ruleSource'), width: 'w-40 md:w-56' },
     ] as const,
 )
+
+const formatSearch = () => {
+  penetrationDialogSearch.value = normalizeRuleTarget(penetrationDialogSearch.value).replace(/:\d+$/, '')
+}
 
 const toggleSort = (key: PenetrationSortKey) => {
   if (penetrationDialogSortKey.value !== key) {
