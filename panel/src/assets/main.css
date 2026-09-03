@@ -483,6 +483,19 @@ body:has(.sortable-chosen) * {
   }
 }
 
+/* 简单数据表(概览 · 每日流量明细这类):不要连接表那套毛玻璃。上面 blur-intensity 给
+   .table tbody::before 加的绝对定位模糊层会盖在文字上,没有 sticky 单元格把内容抬起来的
+   表格整张会被糊掉;偶数行的半透明底色也一并去掉,行与行只靠分割线区分。 */
+#app-content .app-plain-table .table tbody::before {
+  content: none !important;
+}
+#app-content .app-plain-table .table thead {
+  backdrop-filter: none !important;
+}
+#app-content .app-plain-table .table tbody tr:nth-child(even) {
+  background: transparent !important;
+}
+
 .tippy-box {
   @apply bg-neutral text-neutral-content z-[9999] whitespace-pre-line shadow-none;
 }

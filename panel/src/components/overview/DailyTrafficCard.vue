@@ -189,7 +189,7 @@
             :clearable="true"
           />
         </div>
-        <div class="bg-base-200/50 overflow-x-auto rounded-lg">
+        <div class="app-plain-table bg-base-200/50 overflow-x-auto rounded-lg">
           <table class="table-sm table">
             <thead>
               <tr>
