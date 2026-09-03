@@ -156,6 +156,8 @@ import {
   SparklesIcon,
 } from '@heroicons/vue/24/outline'
 import { showNotification } from '@/helper/notification'
+import { loadOpenboxNodeGroups } from '@/store/openboxSiteSets'
+import { fetchProxies } from '@/store/proxies'
 import { computed, onMounted, ref, useTemplateRef } from 'vue'
 
 const { padding } = usePaddingForViews({
@@ -186,7 +188,13 @@ const loadSubscriptions = async () => {
   }
 }
 
-onMounted(loadSubscriptions)
+// 订阅卡片上的节点圆点/可用数来自内核(proxyMap)和节点归属表(nodeProviders);这两份
+// 数据原本只有代理页会拉,设置页不拉的话卡片永远显示 0/N、"内核里没有节点"。
+onMounted(() => {
+  void loadSubscriptions()
+  void loadOpenboxNodeGroups()
+  void fetchProxies()
+})
 
 // 「添加分组」按钮挪到了页签那一行(和「添加订阅」同一个位置),按钮在父组件、
 // 弹窗在子组件,所以要拿到子组件的引用去开它。

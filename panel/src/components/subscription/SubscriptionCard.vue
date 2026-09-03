@@ -76,7 +76,7 @@
         :relaxed-dots-spacing="true"
       />
       <div
-        v-else
+        v-else-if="kernelLoaded"
         class="text-base-content/50 mt-2 text-sm"
       >
         {{ $t(allProxies.length ? 'proxiesSubscriptionNoMatch' : 'proxiesSubscriptionNoNodes') }}
@@ -92,7 +92,7 @@
         />
       </ProxyNodeGrid>
       <div
-        v-else
+        v-else-if="kernelLoaded"
         class="text-base-content/50 text-sm"
       >
         {{ $t(allProxies.length ? 'proxiesSubscriptionNoMatch' : 'proxiesSubscriptionNoNodes') }}
@@ -134,8 +134,14 @@ const allProxies = computed(() =>
     .map(([tag]) => tag),
 )
 const { renderProxies, proxiesCount } = useRenderProxies(allProxies)
+// 内核数据还没拉到(proxyMap 为空)时只显示订阅自己记的节点数,不说"内核里没有节点"
+const kernelLoaded = computed(() => Object.keys(proxyMap.value).length > 0)
 const countText = computed(() =>
-  allProxies.value.length ? proxiesCount.value : `0/${props.subscription.nodeCount}`,
+  allProxies.value.length
+    ? proxiesCount.value
+    : kernelLoaded.value
+      ? `0/${props.subscription.nodeCount}`
+      : String(props.subscription.nodeCount),
 )
 const updatedAtText = computed(() => dayjs(props.subscription.updatedAt).fromNow())
 
