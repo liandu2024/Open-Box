@@ -76,3 +76,18 @@ test('共享网络放行:先清掉旧的 openbox_srv_*,再按启用的服务器�
   await removeProxyRules(ctx)
   assert.ok(ctx.calls.map((c) => [c.cmd, ...c.args].join(' ')).includes('uci -q delete firewall.openbox_srv_old'))
 })
+
+test('applyDnsLanRule:只放行 LAN 到 7853 的 tcp/udp;removeProxyRules 会一起删掉', async () => {
+  const { createMockContext } = await import('./context.mjs')
+  const { applyDnsLanRule, removeProxyRules } = await import('./firewall.mjs')
+  const ctx = createMockContext()
+  await applyDnsLanRule(ctx, { port: 7853 })
+  const sets = ctx.calls.filter((c) => c.cmd === 'uci' && c.args[0] === 'set').map((c) => c.args[1])
+  assert.ok(sets.includes('firewall.openbox_dns.src=lan'))
+  assert.ok(sets.includes('firewall.openbox_dns.proto=tcp udp'))
+  assert.ok(sets.includes('firewall.openbox_dns.dest_port=7853'))
+  assert.ok(sets.includes('firewall.openbox_dns.target=ACCEPT'))
+  ctx.calls.length = 0
+  await removeProxyRules(ctx)
+  assert.ok(ctx.calls.some((c) => c.cmd === 'uci' && c.args.join(' ') === '-q delete firewall.openbox_dns'))
+})

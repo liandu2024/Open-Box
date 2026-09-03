@@ -150,7 +150,7 @@ test('生成的配置通过 sing-box check(dns.mode=dnsmasq;仅 dns-in 入站被
     // 3) 存在监听 127.0.0.1:7853 的 direct 入站,供 dnsmasq 上游转发查询
     const dnsIn = config.inbounds.find((i) => i.type === 'direct' && i.tag === 'dns-in')
     assert.ok(dnsIn, '应存在 tag=dns-in 的 direct 入站')
-    assert.equal(dnsIn.listen, '127.0.0.1')
+    assert.equal(dnsIn.listen, '0.0.0.0')
     assert.equal(dnsIn.listen_port, 7853)
     // 为每个被引用的 rule_set tag 造 .srs fixture
     const { rulesetTags } = buildRoute(profile.routing, dir)
@@ -315,11 +315,11 @@ for (const mode of ['hijack', 'off']) {
         assert.equal(config.dns.rules[0].server, 'dns-local')
         assert.equal(config.inbounds[0].auto_redirect, true)
       } else {
-        assert.ok(!config.route.rules.some((r) => r.action === 'hijack-dns'))
+        assert.deepEqual(config.route.rules.filter((r) => r.action === 'hijack-dns'), [{ inbound: ['dns-in'], action: 'hijack-dns' }])
         assert.ok(!config.dns.servers.some((s) => s.tag === 'dns-local'))
         assert.equal(config.inbounds[0].auto_redirect, undefined)
       }
-      assert.ok(!config.inbounds.some((i) => i.tag === 'dns-in'))
+      assert.ok(config.inbounds.some((i) => i.tag === 'dns-in' && i.listen === '0.0.0.0'))
       // auto_redirect 只有 Linux(nftables)能初始化,本机 macOS 上 sing-box check 会直接
       // FATAL "initialize auto-redirect: invalid argument";上面已经断言过它的取值,校验时去掉
       delete config.inbounds[0].auto_redirect

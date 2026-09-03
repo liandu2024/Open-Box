@@ -34,6 +34,8 @@ const TUN_EXCLUDE_V6 = ['fc00::/7', 'fe80::/10', 'ff00::/8']
 // UDP 会话空闲超时:sing-box 默认 5 分钟,Clash 系默认 60 秒。打洞 / 探测类的一次性 UDP 包
 // 没必要挂 5 分钟,60 秒足够覆盖正常的 DNS / QUIC / 游戏心跳。
 const TUN_UDP_TIMEOUT = '60s'
+// 内核 DNS 入站端口(system/dns-takeover.mjs 的 SINGBOX_DNS_UPSTREAM 与之一致)
+export const DNS_INBOUND_PORT = 7853
 // dnsmasq 模式下把被 auto_redirect 改写进 tun 的局域网 DNS 交回本机 dnsmasq 用的专用出站
 const DNSMASQ_OUTBOUND_TAG = 'dnsmasq'
 
@@ -124,9 +126,12 @@ export const buildConfig = ({ nodes, profile, userGroups, systemDns, localSubnet
   // 面板「真实路由」测试用的回环入站:面板进程经它发请求,请求才会真的走内核的分流
   // (路由器自身发出的流量不一定进 tun)。只听 127.0.0.1,外面碰不到。
   const inbounds = [tunInbound, { type: 'mixed', tag: 'panel-in', listen: '127.0.0.1', listen_port: PANEL_INBOUND_PORT }]
-  if (dnsMode === 'dnsmasq') {
-    inbounds.push({ type: 'direct', tag: 'dns-in', listen: '127.0.0.1', listen_port: 7853 })
-  }
+  // 内核 DNS 入站 :7853,三种模式都开、监听所有地址(防火墙只放行 LAN,见 system/firewall.mjs):
+  // dnsmasq 模式下 dnsmasq 的上游指向它;局域网里的 AdGuard Home / Pi-hole 也可以把上游指向
+  // <路由器 IP>:7853 用内核的分流解析——尤其是「禁用」模式,不劫持任何 DNS,但把入口留着。
+  // 此前只在 dnsmasq 模式开、且只听 127.0.0.1,用户在禁用模式下把 AdGuard 上游指到 7853,
+  // 整个局域网的 DNS 就死了(正式路由器实测)。
+  inbounds.push({ type: 'direct', tag: 'dns-in', listen: '0.0.0.0', listen_port: DNS_INBOUND_PORT })
   // 共享网络:用户在设置里开的服务器入站(engine/servers.mjs)
   inbounds.push(...buildServerInbounds(profile.servers, tlsCert))
 

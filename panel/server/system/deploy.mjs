@@ -4,7 +4,7 @@ import { restartService, stopService, serviceStatus } from './service.mjs'
 import { applyDnsTakeover, restoreDnsTakeover, dnsTakeoverBackupPath } from './dns-takeover.mjs'
 import { dnsmasqForwardDomains, normalizeRouting } from '../engine/routing-model.mjs'
 import { builtinTags } from '../engine/user-groups.mjs'
-import { applyPanelLanRule, applyIpv6Block, removeProxyRules, applyServerPortRules } from './firewall.mjs'
+import { applyPanelLanRule, applyDnsLanRule, applyIpv6Block, removeProxyRules, applyServerPortRules } from './firewall.mjs'
 import { ensureTlsKeypair } from './tls-keypair.mjs'
 import { configNeedsTlsKeypair, enabledServers } from '../engine/servers.mjs'
 import { ensureRulesets } from './rulesets.mjs'
@@ -100,6 +100,8 @@ export const deployConfig = async (ctx, paths, { config, profile, userGroups, fe
 
     // 6. 防火墙
     await applyPanelLanRule(ctx, { port: 2026 })
+    // 内核 DNS 入站 :7853 只放行 LAN(config.mjs 的 dns-in)
+    await applyDnsLanRule(ctx, { port: 7853 })
     await applyIpv6Block(ctx, { enabled: profile.ipv6 === false })
     // 共享网络:从 WAN 放行各服务器的端口(局域网本来就能到路由器)
     await applyServerPortRules(ctx, enabledServers(profile.servers))

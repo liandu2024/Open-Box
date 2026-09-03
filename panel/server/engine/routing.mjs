@@ -21,10 +21,14 @@ export const buildRoute = (routing, rulesetDir, options = {}) => {
 
   const dnsMode = options.dnsMode || 'hijack'
   const rules = [{ action: 'sniff' }]
-  // off:Open-Box 完全不碰 DNS——不劫持、不回交,局域网的 53 端口流量当普通 UDP 按规则走。
-  // 配合 config.mjs 里关掉 auto_redirect(它自带 nft 层的 DNS 劫持,关不掉)。
+  // off:Open-Box 不劫持任何 DNS——不改写、不回交,局域网的 53 端口流量当普通 UDP 按规则走
+  // (配合 config.mjs 里关掉 auto_redirect,它自带 nft 层的 DNS 劫持,关不掉)。但内核 DNS 入站
+  // dns-in 仍开着,主动发到 <路由器 IP>:7853 的查询(AdGuard Home / Pi-hole 的上游)照常解析。
+  // hijack 模式靠 {protocol:'dns'} 一并接住 dns-in 收到的查询(sniff 对 direct 入站同样生效)。
   if (dnsMode === 'hijack') {
     rules.push({ protocol: 'dns', action: 'hijack-dns' })
+  } else if (dnsMode === 'off') {
+    rules.push({ inbound: ['dns-in'], action: 'hijack-dns' })
   } else if (dnsMode === 'dnsmasq') {
     // dnsmasq 接管模式下不能全局劫持 DNS 协议流量:tun 里到 dns-in 的转发查询也会
     // 匹配 {protocol:'dns'},被劫持回同一个 dns-in 入站,形成自环导致解析超时。

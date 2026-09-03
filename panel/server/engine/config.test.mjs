@@ -149,29 +149,31 @@ test('tun.autoRedirect 默认关闭,可开启', () => {
   assert.equal(c2.inbounds[0].auto_redirect, true)
 })
 
-test('dns.mode=hijack(默认)生成 hijack-dns 路由规则', () => {
+test('dns.mode=hijack(默认)生成全局 hijack-dns 路由规则;dns-in 入站三种模式都有且监听所有地址', () => {
   const c = buildConfig({ nodes, regionGroups, profile })
-  assert.ok(c.route.rules.some((r) => r.action === 'hijack-dns'))
-  assert.ok(!c.inbounds.some((i) => i.type === 'direct'))
+  assert.ok(c.route.rules.some((r) => r.action === 'hijack-dns' && r.protocol === 'dns'))
+  const dnsIn = c.inbounds.find((i) => i.tag === 'dns-in')
+  assert.deepEqual(dnsIn, { type: 'direct', tag: 'dns-in', listen: '0.0.0.0', listen_port: 7853 })
 })
 
-test('dns.mode=off:不劫持 DNS、没有 dns-in,且即使开了 tun.autoRedirect 也不写 auto_redirect(它自带 DNS 劫持)', () => {
+test('dns.mode=off:不改写任何 DNS(只劫持 dns-in 自己收到的查询),保留 dns-in 入站,且即使开了 tun.autoRedirect 也不写 auto_redirect', () => {
   const c = buildConfig({ nodes, regionGroups, profile: { ...profile, tun: { autoRedirect: true }, dns: { ...profile.dns, mode: 'off' } } })
-  assert.ok(!c.route.rules.some((r) => r.action === 'hijack-dns'))
-  assert.ok(!c.inbounds.some((i) => i.type === 'direct'))
+  const hijacks = c.route.rules.filter((r) => r.action === 'hijack-dns')
+  assert.deepEqual(hijacks, [{ inbound: ['dns-in'], action: 'hijack-dns' }])
+  assert.ok(c.inbounds.some((i) => i.tag === 'dns-in' && i.listen === '0.0.0.0'))
   assert.equal(c.inbounds[0].auto_redirect, undefined)
   assert.equal(c.inbounds[0].auto_route, true)
   assert.ok(!c.outbounds.some((o) => o.tag === 'dnsmasq'))
 })
 
-test('dns.mode=dnsmasq: hijack 规则仅限 dns-in 入站(不自环),增 DNS 入站 127.0.0.1:7853', () => {
+test('dns.mode=dnsmasq: hijack 规则仅限 dns-in 入站(不自环),DNS 入站监听 0.0.0.0:7853', () => {
   const c = buildConfig({ nodes, regionGroups, profile: { ...profile, dns: { ...profile.dns, mode: 'dnsmasq' } } })
   const hijack = c.route.rules.find((r) => r.action === 'hijack-dns')
   assert.ok(hijack)
   assert.deepEqual(hijack.inbound, ['dns-in'])
   assert.ok(!hijack.protocol)
   const dnsIn = c.inbounds.find((i) => i.type === 'direct')
-  assert.equal(dnsIn.listen, '127.0.0.1')
+  assert.equal(dnsIn.listen, '0.0.0.0')
   assert.equal(dnsIn.listen_port, 7853)
 })
 

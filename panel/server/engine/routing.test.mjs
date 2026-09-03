@@ -90,9 +90,10 @@ test('dnsmasq 模式:被 auto_redirect 改写到 tun 网段:53 的局域网 DNS 
   assert.ok(!h.route.rules.some((r) => r.override_address))
 })
 
-test('dnsMode=off 时不劫持任何 DNS,也没有回交规则', () => {
+test('dnsMode=off 时只劫持 dns-in 自己收到的查询(AdGuard 等主动指过来的),不改写别的 DNS,也没有回交规则', () => {
   const { route } = build({ policies: [] }, { dnsMode: 'off', tunCidrs: ['172.19.0.0/30'], dnsmasqTag: 'dnsmasq' })
-  assert.ok(!route.rules.some((r) => r.action === 'hijack-dns'))
+  assert.deepEqual(route.rules.filter((r) => r.action === 'hijack-dns'), [{ inbound: ['dns-in'], action: 'hijack-dns' }])
+  assert.ok(!route.rules.some((r) => r.protocol === 'dns'))
   assert.ok(!route.rules.some((r) => r.override_address))
 })
 
