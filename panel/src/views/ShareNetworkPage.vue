@@ -34,7 +34,6 @@
         >
           <div class="app-card-inset flex items-center gap-2 text-sm">
             <span class="loading loading-spinner loading-xs" />
-            {{ $t('loading') }}
           </div>
         </div>
 
@@ -56,10 +55,12 @@
             <div class="flex min-w-0 flex-1 flex-col gap-1">
               <div class="flex min-w-0 flex-wrap items-center gap-2">
                 <span class="text-base">{{ s.name }}</span>
+                <!-- 和站点集卡片一致:只在停用时挂个标签 -->
                 <StatusBadge
-                  :on="s.enabled !== false"
-                  :on-text="$t('groupEnabled')"
-                  :off-text="$t('groupDisabled')"
+                  v-if="s.enabled === false"
+                  :on="false"
+                  on-text=""
+                  :off-text="$t('groupDisabledBadge')"
                 />
               </div>
               <div class="text-base-content/60 flex flex-wrap gap-x-3 text-xs">
