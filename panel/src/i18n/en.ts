@@ -650,10 +650,6 @@ const en = {
   // --- Region defaults card ---
   edit: 'Edit',
   kernelApplyHint: 'Start/restart regenerates the config from the current settings and applies it; on failure it rolls back to direct.',
-  icmpTitle: 'Real ping (ICMP)',
-  icmpDescription: 'Pings from the LAN leave the router directly and return the real latency; restart the kernel to apply.',
-  icmpOnNote: 'On: you ping the target itself. For proxied sites this is the direct-path latency from here, and blocked targets time out — which is the truth.',
-  icmpOffNote: 'Off: pings to proxied destinations are answered locally by the kernel, always ~1 ms, even for addresses that do not exist.',
   ipv6Title: 'IPv6',
   dnsModeTitle: 'DNS hijack',
   dnsModeDescription: 'How LAN DNS queries reach the kernel for split resolution; restart the kernel after changing.',

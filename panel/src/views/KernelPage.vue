@@ -33,10 +33,6 @@
             :profile="profile"
             :patch-profile="patchProfile"
           />
-          <IcmpCard
-            :profile="profile"
-            :patch-profile="patchProfile"
-          />
           <TestUrlCard
             :profile="profile"
             :patch-profile="patchProfile"
@@ -64,7 +60,6 @@ import type { OpenboxKernelVersion, OpenboxProfile, OpenboxServiceStatus } from 
 import { fetchKernelVersion, fetchProfile, fetchServiceStatus, saveProfile } from '@/api/openbox'
 import DnsModeCard from '@/components/kernel/DnsModeCard.vue'
 import GeoUpdateCard from '@/components/kernel/GeoUpdateCard.vue'
-import IcmpCard from '@/components/kernel/IcmpCard.vue'
 import KernelServiceCard from '@/components/kernel/KernelServiceCard.vue'
 import NodeDirectCard from '@/components/kernel/NodeDirectCard.vue'
 import OpenboxUpdateCard from '@/components/kernel/OpenboxUpdateCard.vue'

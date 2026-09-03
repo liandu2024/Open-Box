@@ -53,11 +53,6 @@ test('validateProfilePatch 只碰 ipv6 不要求提供 dns(部分 patch 只校�
   assert.equal(validateProfilePatch({ ipv6: false }), null)
 })
 
-test('validateProfilePatch icmpDirect 必须是布尔', () => {
-  assert.ok(validateProfilePatch({ icmpDirect: 'yes' }))
-  assert.equal(validateProfilePatch({ icmpDirect: false }), null)
-})
-
 test('validateProfilePatch dns.mode 非法值 → 报错', () => {
   assert.ok(validateProfilePatch({ dns: { mode: 'foo' } }))
 })

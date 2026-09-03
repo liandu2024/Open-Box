@@ -3,8 +3,7 @@ import test from 'node:test'
 import { buildRoute } from './routing.mjs'
 
 const RULESET_DIR = '/data/rulesets'
-// 既有用例按下标断言规则位置,ICMP 直连那条默认关掉,只在它自己的用例里打开
-const build = (routing, options) => buildRoute(routing, RULESET_DIR, { icmpDirect: false, ...options })
+const build = (routing, options) => buildRoute(routing, RULESET_DIR, options)
 
 const policy = (over = {}) => ({ id: 'p1', name: '谷歌', rulesets: ['geosite-google'], ...over })
 
@@ -89,16 +88,6 @@ test('dnsmasq 模式:被 auto_redirect 改写到 tun 网段:53 的局域网 DNS 
   // hijack 模式靠 protocol:dns 接住,不需要这条
   const h = build({ policies: [] }, { dnsMode: 'hijack', tunCidrs: ['172.19.0.0/30'], dnsmasqTag: 'dnsmasq' })
   assert.ok(!h.route.rules.some((r) => r.override_address))
-})
-
-test('ICMP 直连:默认有 network=icmp → 直连 的规则,且排在 ip_is_private 之前;icmpDirect=false 就没有', () => {
-  const { route } = build({ policies: [] }, { directTag: '直连', icmpDirect: true })
-  const i = route.rules.findIndex((r) => Array.isArray(r.network) && r.network.includes('icmp'))
-  const j = route.rules.findIndex((r) => r.ip_is_private)
-  assert.ok(i >= 0 && i < j, `icmp=${i} private=${j}`)
-  assert.equal(route.rules[i].outbound, '直连')
-  const off = build({ policies: [] }, { directTag: '直连', icmpDirect: false })
-  assert.ok(!off.route.rules.some((r) => Array.isArray(r.network) && r.network.includes('icmp')))
 })
 
 test('dnsMode=off 时不劫持任何 DNS,也没有回交规则', () => {

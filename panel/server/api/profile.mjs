@@ -35,9 +35,6 @@ export const validateProfilePatch = (patch) => {
   if ('ipv6' in patch && !isBoolean(patch.ipv6)) {
     return 'ipv6 must be a boolean'
   }
-  if ('icmpDirect' in patch && !isBoolean(patch.icmpDirect)) {
-    return 'icmpDirect must be a boolean'
-  }
   if ('directForNodes' in patch && !isBoolean(patch.directForNodes)) {
     return 'directForNodes must be a boolean'
   }

@@ -647,10 +647,6 @@ const zhTW: LANG_MESSAGE = {
   // --- 地區預設值卡片 ---
   edit: '編輯',
   kernelApplyHint: '啟動/重新啟動會用目前設定重新產生設定檔並套用;失敗會自動回復成直連。',
-  icmpTitle: 'Ping(ICMP)真實延遲',
-  icmpDescription: '區域網路發出的 ping 一律從路由器直連出去,回傳真實延遲;重啟核心生效。',
-  icmpOnNote: '開啟中:ping 的是目標本身,走代理的站點顯示的是從本機直連過去的延遲,被牆的目標會逾時——這才是真實情況。',
-  icmpOffNote: '關閉中:發往代理站點的 ping 由核心在本機代答,永遠 1ms 左右,ping 一個不存在的位址也有回覆,沒有參考價值。',
   ipv6Title: 'IPv6',
   dnsModeTitle: 'DNS 劫持',
   dnsModeDescription: '區域網路的 DNS 查詢怎麼交給核心分流解析;切換後重啟核心生效。',
