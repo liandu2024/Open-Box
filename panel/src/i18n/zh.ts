@@ -566,7 +566,7 @@ const zh: LANG_MESSAGE = {
   iconCategoryBrands: '公司',
   iconCategoryMisc: '其他',
   subscriptionRenameCountryNoMatch: '没有匹配的国家/地区',
-  subscriptionRenamePrefixLabel: '节点名前加订阅名(如「破晓 {sep} 香港-01」)',
+  subscriptionRenamePrefixLabel: '节点名前加订阅名(如「机场名称 {sep} 香港-01」)',
   subscriptionRenameTokensHint: '拖拽排序:',
   subscriptionRenameUnknownLabel: '\u65e0\u6cd5\u8bc6\u522b\u5730\u533a\u65f6\u7684\u6807\u7b7e',
   subscriptionRenameSeqPadHint: '给序号补零的位数。节点名到处都按文本排序,不补零时「美国-10」会排到「美国-2」前面。',

@@ -326,7 +326,7 @@ const tokenOrder = ref<string[]>(orderFromTemplate(init?.template || DEFAULT_REN
 // 分隔符一起去掉,所以三块牌子常驻不会留下 "美国--01" 这种空档。
 const template = computed(() => tokenOrder.value.join('-'))
 
-// 用订阅名做前缀(「破晓 | 香港-01」),一眼看出节点来自哪个订阅。
+// 用订阅名做前缀(「机场名称 | 香港-01」),一眼看出节点来自哪个订阅。
 const usePrefix = ref(init?.usePrefix === true)
 
 const options = computed<OpenboxRenameOptions>(() => ({

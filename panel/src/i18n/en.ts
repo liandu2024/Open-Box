@@ -569,7 +569,7 @@ const en = {
   iconCategoryBrands: 'Brands',
   iconCategoryMisc: 'Other',
   subscriptionRenameCountryNoMatch: 'No matching country/region',
-  subscriptionRenamePrefixLabel: 'Prefix node names with the subscription name (e.g. “MySub {sep} HK-01”)',
+  subscriptionRenamePrefixLabel: 'Prefix node names with the subscription name (e.g. "Airport {sep} HK-01")',
   subscriptionRenameTokensHint: 'Drag to reorder:',
   subscriptionRenameUnknownLabel: 'Label for unrecognized region',
   subscriptionRenameSeqPadHint: 'Zero-pads the sequence number. Names sort as text everywhere, so without padding US-10 comes before US-2.',
