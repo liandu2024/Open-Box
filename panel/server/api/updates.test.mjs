@@ -46,7 +46,13 @@ test('GET /update/status + POST /update/run:读 meta/通道/状态文件,发起�
       [paths.updateScript]: '#!/bin/sh\n',
     },
   })
-  const { base, close } = await startApp(ctx, { getProfile: () => ({}) })
+  // 探最新 tag 的 fetch:第一次 offline(不带 --expect),第二次给 302(带 --expect)
+  let online = false
+  const fetchImpl = async () => {
+    if (!online) throw new Error('offline')
+    return { status: 302, headers: new Map([['location', 'https://github.com/liandu2024/Open-Box/releases/tag/v0.2.3']]), url: '' }
+  }
+  const { base, close } = await startApp(ctx, { getProfile: () => ({}) }, fetchImpl)
   try {
     const st = await (await fetch(`${base}/api/openbox/update/status`)).json()
     assert.equal(st.version, 'v0.1.55')
@@ -57,6 +63,10 @@ test('GET /update/status + POST /update/run:读 meta/通道/状态文件,发起�
     assert.equal(run.status, 200)
     const call = ctx.calls.find((c) => c.cmd === 'sh')
     assert.deepEqual(call.args, [paths.updateScript, '--detach', '--mirror'])
+    online = true
+    ctx.calls.length = 0
+    await fetch(`${base}/api/openbox/update/run`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ channel: 'direct' }) })
+    assert.deepEqual(ctx.calls.find((c) => c.cmd === 'sh').args, [paths.updateScript, '--detach', '--direct', '--expect', 'v0.2.3'])
     const bad = await fetch(`${base}/api/openbox/update/run`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ channel: 'x' }) })
     assert.equal(bad.status, 400)
   } finally {

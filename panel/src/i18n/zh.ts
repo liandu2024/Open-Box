@@ -797,6 +797,8 @@ const zh: LANG_MESSAGE = {
   serverPortReserved: '端口 {port} 是面板 / 内核自用端口',
   serverPortListening: '端口 {port} 已被路由器上其它服务占用',
   serverPortCheckFailed: '端口检测失败:{message}',
+  obUpdateDialogTitle: '正在升级 Open-Box',
+  obUpdateViewProgress: '查看进度',
 }
 
 export default zh

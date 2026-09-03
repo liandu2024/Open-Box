@@ -370,6 +370,13 @@ fi
 # 两两互斥;--detach 与 --probe/--cancel 也互斥(探测、取消都是同步的一次性调用,
 # 不存在"派生到后台"的意义)。
 DETACH=0
+# 期望装到的版本(tag)。面板发起升级时会把它探到的最新 tag 传进来(--expect),
+# 派生到后台的子进程通过环境变量接力。有它就下载带版本号的资产
+# (releases/download/<tag>/open-box-<tag>-linux-<arch>.tar.gz):每个版本 URL 唯一,
+# 加速镜像缓存了上一版同名的稳定资产也串不过来——2026-09-03 真机上就是这么栽的:
+# 面板说最新 v0.1.56,镜像给的却是缓存的 v0.1.55 包,校验文件也是同一份缓存,校验照过。
+# 没传的话自己直连 GitHub 探一次 tag,探不到再退回稳定资产名。
+EXPECT_VERSION="${OPENBOX_UPDATE_EXPECT:-}"
 # CHANNEL_OVERRIDE/CLI_MIRROR_PREFIX 的初始值优先从环境变量读回——这是 --detach
 # 派生后台子进程时,父进程把自己已经解析好的路线选择传给子进程的方式(实际赋值
 # 见下方 --detach 小节真正派生子进程的那一行)。子进程重新执行的是同一份脚本、
@@ -454,6 +461,16 @@ while [ $# -gt 0 ]; do
             ;;
         esac
       fi
+      ;;
+    --expect)
+      shift
+      [ $# -ge 1 ] || die "--expect 需要一个参数:期望升级到的版本 tag(例如 --expect v0.1.56)。"
+      EXPECT_VERSION="$1"
+      case "$EXPECT_VERSION" in
+        '') die "--expect 的值不能为空。" ;;
+        *[!A-Za-z0-9._-]*) die "--expect 的值包含非法字符(只允许字母、数字、. _ -):$EXPECT_VERSION" ;;
+      esac
+      shift
       ;;
     --probe)
       [ "$DETACH" = "0" ] || die "--probe 不能与 --detach 同时使用。"
@@ -641,7 +658,7 @@ if [ "$DETACH" = "1" ]; then
     warn "$_detach_msg"
     exit 0
   fi
-  OPENBOX_UPDATE_CHANNEL_OVERRIDE="$CHANNEL_OVERRIDE" OPENBOX_UPDATE_MIRROR_PREFIX="$CLI_MIRROR_PREFIX" \
+  OPENBOX_UPDATE_CHANNEL_OVERRIDE="$CHANNEL_OVERRIDE" OPENBOX_UPDATE_MIRROR_PREFIX="$CLI_MIRROR_PREFIX" OPENBOX_UPDATE_EXPECT="$EXPECT_VERSION" \
     setsid sh "$0" >"$UPDATE_LOG" 2>&1 </dev/null &
   info "升级已在后台启动,日志:$UPDATE_LOG"
   exit 0
@@ -796,8 +813,28 @@ detect_downloader
 # 校验、解包都完成后才从 meta.json 读出来(见下方),所以"是否已是最新版本"的判断
 # 也相应挪到了解包之后——这是放弃 API 查询换来的必然代价:多了一次下载,但镜像通道
 # 从此能用。
-ASSET="open-box-linux-${ARCH}.tar.gz"
-ASSET_URL="https://github.com/$REPO/releases/latest/download/$ASSET"
+# 没给 --expect 就直连 GitHub 看一眼 releases/latest 的 302 指向哪个 tag(几十字节,
+# 8 秒超时;直连不通就算了)。拿到 tag 才能用带版本号的资产名。
+resolve_latest_tag() {
+  _rlt_url="https://github.com/$REPO/releases/latest"
+  case "$DOWNLOADER" in
+    curl) curl -sI --connect-timeout 8 --max-time 12 "$_rlt_url" 2>/dev/null ;;
+    wget) wget --spider -S --max-redirect=0 --timeout=12 "$_rlt_url" 2>&1 ;;
+  esac | sed -n 's/^[Ll]ocation: .*\/releases\/tag\/\([^/?#[:space:]]*\).*/\1/p' | head -n 1
+}
+if [ -z "$EXPECT_VERSION" ]; then
+  EXPECT_VERSION=$(resolve_latest_tag)
+  case "$EXPECT_VERSION" in
+    *[!A-Za-z0-9._-]*) EXPECT_VERSION="" ;;
+  esac
+fi
+if [ -n "$EXPECT_VERSION" ]; then
+  ASSET="open-box-${EXPECT_VERSION}-linux-${ARCH}.tar.gz"
+  ASSET_URL="https://github.com/$REPO/releases/download/${EXPECT_VERSION}/$ASSET"
+else
+  ASSET="open-box-linux-${ARCH}.tar.gz"
+  ASSET_URL="https://github.com/$REPO/releases/latest/download/$ASSET"
+fi
 SHA_URL="$ASSET_URL.sha256"
 
 OLD_VERSION=$(sed -n 's/.*"version" *: *"\([^"]*\)".*/\1/p' "$INSTALL_ROOT/meta.json" 2>/dev/null | head -n 1)
@@ -956,6 +993,9 @@ check_cancel_and_abort
 
 NEW_VERSION=$(sed -n 's/.*"version" *: *"\([^"]*\)".*/\1/p' "$STAGE_DIR/meta.json" 2>/dev/null | head -n 1)
 [ -n "$NEW_VERSION" ] || die "升级包的 meta.json 无法解析版本号。现有安装未改动。"
+if [ -n "$EXPECT_VERSION" ] && [ "$NEW_VERSION" != "$EXPECT_VERSION" ]; then
+  die "下载到的包是 $NEW_VERSION,不是期望的 $EXPECT_VERSION(镜像缓存了旧包?换「GitHub 直连」通道再试)。现有安装未改动。"
+fi
 if [ -n "$OLD_VERSION" ] && [ "$OLD_VERSION" = "$NEW_VERSION" ]; then
   info "当前已是最新版本($OLD_VERSION),无需升级。"
   write_status done "" "" "已是最新版本,无需升级"

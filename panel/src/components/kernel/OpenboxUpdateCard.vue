@@ -21,26 +21,6 @@
         </template>
       </div>
 
-      <!-- 进行中:进度 + 取消 -->
-      <div
-        v-if="progress?.running"
-        class="flex flex-col gap-2"
-      >
-        <div class="flex items-center gap-2">
-          <span class="loading loading-spinner loading-xs" />
-          <span>{{ stageText }}</span>
-          <span
-            v-if="progress.message"
-            class="text-base-content/60 truncate text-xs"
-          >{{ progress.message }}</span>
-        </div>
-        <progress
-          class="progress progress-primary w-full"
-          :value="percent ?? undefined"
-          max="100"
-        />
-      </div>
-
       <!-- 操作 -->
       <div class="flex flex-wrap items-center gap-2">
         <button
@@ -81,10 +61,10 @@
           v-else
           type="button"
           class="btn btn-sm"
-          :disabled="!cancellable"
-          @click="cancel"
+          @click="dialogOpen = true"
         >
-          {{ $t('cancel') }}
+          <span class="loading loading-spinner loading-xs" />
+          {{ $t('obUpdateViewProgress') }}
         </button>
         <span
           v-if="info?.channel"
@@ -129,17 +109,63 @@
         <span class="text-base-content/50 text-xs">{{ $t('obUpdateAutoHint') }}</span>
       </div>
 
-      <pre
-        v-if="progress?.running && info?.logTail"
-        class="bg-base-200/60 max-h-40 overflow-auto rounded-lg p-2 font-mono text-xs whitespace-pre-wrap"
-      >{{ info.logTail }}</pre>
     </div>
   </div>
+
+  <!-- 升级进行中的进度和日志放弹窗里,卡片布局不动。升级到换文件阶段面板会重启,
+       弹窗关掉也不影响后台的升级。 -->
+  <DialogWrapper
+    v-model="dialogOpen"
+    :title="$t('obUpdateDialogTitle')"
+    box-class="w-full max-w-2xl"
+  >
+    <div class="flex flex-col gap-3 text-sm">
+      <div class="flex items-center gap-2">
+        <span
+          v-if="progress?.running"
+          class="loading loading-spinner loading-xs"
+        />
+        <span>{{ stageText }}</span>
+        <span
+          v-if="progress?.message"
+          class="text-base-content/60 truncate text-xs"
+        >{{ progress.message }}</span>
+      </div>
+      <progress
+        class="progress progress-primary w-full"
+        :value="percent ?? undefined"
+        max="100"
+      />
+      <pre
+        v-if="info?.logTail"
+        class="bg-base-200/60 max-h-64 overflow-auto rounded-lg p-2 font-mono text-xs whitespace-pre-wrap"
+      >{{ info.logTail }}</pre>
+      <div class="flex justify-end gap-2">
+        <button
+          v-if="progress?.running"
+          type="button"
+          class="btn btn-sm"
+          :disabled="!cancellable"
+          @click="cancel"
+        >
+          {{ $t('cancel') }}
+        </button>
+        <button
+          type="button"
+          class="btn btn-sm"
+          @click="dialogOpen = false"
+        >
+          {{ $t('close') }}
+        </button>
+      </div>
+    </div>
+  </DialogWrapper>
 </template>
 
 <script setup lang="ts">
 import type { OpenboxProfile, OpenboxUpdateStatus } from '@/api/openbox'
 import { cancelUpdate, checkUpdate, fetchUpdateStatus, runUpdate } from '@/api/openbox'
+import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import StatusBadge from '@/components/common/StatusBadge.vue'
 import { showNotification } from '@/helper/notification'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
@@ -156,6 +182,7 @@ const latest = ref<{ latest: string; hasUpdate: boolean } | null>(null)
 const checking = ref(false)
 const starting = ref(false)
 const channel = ref<'auto' | 'direct' | 'mirror'>('auto')
+const dialogOpen = ref(false)
 const progress = computed(() => info.value?.status)
 const plan = computed(() => ({
   auto: props.profile.updates?.openbox?.auto === true,
@@ -188,6 +215,8 @@ const load = async () => {
     return
   }
   const running = Boolean(info.value.status.running)
+  // 打开页面时升级已经在跑(比如自动更新),也把弹窗弹出来
+  if (running && !wasRunning) dialogOpen.value = true
   if (wasRunning && !running) {
     const stage = info.value.status.stage
     if (stage === 'done') {
@@ -224,6 +253,7 @@ const start = async () => {
   try {
     await runUpdate(channel.value)
     showNotification({ content: 'obUpdateStarted', type: 'alert-info' })
+    dialogOpen.value = true
     wasRunning = true
     schedule(800)
   } catch (err) {

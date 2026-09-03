@@ -800,6 +800,8 @@ const en = {
   serverPortReserved: 'Port {port} is used by the panel or the kernel itself',
   serverPortListening: 'Port {port} is already in use by another service on the router',
   serverPortCheckFailed: 'Port check failed: {message}',
+  obUpdateDialogTitle: 'Updating Open-Box',
+  obUpdateViewProgress: 'Progress',
 }
 
 export type LANG_MESSAGE = typeof en

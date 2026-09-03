@@ -797,6 +797,8 @@ const zhTW: LANG_MESSAGE = {
   serverPortReserved: '連接埠 {port} 是面板 / 核心自用連接埠',
   serverPortListening: '連接埠 {port} 已被路由器上其它服務佔用',
   serverPortCheckFailed: '連接埠檢測失敗:{message}',
+  obUpdateDialogTitle: '正在升級 Open-Box',
+  obUpdateViewProgress: '查看進度',
 }
 
 export default zhTW

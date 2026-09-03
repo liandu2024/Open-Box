@@ -8,8 +8,19 @@ import {
 
 const CHANNELS = new Set(['auto', 'direct', 'mirror'])
 
+// 发起升级前探一下最新 tag(直连不通就走镜像,见 fetchLatestVersion);探不到就空着,
+// 脚本会自己再试一次直连,再不行退回稳定资产名
+const makeLatestTagOrEmpty = (fetchImpl) => async () => {
+  try {
+    return (await fetchLatestVersion(fetchImpl)).latest
+  } catch {
+    return ''
+  }
+}
+
 export const registerUpdateRoutes = (app, { store, ctx, paths, fetchImpl = globalThis.fetch } = {}) => {
   const router = express.Router({ caseSensitive: true })
+  const latestTagOrEmpty = makeLatestTagOrEmpty(fetchImpl)
   router.use(express.json({ limit: '64kb' }))
 
   // GET /api/openbox/update/status —— 本地信息,不出网
@@ -38,7 +49,7 @@ export const registerUpdateRoutes = (app, { store, ctx, paths, fetchImpl = globa
     const status = await readUpdateStatus(ctx, paths)
     if (status.running) return res.status(409).json({ message: '已有一次更新在进行中' })
     if (!(await ctx.exists(paths.updateScript))) return res.status(503).json({ message: `找不到升级脚本:${paths.updateScript}` })
-    const r = await startUpdate(ctx, paths, channel)
+    const r = await startUpdate(ctx, paths, channel, { expect: await latestTagOrEmpty() })
     if (!r.ok) return res.status(503).json({ message: r.output || `update.sh exit ${r.code}` })
     res.json({ ok: true, output: r.output })
   })

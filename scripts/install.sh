@@ -234,8 +234,27 @@ detect_downloader
 # release 里同名资产,常见加速站也普遍代理这条路径。资产名不带版本号(由
 # build-release.sh 与 release.yml 同步产出,见 Important 5),真正装的是哪个版本
 # 校验通过、解包完成后从 meta.json 里读(见下方)。
-ASSET="open-box-linux-${ARCH}.tar.gz"
-ASSET_URL="https://github.com/$REPO/releases/latest/download/$ASSET"
+# 先直连 GitHub 看一眼 releases/latest 的 302 指向哪个 tag(几十字节,8 秒超时),拿到就
+# 下载带版本号的资产:每个版本 URL 唯一,加速镜像缓存了上一版同名的稳定资产也串不过来
+# (update.sh 里有同样的处理和真机踩坑记录)。直连探不到再退回稳定资产名。
+resolve_latest_tag() {
+  _rlt_url="https://github.com/$REPO/releases/latest"
+  case "$DOWNLOADER" in
+    curl) curl -sI --connect-timeout 8 --max-time 12 "$_rlt_url" 2>/dev/null ;;
+    wget) wget --spider -S --max-redirect=0 --timeout=12 "$_rlt_url" 2>&1 ;;
+  esac | sed -n 's/^[Ll]ocation: .*\/releases\/tag\/\([^/?#[:space:]]*\).*/\1/p' | head -n 1
+}
+LATEST_TAG=$(resolve_latest_tag)
+case "$LATEST_TAG" in
+  *[!A-Za-z0-9._-]*) LATEST_TAG="" ;;
+esac
+if [ -n "$LATEST_TAG" ]; then
+  ASSET="open-box-${LATEST_TAG}-linux-${ARCH}.tar.gz"
+  ASSET_URL="https://github.com/$REPO/releases/download/${LATEST_TAG}/$ASSET"
+else
+  ASSET="open-box-linux-${ARCH}.tar.gz"
+  ASSET_URL="https://github.com/$REPO/releases/latest/download/$ASSET"
+fi
 SHA_URL="$ASSET_URL.sha256"
 
 # ---------- 内置镜像列表(--mirror 不带前缀时使用)----------

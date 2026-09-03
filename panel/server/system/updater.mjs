@@ -75,10 +75,13 @@ export const readUpdateLogTail = async (ctx, paths, lines = 30) => {
 }
 
 // 发起升级:update.sh --detach 自己 fork 到后台并立刻返回;真正的进度看状态文件。
-export const startUpdate = async (ctx, paths, channel = 'auto') => {
+export const startUpdate = async (ctx, paths, channel = 'auto', { expect = '' } = {}) => {
   const args = [paths.updateScript, '--detach']
   if (channel === 'direct') args.push('--direct')
   else if (channel === 'mirror') args.push('--mirror')
+  // 把探到的最新 tag 交给脚本:它据此下载带版本号的资产,并在解包后核对版本,
+  // 镜像缓存的旧包过不了这一关(见 update.sh 里 EXPECT_VERSION 的说明)
+  if (expect && /^[A-Za-z0-9._-]+$/.test(expect)) args.push('--expect', expect)
   const r = await ctx.exec('sh', args, { timeoutMs: 20_000 })
   return { ok: r.code === 0, code: r.code, output: `${r.stdout}${r.stderr}`.trim() }
 }
