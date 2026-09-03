@@ -154,7 +154,7 @@ export default defineComponent({
           <TextInput
             v-model={logFilter.value}
             beforeClose={true}
-            class="flex-1"
+            class="min-w-64 flex-1"
             placeholder={`${t('search')} | Regex`}
             clearable={true}
             menus={logSearchHistory.value}
@@ -173,7 +173,7 @@ export default defineComponent({
 
       const logTypeSelect = (
         <select
-          class={['select select-sm', isLargeCtrlsBar.value ? 'w-40' : 'w-24 max-w-40 flex-1']}
+          class={['select select-sm shrink-0', isLargeCtrlsBar.value ? 'w-28' : 'w-20 max-w-28']}
           v-model={logTypeFilter.value}
         >
           <option value="">{t('all')}</option>
