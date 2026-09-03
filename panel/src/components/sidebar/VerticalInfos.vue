@@ -1,5 +1,5 @@
 <template>
-  <div class="card mx-1 flex flex-col gap-4 py-2 text-xs">
+  <div class="card flex flex-col gap-4 py-2 text-xs">
     <div class="flex flex-col gap-4">
       <div class="flex flex-col items-center justify-center gap-1">
         <ArrowsRightLeftIcon class="h-4 w-4" />
