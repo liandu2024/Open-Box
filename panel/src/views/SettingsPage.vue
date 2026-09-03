@@ -80,8 +80,8 @@ const tabItems: { key: SETTINGS_TAB; label: string; icon: Component }[] = [
   { key: SETTINGS_TAB.subscriptions, label: 'subscriptionsManageTab', icon: RssIcon },
   { key: SETTINGS_TAB.groups, label: 'groupsTab', icon: RectangleStackIcon },
   { key: SETTINGS_TAB.routing, label: 'routingSettings', icon: MapIcon },
-  { key: SETTINGS_TAB.kernel, label: 'kernelSettings', icon: CpuChipIcon },
   { key: SETTINGS_TAB.share, label: 'shareNetworkTab', icon: ShareIcon },
+  { key: SETTINGS_TAB.kernel, label: 'kernelSettings', icon: CpuChipIcon },
 ]
 
 const TAB_COMPONENTS: Partial<Record<SETTINGS_TAB, Component>> = {
