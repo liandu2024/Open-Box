@@ -37,7 +37,8 @@ test('decideDnsServer:域名条件本地判;规则集经内核;都不中落到 f
 })
 
 test('POST /route-test:内核解析 + 真实访问 + 在连接表里找到这条连接的链路', async () => {
-  const ctx = createMockContext({ files: { [paths.configPath]: JSON.stringify(config), [paths.singbox]: 'x' } })
+  // 规则集文件要在:第一条 dns 规则是 rule_set,缺文件会被判成"没法确认"而不是"不命中"
+  const ctx = createMockContext({ files: { [paths.configPath]: JSON.stringify(config), [paths.singbox]: 'x', [`${paths.rulesetDir}/geosite-openai.srs`]: 'x' } })
   const fetchImpl = async (url) => {
     if (url.includes('/dns/query')) return { ok: true, status: 200, json: async () => ({ Answer: [{ data: '39.156.66.10' }] }) }
     if (url.includes('/connections')) return { ok: true, status: 200, json: async () => ({ connections: [
