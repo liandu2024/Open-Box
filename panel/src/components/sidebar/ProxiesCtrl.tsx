@@ -1,14 +1,11 @@
-import { disconnectByIdAPI, isSingBox } from '@/api'
 import { nodeGroups, policyGroups, renderGroups } from '@/composables/proxies'
 import { useCtrlsBar } from '@/composables/useCtrlsBar'
 import { PROXY_SORT_TYPE, PROXY_TAB_TYPE } from '@/constant'
 import { getMinCardWidth } from '@/helper/utils'
-import { configs, updateConfigs } from '@/store/config'
 import {
   openboxSubscriptions,
   refreshAllOpenboxSubscriptions,
 } from '@/store/openboxSubscriptions'
-import { activeConnections } from '@/store/connections'
 import {
   proxyMap,
   allProxiesLatencyTest,
@@ -18,7 +15,6 @@ import {
   proxiesTabShow,
 } from '@/store/proxies'
 import {
-  automaticDisconnection,
   collapseGroupMap,
   displayFinalOutbound,
   groupProxiesByProvider,
@@ -36,7 +32,6 @@ import {
   ChevronUpIcon,
   WrenchScrewdriverIcon,
 } from '@heroicons/vue/24/outline'
-import { every } from 'lodash'
 import { isEmpty } from 'lodash'
 import { computed, defineComponent, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -72,26 +67,6 @@ export default defineComponent({
         await fetchProxies()
       } finally {
         isUpgrading.value = false
-      }
-    }
-
-    const defaultModes = ['direct', 'rule', 'global']
-    const modeList = computed(() => {
-      return configs.value?.['mode-list'] || configs.value?.['modes'] || defaultModes
-    })
-    const needTranslateModes = computed(() => {
-      return every(modeList.value, (mode) => defaultModes.includes(mode.toLowerCase()))
-    })
-
-    const handlerModeChange = (e: Event) => {
-      const mode = (e.target as HTMLSelectElement).value
-      updateConfigs({ mode })
-      if (isSingBox.value && automaticDisconnection.value) {
-        activeConnections.value.forEach((connection) => {
-          if (connection.rule.includes('clash_mode')) {
-            disconnectByIdAPI(connection.id)
-          }
-        })
       }
     }
 
@@ -211,28 +186,6 @@ export default defineComponent({
         >
           <ArrowPathIcon class={['h-4 w-4', isUpgrading.value && 'animate-spin']} />
         </button>
-      )
-
-      const modeSelect = proxiesTabShow.value === PROXY_TAB_TYPE.POLICY && configs.value && (
-        <select
-          class={[
-            'select select-sm shrink-0',
-            isLargeCtrlsBar.value ? 'min-w-40' : 'w-20 min-w-20',
-          ]}
-          v-model={configs.value.mode}
-          onChange={handlerModeChange}
-        >
-          {modeList.value.map((mode) => {
-            return (
-              <option
-                key={mode}
-                value={mode}
-              >
-                {needTranslateModes.value ? t(mode.toLowerCase()) : mode}
-              </option>
-            )
-          })}
-        </select>
       )
 
       const sort = (
@@ -372,7 +325,6 @@ export default defineComponent({
             {!moveRefreshToSecondRow && upgradeAllIcon}
           </div>
           <div class="flex w-full gap-2">
-            {modeSelect}
             {searchSection}
             <div class="ml-auto flex shrink-0 items-center gap-2">
               {moveRefreshToSecondRow && upgradeAllIcon}
@@ -385,7 +337,6 @@ export default defineComponent({
       ) : (
         <div class="app-card-padding flex gap-2">
           {tabs}
-          {modeSelect}
           {searchSection}
           {upgradeAllIcon}
           {settingsModal}
