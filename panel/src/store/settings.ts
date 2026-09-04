@@ -257,12 +257,8 @@ export const connectionCardLines = useStorage<CONNECTIONS_TABLE_ACCESSOR_KEY[][]
 export const sourceIPLabelList = useStorage<SourceIPLabel[]>('config/source-ip-label-list', [])
 
 // rules
-export const displayNowNodeInRule = useStorage('config/display-now-node-in-rule', true)
-export const displayLatencyInRule = useStorage('config/display-latency-in-rule', true)
-export const disconnectOnRuleDisable = useStorage('config/disconnect-on-rule-disable', true)
 
 // logs
-export const logRetentionLimit = useStorage<number>('config/log-retention-limit', 1000)
 export const logSearchHistory = useStorage<string[]>('config/log-search-history', [])
 
 // settings visibility

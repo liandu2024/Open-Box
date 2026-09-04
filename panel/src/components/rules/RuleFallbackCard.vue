@@ -31,7 +31,7 @@
           />
         </div>
         <span
-          v-if="latency !== NOT_CONNECTED && displayLatencyInRule"
+          v-if="latency !== NOT_CONNECTED"
           :class="latencyColor"
           class="ml-1 text-xs"
         >
@@ -46,7 +46,6 @@
 import { NOT_CONNECTED } from '@/constant'
 import { getColorForLatency } from '@/helper'
 import { getLatencyByName, proxyMap } from '@/store/proxies'
-import { displayLatencyInRule, displayNowNodeInRule } from '@/store/settings'
 import type { Rule } from '@/types'
 import { computed } from 'vue'
 import ProxyGroupNow from '../proxies/ProxyGroupNow.vue'
@@ -57,7 +56,7 @@ const props = defineProps<{
 }>()
 
 const showProxyRoute = computed(() => {
-  return Boolean(props.rule && displayNowNodeInRule.value && proxyMap.value[props.rule.proxy]?.now)
+  return Boolean(props.rule && proxyMap.value[props.rule.proxy]?.now)
 })
 
 const latency = computed(() => {

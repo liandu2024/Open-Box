@@ -83,7 +83,7 @@
           />
         </div>
         <span
-          v-if="latency !== NOT_CONNECTED && displayLatencyInRule"
+          v-if="latency !== NOT_CONNECTED"
           :class="latencyColor"
           class="ml-1 text-xs"
         >
@@ -122,9 +122,6 @@ import {
 } from '@/store/proxies'
 import { fetchRules, ruleProviderList } from '@/store/rules'
 import {
-  disconnectOnRuleDisable,
-  displayLatencyInRule,
-  displayNowNodeInRule,
 } from '@/store/settings'
 import type { Rule } from '@/types'
 import {
@@ -153,7 +150,7 @@ const selected = ref('')
 const { t } = useI18n()
 const { showTip } = useTooltip()
 const showProxyRoute = computed(() => {
-  return displayNowNodeInRule.value && Boolean(proxyMap.value[props.rule.proxy]?.now)
+  return Boolean(proxyMap.value[props.rule.proxy]?.now)
 })
 const routeNames = computed(() => {
   if (!showProxyRoute.value) {
@@ -231,7 +228,7 @@ const toggleRuleDisabledHandler = async () => {
       await toggleRuleDisabledAPI({ [props.rule.index]: willBeDisabled })
     }
 
-    if (willBeDisabled && disconnectOnRuleDisable.value) {
+    if (willBeDisabled) {
       const matchingConnections = activeConnections.value.filter((conn) => {
         const ruleTypeMatches = conn.rule === props.rule.type
         const rulePayloadMatches = (conn.rulePayload || '') === (props.rule.payload || '')

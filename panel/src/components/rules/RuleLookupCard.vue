@@ -40,7 +40,7 @@
               />
             </div>
             <span
-              v-if="getLatency(rule.proxy) !== NOT_CONNECTED && displayLatencyInRule"
+              v-if="getLatency(rule.proxy) !== NOT_CONNECTED"
               :class="getLatencyClass(rule.proxy)"
               class="ml-1 text-xs"
             >
@@ -99,7 +99,6 @@ import { getColorForLatency } from '@/helper'
 import { copyText as copyToClipboard } from '@/helper/clipboard'
 import { showNotification } from '@/helper/notification'
 import { getLatencyByName, proxyMap } from '@/store/proxies'
-import { displayLatencyInRule, displayNowNodeInRule } from '@/store/settings'
 import type { Rule } from '@/types'
 import { DocumentDuplicateIcon } from '@heroicons/vue/24/outline'
 import { useI18n } from 'vue-i18n'
@@ -127,7 +126,7 @@ defineProps<{
 }>()
 
 const showProxyRoute = (proxyName: string) => {
-  return displayNowNodeInRule.value && Boolean(proxyMap.value[proxyName]?.now)
+  return Boolean(proxyMap.value[proxyName]?.now)
 }
 
 const getLatency = (proxyName: string) => {

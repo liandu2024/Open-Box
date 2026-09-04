@@ -5,21 +5,21 @@ import { useStorage } from '@vueuse/core'
 import dayjs from 'dayjs'
 import { throttle } from 'lodash'
 import { ref, watch } from 'vue'
-import { logRetentionLimit, sourceIPLabelList } from './settings'
+import { sourceIPLabelList } from './settings'
 
 export const logs = ref<LogWithSeq[]>([])
 export const logFilter = ref('')
 export const logTypeFilter = ref('')
 export const isPaused = ref(false)
 export const logLevel = useStorage<string>('config/log-level', LOG_LEVEL.Info)
-export const logFilterRegex = useStorage<string>('config/log-filter-regex', '')
-export const logFilterEnabled = useStorage<boolean>('config/log-filter-enabled', false)
+// 页面里保留多少条日志。原来是个设置项,但没人会去改它,固定成原来的默认值。
+const LOG_RETENTION_LIMIT = 1000
 
 let cancel: () => void
 let logsTemp: LogWithSeq[] = []
 
 const sliceLogs = throttle(() => {
-  logs.value = logsTemp.concat(logs.value).slice(0, logRetentionLimit.value)
+  logs.value = logsTemp.concat(logs.value).slice(0, LOG_RETENTION_LIMIT)
   logsTemp = []
 }, 500)
 

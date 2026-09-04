@@ -3,39 +3,26 @@ import { normalizeRuleTarget } from '@/store/rules'
 import { useCtrlsBar } from '@/composables/useCtrlsBar'
 import { LOG_LEVEL } from '@/constant'
 import { useTooltip } from '@/helper/tooltip'
-import {
-  initLogs,
-  isPaused,
-  logFilter,
-  logFilterEnabled,
-  logFilterRegex,
-  logLevel,
-  logTypeFilter,
-  logs,
-} from '@/store/logs'
-import { logRetentionLimit, logSearchHistory } from '@/store/settings'
+import { initLogs, isPaused, logFilter, logLevel, logTypeFilter, logs } from '@/store/logs'
+import { logSearchHistory } from '@/store/settings'
 import {
   ArrowDownTrayIcon,
-  LinkIcon,
-  LinkSlashIcon,
   PauseIcon,
   PlayIcon,
-  QuestionMarkCircleIcon,
-  WrenchScrewdriverIcon,
-  XMarkIcon, SparklesIcon } from '@heroicons/vue/24/outline'
+  SparklesIcon,
+  XMarkIcon,
+} from '@heroicons/vue/24/outline'
 import dayjs from 'dayjs'
 import { debounce } from 'lodash'
-import { computed, defineComponent, ref, watch } from 'vue'
+import { computed, defineComponent, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import DialogWrapper from '../common/DialogWrapper.vue'
 import TextInput from '../common/TextInput.vue'
 
 export default defineComponent({
   setup() {
     const { t } = useI18n()
-    const settingsModel = ref(false)
     const { isLargeCtrlsBar } = useCtrlsBar()
-    const { showTip, updateTip } = useTooltip()
+    const { showTip } = useTooltip()
     const insertLogSearchHistory = debounce((log: string) => {
       if (!log) {
         return
@@ -200,83 +187,13 @@ export default defineComponent({
         </select>
       )
 
-      const settingsModal = (
-        <>
-          <button
-            class={'btn btn-circle btn-sm'}
-            onClick={() => (settingsModel.value = true)}
-          >
-            <WrenchScrewdriverIcon class="h-4 w-4" />
-          </button>
-          <DialogWrapper
-            v-model={settingsModel.value}
-            title={t('logSettings')}
-          >
-            <div class="flex flex-col gap-4 p-2 text-sm">
-              <div class="flex items-center gap-2">
-                {t('logRetentionLimit')}
-                <input
-                  class="input input-sm w-20"
-                  type="number"
-                  max="9999"
-                  v-model={logRetentionLimit.value}
-                />
-              </div>
-              <div class="flex items-center gap-2">
-                <span class="shrink-0">{t('hideLogRegex')}</span>
-                <TextInput
-                  class="w-32 max-w-64 flex-1"
-                  v-model={logFilterRegex.value}
-                />
-              </div>
-              <div class="flex items-center gap-2">
-                {t('hideLog')}
-                <input
-                  type="checkbox"
-                  class="toggle"
-                  v-model={logFilterEnabled.value}
-                />
-                <div
-                  onMouseenter={(e) =>
-                    showTip(e, t('hideLogTip'), {
-                      appendTo: 'parent',
-                    })
-                  }
-                >
-                  <QuestionMarkCircleIcon class="h-4 w-4" />
-                </div>
-              </div>
-            </div>
-          </DialogWrapper>
-        </>
-      )
-
       const buttons = (
         <div class="flex items-center gap-2">
-          {settingsModal}
           <button
             class="btn btn-circle btn-sm"
             onClick={downloadAllLogs}
           >
             <ArrowDownTrayIcon class="h-4 w-4" />
-          </button>
-          <button
-            class="btn btn-circle btn-sm"
-            onClick={() => {
-              logFilterEnabled.value = !logFilterEnabled.value
-              updateTip(logFilterEnabled.value ? t('showLog') : t('hideLog'))
-            }}
-            onMouseenter={(e) =>
-              showTip(e, logFilterEnabled.value ? t('showLog') : t('hideLog'), {
-                appendTo: 'parent',
-              })
-            }
-          >
-            {logFilterEnabled.value ? (
-              <LinkSlashIcon class="h-4 w-4" />
-            ) : (
-              <LinkIcon class="h-4 w-4" />
-            )}
           </button>
           <button
             class="btn btn-circle btn-sm"

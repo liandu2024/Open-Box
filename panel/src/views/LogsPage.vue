@@ -20,7 +20,7 @@ import LogsCard from '@/components/logs/LogsCard.vue'
 import LogsCtrl from '@/components/sidebar/LogsCtrl.tsx'
 import { usePaddingForViews } from '@/composables/paddingViews'
 import { isMiddleScreen } from '@/helper/utils'
-import { logFilter, logFilterEnabled, logFilterRegex, logTypeFilter, logs } from '@/store/logs'
+import { logFilter, logTypeFilter, logs } from '@/store/logs'
 import type { LogWithSeq } from '@/types'
 import { computed } from 'vue'
 
@@ -56,12 +56,6 @@ const renderLogs = computed(() => {
     })
   }
 
-  if (logFilterEnabled.value && logFilterRegex.value) {
-    const hideRegex = new RegExp(logFilterRegex.value, 'i')
-    renderLogs = renderLogs.filter((log) => {
-      return ![log.payload, log.time, log.type].some((i) => hideRegex.test(i))
-    })
-  }
 
   return renderLogs
 })
