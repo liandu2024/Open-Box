@@ -1,4 +1,7 @@
-# Open-Box
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/pic/logo-dark.png">
+  <img src="docs/pic/logo.png" alt="Open-Box" height="72">
+</picture>
 
 OpenWrt 上的一体化透明代理:一条命令装完 sing-box 内核和管理面板,首次打开面板设个密码、跟引导走,不用手写任何配置文件。
 
