@@ -13,7 +13,26 @@ test('vmess emit 带 ws + tls', () => {
   const o = emitOutbound(n)
   assert.equal(o.type, 'vmess'); assert.equal(o.uuid, 'u'); assert.equal(o.alter_id, 0); assert.equal(o.security, 'auto')
   assert.deepEqual(o.transport, { type: 'ws', path: '/vm', headers: { Host: 'cdn.com' } })
-  assert.deepEqual(o.tls, { enabled: true, server_name: 'a.com' })
+  // 证书校验一律跳过(见 emit-outbound.mjs 的说明)
+  assert.deepEqual(o.tls, { enabled: true, server_name: 'a.com', insecure: true })
+})
+
+test('QUIC 出站(tuic / hysteria2)不写 utls:内核在这条路径上不支持,写了每次拨号直接失败', () => {
+  const fields = (extra) => ({ password: 'pw', tls: { enabled: true, server_name: 'kami.im', alpn: ['h3'], utls: { enabled: true, fingerprint: 'chrome' } }, ...extra })
+  const h = createNode({ tag: 'H', type: 'hysteria2', server: 'a.com', server_port: 8443, fields: fields(), source: 'sharelink' })
+  assert.deepEqual(emitOutbound(h).tls, { enabled: true, server_name: 'kami.im', alpn: ['h3'], insecure: true })
+  const t = createNode({ tag: 'T', type: 'tuic', server: 'a.com', server_port: 8443, fields: { uuid: 'u', password: 'pw', tls: { enabled: true, server_name: 'kami.im', utls: { enabled: true, fingerprint: 'chrome' } } }, source: 'sharelink' })
+  assert.deepEqual(emitOutbound(t).tls, { enabled: true, server_name: 'kami.im', insecure: true })
+  // 非 QUIC 的出站照旧带 utls
+  const v = createNode({ tag: 'V', type: 'vless', server: 'a.com', server_port: 443, fields: { uuid: 'u', tls: { enabled: true, server_name: 'a.com', utls: { enabled: true, fingerprint: 'chrome' } } }, source: 'sharelink' })
+  assert.deepEqual(emitOutbound(v).tls.utls, { enabled: true, fingerprint: 'chrome' })
+})
+
+test('证书校验一律跳过:链接里没写 insecure 也跳过(机场证书自签 / 过期 / 张冠李戴是常态);REALITY 例外', () => {
+  const v = createNode({ tag: 'V', type: 'trojan', server: 'a.com', server_port: 443, fields: { password: 'pw', tls: { enabled: true, server_name: 'a.com' } }, source: 'sharelink' })
+  assert.equal(emitOutbound(v).tls.insecure, true)
+  const r = createNode({ tag: 'R', type: 'vless', server: 'a.com', server_port: 443, fields: { uuid: 'u', tls: { enabled: true, server_name: 'a.com', reality: { enabled: true, public_key: 'PK', short_id: 'ab' } } }, source: 'sharelink' })
+  assert.equal(emitOutbound(r).tls.insecure, undefined, 'REALITY 靠公钥验证,不该写 insecure')
 })
 
 test('vless reality emit 强制补 utls', () => {

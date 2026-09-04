@@ -70,12 +70,22 @@ export const buildTransport = (t) => {
   }
 }
 
-export const buildTls = (tls) => {
+// options.quic:tuic / hysteria2 这类基于 QUIC 的出站。
+// 它们的 TLS 握手在 QUIC 里做,内核不支持在这条路径上用 uTLS 指纹伪装,配置里写了就
+// 每次拨号直接失败(实测正式路由器:"open connection: unsupported usage for uTLS",
+// 而机场发的 tuic:// / hysteria2:// 链接普遍带 fp=chrome)。所以 QUIC 出站一律不写 utls。
+// mihomo 是直接忽略这个字段,所以同样的订阅在 OpenClash 里能用、在这里全挂——差别就在这。
+//
+// insecure 恒开:节点服务器用自签、过期、或者干脆是别人家域名的证书是常态(实测有节点
+// 发的是 www.tesla.com 的证书,而链接里写 sni=kami.im),而分享链接里带不带 insecure=1
+// 全看机场心情。校验失败的表现是"这个节点就是连不上",用户无从判断。节点本身有密码 /
+// UUID 认证,这里放宽的是"服务器证书归谁"这一层。REALITY 例外:它本来就不靠证书链,
+// 而是用公钥验证,不需要也不该写 insecure。
+export const buildTls = (tls, options = {}) => {
   if (!tls || !tls.enabled) return undefined
   const out = { enabled: true }
   if (tls.server_name) out.server_name = tls.server_name
   if (Array.isArray(tls.alpn) && tls.alpn.length) out.alpn = tls.alpn
-  if (tls.insecure) out.insecure = true
   if (tls.reality && tls.reality.enabled) {
     out.reality = { enabled: true }
     if (tls.reality.public_key) out.reality.public_key = tls.reality.public_key
@@ -84,15 +94,19 @@ export const buildTls = (tls) => {
     out.utls = tls.utls && tls.utls.enabled
       ? { enabled: true, fingerprint: tls.utls.fingerprint || 'chrome' }
       : { enabled: true, fingerprint: 'chrome' }
-  } else if (tls.utls && tls.utls.enabled) {
+    return out
+  }
+  if (!options.quic && tls.utls && tls.utls.enabled) {
     out.utls = { enabled: true, fingerprint: tls.utls.fingerprint || 'chrome' }
   }
+  out.insecure = true
   return out
 }
 
 const base = (node) => ({ tag: node.tag, server: node.server, server_port: node.server_port })
 const withTransport = (o, f) => { const t = buildTransport(f.transport); if (t) o.transport = t; return o }
-const withTls = (o, f) => { const t = buildTls(f.tls); if (t) o.tls = t; return o }
+const withTls = (o, f, options) => { const t = buildTls(f.tls, options); if (t) o.tls = t; return o }
+const QUIC = { quic: true }
 
 const EMITTERS = {
   shadowsocks: (n) => ({ type: 'shadowsocks', ...base(n), method: n.fields.method, password: n.fields.password }),
@@ -105,14 +119,14 @@ const EMITTERS = {
   trojan: (n) => withTls(withTransport({ type: 'trojan', ...base(n), password: n.fields.password }, n.fields), n.fields),
   anytls: (n) => withTls({ type: 'anytls', ...base(n), password: n.fields.password }, n.fields),
   hysteria2: (n) => {
-    const o = withTls({ type: 'hysteria2', ...base(n), password: n.fields.password }, n.fields)
+    const o = withTls({ type: 'hysteria2', ...base(n), password: n.fields.password }, n.fields, QUIC)
     if (n.fields.obfs) o.obfs = n.fields.obfs
     return o
   },
   tuic: (n) => {
     const o = { type: 'tuic', ...base(n), uuid: n.fields.uuid, password: n.fields.password }
     if (n.fields.congestion_control) o.congestion_control = n.fields.congestion_control
-    return withTls(o, n.fields)
+    return withTls(o, n.fields, QUIC)
   },
 }
 
