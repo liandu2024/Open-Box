@@ -58,6 +58,15 @@ export const validateProfilePatch = (patch, { reservedNames = [] } = {}) => {
     if (key in patch && !isHttpUrl(patch[key])) return `${key} must be an http(s) URL`
   }
 
+  // 分析数据保留时长(月)
+  if ('traffic' in patch) {
+    const tr = patch.traffic
+    if (!isPlainObject(tr)) return 'traffic must be an object'
+    if ('keepMonths' in tr && !(Number.isInteger(tr.keepMonths) && tr.keepMonths >= 1 && tr.keepMonths <= 36)) {
+      return 'traffic.keepMonths must be an integer 1-36'
+    }
+  }
+
   // 自动更新计划:openbox {auto, hour, days, channel} / geo {auto, hour, days, channel}
   if ('updates' in patch) {
     const u = patch.updates

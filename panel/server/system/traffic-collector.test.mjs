@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { createTrafficCollector, createTrafficStore, hostOf, leafOf, localDay, pairKindFor } from './traffic-collector.mjs'
+import {
+  createTrafficCollector,
+  createTrafficStore,
+  hostOf,
+  leafOf,
+  localDay,
+  normalizeKeepMonths,
+  pairKindFor,
+} from './traffic-collector.mjs'
 
 const fakeStore = () => ({
   rows: [],
@@ -167,10 +175,15 @@ test('sqlite store:交叉表按前一维 / 后一维查构成,含空串 key;交�
   assert.deepEqual(store.drill('2026-09-03', 'host', 'a.com', 'client', 1).count, 3)
   assert.equal(store.drill('2026-09-03', 'host', 'a.com', 'client', 1).rows.length, 1)
   assert.deepEqual(store.drill('2026-09-03', 'node', 'node', 'node', 10), { rows: [], count: 0, sum: { up: 0, down: 0 } })
-  // 交叉表单独清理,单维的不动
-  store.prunePairs('2026-09-03')
+  // 到期清理:单维和交叉表一起删(保留时长只有一个,见「分析数据保留时长」)
+  store.prune('2026-09-03')
   assert.deepEqual(store.drill('2026-09-02', 'client', '10.0.0.9', 'host', 10), { rows: [], count: 0, sum: { up: 0, down: 0 } })
-  assert.deepEqual(store.day('2026-09-02', 'client', 10), [{ key: '10.0.0.9', up: 9, down: 9, conns: 1 }])
+  assert.deepEqual(store.day('2026-09-02', 'client', 10), [])
+  // usage():卡片上显示的"存了多少、多大"
+  const u = store.usage()
+  assert.equal(u.days, 1)
+  assert.ok(u.rows > 0 && u.bytes > u.rows * 40)
+  assert.equal(u.oldestDay, '2026-09-03')
 })
 
 test('dnsmasq 回环出站不算流量:不进任何维度,总量也把它减掉', () => {
@@ -191,4 +204,26 @@ test('dnsmasq 回环出站不算流量:不进任何维度,总量也把它减掉'
   assert.equal(rows.find((r) => r.kind === 'node' && r.key === '节点A').up, 300)
   assert.equal(rows.filter((r) => r.kind === 'client' && r.key === '10.0.0.9').length, 1, '终端只剩真实连接那一条')
   assert.equal(rows.find((r) => r.kind === 'client' && r.key === '10.0.0.9').up, 300)
+})
+
+test('保留时长按月算,1~36 之外夹回来;到期的按天删,单维和交叉表一视同仁', () => {
+  assert.equal(normalizeKeepMonths(6), 6)
+  assert.equal(normalizeKeepMonths(0), 1)
+  assert.equal(normalizeKeepMonths(99), 36)
+  assert.equal(normalizeKeepMonths('12'), 12)
+  assert.equal(normalizeKeepMonths(undefined), 6)
+  assert.equal(normalizeKeepMonths(2.7), 2)
+
+  const pruned = []
+  const store = { ...fakeStore(), rows: [], prune: (d) => pruned.push(d) }
+  let months = 6
+  const c = createTrafficCollector({ store, now: () => new Date(2026, 8, 4), getKeepMonths: () => months })
+  c.prune()
+  assert.deepEqual(pruned, ['2026-03-04'], '默认半年')
+  months = 1
+  c.prune()
+  assert.deepEqual(pruned.at(-1), '2026-08-04')
+  months = 36
+  c.prune()
+  assert.deepEqual(pruned.at(-1), '2023-09-04')
 })

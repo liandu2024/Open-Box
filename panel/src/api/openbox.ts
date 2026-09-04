@@ -116,6 +116,8 @@ export interface OpenboxProfile {
   // 测速地址:testUrl 给自动择优组和面板延迟测试用;directTestUrl 只给内置直连用
   testUrl?: string
   directTestUrl?: string
+  // 每日流量这些分析数据留多久(月,1~36)
+  traffic?: { keepMonths?: number }
   rulesetDir?: string
 }
 
@@ -770,6 +772,18 @@ export interface OpenboxTrafficDay {
   // 总量减去各节点之和:没采样到的短连接
   other: { up: number; down: number }
 }
+// 「分析数据保留时长」卡片:库里存了多少、大概占多大、每天涨多少
+export interface OpenboxTrafficUsage {
+  rows: number
+  days: number
+  bytes: number
+  perDay: number
+  oldestDay: string
+  newestDay: string
+}
+export const fetchTrafficUsage = () =>
+  requestJson<OpenboxTrafficUsage>('/api/openbox/traffic/usage')
+
 export const fetchTrafficMonth = (month?: string) =>
   requestJson<OpenboxTrafficMonth>(`/api/openbox/traffic/month${month ? `?month=${encodeURIComponent(month)}` : ''}`)
 export const fetchTrafficDay = (day: string, limit = 500) =>

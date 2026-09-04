@@ -18,6 +18,16 @@ import { DNSMASQ_OUTBOUND_TAG } from '../engine/config.mjs'
 
 const pad2 = (n) => String(n).padStart(2, '0')
 
+// 分析数据保留时长(月):默认半年,允许 1~36
+export const DEFAULT_KEEP_MONTHS = 6
+export const MIN_KEEP_MONTHS = 1
+export const MAX_KEEP_MONTHS = 36
+export const normalizeKeepMonths = (v) => {
+  const n = Math.floor(Number(v))
+  if (!Number.isFinite(n)) return DEFAULT_KEEP_MONTHS
+  return Math.min(MAX_KEEP_MONTHS, Math.max(MIN_KEEP_MONTHS, n))
+}
+
 // 都按面板进程的本地时间算天:路由器上 TZ 跟 OpenWrt 系统一致,前端拿服务端给的 today 做高亮,
 // 不自己算,免得浏览器和路由器时区不一样。
 export const localDay = (d = new Date()) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
@@ -127,9 +137,11 @@ export const createTrafficStore = (db) => {
     WHERE day = ?2 AND kind = ?3 AND substr(key, -length(?1) - 1) = char(9) || ?1
   `)
   const deleteBefore = db.prepare(`DELETE FROM traffic_daily WHERE day < ?`)
-  const deletePairsBefore = db.prepare(
-    `DELETE FROM traffic_daily WHERE day < ? AND kind IN (${PAIR_KIND_NAMES.map(() => '?').join(', ')})`,
-  )
+  const usageStat = db.prepare(`
+    SELECT COUNT(*) AS rows, COUNT(DISTINCT day) AS days, MIN(day) AS oldestDay, MAX(day) AS newestDay,
+           COALESCE(SUM(LENGTH(key) + LENGTH(kind)), 0) AS keyBytes
+    FROM traffic_daily
+  `)
 
   return {
     add(rows) {
@@ -174,9 +186,19 @@ export const createTrafficStore = (db) => {
     prune(beforeDay) {
       deleteBefore.run(beforeDay)
     },
-    // 交叉表行数是单维的好几倍,留的天数短一些
-    prunePairs(beforeDay) {
-      deletePairsBefore.run(beforeDay, ...PAIR_KIND_NAMES)
+    // 「分析数据保留时长」那张卡片要显示的东西:存了多少天、多少行、大概占多大。
+    // 字节数是估的:键本身的长度 + 每行 40 字节(日期、三个整数、页内开销)。和把某一天
+    // 的行复制进空库量出来的实际占用对得上(实测差 5% 以内)。
+    usage() {
+      const r = usageStat.get() || {}
+      const rows = Number(r.rows) || 0
+      return {
+        rows,
+        days: Number(r.days) || 0,
+        oldestDay: r.oldestDay || '',
+        newestDay: r.newestDay || '',
+        bytes: (Number(r.keyBytes) || 0) + rows * 40,
+      }
     },
   }
 }
@@ -189,8 +211,9 @@ export const createTrafficCollector = ({
   intervalMs = 2000,
   retryMs = 10_000,
   flushMs = 60_000,
-  keepDays = 400,
-  keepPairDays = 90,
+  // 分析数据保留多少个月(面板「后端设置」里可改,1~36,默认 6)。曲线、排行和下钻构成
+  // 用同一个期限:分开留会出现"曲线上有这一天、点开却没有构成"的怪事。
+  getKeepMonths = () => DEFAULT_KEEP_MONTHS,
   now = () => new Date(),
   log = () => {},
 }) => {
@@ -207,7 +230,6 @@ export const createTrafficCollector = ({
   let stopped = true
   let pollTimer = null
   let flushTimer = null
-  let pruneTimer = null
 
   const bump = (day, kind, key, up, down, conns) => {
     if (!up && !down && !conns) return
@@ -322,13 +344,8 @@ export const createTrafficCollector = ({
   const prune = () => {
     try {
       const d = now()
-      d.setDate(d.getDate() - keepDays)
+      d.setMonth(d.getMonth() - normalizeKeepMonths(getKeepMonths()))
       store.prune(localDay(d))
-      if (typeof store.prunePairs === 'function') {
-        const p = now()
-        p.setDate(p.getDate() - keepPairDays)
-        store.prunePairs(localDay(p))
-      }
     } catch (err) {
       log(`[traffic] 清理旧记录失败:${err instanceof Error ? err.message : err}`)
     }
@@ -366,10 +383,13 @@ export const createTrafficCollector = ({
     stopped = false
     prune()
     schedule()
-    flushTimer = setInterval(flush, flushMs)
+    // 清理跟着 flush 一起跑:用户在设置里把保留时长调小,一分钟内就生效,不用等到明天。
+    // 删的是 day < 期限 的主键范围,没有过期数据时几乎不花时间。
+    flushTimer = setInterval(() => {
+      flush()
+      prune()
+    }, flushMs)
     flushTimer.unref?.()
-    pruneTimer = setInterval(prune, 24 * 60 * 60 * 1000)
-    pruneTimer.unref?.()
   }
 
   const stop = () => {
@@ -377,9 +397,8 @@ export const createTrafficCollector = ({
     stopped = true
     clearTimeout(pollTimer)
     clearInterval(flushTimer)
-    clearInterval(pruneTimer)
     flush()
   }
 
-  return { store, start, stop, flush, applySnapshot, poll, get pendingSize() { return pending.size } }
+  return { store, start, stop, flush, prune, applySnapshot, poll, get pendingSize() { return pending.size } }
 }

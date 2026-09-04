@@ -37,6 +37,10 @@
             :profile="profile"
             :patch-profile="patchProfile"
           />
+          <TrafficRetentionCard
+            :profile="profile"
+            :patch-profile="patchProfile"
+          />
         </template>
 
         <!-- Open-Box 自身更新 / Geo 规则集更新(各带自动更新计划) -->
@@ -64,6 +68,7 @@ import GeoUpdateCard from '@/components/kernel/GeoUpdateCard.vue'
 import KernelServiceCard from '@/components/kernel/KernelServiceCard.vue'
 import NodeDirectCard from '@/components/kernel/NodeDirectCard.vue'
 import OpenboxUpdateCard from '@/components/kernel/OpenboxUpdateCard.vue'
+import TrafficRetentionCard from '@/components/kernel/TrafficRetentionCard.vue'
 import Ipv6Card from '@/components/routing/Ipv6Card.vue'
 import TestUrlCard from '@/components/routing/TestUrlCard.vue'
 import { usePaddingForViews } from '@/composables/paddingViews'

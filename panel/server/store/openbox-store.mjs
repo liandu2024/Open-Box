@@ -30,6 +30,9 @@ export const DEFAULT_PROFILE = {
   clientRoutes: [],
   // mode:off 不碰 DNS / hijack 防火墙劫持 / dnsmasq 转发(默认;见 engine/dns.mjs 与 system/dns-takeover.mjs)
   dns: { split: true, mode: 'dnsmasq', direct: '223.5.5.5', proxy: '1.1.1.1' },
+  // 每日流量这些分析数据在库里留多久(月)。面板「后端设置」里可改,1~36。
+  // 按正式路由器实测,一天大约 0.75MB,半年 ≈ 135MB(见 system/traffic-collector.mjs)
+  traffic: { keepMonths: 6 },
   // 测速地址。testUrl 给自动择优(url-test)组和面板的延迟测试用;directTestUrl 只给内置
   // 直连出站用——默认那个是 Google 的域名,从国内直连去测量出来的是"直连到 Google 有多远"。
   testUrl: 'https://www.gstatic.com/generate_204',

@@ -1037,6 +1037,8 @@ const trafficCollector = createTrafficCollector({
   store: createTrafficStore(db),
   fetchImpl: globalThis.fetch,
   getSecret: () => store.getClashSecret(),
+  // 保留时长跟着档案走(后端设置里的「分析数据保留时长」),改完一分钟内生效
+  getKeepMonths: () => ((store.getProfile() || {}).traffic || {}).keepMonths,
   log: (m) => console.log(m),
 })
 registerTrafficRoutes(app, { collector: trafficCollector, ctx: obCtx, paths: obPaths })

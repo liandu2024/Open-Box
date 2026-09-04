@@ -82,6 +82,13 @@ const DRILL_KINDS = new Set(['client', 'node', 'host'])
 export const registerTrafficRoutes = (app, { collector, ctx, paths, now = () => new Date() }) => {
   const router = express.Router()
 
+  // 「分析数据保留时长」卡片用:存了多少、大概占多大、每天涨多少
+  router.get('/traffic/usage', (_req, res) => {
+    const u = collector.store.usage ? collector.store.usage() : null
+    if (!u) return res.json({ rows: 0, days: 0, bytes: 0, perDay: 0 })
+    res.json({ ...u, perDay: u.days ? Math.round(u.bytes / u.days) : 0 })
+  })
+
   router.get('/traffic/month', (req, res) => {
     const today = localDay(now())
     const month = typeof req.query.month === 'string' && req.query.month ? req.query.month : today.slice(0, 7)
