@@ -43,9 +43,9 @@
               >
                 {{ e.row.key || '—' }}
                 <span
-                  v-if="e.row.name"
+                  v-if="trafficRowNote(e.row, t)"
                   class="text-base-content/60 ml-1"
-                >{{ e.row.name }}</span>
+                >{{ trafficRowNote(e.row, t) }}</span>
               </td>
               <td class="text-right tabular-nums">{{ fmt(e.row.down) }}</td>
               <td class="text-right tabular-nums">{{ fmt(e.row.up) }}</td>
@@ -100,6 +100,34 @@
               </td>
             </tr>
           </template>
+          <!-- 父行总量减去构成合计 = 记录时还没有交叉明细(旧版本记的)或没采样到的部分 -->
+          <tr
+            v-if="unrecorded && unrecorded.up + unrecorded.down > 1024"
+            class="text-base-content/60"
+          >
+            <td>
+              <span class="inline-flex items-center gap-1">
+                {{ $t('trafficDrillUnrecorded') }}
+                <InformationCircleIcon
+                  v-tip="$t('trafficDrillUnrecordedHint')"
+                  class="h-3.5 w-3.5 cursor-help"
+                />
+              </span>
+            </td>
+            <td class="text-right tabular-nums">{{ fmt(unrecorded.down) }}</td>
+            <td class="text-right tabular-nums">{{ fmt(unrecorded.up) }}</td>
+            <td class="text-right tabular-nums">{{ fmt(unrecorded.up + unrecorded.down) }}</td>
+            <td>
+              <div class="flex items-center gap-2">
+                <progress
+                  class="progress w-24"
+                  :value="share(unrecorded)"
+                  max="100"
+                />
+                <span class="w-10 text-xs tabular-nums">{{ share(unrecorded) }}%</span>
+              </div>
+            </td>
+          </tr>
           <tr v-if="loading && !current">
             <td
               colspan="5"
@@ -144,7 +172,8 @@ import {
   type OpenboxTrafficRow,
 } from '@/api/openbox'
 import { prettyBytesHelper } from '@/helper/utils'
-import { ChevronDownIcon, ChevronUpIcon } from '@heroicons/vue/24/outline'
+import { ChevronDownIcon, ChevronUpIcon, InformationCircleIcon } from '@heroicons/vue/24/outline'
+import { trafficRowNote } from '@/helper/trafficName'
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -196,6 +225,12 @@ const entries = computed<Entry[]>(() => {
   return head
 })
 const hidden = computed(() => (current.value ? Math.max(0, current.value.count - current.value.rows.length) : 0))
+// 父行总量减去全部构成的合计(sum 不受 limit 影响);没有 sum 的老接口不算
+const unrecorded = computed(() => {
+  const s = current.value?.sum
+  if (!s) return null
+  return { up: Math.max(0, props.total.up - s.up), down: Math.max(0, props.total.down - s.down) }
+})
 const parentTotal = computed(() => props.total.up + props.total.down)
 const share = (r: { up: number; down: number }) =>
   parentTotal.value > 0 ? Math.min(100, Math.round(((r.up + r.down) / parentTotal.value) * 100)) : 0

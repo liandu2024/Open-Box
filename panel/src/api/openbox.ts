@@ -737,8 +737,10 @@ export interface OpenboxTrafficRow {
   up: number
   down: number
   conns: number
-  // 访问终端那份带:DHCP 租约里的主机名,没有就是空串
+  // 终端设备那份带:DHCP 租约里的主机名,没有就是空串
   name?: string
+  // 这个地址是路由器自己的(WAN / LAN 接口地址),打环、路由器自身的直连会以它当"终端"出现
+  self?: { iface: string; kind: 'lan' | 'wan' | 'other' }
 }
 export interface OpenboxTrafficDaySummary {
   day: string
@@ -778,6 +780,8 @@ export interface OpenboxTrafficDrill {
   key: string
   by: OpenboxTrafficDim
   count: number
+  // 全部构成的合计(不受 limit 影响);父行总量减它 = 没记到交叉表里的部分
+  sum?: { up: number; down: number }
   rows: OpenboxTrafficRow[]
 }
 export const fetchTrafficDrill = (day: string, kind: OpenboxTrafficDim, key: string, by: OpenboxTrafficDim, limit = 200) =>

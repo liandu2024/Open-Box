@@ -15,9 +15,9 @@
           :title="row.key"
         >{{ row.key || '—' }}</span>
         <span
-          v-if="row.name"
+          v-if="note"
           class="text-base-content/60 shrink-0"
-        >{{ row.name }}</span>
+        >{{ note }}</span>
       </span>
     </td>
     <td class="text-right tabular-nums">{{ fmt(row.down) }}</td>
@@ -54,9 +54,12 @@
 import type { OpenboxTrafficDim, OpenboxTrafficRow } from '@/api/openbox'
 import { prettyBytesHelper } from '@/helper/utils'
 import { ChevronDownIcon } from '@heroicons/vue/24/outline'
+import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { trafficRowNote } from '@/helper/trafficName'
 import TrafficDrillPanel from './TrafficDrillPanel.vue'
 
-defineProps<{
+const props = defineProps<{
   row: OpenboxTrafficRow
   share: number
   expanded: boolean
@@ -66,5 +69,7 @@ defineProps<{
 }>()
 defineEmits<{ toggle: [] }>()
 
+const { t } = useI18n()
+const note = computed(() => trafficRowNote(props.row, t))
 const fmt = (n?: number) => prettyBytesHelper(Math.max(0, Math.round(n || 0)), { maximumFractionDigits: 1 })
 </script>

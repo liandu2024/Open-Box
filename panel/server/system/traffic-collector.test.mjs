@@ -154,7 +154,10 @@ test('sqlite store:交叉表按前一维 / 后一维查构成,含空串 key;交�
   assert.deepEqual(store.drill('2026-09-03', 'client', '10.0.0.9', 'host', 10), {
     rows: [{ key: 'b.com', up: 2, down: 30, conns: 1 }, { key: 'a.com', up: 1, down: 10, conns: 1 }],
     count: 2,
+    sum: { up: 3, down: 40 },
   })
+  // limit 截行时 sum 不受影响(父行总量减 sum = 没记到交叉表里的部分)
+  assert.deepEqual(store.drill('2026-09-03', 'client', '10.0.0.9', 'host', 1).sum, { up: 3, down: 40 })
   // 访问目标 a.com 按终端拆:后一维匹配,包括来源为空串的
   const byClient = store.drill('2026-09-03', 'host', 'a.com', 'client', 10)
   assert.deepEqual(byClient.rows.map((r) => r.key), ['', '10.0.0.90', '10.0.0.9'])
@@ -163,9 +166,9 @@ test('sqlite store:交叉表按前一维 / 后一维查构成,含空串 key;交�
   // limit 只截行,count 还是全部
   assert.deepEqual(store.drill('2026-09-03', 'host', 'a.com', 'client', 1).count, 3)
   assert.equal(store.drill('2026-09-03', 'host', 'a.com', 'client', 1).rows.length, 1)
-  assert.deepEqual(store.drill('2026-09-03', 'node', 'node', 'node', 10), { rows: [], count: 0 })
+  assert.deepEqual(store.drill('2026-09-03', 'node', 'node', 'node', 10), { rows: [], count: 0, sum: { up: 0, down: 0 } })
   // 交叉表单独清理,单维的不动
   store.prunePairs('2026-09-03')
-  assert.deepEqual(store.drill('2026-09-02', 'client', '10.0.0.9', 'host', 10), { rows: [], count: 0 })
+  assert.deepEqual(store.drill('2026-09-02', 'client', '10.0.0.9', 'host', 10), { rows: [], count: 0, sum: { up: 0, down: 0 } })
   assert.deepEqual(store.day('2026-09-02', 'client', 10), [{ key: '10.0.0.9', up: 9, down: 9, conns: 1 }])
 })

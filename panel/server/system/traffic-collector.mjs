@@ -114,6 +114,15 @@ export const createTrafficStore = (db) => {
     SELECT COUNT(*) AS n FROM traffic_daily
     WHERE day = ?2 AND kind = ?3 AND substr(key, -length(?1) - 1) = char(9) || ?1
   `)
+  // 构成的合计(不受 limit 影响):父行总量减它就是"没记到交叉表里的部分"
+  const sumPairHead = db.prepare(`
+    SELECT COALESCE(SUM(up), 0) AS up, COALESCE(SUM(down), 0) AS down FROM traffic_daily
+    WHERE day = ?2 AND kind = ?3 AND key >= ?1 || char(9) AND key < ?1 || char(10)
+  `)
+  const sumPairTail = db.prepare(`
+    SELECT COALESCE(SUM(up), 0) AS up, COALESCE(SUM(down), 0) AS down FROM traffic_daily
+    WHERE day = ?2 AND kind = ?3 AND substr(key, -length(?1) - 1) = char(9) || ?1
+  `)
   const deleteBefore = db.prepare(`DELETE FROM traffic_daily WHERE day < ?`)
   const deletePairsBefore = db.prepare(
     `DELETE FROM traffic_daily WHERE day < ? AND kind IN (${PAIR_KIND_NAMES.map(() => '?').join(', ')})`,
@@ -148,13 +157,15 @@ export const createTrafficStore = (db) => {
     // 一条记录的构成:kind/key 是点开的那条,by 是要拆成哪一维
     drill(day, kind, key, by, limit) {
       const pair = pairKindFor(kind, by)
-      if (!pair) return { rows: [], count: 0 }
+      if (!pair) return { rows: [], count: 0, sum: { up: 0, down: 0 } }
       const [pairKind, pos] = pair
       const select = pos === 0 ? selectPairHead : selectPairTail
       const count = pos === 0 ? countPairHead : countPairTail
+      const sum = (pos === 0 ? sumPairHead : sumPairTail).get(key, day, pairKind) || {}
       return {
         rows: select.all(key, day, pairKind, limit).map(plain),
         count: Number((count.get(key, day, pairKind) || {}).n) || 0,
+        sum: { up: Number(sum.up) || 0, down: Number(sum.down) || 0 },
       }
     },
     prune(beforeDay) {

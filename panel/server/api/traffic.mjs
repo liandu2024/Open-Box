@@ -2,6 +2,7 @@
 // GET /api/openbox/traffic/day?day=YYYY-MM-DD(某天按节点、按域名/IP 的明细)。
 // 数据来自 system/traffic-collector.mjs 常驻采集写进 cache.db 的 traffic_daily 表。
 import express from 'express'
+import { readLocalAddresses } from '../system/local-subnets.mjs'
 import { localDay } from '../system/traffic-collector.mjs'
 
 const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/
@@ -50,6 +51,23 @@ export const parseDhcpLeases = (text) => {
   return map
 }
 
+// 路由器自己的地址 → { iface, kind }:WAN / LAN 地址会以"终端"身份出现在流量表里(打环、
+// 路由器自身的直连),标出来免得像一台陌生设备
+const readSelfAddresses = async (ctx) => {
+  if (!ctx) return new Map()
+  try {
+    return new Map((await readLocalAddresses(ctx)).map((a) => [a.address, { iface: a.iface, kind: a.kind }]))
+  } catch {
+    return new Map()
+  }
+}
+const withClientLabels = (rows, names, self) => rows.map((r) => {
+  const out = { ...r, name: names.get(r.key) || '' }
+  const me = self.get(r.key)
+  if (me) out.self = me
+  return out
+})
+
 const readLeaseNames = async (ctx, leasesPath) => {
   if (!ctx || !leasesPath) return new Map()
   try {
@@ -92,8 +110,8 @@ export const registerTrafficRoutes = (app, { collector, ctx, paths, now = () => 
     }
     const nodes = store.day(day, 'node', limit)
     const hosts = store.day(day, 'host', limit)
-    const names = await readLeaseNames(ctx, paths && paths.dhcpLeases)
-    const clients = store.day(day, 'client', limit).map((r) => ({ ...r, name: names.get(r.key) || '' }))
+    const [names, self] = await Promise.all([readLeaseNames(ctx, paths && paths.dhcpLeases), readSelfAddresses(ctx)])
+    const clients = withClientLabels(store.day(day, 'client', limit), names, self)
     const hostSum = store.daySum(day, 'host')
     const clientSum = store.daySum(day, 'client')
     const nodeSum = store.daySum(day, 'node')
@@ -125,12 +143,13 @@ export const registerTrafficRoutes = (app, { collector, ctx, paths, now = () => 
     }
     const limit = Math.min(1000, Math.max(1, Number(req.query.limit) || 200))
     collector.flush()
-    const { rows, count } = collector.store.drill(day, kind, key, by, limit)
-    const names = by === 'client' ? await readLeaseNames(ctx, paths && paths.dhcpLeases) : null
-    res.json({
-      day, kind, key, by, count,
-      rows: names ? rows.map((r) => ({ ...r, name: names.get(r.key) || '' })) : rows,
-    })
+    const { rows, count, sum } = collector.store.drill(day, kind, key, by, limit)
+    let labeled = rows
+    if (by === 'client') {
+      const [names, self] = await Promise.all([readLeaseNames(ctx, paths && paths.dhcpLeases), readSelfAddresses(ctx)])
+      labeled = withClientLabels(rows, names, self)
+    }
+    res.json({ day, kind, key, by, count, sum: sum || { up: 0, down: 0 }, rows: labeled })
   })
 
   router.get('/clients', async (_req, res) => {

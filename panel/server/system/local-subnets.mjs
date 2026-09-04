@@ -146,3 +146,37 @@ export const readLocalSubnets = async (ctx) => {
   }
   return out
 }
+
+// 本机各接口的地址(带接口名),给流量页把"路由器自己"标出来:打环、路由器自身的直连
+// 都会以 WAN / LAN 地址当"终端"出现在列表里,不标的话像一台陌生设备。
+// 和 parseIpAddr 不同:/32 也要(PPPoE 的 WAN 地址就是 /32),只跳过回环和链路本地。
+export const classifyIface = (iface) => {
+  if (/^(br-lan|lan)/.test(iface)) return 'lan'
+  if (/^(pppoe-|wan|wwan|ppp)/.test(iface)) return 'wan'
+  return 'other'
+}
+export const parseIpAddresses = (text) => {
+  const out = []
+  for (const line of String(text || '').split('\n')) {
+    const m = /^\s*\d+:\s+(\S+)\s+inet6?\s+(\S+)/.exec(line)
+    if (!m) continue
+    const [, iface, cidr] = m
+    if (iface === 'lo') continue
+    const address = cidr.split('/')[0]
+    if (/^127\./.test(address) || /^fe[89ab][0-9a-f]:/i.test(address) || address === '::1') continue
+    out.push({ iface, address, kind: classifyIface(iface) })
+  }
+  return out
+}
+export const readLocalAddresses = async (ctx) => {
+  const out = []
+  for (const family of ['-4', '-6']) {
+    try {
+      const r = await ctx.exec('ip', [family, '-o', 'addr'], { timeoutMs: 5000 })
+      if (r && r.code === 0) out.push(...parseIpAddresses(r.stdout))
+    } catch {
+      // 读不到就不标
+    }
+  }
+  return out
+}
