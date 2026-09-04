@@ -191,9 +191,11 @@ const errorText = (raw: string) => {
   return raw
 }
 
+// 目标是 IP 时没有解析这一步,DNS 节点整个不画(画出来只能写"不用解析",是噪音)
+const dnsSkipped = computed(() => Boolean(result.value && result.value.dns && 'skipped' in result.value.dns))
 const flowNodes = computed(() => [
   { key: 'exit', label: t('routeTestExit'), sub: result.value?.exit.ms !== undefined ? `${result.value.exit.ms}ms` : '—' },
-  { key: 'dns', label: 'DNS', sub: result.value?.resolve ? `${result.value.resolve.ms}ms` : '—' },
+  ...(dnsSkipped.value ? [] : [{ key: 'dns', label: 'DNS', sub: result.value?.resolve ? `${result.value.resolve.ms}ms` : '—' }]),
 ])
 
 const dnsServerText = computed(() => {

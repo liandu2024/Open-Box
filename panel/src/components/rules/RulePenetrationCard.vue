@@ -186,9 +186,11 @@ const TYPE_LABEL_KEY: Record<string, string> = {
 }
 const typeLabel = (type: string) => t(TYPE_LABEL_KEY[type] || 'ruleTypeOther')
 
+// 目标是 IP 时没有解析这一步,DNS 节点整个不画(和「真实路由」一致)
+const dnsSkipped = computed(() => Boolean(result.value && (!result.value.dns || 'skipped' in result.value.dns)))
 const flowNodes = computed(() => [
   { key: 'exit', label: t('routeTestExit') },
-  { key: 'dns', label: 'DNS' },
+  ...(dnsSkipped.value ? [] : [{ key: 'dns', label: 'DNS' }]),
   { key: 'rule', label: t('routeTestRuleNode'), sub: result.value?.matched ? `#${result.value.matched.index + 1}` : undefined },
 ])
 const dnsDecision = computed(() => {
