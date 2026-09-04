@@ -1150,6 +1150,9 @@ CORE_MSG="内核未自动重启——如之前配置并运行着代理服务,请
 if [ "$CORE_WAS_RUNNING" = "1" ]; then
   DEPLOY_CLI="$INSTALL_ROOT/panel/server/cli/deploy.mjs"
   if [ -x "$INSTALL_ROOT/node/bin/node" ] && [ -f "$DEPLOY_CLI" ]; then
+    # 面板这时已经起来了,前端能重新读到状态文件:给内核重启单独一个阶段,否则弹窗
+    # 一直停在"正在替换文件,面板即将重启…",用户不知道后面还有一次内核重启(约 20 秒)。
+    write_status restarting_core "" "" "面板已重启,正在按新版本重新生成配置并启动内核"
     info "升级前内核在运行,按新版本重新生成配置并启动内核..."
     if OPENBOX_ROOT="$INSTALL_ROOT" ZASHBOARD_DB_PATH="$INSTALL_ROOT/data/openbox.sqlite" \
        LD_LIBRARY_PATH="$INSTALL_ROOT/node/lib" "$INSTALL_ROOT/node/bin/node" "$DEPLOY_CLI" >/dev/null 2>&1; then

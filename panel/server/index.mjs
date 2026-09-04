@@ -51,7 +51,6 @@ const MIN_ACCESS_PASSWORD_LENGTH = 4
 // 首次访问强制设密:密码尚未设置前,除这三条(健康检查 + 查询状态 + 设密本身)外,
 // 一切 /api/* 一律拒绝 —— 面板对路由器有 root 级权限,不能裸奔。
 const PASSWORD_SETUP_EXEMPT_PATHS = new Set(['/api/health', '/api/auth/status', '/api/auth/setup'])
-const accessSessionSecret = randomBytes(32).toString('hex')
 const serviceWorkerCleanupScript = `
 self.addEventListener('install', () => {
   self.skipWaiting()
@@ -146,6 +145,20 @@ const store = createStore({
   set: (key, value) => upsertStorageValueStatement.run(key, value),
   del: (key) => deleteStorageValueStatement.run(key),
 })
+
+// 会话密钥落库,不是每次启动随机生成:否则升级 / 重启面板 / 路由器重启后进程一换,所有
+// 浏览器 cookie 立刻失效、被踢回登录页(升级到"替换文件"阶段面板重启就会当场弹登录)。
+// 键在 openbox/ 前缀下(isProtectedStorageKey 保护):不回显给浏览器,也不被设置同步清掉。
+// 改密时令牌本身是 HMAC(密钥, 密码),密码一变旧令牌自然失效,安全性不受影响。
+const SESSION_SECRET_KEY = 'openbox/session-secret'
+const loadOrCreateSessionSecret = () => {
+  const existing = getStorageValueStatement.get(SESSION_SECRET_KEY)?.value
+  if (typeof existing === 'string' && existing.length >= 32) return existing
+  const secret = randomBytes(32).toString('hex')
+  upsertStorageValueStatement.run(SESSION_SECRET_KEY, secret)
+  return secret
+}
+const accessSessionSecret = loadOrCreateSessionSecret()
 
 // Open-Box 系统层依赖:paths 描述 OpenWrt 上的固定安装布局,ctx 是真实的 exec/fs 抽象
 // (与测试用的 createMockContext 同接口),两者都是无状态的纯对象/闭包,可安全全局复用。

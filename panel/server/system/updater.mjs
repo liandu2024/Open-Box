@@ -67,7 +67,9 @@ export const readChannel = async (ctx, paths) => {
 }
 
 // /tmp/openbox-update.status:pid= stage= bytes= total= message=
-const RUNNING_STAGES = new Set(['starting', 'probing', 'downloading', 'verifying', 'extracting', 'committing'])
+// 与 scripts/update.sh 的 write_status 一致。restarting_core 是面板重启之后、内核按新版本
+// 重新部署的那一段(约 20 秒):必须算"进行中",否则前端会当升级已结束而提前刷新页面。
+const RUNNING_STAGES = new Set(['starting', 'probing', 'downloading', 'verifying', 'extracting', 'committing', 'restarting_core'])
 const pidAlive = (pid) => {
   if (!Number.isInteger(pid) || pid <= 0) return false
   try {

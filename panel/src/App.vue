@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, type Ref, watch } from 'vue'
 import { RouterView } from 'vue-router'
+import OpenboxUpdateDialog from './components/kernel/OpenboxUpdateDialog.vue'
+import { resumeUpdateWatch } from './composables/openboxUpdate'
 import { useKeyboard } from './composables/keyboard'
 import { EMOJIS, FONTS, IS_APPLE_DEVICE } from './constant'
 import { autoImportSettings, importSettingsFromUrl } from './helper/autoImportSettings'
@@ -93,6 +95,9 @@ watch(
 onMounted(() => {
   cleanupWindowResizeState = initializeWindowResizeState()
 
+  // 后台可能正在升级(自己点的、定时任务发起的,或者刚被面板重启打断过):接着把弹窗显示出来
+  void resumeUpdateWatch()
+
   if (autoImportSettings.value) {
     importSettingsFromUrl()
   }
@@ -164,6 +169,8 @@ useKeyboard()
     :style="appStyles"
   >
     <RouterView />
+    <!-- 升级弹窗挂在根上:升级期间面板和内核各会重启一次,不管用户在哪一页都盖上去 -->
+    <OpenboxUpdateDialog />
     <div
       ref="toast"
       class="toast-sm toast toast-end toast-top z-[100000] max-w-80 text-sm md:max-w-96 md:translate-y-8"

@@ -9,7 +9,7 @@
       <!-- 版本一行:当前 / 最新 -->
       <div class="flex flex-wrap items-center gap-x-4 gap-y-1">
         <span class="text-base-content/70">{{ $t('obUpdateCurrent') }}:</span>
-        <span class="font-mono">{{ info?.version || '—' }}</span>
+        <span class="font-mono">{{ updateInfo?.version || '—' }}</span>
         <template v-if="latest">
           <span class="text-base-content/70">{{ $t('obUpdateLatest') }}:</span>
           <span class="font-mono">{{ latest.latest }}</span>
@@ -27,17 +27,17 @@
         <select
           v-model="channel"
           class="select select-sm"
-          :disabled="Boolean(progress?.running)"
+          :disabled="updateRunning"
         >
           <option value="auto">{{ $t('obUpdateChannelAuto') }}</option>
           <option value="direct">{{ $t('obUpdateChannelDirect') }}</option>
           <option value="mirror">{{ $t('obUpdateChannelMirror') }}</option>
         </select>
         <button
-          v-if="progress?.running"
+          v-if="updateRunning"
           type="button"
           class="btn btn-sm"
-          @click="dialogOpen = true"
+          @click="updateDialogOpen = true"
         >
           <span class="loading loading-spinner loading-xs" />
           {{ $t('obUpdateViewProgress') }}
@@ -46,11 +46,11 @@
           v-else-if="latest?.hasUpdate"
           type="button"
           class="btn btn-primary btn-sm"
-          :disabled="starting"
+          :disabled="updateStarting"
           @click="start"
         >
           <span
-            v-if="starting"
+            v-if="updateStarting"
             class="loading loading-spinner loading-xs"
           />
           {{ $t('obUpdateNow') }}
@@ -69,9 +69,9 @@
           {{ $t('obUpdateCheck') }}
         </button>
         <span
-          v-if="info?.channel"
+          v-if="updateInfo?.channel"
           class="text-base-content/50 text-xs"
-        >{{ $t('obUpdateInstalledChannel', { channel: info.channel.mode === 'mirror' ? $t('obUpdateChannelMirror') : $t('obUpdateChannelDirect') }) }}</span>
+        >{{ $t('obUpdateInstalledChannel', { channel: updateInfo!.channel.mode === 'mirror' ? $t('obUpdateChannelMirror') : $t('obUpdateChannelDirect') }) }}</span>
       </div>
 
       <div class="bg-base-content/10 h-px" />
@@ -126,78 +126,33 @@
     </div>
   </div>
 
-  <!-- 升级进行中的进度和日志放弹窗里,卡片布局不动。升级到换文件阶段面板会重启,
-       弹窗关掉也不影响后台的升级。 -->
-  <DialogWrapper
-    v-model="dialogOpen"
-    :title="$t('obUpdateDialogTitle')"
-    box-class="w-full max-w-2xl"
-  >
-    <div class="flex flex-col gap-3 text-sm">
-      <div class="flex items-center gap-2">
-        <span
-          v-if="progress?.running"
-          class="loading loading-spinner loading-xs"
-        />
-        <span>{{ stageText }}</span>
-        <span
-          v-if="progress?.message"
-          class="text-base-content/60 truncate text-xs"
-        >{{ progress.message }}</span>
-      </div>
-      <progress
-        class="progress progress-primary w-full"
-        :value="percent ?? undefined"
-        max="100"
-      />
-      <pre
-        v-if="info?.logTail"
-        class="bg-base-200/60 max-h-64 overflow-auto rounded-lg p-2 font-mono text-xs whitespace-pre-wrap"
-      >{{ info.logTail }}</pre>
-      <div class="flex justify-end gap-2">
-        <button
-          v-if="progress?.running"
-          type="button"
-          class="btn btn-sm"
-          :disabled="!cancellable"
-          @click="cancel"
-        >
-          {{ $t('cancel') }}
-        </button>
-        <button
-          type="button"
-          class="btn btn-sm"
-          @click="dialogOpen = false"
-        >
-          {{ $t('close') }}
-        </button>
-      </div>
-    </div>
-  </DialogWrapper>
 </template>
 
 <script setup lang="ts">
-import type { OpenboxProfile, OpenboxUpdateStatus } from '@/api/openbox'
-import { cancelUpdate, checkUpdate, fetchUpdateStatus, runUpdate } from '@/api/openbox'
-import DialogWrapper from '@/components/common/DialogWrapper.vue'
+import type { OpenboxProfile, OpenboxUpdateChannel } from '@/api/openbox'
+import { checkUpdate } from '@/api/openbox'
 import StatusBadge from '@/components/common/StatusBadge.vue'
+// 升级进度是全局的(面板和内核各重启一次,用户可能待在任何页面),状态和弹窗都在
+// composables/openboxUpdate 这个单例里,弹窗由 App.vue 挂在根上;这张卡只管发起和显示版本。
+import {
+  refreshUpdateInfo,
+  startUpdate,
+  updateDialogOpen,
+  updateInfo,
+  updateRunning,
+  updateStarting,
+} from '@/composables/openboxUpdate'
 import { showNotification } from '@/helper/notification'
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { useI18n } from 'vue-i18n'
+import { computed, onMounted, ref } from 'vue'
 
 const props = defineProps<{
   profile: OpenboxProfile
   patchProfile: (patch: Record<string, unknown>) => Promise<OpenboxProfile>
 }>()
 
-const { t } = useI18n()
-const info = ref<OpenboxUpdateStatus | null>(null)
 const latest = ref<{ latest: string; hasUpdate: boolean } | null>(null)
 const checking = ref(false)
-const starting = ref(false)
-const channel = ref<'auto' | 'direct' | 'mirror'>('auto')
-const dialogOpen = ref(false)
-const progress = computed(() => info.value?.status)
+const channel = ref<OpenboxUpdateChannel>('auto')
 const plan = computed(() => ({
   auto: props.profile.updates?.openbox?.auto === true,
   hour: props.profile.updates?.openbox?.hour ?? 4,
@@ -205,115 +160,44 @@ const plan = computed(() => ({
   channel: props.profile.updates?.openbox?.channel ?? 'auto',
 }))
 
-// 与 scripts/update.sh 里"可安全取消的阶段"一致:committing 之后不能取消
-const CANCELLABLE = new Set(['starting', 'probing', 'downloading', 'verifying', 'extracting'])
-const cancellable = computed(() => CANCELLABLE.has(progress.value?.stage || ''))
-const percent = computed(() => {
-  const p = progress.value
-  if (!p || !p.total || p.bytes === null) return null
-  return Math.min(100, Math.round((p.bytes / p.total) * 100))
-})
-const stageText = computed(() => {
-  const stage = progress.value?.stage || ''
-  const key = `obUpdateStage_${stage}`
-  const text = t(key)
-  return text === key ? stage : text
-})
-
-let timer = 0
-let wasRunning = false
-// 卸载后仍在途的 load() 不能再排下一次轮询,也不能在别的页面触发整页 reload
-let disposed = false
-// 面板重启窗口内连续失败的次数;升级进行中最多再试 45 次(约 90 秒),重连上就清零
-let offline = 0
-const load = async () => {
-  if (disposed) return
-  try {
-    info.value = await fetchUpdateStatus()
-    offline = 0
-  } catch {
-    if (disposed) return
-    // 升级到换文件阶段时面板会重启,接口短暂不可用是正常的。之前这里直接 return,
-    // 轮询就此停掉:弹窗停在「正在替换文件…」,升级其实已完成、页面却不会刷新。
-    // 升级进行中就隔两秒再试,直到重新读到状态(done / failed 会照常提示、刷新)。
-    if (wasRunning && offline < 45) {
-      offline += 1
-      schedule(2000)
-    }
-    return
-  }
-  if (disposed) return
-  const running = Boolean(info.value.status.running)
-  // 打开页面时升级已经在跑(比如自动更新),也把弹窗弹出来
-  if (running && !wasRunning) dialogOpen.value = true
-  if (wasRunning && !running) {
-    const stage = info.value.status.stage
-    if (stage === 'done') {
-      showNotification({ content: 'obUpdateDone', type: 'alert-success' })
-      window.setTimeout(() => window.location.reload(), 1500)
-    } else if (stage === 'failed') {
-      showNotification({ content: 'obUpdateFailed', params: { message: info.value.status.message }, type: 'alert-error', timeout: 8000 })
-    } else if (stage === 'cancelled') {
-      showNotification({ content: 'obUpdateCancelled', type: 'alert-warning' })
-    }
-  }
-  wasRunning = running
-  schedule(running ? 1500 : 0)
-}
-const schedule = (ms: number) => {
-  window.clearTimeout(timer)
-  if (ms > 0) timer = window.setTimeout(load, ms)
-}
-
 const check = async () => {
   checking.value = true
   try {
     const r = await checkUpdate()
     latest.value = r
-    showNotification({ content: r.hasUpdate ? 'obUpdateAvailableToast' : 'obUpdateUpToDateToast', params: { latest: r.latest }, type: r.hasUpdate ? 'alert-info' : 'alert-success' })
+    showNotification({
+      content: r.hasUpdate ? 'obUpdateAvailableToast' : 'obUpdateUpToDateToast',
+      params: { latest: r.latest },
+      type: r.hasUpdate ? 'alert-info' : 'alert-success',
+    })
   } catch (err) {
-    showNotification({ content: 'obUpdateCheckFailed', params: { message: err instanceof Error ? err.message : String(err) }, type: 'alert-error' })
+    showNotification({
+      content: 'obUpdateCheckFailed',
+      params: { message: err instanceof Error ? err.message : String(err) },
+      type: 'alert-error',
+    })
   } finally {
     checking.value = false
   }
 }
-const start = async () => {
-  starting.value = true
-  try {
-    await runUpdate(channel.value)
-    showNotification({ content: 'obUpdateStarted', type: 'alert-info' })
-    dialogOpen.value = true
-    wasRunning = true
-    schedule(800)
-  } catch (err) {
-    showNotification({ content: 'obUpdateStartFailed', params: { message: err instanceof Error ? err.message : String(err) }, type: 'alert-error' })
-  } finally {
-    starting.value = false
-  }
-}
-const cancel = async () => {
-  try {
-    await cancelUpdate()
-    schedule(500)
-  } catch (err) {
-    showNotification({ content: 'obUpdateStartFailed', params: { message: err instanceof Error ? err.message : String(err) }, type: 'alert-error' })
-  }
-}
-const savePlan = async (patch: Partial<{ auto: boolean; hour: number; days: number; channel: 'auto' | 'direct' | 'mirror' }>) => {
+
+const start = () => startUpdate(channel.value)
+
+const savePlan = async (patch: Partial<{ auto: boolean; hour: number; days: number; channel: OpenboxUpdateChannel }>) => {
   try {
     await props.patchProfile({ updates: { openbox: { ...plan.value, ...patch } } })
     showNotification({ content: 'obUpdatePlanSaved', type: 'alert-success' })
   } catch (err) {
-    showNotification({ content: 'routingSaveFailed', params: { message: err instanceof Error ? err.message : String(err) }, type: 'alert-error' })
+    showNotification({
+      content: 'routingSaveFailed',
+      params: { message: err instanceof Error ? err.message : String(err) },
+      type: 'alert-error',
+    })
   }
 }
 
 onMounted(() => {
   channel.value = 'auto'
-  void load()
-})
-onBeforeUnmount(() => {
-  disposed = true
-  window.clearTimeout(timer)
+  void refreshUpdateInfo()
 })
 </script>
