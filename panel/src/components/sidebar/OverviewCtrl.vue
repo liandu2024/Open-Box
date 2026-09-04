@@ -3,7 +3,8 @@
     <!-- 概览页顶栏。原来放的是内核版本号(sing-box x.y.z),那个信息在「设置 → 后端设置」
          的内核卡片里有,这里让位给站点推广:左边超市,右边两个 AI 中转站。 -->
     <div class="app-card-padding flex h-12 flex-row items-center gap-2 overflow-hidden text-sm">
-      <span class="text-base-content/70 truncate">{{ $t('marketPromo') }}</span>
+      <!-- 手机上一行放不下,只留两边的站名:左「安格超市」,右「SUPERDOOR | OPENDOOR」 -->
+      <span class="text-base-content/70 hidden truncate sm:inline">{{ $t('marketPromo') }}</span>
       <!-- 只露站名,网址藏在 href 里。颜色往 base-content 方向调深一点:纯 link-primary
            在浅色主题下太淡,和正文挤在一起看不出是链接;混 base-content 而不是混黑色,
            深色主题下同样是"更贴近正文色"而不是糊成一团。 -->
