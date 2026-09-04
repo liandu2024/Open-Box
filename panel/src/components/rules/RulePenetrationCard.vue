@@ -129,6 +129,7 @@ import { queryPenetration } from '@/api/openbox'
 import ProxyGroupNow from '@/components/proxies/ProxyGroupNow.vue'
 import ProxyName from '@/components/proxies/ProxyName.vue'
 import RouteFlow from '@/components/rules/RouteFlow.vue'
+import { ruleTypeLabelKey } from '@/helper/ruleType'
 import StatusBadge from '@/components/common/StatusBadge.vue'
 import { proxyMap } from '@/store/proxies'
 import { MagnifyingGlassIcon, NoSymbolIcon, QuestionMarkCircleIcon } from '@heroicons/vue/24/outline'
@@ -177,14 +178,7 @@ watch(
 )
 onBeforeUnmount(() => window.clearTimeout(timer))
 
-const TYPE_LABEL_KEY: Record<string, string> = {
-  domain: 'ruleTypeDomain',
-  domain_suffix: 'ruleTypeDomainSuffix',
-  domain_keyword: 'ruleTypeDomainKeyword',
-  domain_regex: 'ruleTypeDomainRegex',
-  ip_cidr: 'ruleTypeIpCidr',
-}
-const typeLabel = (type: string) => t(TYPE_LABEL_KEY[type] || 'ruleTypeOther')
+const typeLabel = (type: string) => t(ruleTypeLabelKey(type))
 
 // 目标是 IP 时没有解析这一步,DNS 节点整个不画(和「真实路由」一致)
 const dnsSkipped = computed(() => Boolean(result.value && (!result.value.dns || 'skipped' in result.value.dns)))

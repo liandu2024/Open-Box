@@ -5,6 +5,13 @@
     box-class="w-full max-w-2xl"
   >
     <div class="flex flex-col gap-3">
+      <!-- 这个分类是什么:和下拉框里的说明是同一份(helper/geoCatalog.ts) -->
+      <p
+        v-if="note"
+        class="text-base-content/70 text-sm leading-snug"
+      >
+        {{ note }}
+      </p>
       <TextInput
         v-model="keyword"
         :placeholder="$t('geoEntriesSearch')"
@@ -34,7 +41,7 @@
             :key="`${entry.type}:${entry.value}:${index}`"
             class="border-base-300/40 flex items-center gap-2 border-b px-3 py-1.5 last:border-b-0"
           >
-            <span class="badge badge-ghost badge-xs shrink-0 font-mono">{{ entry.type }}</span>
+            <span class="badge badge-ghost badge-xs shrink-0">{{ $t(ruleTypeLabelKey(entry.type)) }}</span>
             <span class="min-w-0 flex-1 truncate font-mono text-xs">{{ entry.value }}</span>
           </li>
         </ul>
@@ -64,10 +71,20 @@ import { showNotification } from '@/helper/notification'
 import { fetchRulesetEntries } from '@/api/openbox'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import TextInput from '@/components/common/TextInput.vue'
+import { ruleTypeLabelKey } from '@/helper/ruleType'
+import { geoTagNote } from '@/helper/geoCatalog'
 import { ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{ tag: string }>()
 const open = defineModel<boolean>({ required: true })
+const { locale, t } = useI18n()
+
+// 分类说明按 tag 从目录里找,语言切换时跟着变
+const note = ref('')
+watch([() => props.tag, locale], async ([tag]) => {
+  note.value = await geoTagNote(tag, locale.value, t)
+}, { immediate: true })
 
 
 const PAGE = 50

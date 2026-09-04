@@ -54,16 +54,18 @@
             v-for="row in visible"
             :key="row[0]"
           >
+            <!-- 名字一行、说明一行:说明是选这条的依据,不能截断 -->
             <button
               type="button"
-              class="hover:bg-base-200 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left"
+              class="hover:bg-base-200 flex w-full flex-col items-start gap-0.5 rounded-md px-2 py-1.5 text-left"
               :class="{ 'bg-base-200': row[0] === modelValue }"
               @click="choose(row[0])"
             >
-              <span class="shrink-0 font-mono text-xs">{{ row[0] }}</span>
-              <span class="text-base-content/50 min-w-0 flex-1 truncate text-right text-xs">{{
-                note(row)
-              }}</span>
+              <span class="font-mono text-xs">{{ row[0] }}</span>
+              <span
+                v-if="note(row)"
+                class="text-base-content/60 text-xs leading-snug whitespace-normal"
+              >{{ note(row) }}</span>
             </button>
           </li>
           <li
@@ -89,6 +91,7 @@
 import TextInput from '@/components/common/TextInput.vue'
 import { useAnchoredDropdown } from '@/composables/anchoredDropdown'
 import type { GeoCategoryRow } from '@/constant/geo-catalog'
+import { composeGeoNote } from '@/helper/geoCatalog'
 import { ChevronDownIcon } from '@heroicons/vue/24/outline'
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -139,35 +142,9 @@ watch(
 
 const keyword = ref('')
 
-// [名称, 中文, 英文, 繁体?];繁体缺省时用中文
-const rawNote = (row: GeoCategoryRow) => {
-  if (locale.value === 'zh-TW') return row[3] || row[1] || ''
-  if (locale.value.startsWith('zh')) return row[1] || ''
-  return row[2] || row[1] || ''
-}
-
-// 上游有 337 个 `<基名>@<属性>` 的子集(google@ads、ccb@!cn、chinamobile@cn……),
-// 它们在分类注释库里没有独立条目——注释库是按 v2ray 的分类整理的,不含属性切片。
-// 与其让这三百多条空着,不如就地拼出来:基名的说明 + 属性是什么。
-const ATTR_KEY: Record<string, string> = {
-  ads: 'geoCategoryAttrAds',
-  cn: 'geoCategoryAttrCn',
-  '!cn': 'geoCategoryAttrNotCn',
-}
-
+// 说明的取法(按语言挑列、@属性子集拼基名说明)在 helper/geoCatalog.ts,和详情弹窗共用
 const noteByName = computed(() => new Map(rows.value.map((r) => [r[0], r])))
-
-const note = (row: GeoCategoryRow): string => {
-  const own = rawNote(row)
-  if (own) return own
-  const at = row[0].indexOf('@')
-  if (at < 0) return ''
-  const attrKey = ATTR_KEY[row[0].slice(at + 1)]
-  if (!attrKey) return ''
-  const base = noteByName.value.get(row[0].slice(0, at))
-  const baseNote = base ? rawNote(base) : ''
-  return baseNote ? `${baseNote} · ${t(attrKey)}` : t(attrKey)
-}
+const note = (row: GeoCategoryRow): string => composeGeoNote(row, noteByName.value, locale.value, t)
 
 const currentNote = computed(() => {
   const hit = rows.value.find((r) => r[0] === props.modelValue)
