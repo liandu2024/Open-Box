@@ -1,27 +1,19 @@
 <template>
-  <!-- 侧边栏顶部:左边产品名 + 版本号,右边收起/展开侧边栏。折叠时只剩那个图标。 -->
-  <!-- 不加内边距:上下左右都吃侧边栏那层 p-2(8px)。之前额外加了 pt-1,顶上就比
-       底部的卡片多出 4px,一眼看得出不齐 -->
+  <!-- 侧边栏顶部:左边产品标识,右边收起/展开。折叠时只剩那个按钮。 -->
+  <!-- 不加内边距:上下左右统一吃侧边栏那层 p-2(8px),和底部卡片同一条边 -->
   <div
     class="flex items-center"
     :class="isSidebarCollapsed ? 'justify-center' : 'justify-between gap-2'"
   >
-    <div
+    <!-- 产品标识用图片(src/assets/logo.png,已抠掉背景)。深色主题下墨迹是深藏青,
+         在 forest 底色上几乎看不见,靠 main.css 里的滤镜整体翻亮,绿橙两个点缀色不变。
+         版本号和发布日期不在这里显示了——「设置 → 后端设置」的更新卡片上就有 -->
+    <img
       v-if="!isSidebarCollapsed"
-      class="flex min-w-0 flex-col leading-tight"
-    >
-      <!-- 产品标识用图片(src/assets/logo.png,已抠掉背景)。深色主题下墨迹是深藏青,
-           在 forest 底色上几乎看不见,靠 main.css 里的滤镜整体翻亮,绿橙两个点缀色不变 -->
-      <img
-        :src="logoUrl"
-        class="app-logo h-6 w-auto self-start"
-        alt="Open-Box"
-      />
-      <span
-        class="text-base-content/60 truncate font-mono text-[11px]"
-        :title="openboxBuiltAt"
-      >{{ versionLabel || '—' }}</span>
-    </div>
+      :src="logoUrl"
+      class="app-logo h-6 w-auto min-w-0"
+      alt="Open-Box"
+    />
     <button
       type="button"
       class="btn btn-ghost btn-sm btn-square shrink-0"
@@ -52,29 +44,5 @@
 
 <script setup lang="ts">
 import logoUrl from '@/assets/logo.png'
-import { fetchUpdateStatus } from '@/api/openbox'
 import { isSidebarCollapsed } from '@/store/settings'
-import { computed, onMounted, ref } from 'vue'
-
-// 版本号整个会话里不会变,取一次就够
-const openboxVersion = ref('')
-// 发布时间(meta.json 的 builtAt,UTC ISO),侧边栏显示成 v0.1.79 | 20260904(按浏览器所在时区取日期)
-const openboxBuiltAt = ref('')
-const versionLabel = computed(() => {
-  if (!openboxVersion.value) return ''
-  const d = openboxBuiltAt.value ? new Date(openboxBuiltAt.value) : null
-  if (!d || Number.isNaN(d.getTime())) return openboxVersion.value
-  const ymd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`
-  return `${openboxVersion.value} | ${ymd}`
-})
-onMounted(async () => {
-  if (openboxVersion.value) return
-  try {
-    const status = await fetchUpdateStatus()
-    openboxVersion.value = status.version || ''
-    openboxBuiltAt.value = status.builtAt || ''
-  } catch {
-    openboxVersion.value = ''
-  }
-})
 </script>
