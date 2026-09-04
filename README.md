@@ -1,129 +1,140 @@
 # Open-Box
 
-OpenWrt 一体化透明代理方案:一条命令装完 sing-box 内核 + 管理面板,面板首次打开设密码、跟引导走,不需要手写配置文件。
+OpenWrt 上的一体化透明代理:一条命令装完 sing-box 内核和管理面板,首次打开面板设个密码、跟引导走,不用手写任何配置文件。
 
-- 设计文档:`docs/superpowers/specs/2026-07-21-open-box-design.md`
-- 实施路线图:`docs/superpowers/plans/2026-07-24-open-box-roadmap.md`
+订阅、节点、分流规则、DNS 接管、防火墙改动全部由面板托管,配错了也能一键恢复直连。
 
-> **当前状态:尚未在真实 OpenWrt 硬件上验证过完整安装流程。**
-> 以下所有脚本已经过 shell 语法检查、打包产物结构检查、契约测试等本地/CI 验证,但
-> 真实路由器上的"下载 → 铺装 → 起服务"全流程还没有跑过一次。在这一轮真机验收
-> (路线图 P7)完成之前,请把本项目当作 **测试版** 使用,不建议在生产网络中依赖它。
+## 界面
+
+**代理 · 策略**:每个站点集一张卡片,直接看到它此刻走哪条线路、下面这些节点的健康状况。
+
+![代理页策略页签](docs/pic/proxies-policies.webp)
+
+**域名穿透**:展开任意一条策略,一层层看到「站点集 → 节点组 → 具体节点」的完整链路,每一层都能当场改。
+
+![域名穿透](docs/pic/proxies-penetration.webp)
+
+**规则 · 真实路由**:输入一个域名,先按规则推一遍,再真发一次请求看它实际走了哪条线、DNS 用了哪台服务器、命中第几条规则。
+
+![规则调试](docs/pic/rules-route-test.webp)
+
+**订阅管理**:Clash 配置和分享链接都能吃,节点按地区自动改名分组。
+
+![订阅管理](docs/pic/settings-subscriptions.webp)
+
+**节点管理**:自动择优组和手动组混排,动态组按关键词自动收编新节点,不用每次刷新订阅回来重勾一遍。
+
+![节点管理](docs/pic/settings-groups.webp)
+
+**目标分流**:一个站点集 = 一组匹配条件 + 一个同名出口,规则集来自 MetaCubeX 的 meta-rules-dat(含被墙域名表)。
+
+![目标分流](docs/pic/settings-policies.webp)
+
+**后端设置**:IPv6、测速地址、自身升级和规则集更新的计划任务都在这里。
+
+![后端设置](docs/pic/settings-backend.webp)
+
+## 它能做什么
+
+- **订阅**:Clash YAML 与 base64 分享链接都支持,协议覆盖 shadowsocks / vmess / vless(含 REALITY)/ trojan / hysteria2 / tuic / anytls / wireguard。导入尽量宽松——自签、过期、张冠李戴的证书都不拦,只要节点本身能用就让它通。
+- **节点组**:自动择优(url-test)和手动选择(select)两种;动态组按关键词自动跟着订阅走,静态组手工挑。
+- **目标分流**:站点集按域名 / 域名后缀 / 关键词 / 规则集 / IP 段匹配,出口在代理页点选,选完即成为默认。规则集来自 MetaCubeX/meta-rules-dat 的 sing 分支,geosite 1899 类、geoip 260 类,可按需下载。
+- **终端分流**:按局域网来源 IP 给指定设备单独指定出口。
+- **DNS 接管**:三种模式——接管 dnsmasq 转发(默认)、防火墙劫持、完全禁用。国内域名走本地解析拿就近 CDN,走代理的域名经代理侧解析,两边分开。
+- **共享网络**:把内核的入站开放给局域网里的其它设备当代理用。
+- **流量统计**:每日流量按终端设备 / 节点 / 访问目标三个维度下钻。
+- **自动更新**:Open-Box 自身与 Geosite / GeoIP 都能按天定时检查,有新版才升。
+- **LuCI 兜底页**:面板打不开时,从路由器自带界面一键停代理、恢复直连。
 
 ## 硬件要求
 
-- **CPU 架构**:x86_64 或 arm64(aarch64)。除此之外的架构(如常见的 mips/mipsel
-  老款路由器)暂不支持。
-- **可用存储**:≥ 512MB。**16MB / 32MB flash 的经典入门路由器不支持**——即使刷了
-  OpenWrt,可用空间也远达不到这个门槛。通常需要路由器自带 eMMC/NAND ≥512MB,或者
-  接了 USB 盘/TF 卡并 `extroot` 到足够大的存储上。
+- **CPU 架构**:x86_64 或 arm64(aarch64)。mips / mipsel 这类老款路由器不支持。
+- **可用存储**:≥ 512MB。16MB / 32MB flash 的经典入门路由器装不下,需要自带 eMMC/NAND,或者接 USB 盘 / TF 卡做 `extroot`。
 - **可用内存**:≥ 512MB。
-- **系统**:OpenWrt(安装脚本会检测 `/etc/openwrt_release`,非 OpenWrt 系统会直接
-  拒绝安装)。
+- **系统**:OpenWrt。安装脚本会检查 `/etc/openwrt_release`,不是 OpenWrt 直接拒装。
 
-不满足以上任一条件,`install.sh` 的预检会直接报错退出,不会碰你的系统。
-
-> **正在做真机测试?** 请按 [真机验收指南](docs/P7-真机验收指南.md) 逐步进行——里面有每一步的预期输出、关键验证项和应急恢复方法。
+以上任一条不满足,`install.sh` 的预检会报错退出,不会碰你的系统。发布包同时提供两种架构,日常验证主要在 x86_64 上进行。
 
 ## 安装
 
-**通过 SSH 以 root 身份登录路由器**,然后二选一执行:
+SSH 以 root 登录路由器,二选一:
 
 ```bash
-# 直连版(能正常访问 GitHub 时用这个)
 curl -fsSL https://raw.githubusercontent.com/liandu2024/Open-Box/main/scripts/install.sh | sh
+```
 
-# 加速版(GitHub 访问不畅时用这个;不用自己找加速站,脚本内置了几个,
-# 会依次探测、自动挑一个能用的)
+GitHub 访问不畅时用加速版(脚本内置了几个加速站,会依次探测自动挑一个能用的):
+
+```bash
 curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/liandu2024/Open-Box/main/scripts/install.sh | sh -s -- --mirror
 ```
 
-安装脚本会先做预检(架构、存储、内存、系统),校验通过才会下载对应架构的发布包、
-校验 SHA256、铺装到 `/opt/open-box/`,并启动面板服务。**校验不通过、下载失败,或
-架构/存储/内存不满足要求,系统不会有任何改动。**
+已经有信得过的加速站,也可以指定具体前缀跳过探测:`sh -s -- --mirror <镜像前缀>`。
 
-如果你已经有信得过的加速站,也可以指定具体前缀,跳过自动探测:
-`sh -s -- --mirror <镜像前缀>`(把 `<镜像前缀>` 换成该加速站点域名)。
+安装脚本先做预检(架构、存储、内存、系统),通过才下载对应架构的发布包、校验 SHA256、铺装到 `/opt/open-box/` 并启动面板。校验不过或下载失败,系统不会有任何改动。
 
-### 安装完成后
+装完之后:
 
-1. 浏览器打开脚本输出的面板地址,一般是 `http://<路由器局域网 IP>:2026`。
-2. 首次访问会要求**设置管理密码**——安装过程不会生成随机密码,这一步是必须的。
-3. 设完密码后跟着**引导向导**走,添加订阅、配置分流规则即可。
+1. 浏览器打开脚本输出的地址,一般是 `http://<路由器局域网 IP>:2026`。
+2. 首次访问强制**设置管理密码**——安装过程不生成随机密码。
+3. 跟引导走:加订阅、挑分流、启动内核。
 
-面板默认仅允许局域网访问(由防火墙规则保证),不会自动开放到公网。
+面板默认只允许局域网访问,由防火墙规则保证,不会自动开到公网。
 
 ## 升级
 
-同样通过 SSH 以 root 身份登录路由器执行:
+面板「设置 → 后端设置」里点「检查更新」就能升,也可以在 SSH 里跑:
 
 ```bash
-# 不带参数:自动沿用安装时选择的下载通道(直连或镜像),无需重新指定
 curl -fsSL https://raw.githubusercontent.com/liandu2024/Open-Box/main/scripts/update.sh | sh
-
-# 强制直连 GitHub
-curl -fsSL https://raw.githubusercontent.com/liandu2024/Open-Box/main/scripts/update.sh | sh -s -- --direct
-
-# 强制走加速(内置列表自动挑一个能用的;也可以用 --mirror <前缀> 指定具体加速站)
-curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/liandu2024/Open-Box/main/scripts/update.sh | sh -s -- --mirror
 ```
 
-不加 `--direct`/`--mirror` 时,`update.sh` 会自动沿用安装时选择的下载通道——如果
-安装时用的是镜像通道,升级会自动继续用同一个镜像前缀,无需再手动指定。加
-`--direct` 或 `--mirror` 会覆盖这个记录,只对这一次升级生效。LuCI 兜底页的「立即
-更新」按钮同样会先让你选一次路线(GitHub 直连 / 代理加速),不依赖这里的命令行。
+强制直连 GitHub 加 `-s -- --direct`,强制走加速加 `-s -- --mirror [前缀]`。不带参数时沿用安装时选的下载通道。
 
-升级会保留你的数据(`data/`,包括订阅、规则、面板密码)与已生效的运行配置,只替换
-程序本体;只重启面板,不会自动重启代理内核——如果之前配置并跑着代理,升级后请到
-面板里手动重新启动一次。
+升级保留 `data/`(订阅、规则、面板密码)和已生效的运行配置,只替换程序本体。升级前内核在跑的话,升级完会按新版本重新生成配置并自动把内核带起来。
 
 ## 卸载
 
-同样通过 SSH 以 root 身份登录路由器执行:
-
 ```bash
-# 停止服务、清理系统改动、删除程序文件;默认保留 data/(订阅、规则、密码等数据)
+# 停服务、清理系统改动、删程序文件;默认保留 data/
 curl -fsSL https://raw.githubusercontent.com/liandu2024/Open-Box/main/scripts/uninstall.sh | sh
 
-# 同上,但连 data/ 一起删掉,彻底清干净
+# 连 data/ 一起删,彻底清干净
 curl -fsSL https://raw.githubusercontent.com/liandu2024/Open-Box/main/scripts/uninstall.sh | sh -s -- --purge
 ```
 
-不加 `--purge` 时,如果是在真实终端里交互执行,脚本还会追问一次是否保留
-`data/`;通过管道这种非交互方式执行时问不到,会静默按"保留"处理,之后想彻底删除
-再重新执行一次上面的 `--purge` 命令即可。
+不加 `--purge` 且在真实终端里交互执行时,脚本会追问一次是否保留 `data/`;通过管道非交互执行问不到,按"保留"处理。
 
 ## LuCI 兜底页
 
-安装后,路由器自带的管理界面(LuCI)里会多出一个入口:**服务 → Open-Box**。这是给
-面板本身打不开时用的救场页面,能做的事情包括:
+装完之后路由器自带界面里会多一个入口:**服务 → Open-Box**。面板本身打不开时用它救场:
 
-- 分别启停 sing-box 内核服务与面板服务,以及切换它们的开机自启
-- 「紧急停止并恢复直连」——一键停掉代理、清掉路由/防火墙/DNS 改动,恢复到裸直连
-- 「打开 Open-Box 面板」跳转链接
+- 分别启停内核与面板服务,以及各自的开机自启
+- 「紧急停止并恢复直连」:停代理、撤掉路由 / 防火墙 / DNS 改动,回到裸直连
+- 跳转打开面板
 
-如果面板进程意外崩溃或者你被自己配的分流规则卡在了外面,先去 LuCI 这个页面看看。
+被自己配的分流规则卡在外面时,先去这一页。
 
-## ⚠️ 安全提示
+## 安全提示
 
-**面板后端具备路由器 root 级别的权限**(它需要改防火墙规则、下发 DNS 接管、启停
-系统服务)。因此:
+**面板后端拥有路由器 root 级权限**(它要改防火墙、接管 DNS、启停系统服务)。所以:
 
-- 面板端口(2026)默认只监听局域网,**不要把它裸端口转发到公网**。
-- 如果确实需要在外网访问面板,请自己在前面套一层带认证的 HTTPS 反向代理,或者用
-  VPN/WireGuard 之类的方式先接入局域网,再访问面板——不要让路由器直接把 2026 端口
-  暴露给公网。
+- 面板端口 2026 默认只监听局域网,**不要裸端口转发到公网**。
+- 确实要在外网用,请自己在前面套一层带认证的 HTTPS 反向代理,或者先用 VPN 接进局域网再访问。
+- 节点侧的 TLS 证书校验默认跳过(机场自签、过期、甚至用别人域名的证书是常态,校验只会让能用的节点连不上)。节点本身的密码 / UUID 认证不受影响。
 
 ## 仓库结构
 
 - `panel/` 管理面板(fork 自 AnGe-ClashBoard,上游 zashboard,MIT)
-- `openwrt/` init 脚本与 LuCI 兜底页(P5)
-- `scripts/` install / update / uninstall / build-release(P6)
-- `templates/` sing-box 配置模板(P2)
+- `openwrt/` init 脚本与 LuCI 兜底页
+- `scripts/` install / update / uninstall / build-release
+- `templates/` sing-box 配置模板
+- `docs/` 设计文档与真机验收指南
 
 ## 本地开发
 
 ```bash
-bash scripts/dev-panel.sh   # 构建并启动面板于 http://127.0.0.1:2026
-cd panel && corepack pnpm run test:server   # 服务端测试
+bash scripts/dev-panel.sh                    # 构建并启动面板于 http://127.0.0.1:2026
+cd panel && corepack pnpm run test:server    # 服务端测试
+cd panel && corepack pnpm run type-check     # 类型检查
 ```
