@@ -34,11 +34,24 @@
         class="app-popover border-base-content/10 z-[1000] flex flex-col rounded-lg border p-2 shadow-lg"
         :style="style"
       >
-        <TextInput
-          v-model="keyword"
-          :placeholder="$t('geoCategorySearch')"
-          clearable
-        />
+        <!-- geoip 的目录里国家地区码和按服务的 IP 段混在一起:给个范围下拉,搜索框相应缩窄 -->
+        <div class="flex items-center gap-2">
+          <TextInput
+            v-model="keyword"
+            class="min-w-0 flex-1"
+            :placeholder="$t('geoCategorySearch')"
+            clearable
+          />
+          <select
+            v-if="kind === 'geoip'"
+            v-model="scope"
+            class="select select-sm w-24 shrink-0"
+          >
+            <option value="all">{{ $t('geoScopeAll') }}</option>
+            <option value="region">{{ $t('geoScopeRegion') }}</option>
+            <option value="other">{{ $t('geoScopeOther') }}</option>
+          </select>
+        </div>
         <ul
         ref="listRef"
         class="mt-1 min-h-0 flex-1 overflow-y-auto"
@@ -170,7 +183,16 @@ const scoreOf = (row: GeoCategoryRow, kw: string) => {
 // 名称、中文、英文、繁体一起参与检索。注意说明是一句描述、不是别名表:搜 netflix 或
 // 「流媒体」能找到 geosite:netflix,搜「奈飞」找不到——它的说明里没这两个字。
 const excluded = computed(() => new Set((props.exclude || []).filter((v) => v && v !== props.modelValue)))
-const candidates = computed(() => (excluded.value.size ? rows.value.filter((r) => !excluded.value.has(r[0])) : rows.value))
+// geoip 的范围:地区 = 两位国家地区码(ad、cn、us…),其他 = 按服务的 IP 段(cloudflare、telegram…)
+const scope = ref<'all' | 'region' | 'other'>('all')
+const isRegion = (row: GeoCategoryRow) => /^[a-z]{2}$/i.test(row[0])
+const candidates = computed(() => {
+  let list = excluded.value.size ? rows.value.filter((r) => !excluded.value.has(r[0])) : rows.value
+  if (props.kind === 'geoip' && scope.value !== 'all') {
+    list = list.filter((r) => (scope.value === 'region' ? isRegion(r) : !isRegion(r)))
+  }
+  return list
+})
 
 const filtered = computed(() => {
   const kw = keyword.value.trim().toLowerCase()
@@ -196,7 +218,7 @@ const onScroll = () => {
 }
 
 // 换关键词/换类型就从头来:上一次滚到第 600 条,不该影响新结果
-watch([keyword, () => props.kind], () => {
+watch([keyword, scope, () => props.kind], () => {
   shown.value = PAGE_SIZE
   if (listRef.value) listRef.value.scrollTop = 0
 })
@@ -212,6 +234,7 @@ const onTriggerClick = () => {
 
 const choose = (value: string) => {
   emit('update:modelValue', value)
+  scope.value = 'all'
   keyword.value = ''
   close()
 }
