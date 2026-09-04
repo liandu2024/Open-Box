@@ -403,6 +403,8 @@ export interface OpenboxUserGroup {
   members: string[]
   interval?: string
   tolerance?: number
+  // urltest 用:多久没流量经过就停止健康检查(内核默认 30 分钟,见 engine/user-groups.mjs)
+  idleTimeout?: string
   // urltest 用:这个组自己的测速地址,空 = 用档案里的全局地址
   testUrl?: string
 }

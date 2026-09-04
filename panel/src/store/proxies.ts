@@ -363,6 +363,50 @@ export const fetchProxies = async () => {
   if (smartGroups.length > 0) {
     initSmartWeights(smartGroups)
   }
+
+  repairStaleUrlTestGroups()
+}
+
+// 自动择优组"当前选中的线路已经失效":内核在经这个组拨号失败时,只把该节点的延迟记录删掉,
+// 并不重新择优(sing-box protocol/group/urltest.go 的 DialContext),要等这个组自己的定时
+// 检查(默认 3 分钟)才切走;而组闲置久了连定时检查都会停。所以"选中的节点没有延迟记录"
+// 就是这条线路已经不通、而且没人来修的信号。
+export const isUrlTestGroupStale = (groupName: string) => {
+  const group = proxyMap.value[groupName]
+
+  if (!group || group.type?.toLowerCase() !== PROXY_TYPE.URLTest || !group.now) {
+    return false
+  }
+
+  return getLatencyByName(group.now) === NOT_CONNECTED
+}
+
+// 看到这种组就替它强制重测一次(/group/<name>/delay):内核测完会立刻重新择优,
+// 用户不用自己去点闪电。同一个组 3 分钟内只补一次,免得所有成员都挂掉时反复重测。
+const staleRepairAt = new Map<string, number>()
+const STALE_REPAIR_INTERVAL = 3 * 60 * 1000
+
+const repairStaleUrlTestGroups = () => {
+  const now = Date.now()
+
+  for (const groupName of proxyGroupList.value) {
+    if (!isUrlTestGroupStale(groupName)) {
+      continue
+    }
+    // 补测的时间戳不因为"这次好了"就清掉:线路刚换过又立刻挂掉时,清了就会每刷新一次
+    // 列表重测一整个组。留着就是"同一个组最多 3 分钟补一次",和内核自己的检查间隔一致。
+    if (now - (staleRepairAt.get(groupName) ?? 0) < STALE_REPAIR_INTERVAL) {
+      continue
+    }
+    staleRepairAt.set(groupName, now)
+    fetchProxyGroupLatencyAPI(
+      groupName,
+      getTestUrl(groupName),
+      Math.max(5000, speedtestTimeout.value),
+    )
+      .then(() => fetchProxies())
+      .catch(() => {})
+  }
 }
 
 export const handlerProxySelect = async (proxyGroupName: string, proxyName: string) => {

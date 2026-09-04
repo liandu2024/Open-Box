@@ -21,6 +21,11 @@
           class="text-base-content/80 text-xs md:text-sm"
         />
       </template>
+      <ExclamationTriangleIcon
+        v-if="isStale"
+        class="text-warning h-4 w-4 shrink-0"
+        @mouseenter="tipForStale"
+      />
     </div>
   </template>
   <template v-else-if="proxyGroup.type.toLowerCase() === PROXY_TYPE.LoadBalance">
@@ -34,9 +39,14 @@
 <script setup lang="ts">
 import { PROXY_TYPE } from '@/constant'
 import { useTooltip } from '@/helper/tooltip'
-import { getProxyRouteChain, proxyMap } from '@/store/proxies'
+import { getProxyRouteChain, isUrlTestGroupStale, proxyMap } from '@/store/proxies'
 import { displayFinalOutbound } from '@/store/settings'
-import { ArrowRightCircleIcon, CheckCircleIcon, LockClosedIcon } from '@heroicons/vue/24/outline'
+import {
+  ArrowRightCircleIcon,
+  CheckCircleIcon,
+  ExclamationTriangleIcon,
+  LockClosedIcon,
+} from '@heroicons/vue/24/outline'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import ProxyName from './ProxyName.vue'
@@ -78,6 +88,14 @@ const routeNames = computed(() => {
 
   return [props.name, ...baseRouteNames]
 })
+
+// 自动择优组选中的线路已经失效(见 store/proxies.ts):面板已经在后台替它重测重选,
+// 这里只是把"为什么这条线路没有延迟"说清楚,免得看起来像面板没测。
+const isStale = computed(() => isUrlTestGroupStale(props.name))
+
+const tipForStale = (e: Event) => {
+  showTip(e, t('urlTestStaleTip'), { delay: [300, 0] })
+}
 
 const tipForFixed = (e: Event) => {
   if (!isFixed.value) {

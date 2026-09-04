@@ -203,6 +203,8 @@ const en = {
   disconnectOnRuleDisable: 'Disconnect connections when disabling rule',
   tipForFixed:
     'The current policy group is locked to the current node. Run a speed test to restore {type} behavior.',
+  urlTestStaleTip:
+    'This line is dead: after a failed dial the kernel dropped its latency record but does not switch on its own. The panel is retesting this group in the background to pick a new one.',
   remoteAddress: 'Remote address',
   moreSettings: 'More settings',
   customIcon: 'Custom icon',

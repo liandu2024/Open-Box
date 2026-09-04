@@ -254,3 +254,21 @@ test('url-test 组的测速地址:组里填了用组的,没填用档案里的全
   const noGlobal = userOnly(emitUserGroups(groups, nodes).outbounds)
   assert.equal(noGlobal[1].url, 'https://www.gstatic.com/generate_204')
 })
+
+test('自动择优组带 idle_timeout:内核默认 30 分钟不用就停止健康检查,停了就一直挂在失效的线路上', () => {
+  const { outbounds } = emitUserGroups(
+    [{ id: 'g', name: '自动', type: 'urltest', mode: 'static', members: ['A', 'B'] }],
+    [{ tag: 'A' }, { tag: 'B' }],
+  )
+  const group = outbounds.find((o) => o.tag === '自动')
+  assert.equal(group.type, 'urltest')
+  assert.equal(group.interval, '3m')
+  assert.equal(group.tolerance, 50)
+  assert.equal(group.idle_timeout, '12h')
+  // 组自己填了就用组的
+  const custom = emitUserGroups(
+    [{ id: 'g', name: '自动', type: 'urltest', mode: 'static', members: ['A'], idleTimeout: '2h' }],
+    [{ tag: 'A' }],
+  ).outbounds.find((o) => o.tag === '自动')
+  assert.equal(custom.idle_timeout, '2h')
+})

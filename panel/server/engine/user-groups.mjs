@@ -43,6 +43,14 @@ export const builtinDefaults = () => ([
 export const DEFAULT_TEST_URL = 'https://www.gstatic.com/generate_204'
 export const DEFAULT_INTERVAL = '3m'
 export const DEFAULT_TOLERANCE = 50
+// 自动择优组多久不用就停止健康检查。内核的默认值是 30 分钟(constant.DefaultURLTestIdleTimeout):
+// 一个组超过 30 分钟没有流量经过,它自己的定时检查就停了,再也不重测、也不重新择优——直到
+// 下次有连接走它才重新启动(sing-box protocol/group/urltest.go 的 Touch / loopCheck)。
+// 后果是:不常用的组会长期停在一个已经不通的节点上(内核在拨号失败时只删该节点的延迟记录,
+// 并不重新择优),用户点开代理页看到的就是"选中的线路没有延迟、也不自动换"。
+// 12 小时:一天之内用过一次的组就一直保持每 3 分钟一检。代价是这些组的成员会持续被测速,
+// 但同一个节点的延迟记录是全局共享的,3 分钟内只会被测一次,不会因为组多就成倍增加。
+export const DEFAULT_IDLE_TIMEOUT = '12h'
 
 // 两个开箱即用的组:一份自动择优、一份手动指定,成员都是"当前所有有效节点"。
 // allNodes 是动态的——订阅刷新后节点变了,组的成员跟着变,不需要用户回来重新勾一遍。
@@ -60,6 +68,7 @@ export const defaultGroups = () => ([
     members: [],
     interval: DEFAULT_INTERVAL,
     tolerance: DEFAULT_TOLERANCE,
+    idleTimeout: DEFAULT_IDLE_TIMEOUT,
   },
   {
     id: 'all-manual',
@@ -115,6 +124,7 @@ export const normalizeGroup = (raw, index = 0) => {
     group.interval = isNonEmptyString(raw?.interval) ? raw.interval.trim() : DEFAULT_INTERVAL
     const tol = Number(raw?.tolerance)
     group.tolerance = Number.isFinite(tol) && tol >= 0 ? Math.floor(tol) : DEFAULT_TOLERANCE
+    group.idleTimeout = isNonEmptyString(raw?.idleTimeout) ? raw.idleTimeout.trim() : DEFAULT_IDLE_TIMEOUT
   }
   return group
 }
@@ -262,6 +272,7 @@ export const emitUserGroups = (groups, nodes, options = {}) => {
         url: g.testUrl || testUrl,
         interval: g.interval || DEFAULT_INTERVAL,
         tolerance: g.tolerance ?? DEFAULT_TOLERANCE,
+        idle_timeout: g.idleTimeout || DEFAULT_IDLE_TIMEOUT,
       })
     } else {
       outbounds.push({ type: 'selector', tag: g.name, outbounds: members })

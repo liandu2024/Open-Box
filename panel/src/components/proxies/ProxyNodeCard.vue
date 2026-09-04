@@ -51,10 +51,10 @@
 </template>
 
 <script setup lang="ts">
-import { PROXY_CARD_SIZE, PROXY_SORT_TYPE } from '@/constant'
+import { PROXY_CARD_SIZE, PROXY_SORT_TYPE, PROXY_TYPE } from '@/constant'
 import { checkTruncation } from '@/helper/tooltip'
 import { scrollIntoCenter } from '@/helper/utils'
-import { getIPv6ByName, getTestUrl, proxyLatencyTest, proxyMap } from '@/store/proxies'
+import { getIPv6ByName, getTestUrl, proxyGroupLatencyTest, proxyLatencyTest, proxyMap } from '@/store/proxies'
 import { IPv6test, proxyCardSize, proxySortType, theme, truncateProxyName } from '@/store/settings'
 import { smartWeightsMap } from '@/store/smart'
 import { twMerge } from 'tailwind-merge'
@@ -126,7 +126,15 @@ const handlerLatencyTest = async () => {
 
   isLatencyTesting.value = true
   try {
-    await proxyLatencyTest(props.name, getTestUrl(props.groupName))
+    // 这张卡片本身是个自动择优组(站点集 / 组的成员列表里会出现)时,测的应该是"这个组"
+    // 而不是"经这个组出去有多快":后者只从组当前选中的那个节点上跑一次,既不重测其它成员,
+    // 也不会重新择优——当前选中的节点已经不通时,点它必然超时,而且线路不会自己换。
+    // 走 proxyGroupLatencyTest 就是内核的 /group/<name>/delay:强制重测全部成员并立即重新择优。
+    if (node.value.type?.toLowerCase() === PROXY_TYPE.URLTest) {
+      await proxyGroupLatencyTest(props.name)
+    } else {
+      await proxyLatencyTest(props.name, getTestUrl(props.groupName))
+    }
     isLatencyTesting.value = false
   } catch {
     isLatencyTesting.value = false
