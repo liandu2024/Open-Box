@@ -13,11 +13,13 @@
           :key="r"
           @mouseenter="(e) => mouseenterHandler(e, r)"
         >
+          <!-- 行高写死 h-9(36px):折叠时只有 20px 的图标,展开时多一行文字,靠内边距
+               撑高的话两种状态每一项差一两像素,一路累加下来整列图标就对不齐了 -->
           <a
             :class="[
               r === route.name ? 'menu-active' : '',
               isSidebarCollapsed && 'justify-center',
-              'py-2',
+              'flex h-9 items-center py-0',
             ]"
             @click.passive="() => router.push({ name: r })"
           >

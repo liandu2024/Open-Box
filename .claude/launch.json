@@ -9,6 +9,18 @@
         "ZASHBOARD_DEV_PROXY_PORT=${ZASHBOARD_DEV_PROXY_PORT:-2026} exec pnpm --dir panel run dev --port 5199"
       ],
       "port": 5199
+    },
+    {
+      "name": "panel-static",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "4173",
+        "--directory",
+        "panel/dist"
+      ],
+      "port": 4173
     }
   ]
 }
