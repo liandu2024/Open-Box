@@ -176,3 +176,12 @@ test('allowInsecure=true 变体也应置 insecure(修复6)', () => {
   const n = parseShareLink('trojan://pw@a.com:443?sni=a.com&allowInsecure=true#I2')
   assert.equal(n.fields.tls.insecure, true)
 })
+
+test('vmess grpc:v2rayN 把 serviceName 放在 path,存成 service_name;kcp / xhttp 这类内核没有的传输层整条跳过', () => {
+  const grpc = parseShareLink('vmess://' + Buffer.from(JSON.stringify({ v: '2', ps: 'G', add: 'g.example.com', port: '443', id: '11111111-1111-1111-1111-111111111111', aid: '0', net: 'grpc', path: '/mysvc', tls: 'tls' })).toString('base64'))
+  assert.deepEqual(grpc.fields.transport, { type: 'grpc', service_name: 'mysvc' })
+  const kcp = parseShareLink('vmess://' + Buffer.from(JSON.stringify({ v: '2', ps: 'K', add: 'k.example.com', port: '443', id: '11111111-1111-1111-1111-111111111111', net: 'kcp' })).toString('base64'))
+  assert.equal(kcp, null)
+  assert.equal(parseShareLink('vless://11111111-1111-1111-1111-111111111111@x.example.com:443?type=xhttp&path=%2Fx&security=tls#X'), null)
+  assert.equal(parseShareLink('vless://11111111-1111-1111-1111-111111111111@x.example.com:443?type=splithttp&security=tls#X'), null)
+})

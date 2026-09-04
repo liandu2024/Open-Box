@@ -9,6 +9,9 @@ import { ensureTlsKeypair } from './tls-keypair.mjs'
 import { configNeedsTlsKeypair, enabledServers } from '../engine/servers.mjs'
 import { ensureRulesets } from './rulesets.mjs'
 
+// 与 openwrt/initd/openbox 的 CONF_META 一致
+export const configMetaPath = (paths) => `${paths.etc}/config.meta.json`
+
 export const rollbackToDirect = async (ctx, paths) => {
   const actions = []
   try { await stopService(ctx, paths.initd.core); actions.push('stop-core') } catch { /* 尽力而为 */ }
@@ -75,9 +78,15 @@ export const deployConfig = async (ctx, paths, { config, profile, userGroups, fe
   try {
     // 4. 落盘
     await ctx.writeFile(paths.configPath, JSON.stringify(config, null, 2))
+    // 旁边放一份元数据给 init 脚本:开机时它要知道这份配置是不是 dnsmasq 分流模式
+    // (要不要重新接管 dnsmasq)。以前靠在 config.json 里 grep 出站 tag,节点名撞上就误判。
+    const dnsMode = (profile.dns && profile.dns.mode) || 'hijack'
+    await ctx.writeFile(
+      configMetaPath(paths),
+      JSON.stringify({ dnsMode, autoRedirect: Boolean(profile.tun && profile.tun.autoRedirect && dnsMode !== 'off'), generatedAt: new Date().toISOString() }, null, 2),
+    )
 
     // 5. DNS 接管
-    const dnsMode = (profile.dns && profile.dns.mode) || 'hijack'
     if (dnsMode !== 'dnsmasq' && (await ctx.exists(dnsTakeoverBackupPath(paths)))) {
       // 上次部署用了 dnsmasq 接管、这次切回 hijack(或其它非 dnsmasq 模式):
       // 若不先还原,dnsmasq 会继续指向 127.0.0.1#7853,而新配置已无 dns-in 入站,

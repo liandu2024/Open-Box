@@ -98,7 +98,9 @@ const setAlert = (
 
   const contentDiv = document.createElement('div')
   contentDiv.className = 'break-all whitespace-pre-wrap'
-  contentDiv.innerHTML = t(content, params)
+  // 文案里会带服务端错误原文,而错误原文又可能来自订阅内容(节点名、type 字段),
+  // 必须按纯文本渲染——用 innerHTML 就是一条从恶意机场到面板会话的 XSS 通道。
+  contentDiv.textContent = t(content, params)
 
   const closeButton = document.createElement('button')
   closeButton.className = 'absolute top-0 right-0 btn btn-xs btn-circle btn-ghost'

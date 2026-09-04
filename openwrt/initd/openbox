@@ -17,7 +17,12 @@ DNSMASQ_BACKUP="$DATA/dnsmasq-backup.txt"
 # 与 dns-takeover.mjs 的 dnsTakeoverStatePath 一致:面板最近一次接管往 dnsmasq 写了什么
 # (每行 server=<值>,全局接管再加一行 noresolv=1)。开机时照抄,见 openbox_apply_takeover。
 DNSMASQ_TAKEOVER="$DATA/dnsmasq-takeover.txt"
-# 与 engine/config.mjs 的 DNSMASQ_OUTBOUND_TAG 一致:配置里有这个出站 <=> dnsmasq 分流模式
+# 与 system/deploy.mjs 的 configMetaPath 一致:面板每次落盘 config.json 时旁边写的元数据,
+# 里面的 dnsMode 说明这份配置是哪种 DNS 模式。
+CONF_META="$OPENBOX_ROOT/etc/config.meta.json"
+# 与 engine/config.mjs 的 DNSMASQ_OUTBOUND_TAG 一致:老版本部署的配置没有元数据文件,
+# 只能退而求其次在 config.json 里找这个出站 tag(节点名恰好也叫 dnsmasq 时会误判,
+# 所以只作为没有元数据时的兜底)。
 DNSMASQ_OUTBOUND_TAG=dnsmasq
 # sing-box 自己流量的 fwmark(tun 的 auto_redirect_output_mark 默认值):带这个标记的包
 # 会被内核的 nft output 链直接放行、ip rule 9000 跳过 tun 路由表
@@ -25,7 +30,49 @@ SINGBOX_OUTPUT_MARK=0x2024
 NFT_TABLE="inet openbox"
 
 openbox_dnsmasq_mode() {
+	if [ -f "$CONF_META" ]; then
+		grep -qE "\"dnsMode\": *\"dnsmasq\"" "$CONF_META" 2>/dev/null
+		return $?
+	fi
 	grep -qE "\"tag\": *\"$DNSMASQ_OUTBOUND_TAG\"" "$CONF" 2>/dev/null
+}
+
+# procd 里内核实例当前的 PID;没在跑(崩了、或重试用完放弃)就是空
+openbox_instance_pid() {
+	ubus call service list '{"name":"openbox"}' 2>/dev/null | sed -n 's/.*"pid": *\([0-9][0-9]*\).*/\1/p' | head -n 1
+}
+
+# 内核起不来时把 dnsmasq 还给系统。procd 重试 5 次放弃后不会调 stop,接管若留着,dnsmasq
+# 就一直指着一个死掉的 127.0.0.1#7853 且 noresolv=1——全 LAN 无解析,比"代理没起来"糟得多。
+# 起一个后台小循环盯 60 秒:同一个 PID 连续 5 次(10 秒)都在就放心退出;到点还没稳住就做
+# 一次完整清理(和 stop 一样:还原 dnsmasq、撤 v6 拦截、删标记表)。只在 dnsmasq 模式下需要。
+# 判断依据必须是 PID 稳定而不是 status 文本:配置坏了时 procd 每 5 秒重拉一次,status
+# 在两次崩溃之间照样报 running,看文本会被骗过去(实测)。
+openbox_watch_start() {
+	openbox_dnsmasq_mode || return 0
+	(
+		# 脱离调用方的会话:从 ssh 手动 restart 时会话一结束 SIGHUP 会把它带走
+		trap '' HUP INT TERM
+		_ob_up=0
+		_ob_i=0
+		_ob_last=""
+		while [ "$_ob_i" -lt 30 ]; do
+			sleep 2
+			_ob_i=$((_ob_i + 1))
+			_ob_pid="$(openbox_instance_pid)"
+			if [ -n "$_ob_pid" ] && [ "$_ob_pid" = "$_ob_last" ]; then
+				_ob_up=$((_ob_up + 1))
+				[ "$_ob_up" -ge 5 ] && exit 0
+			else
+				_ob_up=0
+			fi
+			_ob_last="$_ob_pid"
+		done
+		if [ -z "$(openbox_instance_pid)" ]; then
+			logger -t openbox "sing-box did not stay up after start; restoring dnsmasq upstream" 2>/dev/null
+			openbox_cleanup
+		fi
+	) </dev/null >/dev/null 2>&1 &
 }
 
 # 这份配置是 dnsmasq 分流模式时,确保 dnsmasq 的上游指向内核。
@@ -131,6 +178,8 @@ start_service() {
 	procd_set_param respawn 3600 5 5
 	procd_set_param limits core="unlimited" nofile="65535 65535"
 	procd_close_instance
+
+	openbox_watch_start
 }
 
 # 停止后让系统回到"能正常上网"的状态:

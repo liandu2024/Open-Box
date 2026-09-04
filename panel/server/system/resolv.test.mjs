@@ -51,3 +51,15 @@ test('读文件抛异常也不该让部署失败', async () => {
   const ctx = { exists: async () => true, readFile: async () => { throw new Error('EACCES') } }
   assert.deepEqual(await readSystemDns(ctx), [])
 })
+
+test('丢掉链路本地 / 带 zone / 不是 IP 的 nameserver:fe80::1%wan6 会让 Resolver 同步抛错、整次部署失败', () => {
+  const text = [
+    'nameserver fe80::1%wan6',
+    'nameserver fe80::1',
+    'nameserver 999.1.1.1',
+    'nameserver 2409:8000::1',
+    'nameserver 211.139.29.150',
+    'nameserver not-an-ip',
+  ].join('\n')
+  assert.deepEqual(parseResolvConf(text), ['211.139.29.150', '2409:8000::1'])
+})

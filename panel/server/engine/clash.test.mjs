@@ -184,3 +184,19 @@ proxies:
   assert.equal(r.fields.transport.headers.Host, 'cdn.com')
   assert.ok(skipped.some((s) => s.name === 'SS-Plugin'))
 })
+
+test('YAML 里不加引号的数字密码转成字符串;kcp / xhttp 传输层的条目记为 skipped', () => {
+  const yaml = [
+    'proxies:',
+    '  - { name: NUM, type: trojan, server: n.example.com, port: 443, password: 12345678, sni: n.example.com }',
+    '  - { name: SSNUM, type: ss, server: s.example.com, port: 8388, cipher: aes-256-gcm, password: 000123 }',
+    '  - { name: KCP, type: vmess, server: k.example.com, port: 443, uuid: 11111111-1111-1111-1111-111111111111, alterId: 0, cipher: auto, network: kcp }',
+    '  - { name: XH, type: vless, server: x.example.com, port: 443, uuid: 11111111-1111-1111-1111-111111111111, network: xhttp, tls: true }',
+  ].join('\n')
+  const { nodes, skipped } = parseClashProxies(yaml)
+  const byName = Object.fromEntries(nodes.map((n) => [n.tag, n]))
+  assert.equal(byName.NUM.fields.password, '12345678')
+  assert.equal(typeof byName.NUM.fields.password, 'string')
+  assert.equal(byName.SSNUM.fields.password, '123')
+  assert.deepEqual(skipped.map((s) => s.name).sort(), ['KCP', 'XH'])
+})

@@ -178,7 +178,10 @@ test('POST /api/openbox/deploy 冲突路径 → 409,未写任何文件,不 enabl
 
     assert.equal(ctx.writes.length, 0) // 未写任何配置
     assert.equal(store.getDeployState().stage, 'conflict')
-    assert.ok(!cmds(ctx).some((c) => c.includes('enable') || c.includes('disable')))
+    // 失败且内核没在跑(这里没 mock status → 视为没跑)→ 和「停止」一样关掉开机自启,
+    // 不能留着一份没验证过的配置等下次开机被 procd 拉起
+    assert.ok(!cmds(ctx).some((c) => c.includes('/etc/init.d/openbox enable')))
+    assert.ok(cmds(ctx).some((c) => c.includes('/etc/init.d/openbox disable')))
   } finally {
     await close()
   }
@@ -199,8 +202,28 @@ test('POST /api/openbox/deploy 校验失败 → 409,给 badTags,不写正式配�
 
     assert.ok(!ctx.writes.some((w) => w.path === paths.configPath)) // 未写正式配置
     assert.ok(!cmds(ctx).some((c) => c.includes('/etc/init.d/openbox restart')))
-    assert.ok(!cmds(ctx).some((c) => c.includes('enable') || c.includes('disable')))
+    // 失败且内核没在跑(这里没 mock status → 视为没跑)→ 和「停止」一样关掉开机自启,
+    // 不能留着一份没验证过的配置等下次开机被 procd 拉起
+    assert.ok(!cmds(ctx).some((c) => c.includes('/etc/init.d/openbox enable')))
+    assert.ok(cmds(ctx).some((c) => c.includes('/etc/init.d/openbox disable')))
     assert.equal(store.getDeployState().stage, 'validate')
+  } finally {
+    await close()
+  }
+})
+
+test('POST /api/openbox/deploy 校验失败但旧内核还在跑(比如点的是重启)→ 不动开机自启', async () => {
+  const ctx = createMockContext({
+    defaultExec: { code: 1, stderr: 'FATAL: unknown method: x' },
+    execResults: { '/etc/init.d/openbox status': { code: 0, stdout: 'running' } },
+  })
+  const store = memStore()
+  store.setNodes([BAD_NODE])
+  const { baseUrl, close } = await startApp(ctx, store)
+  try {
+    const res = await fetch(`${baseUrl}/api/openbox/deploy`, { method: 'POST' })
+    assert.equal(res.status, 409)
+    assert.ok(!cmds(ctx).some((c) => c.includes('/etc/init.d/openbox enable') || c.includes('/etc/init.d/openbox disable')))
   } finally {
     await close()
   }

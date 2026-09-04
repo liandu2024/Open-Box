@@ -66,6 +66,11 @@ test('内核启动:dnsmasq 模式先把 dnsmasq 上游重新指向内核,再拉�
   assert.ok(dnsTakeoverStatePath(paths).endsWith('/dnsmasq-takeover.txt'), 'dns-takeover.mjs 状态文件名假设已变化,需同步更新此测试')
   assert.match(core, /^DNSMASQ_TAKEOVER="\$DATA\/dnsmasq-takeover\.txt"$/m, 'init 脚本状态文件路径与 dns-takeover.mjs 不一致')
   assert.match(core, new RegExp(`^DNSMASQ_OUTBOUND_TAG=${DNSMASQ_OUTBOUND_TAG}$`, 'm'), 'init 脚本判断 dnsmasq 模式用的出站 tag 与 engine/config.mjs 不一致')
+  // 模式判断优先读面板落盘的元数据(节点名叫 dnsmasq 不会误判),没有元数据才退回 grep 出站 tag
+  const { configMetaPath } = await import('./deploy.mjs')
+  assert.equal(configMetaPath(paths), '/opt/open-box/etc/config.meta.json')
+  assert.match(core, /^CONF_META="\$OPENBOX_ROOT\/etc\/config\.meta\.json"$/m, 'init 脚本元数据路径与 deploy.mjs 的 configMetaPath 不一致')
+  assert.match(core, /openbox_dnsmasq_mode\(\)\s*\{[^]*?if \[ -f "\$CONF_META" \]; then[^]*?"dnsMode\\": \*\\"dnsmasq[^]*?return \$\?[^]*?fi[^]*?DNSMASQ_OUTBOUND_TAG/, 'openbox_dnsmasq_mode 必须先看元数据的 dnsMode,再退回 grep 出站 tag')
   const start = core.match(/^start_service\(\)\s*\{([^]*?)^\}/m)
   assert.ok(start, '无法提取 start_service 函数体')
   const body = start[1]
@@ -78,6 +83,22 @@ test('内核启动:dnsmasq 模式先把 dnsmasq 上游重新指向内核,再拉�
   assert.match(core, /openbox_apply_takeover\(\)\s*\{[^]*?_ob_want=" \$OPENBOX_DNS_UPSTREAM"[^]*?_ob_want_noresolv=1/, '没有状态文件时必须回落到全局接管')
   // 幂等:先比对再改,避免面板 deploy 之后的 restart 再重启一次 dnsmasq
   assert.match(core, /openbox_apply_takeover\(\)\s*\{[^]*?sort\)" \][^]*?return 0[^]*?uci -q commit dhcp/, 'openbox_apply_takeover 必须先比对当前值、一致就直接返回')
+})
+
+test('内核启动:起了看门狗,内核在 dnsmasq 模式下起不来就把 dnsmasq 还给系统(procd 放弃重试不会调 stop)', () => {
+  const start = core.match(/^start_service\(\)\s*\{([^]*?)^\}/m)
+  assert.ok(start, '无法提取 start_service 函数体')
+  assert.ok(start[1].indexOf('openbox_watch_start') > start[1].indexOf('procd_close_instance'), '看门狗必须在 procd_close_instance 之后启动')
+  const watch = core.match(/^openbox_watch_start\(\)\s*\{([^]*?)^\}/m)
+  assert.ok(watch, '无法提取 openbox_watch_start 函数体')
+  assert.match(watch[1], /openbox_dnsmasq_mode \|\| return 0/, '只有 dnsmasq 模式才需要看门狗')
+  // 崩溃循环里 procd 每 5 秒重拉一次,status 文本在两次崩溃之间照样是 running(实测被骗过);
+  // pidof 又会被别的 sing-box 进程骗到。只能看 procd 里实例 PID 是否连续稳定。
+  assert.match(core, /^openbox_instance_pid\(\)\s*\{[^}]*ubus call service list/m, '实例 PID 必须从 procd(ubus service list)取')
+  assert.match(watch[1], /_ob_pid="\$\(openbox_instance_pid\)"[^]*?\[ "\$_ob_pid" = "\$_ob_last" \]/, '稳定的判断必须是同一个 PID 连续出现,而不是 status 文本')
+  assert.ok(!/init\.d\/openbox status/.test(watch[1]), '看门狗不得用 status 文本判断在跑')
+  assert.match(watch[1], /openbox_cleanup/, '没起来时必须走和 stop 一样的完整清理')
+  assert.match(watch[1], /\) <\/dev\/null >\/dev\/null 2>&1 &/, '看门狗必须脱离 stdio 放后台,否则 procd 的启动会被它挂住')
 })
 
 test('内核启动:dnsmasq 模式给 dnsmasq 自己的外部查询打 sing-box 的 fwmark 防打环,停止时撤掉', () => {

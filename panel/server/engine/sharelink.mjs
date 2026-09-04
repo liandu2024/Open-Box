@@ -88,10 +88,17 @@ const parseVmess = (uri) => {
     alter_id: Number.parseInt(conf.aid ?? 0, 10) || 0,
     security: conf.scy || 'auto',
   }
-  if (net === 'ws' || net === 'grpc' || net === 'http') {
+  // kcp / xhttp / splithttp 这些 sing-box 没有的传输层直接跳过,别生成一份内核拒收的配置
+  if (!SUPPORTED_TRANSPORTS.has(net)) return null
+  if (net !== 'tcp') {
     const transport = { type: net }
-    if (conf.path) transport.path = conf.path
-    if (conf.host) transport.headers = { Host: conf.host }
+    if (net === 'grpc') {
+      // v2rayN 把 serviceName 放在 path
+      if (conf.path) transport.service_name = String(conf.path).replace(/^\/+/, '')
+    } else {
+      if (conf.path) transport.path = conf.path
+      if (conf.host) transport.headers = { Host: conf.host }
+    }
     fields.transport = transport
   }
   if (conf.tls === 'tls' || conf.tls === 'reality') {
@@ -104,10 +111,14 @@ const parseVmess = (uri) => {
   })
 }
 
+const SUPPORTED_TRANSPORTS = new Set(['tcp', 'ws', 'http', 'grpc', 'httpupgrade', 'quic'])
+
 const buildTransportFromQuery = (query) => {
   let type = query.get('type')
   if (!type || type === 'tcp') return undefined
   if (type === 'h2') type = 'http'
+  // xhttp / splithttp / kcp:sing-box 没有对应传输层,整条链接当不支持处理(解析返回 null)
+  if (!SUPPORTED_TRANSPORTS.has(type)) throw new Error(`unsupported transport: ${type}`)
   const transport = { type }
   const path = query.get('path')
   if (path) transport.path = path

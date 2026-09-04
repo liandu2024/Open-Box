@@ -31,6 +31,10 @@ test('生成的配置通过 sing-box check(全协议 + wireguard + DNS 分流 + 
       'trojan://pw@jp.example.com:443?sni=jp.example.com#JP-01',
       'hysteria2://pw@hk.example.com:8443?sni=hk.example.com#HK-01',
       'anytls://pw@sg.example.com:23130/?insecure=1&sni=buylite.music.apple.com#SG-01',
+      // 传输层按类型只留合法字段:grpc 的 serviceName 在 path 里、h2 带 host、ws 带 ?ed=
+      'vmess://' + Buffer.from(JSON.stringify({ v: '2', ps: 'GRPC-01', add: 'g.example.com', port: '443', id: '11111111-1111-1111-1111-111111111111', aid: '0', net: 'grpc', path: '/mysvc', tls: 'tls', sni: 'g.example.com' })).toString('base64'),
+      'vless://11111111-1111-1111-1111-111111111111@h.example.com:443?type=h2&path=%2Fh2&host=cdn.example.com&security=tls&sni=h.example.com#H2-01',
+      'vless://11111111-1111-1111-1111-111111111111@w.example.com:443?type=ws&path=%2Fws%3Fed%3D2048&host=cdn.example.com&security=tls&sni=w.example.com#WS-ED-01',
     ].join('\n')
     const { nodes } = parseSubscription(sub)
     const renamed = renameNodes(nodes)

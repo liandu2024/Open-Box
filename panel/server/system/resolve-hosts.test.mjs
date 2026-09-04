@@ -24,3 +24,8 @@ test('resolveHostsToCidrs:传了 lookup 就用它;servers 里非 IP 的项被丢
   assert.deepEqual(r, ['9.9.9.9/32'])
   assert.deepEqual(seen, ['x.test'])
 })
+
+test('resolveHostsToCidrs:servers 里只有 fe80::1%wan6 这种不能用的地址时不抛错(以前 setServers 同步抛错让整次部署失败)', async () => {
+  const cidrs = await resolveHostsToCidrs(['example.invalid'], { servers: ['fe80::1%wan6', 'garbage'], timeoutMs: 1500 })
+  assert.deepEqual(cidrs, [])
+})

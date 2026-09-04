@@ -3,10 +3,14 @@ import { createNode } from './node-model.mjs'
 
 const toArray = (v) => (Array.isArray(v) ? v : v == null ? [] : [v])
 
+const SUPPORTED_TRANSPORTS = new Set(['ws', 'http', 'grpc', 'httpupgrade', 'quic'])
+
 const buildClashTransport = (p) => {
   let net = p.network
   if (!net || net === 'tcp') return undefined
   if (net === 'h2') net = 'http'
+  // kcp / xhttp / splithttp:sing-box 没有这种传输层,抛出去让这条被记为 skipped
+  if (!SUPPORTED_TRANSPORTS.has(net)) throw new Error(`unsupported transport: ${net}`)
   const transport = { type: net }
   if (net === 'ws') {
     const opts = p['ws-opts'] || {}
@@ -111,6 +115,17 @@ const MAPPERS = {
   }),
 }
 
+// YAML 里不加引号的纯数字密码(password: 12345678)会被解析成 number,原样写进配置内核
+// 报 cannot unmarshal number into string,整份部署失败。凡是内核要字符串的字段这里统一转成字符串。
+const STRING_FIELDS = ['password', 'uuid', 'cipher', 'obfs-password', 'auth-str', 'auth_str', 'private-key', 'public-key', 'preshared-key', 'servername', 'sni', 'flow']
+const normalizeProxy = (p) => {
+  const out = { ...p }
+  for (const k of STRING_FIELDS) {
+    if (typeof out[k] === 'number' || typeof out[k] === 'boolean') out[k] = String(out[k])
+  }
+  return out
+}
+
 export const parseClashProxies = (yamlText) => {
   const nodes = []
   const skipped = []
@@ -129,7 +144,7 @@ export const parseClashProxies = (yamlText) => {
       continue
     }
     try {
-      const { type, fields } = mapper(p)
+      const { type, fields } = mapper(normalizeProxy(p))
       nodes.push(createNode({ tag: p.name, type, server: p.server, server_port: p.port, fields, source: 'clash' }))
     } catch {
       skipped.push({ name: p.name, type: p.type })

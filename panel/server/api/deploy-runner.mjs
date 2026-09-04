@@ -4,7 +4,7 @@ import { resolveHostsToCidrs } from '../system/resolve-hosts.mjs'
 import { collectDirectHosts } from '../engine/direct-hosts.mjs'
 import { buildConfig } from '../engine/config.mjs'
 import { deployConfig } from '../system/deploy.mjs'
-import { enableService, disableService } from '../system/service.mjs'
+import { enableService, disableService, serviceStatus } from '../system/service.mjs'
 import { CLASH_API_BASE } from './penetration.mjs'
 
 // 生成配置前问一下正在跑的内核:每个 selector 现在选的是谁。DNS 规则按它判各站点集
@@ -119,16 +119,20 @@ export const runDeploy = async ({ store, ctx, paths, fetchImpl = globalThis.fetc
     // setDeployState 不会执行——部署态停留在上一次的结果,前端轮询会显示过期状态。
     const message = error instanceof Error ? error.message : String(error)
     store.setDeployState({ stage: 'error', message, at: Date.now(), badTags: [] })
-    return { ok: false, stage: 'error', message, badTags: [] }
+    result = { ok: false, stage: 'error', message, badTags: [] }
   }
 
   // enable/disable 只是"开机自启"标志位的同步动作,发生在结果已经 setDeployState 落盘
   // 之后——它失败不代表这次应用失败(内核已经在跑、配置已经生效),所以单独兜底,
   // 不让它把刚写入的成功状态改写成 error。
+  // 失败时的规则和面板里「停止」一致:内核没在跑就把自启关掉。只看回滚过的阶段不够——
+  // 升级脚本先停内核再跑这条流水线,在 conflict / rulesets / validate 阶段失败时内核
+  // 停着、自启却还开着,下次开机 procd 会直接拉起磁盘上那份旧配置(dnsmasq 模式下
+  // init 还会先把 dnsmasq 接管过去),等于开机指向一份没验证过的配置。
   try {
     if (result.ok) {
       await enableService(ctx, paths.initd.core)
-    } else if (ROLLED_BACK_STAGES.has(result.stage)) {
+    } else if (ROLLED_BACK_STAGES.has(result.stage) || !(await serviceStatus(ctx, paths.initd.core)).running) {
       await disableService(ctx, paths.initd.core)
     }
   } catch (error) {
