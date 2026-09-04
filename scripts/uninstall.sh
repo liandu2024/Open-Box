@@ -12,6 +12,8 @@
 # 的通道),只有卸载才应该删它。
 
 set -eu
+# 从 LuCI(rpcd 管道)触发时读端可能先没了,写 stdout 不能把脚本杀掉
+trap '' PIPE
 
 INSTALL_ROOT="/opt/open-box"
 PURGE=0
@@ -106,9 +108,17 @@ if [ -x /etc/init.d/openbox ]; then
 fi
 
 # ---------- 卸载独有的系统清理:移除面板放行规则 ----------
-info "移除面板防火墙放行规则..."
+info "移除防火墙规则..."
 if command -v uci >/dev/null 2>&1; then
+  # 面板放行、内核 DNS 入站放行、v6 拦截,以及共享网络从 WAN 放行的各服务器端口
+  # (firewall.openbox_srv_*)——都是我们写的,一个不留;留着的话以后任何服务占了
+  # 那个端口就直接暴露到公网。
   uci -q delete firewall.openbox_panel || true
+  uci -q delete firewall.openbox_dns || true
+  uci -q delete firewall.openbox_v6block || true
+  for _ob_rule in $(uci -q show firewall 2>/dev/null | sed -n 's/^firewall\.\(openbox_srv_[A-Za-z0-9_]*\)=rule$/\1/p'); do
+    uci -q delete "firewall.$_ob_rule" || true
+  done
   # 仅在确有变更时才 commit/reload——避免一次无意义的全 LAN 防火墙重载,也避免
   # 顺带提交用户在别处暂存的改动(与 openwrt/initd/openbox 的 openbox_cleanup 同一套顾虑)。
   if [ -n "$(uci -q changes firewall)" ]; then
@@ -131,9 +141,8 @@ rm -f /usr/share/rpcd/acl.d/luci-app-openbox.json
 # 用 -rf 而不是 -f:OpenWrt <=22.03 的 Lua 版 LuCI 里 /tmp/luci-modulecache 是
 # 目录,rm -f 对目录返回非零,在 set -eu 下会直接中止脚本(P6 终审 Important 4)。
 rm -rf /tmp/luci-*cache* 2>/dev/null || true
-if [ -x /etc/init.d/rpcd ]; then
-  /etc/init.d/rpcd restart >/dev/null 2>&1 || warn "重启 rpcd 失败,可忽略(LuCI 文件已删除)。"
-fi
+# rpcd 的重启放到最后一步(见文件末尾):从 LuCI 页面触发卸载时脚本的 stdout 就是 rpcd
+# 的管道,这里一重启 rpcd,后面的任何一句 echo 都会被 SIGPIPE 打死,程序目录还没删。
 
 # ---------- 数据目录:默认保留,--purge 或交互确认后删除 ----------
 # 通过 curl | sh 运行时 stdin 是脚本内容本身,不能直接 read;因此改问 /dev/tty——
@@ -178,5 +187,11 @@ else
   echo ""
   echo "Open-Box 已卸载,数据保留在 $INSTALL_ROOT/data。"
   echo "如需完全删除,请重新执行: sh uninstall.sh --purge"
+fi
+
+# ---------- 最后才重启 rpcd,让 LuCI 忘掉已删除的页面 ----------
+# 到这里该删的都删完了,即使被 SIGPIPE 打死也不会留下半卸载。
+if [ -x /etc/init.d/rpcd ]; then
+  /etc/init.d/rpcd restart >/dev/null 2>&1 || true
 fi
 echo ""

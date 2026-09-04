@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import express from 'express'
-import { registerProfileRoutes, validateProfilePatch } from './profile.mjs'
+import { registerProfileRoutes, validateProfilePatch, reservedPolicyNames } from './profile.mjs'
 import { createStore, DEFAULT_PROFILE } from '../store/openbox-store.mjs'
 
 const memStore = () => {
@@ -484,4 +484,16 @@ test('clientRoutes 校验:来源必须是 IP/网段,出口必填,id 不重复', 
   assert.match(validateClientRoutes([{ ...ok[0], sources: [] }]), /sources/)
   assert.match(validateClientRoutes([{ ...ok[0], outbound: '' }]), /outbound/)
   assert.match(validateClientRoutes([ok[0], { ...ok[0] }]), /duplicated/)
+})
+
+test('站点集不能和节点组 / 内置直连拒绝 / dnsmasq 回送出站同名,也不能彼此重名——都是同一个出站命名空间', () => {
+  const reserved = reservedPolicyNames([{ id: 'g1', name: 'Netflix', type: 'static', members: [] }])
+  assert.ok(reserved.includes('Netflix'))
+  assert.ok(reserved.includes('dnsmasq'))
+  assert.ok(reserved.includes('直连') && reserved.includes('拒绝'))
+  const bad = validateProfilePatch({ routing: { policies: [{ name: 'Netflix', domainSuffix: ['netflix.com'] }] } }, { reservedNames: reserved })
+  assert.match(String(bad), /collides/)
+  const dup = validateProfilePatch({ routing: { policies: [{ name: 'A', domainSuffix: ['a.com'] }, { name: 'A', domainSuffix: ['b.com'] }] } })
+  assert.match(String(dup), /duplicated/)
+  assert.equal(validateProfilePatch({ routing: { policies: [{ name: 'Hulu', domainSuffix: ['hulu.com'] }] } }, { reservedNames: reserved }), null)
 })

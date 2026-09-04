@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createMockContext } from './context.mjs'
 import { createPaths } from './paths.mjs'
-import { applyDnsTakeover, restoreDnsTakeover } from './dns-takeover.mjs'
+import { applyDnsTakeover, restoreDnsTakeover, dnsmasqSafeDomain } from './dns-takeover.mjs'
 
 const paths = createPaths('/opt/open-box')
 const cmds = (ctx) => ctx.calls.map((c) => [c.cmd, ...c.args].join(' '))
@@ -110,4 +110,40 @@ test('没有可枚举的域名时回落到全局转发(和以前一样)', async 
   const executed = cmds(ctx)
   assert.ok(executed.includes('uci set dhcp.@dnsmasq[0].noresolv=1'))
   assert.ok(executed.includes('uci add_list dhcp.@dnsmasq[0].server=127.0.0.1#7853'))
+})
+
+test('按域名转发:只摘掉我们自己上次写的条目,用户的上游(AdGuard / 223.5.5.5)和 noresolv 之外的设置原样保留', async () => {
+  const ctx = createMockContext({ execResults: {
+    'uci show dhcp.@dnsmasq[0]': { code: 0, stdout: '' },
+    'uci -q get dhcp.@dnsmasq[0].server': { code: 0, stdout: '192.168.3.5 /old.com/127.0.0.1#7853 127.0.0.1#7853\n' },
+  } })
+  await applyDnsTakeover(ctx, paths, { mode: 'dnsmasq', forwardDomains: ['google.com'] })
+  const c = cmds(ctx)
+  assert.ok(!c.includes('uci -q delete dhcp.@dnsmasq[0].server'), '按域名模式不能清空整个 server 列表')
+  assert.ok(c.includes('uci -q del_list dhcp.@dnsmasq[0].server=/old.com/127.0.0.1#7853'))
+  assert.ok(c.includes('uci -q del_list dhcp.@dnsmasq[0].server=127.0.0.1#7853'))
+  assert.ok(!c.some((x) => x.includes('192.168.3.5')), '用户自己的上游不能动')
+  assert.ok(c.includes('uci add_list dhcp.@dnsmasq[0].server=/google.com/127.0.0.1#7853'))
+})
+
+test('按域名转发:域名写不进 dnsmasq(非 ASCII / 带 # / 超长标签)就整体回落全局转发;*. 和前导点被去掉', async () => {
+  const ctx = createMockContext({ execResults: { 'uci show dhcp.@dnsmasq[0]': { code: 0, stdout: '' } } })
+  const r = await applyDnsTakeover(ctx, paths, { mode: 'dnsmasq', forwardDomains: ['google.com', '中文.com'] })
+  assert.ok(r.actions.includes('set-upstream:bad-domain'))
+  const c = cmds(ctx)
+  assert.ok(c.includes('uci add_list dhcp.@dnsmasq[0].server=127.0.0.1#7853'))
+  assert.ok(c.includes('uci set dhcp.@dnsmasq[0].noresolv=1'))
+  assert.ok(!c.some((x) => x.includes('中文')))
+  assert.equal(dnsmasqSafeDomain('*.Example.COM'), 'example.com')
+  assert.equal(dnsmasqSafeDomain('.example.com.'), 'example.com')
+  assert.equal(dnsmasqSafeDomain('a/#b.com'), null)
+  assert.equal(dnsmasqSafeDomain('x'.repeat(64) + '.com'), null)
+})
+
+test('uci commit 失败(闪存写满)必须抛错,不能报部署成功', async () => {
+  const ctx = createMockContext({ execResults: {
+    'uci show dhcp.@dnsmasq[0]': { code: 0, stdout: '' },
+    'uci commit dhcp': { code: 1, stderr: 'uci: I/O error' },
+  } })
+  await assert.rejects(() => applyDnsTakeover(ctx, paths, { mode: 'dnsmasq' }), /uci commit dhcp 失败/)
 })

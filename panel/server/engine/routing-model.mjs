@@ -317,17 +317,38 @@ export const effectiveOutbound = (policyDefault, members, builtin = DEFAULT_BUIL
 //     规则集,也不支持关键词匹配
 // 列不出来就返回空数组,调用方回落到全局转发。
 //
-// 注意这份名单是**生成配置时**按各站点集的默认出站算的。用户在代理页把某个站点集
-// 从直连切到代理,转发表不会跟着变,要重启内核重新生成——切换本身仍然生效(流量照样
-// 走代理),只是那些域名这一轮还是本地解析的。
+// 这份名单是**生成配置时**算的,和 DNS 规则一样按内核里此刻的选择(selections)判断
+// 谁走代理;两次重启之间在代理页切了直连/代理,转发表要等下次重启才跟上——切换本身仍然
+// 生效(流量照样走代理),只是那些域名这一轮还是本地解析的。
 // members 是内核里那些 selector 的成员表(生成配置时算出来的那一份,直接传进来,
 // 不在这里重算一遍——两处各算一次迟早会算歪)。
-export const dnsmasqForwardDomains = (routing, members = ['direct'], builtin = DEFAULT_BUILTIN) => {
+// 顺着内核里各 selector 的当前选择(selections:tag → now)一路下钻到叶子。
+// DNS 规则和 dnsmasq 转发表都要按"此刻真走哪"判断,两处共用这一个,免得算歪。
+export const resolveSelectionLeaf = (selections, name) => {
+  const map = selections && typeof selections === 'object' ? selections : {}
+  let current = name
+  const seen = new Set()
+  for (let i = 0; i < 16 && Object.prototype.hasOwnProperty.call(map, current) && !seen.has(current); i++) {
+    seen.add(current)
+    current = map[current]
+  }
+  return current
+}
+
+// 某个站点集(或兜底)此刻是不是直连:内核在跑就按它当前的选择,否则按档案默认
+export const policyGoesDirect = (name, policyDefault, members, builtin, selections) => {
+  const chosen = selections && Object.prototype.hasOwnProperty.call(selections, name)
+    ? resolveSelectionLeaf(selections, name)
+    : effectiveOutbound(policyDefault, members, builtin)
+  return chosen === builtin.direct
+}
+
+export const dnsmasqForwardDomains = (routing, members = ['direct'], builtin = DEFAULT_BUILTIN, selections = {}) => {
   const conf = normalizeRouting(routing)
-  if (effectiveOutbound(conf.fallback.default, members, builtin) !== builtin.direct) return []
+  if (!policyGoesDirect(conf.fallback.name, conf.fallback.default, members, builtin, selections)) return []
   const domains = []
   for (const p of conf.activePolicies) {
-    if (effectiveOutbound(p.default, members, builtin) === builtin.direct) continue
+    if (policyGoesDirect(p.name, p.default, members, builtin, selections)) continue
     // 这个集合要走代理,但它的规则 dnsmasq 展不开 → 只能全局转发
     if (p.rulesets.length || p.domainKeyword.length) return []
     domains.push(...p.domain, ...p.domainSuffix)

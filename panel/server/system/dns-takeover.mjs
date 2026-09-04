@@ -36,6 +36,23 @@ const parseBackup = (text) => {
 // ——这才是"直连的 DNS 完全不经过 Open-Box"。它只在代理面能被逐条列出来时才成立,
 // 由 engine/routing-model.mjs 的 dnsmasqForwardDomains 判断;列不出来就传空数组,
 // 回落到把整个上游指向 sing-box 的老做法。
+// 能安全写进 dnsmasq `server=/域名/` 的域名:ASCII 主机名(dnsmasq 不带 IDN,非 ASCII、
+// 超长标签、控制字符会让它 "bad domain in --server" 拒绝启动 → 全 LAN 断 DNS 和 DHCP);
+// `#` `/` 之类还会改变语义(`/#/` = 匹配全部)。前面的 `*.` / `.` 是用户写后缀的习惯,去掉。
+const DNS_LABEL = /^(?!-)[a-z0-9-]{1,63}(?<!-)$/i
+export const dnsmasqSafeDomain = (raw) => {
+  const d = String(raw || '').trim().toLowerCase().replace(/^\*\./, '').replace(/^\.+/, '').replace(/\.+$/, '')
+  if (!d || d.length > 253) return null
+  const labels = d.split('.')
+  if (!labels.every((l) => DNS_LABEL.test(l))) return null
+  return d
+}
+
+const listOurEntries = async (ctx) => {
+  const { stdout } = await ctx.exec('uci', ['-q', 'get', 'dhcp.@dnsmasq[0].server'])
+  return String(stdout || '').split(/\s+/).filter((v) => v && v.endsWith(SINGBOX_DNS_UPSTREAM))
+}
+
 export const applyDnsTakeover = async (ctx, paths, { mode, forwardDomains = [] } = {}) => {
   if (mode !== 'dnsmasq') return { changed: false, actions: [] }
 
@@ -45,20 +62,33 @@ export const applyDnsTakeover = async (ctx, paths, { mode, forwardDomains = [] }
     await ctx.writeFile(backupPath(paths), stdout)
   }
 
-  const perDomain = Array.isArray(forwardDomains) && forwardDomains.length > 0
+  const wanted = Array.isArray(forwardDomains) ? forwardDomains : []
+  const safeDomains = [...new Set(wanted.map(dnsmasqSafeDomain).filter(Boolean))]
+  // 有一个域名写不进 dnsmasq 就整体回落全局转发:少转发一个域名 = 那个站点走代理却在本地
+  // 解析(拿到污染 IP),比起让 dnsmasq 起不来仍是小得多的代价
+  const badDomain = wanted.length > 0 && wanted.some((d) => !dnsmasqSafeDomain(d))
+  const perDomain = wanted.length > 0 && !badDomain
   const servers = perDomain
-    ? forwardDomains.map((domain) => `/${domain}/${SINGBOX_DNS_UPSTREAM}`)
+    ? safeDomains.map((domain) => `/${domain}/${SINGBOX_DNS_UPSTREAM}`)
     : [SINGBOX_DNS_UPSTREAM]
-  await ctx.exec('uci', ['-q', 'delete', 'dhcp.@dnsmasq[0].server'])
   if (perDomain) {
-    // 不设 noresolv:其余域名还要靠路由器自己的上游解析。反而要把可能残留的那条删掉,
-    // 否则上一次全局接管留下的 noresolv=1 会让"没被转发的域名"彻底无解析。
+    // 只摘掉我们自己上一次写的条目,用户的上游(AdGuard / 223.5.5.5 …)原样保留——
+    // "其余域名交回路由器自己的上游"说的就是它们。也不设 noresolv,反而要把可能残留的
+    // 那条删掉,否则上一次全局接管留下的 noresolv=1 会让"没被转发的域名"彻底无解析。
+    for (const entry of await listOurEntries(ctx)) {
+      await ctx.exec('uci', ['-q', 'del_list', `dhcp.@dnsmasq[0].server=${entry}`])
+    }
     await ctx.exec('uci', ['-q', 'delete', 'dhcp.@dnsmasq[0].noresolv'])
   } else {
+    await ctx.exec('uci', ['-q', 'delete', 'dhcp.@dnsmasq[0].server'])
     await ctx.exec('uci', ['set', 'dhcp.@dnsmasq[0].noresolv=1'])
   }
   for (const s of servers) await ctx.exec('uci', ['add_list', `dhcp.@dnsmasq[0].server=${s}`])
-  await ctx.exec('uci', ['commit', 'dhcp'])
+  const commit = await ctx.exec('uci', ['commit', 'dhcp'])
+  if (commit.code !== 0) {
+    // 闪存写满时 commit 静默失败,dnsmasq 重启后还是旧配置——不能报"部署成功"
+    throw new Error(`uci commit dhcp 失败(code ${commit.code}):${(commit.stderr || commit.stdout || '').trim() || '闪存可能已写满'}`)
+  }
   await ctx.exec('/etc/init.d/dnsmasq', ['restart'])
   // 先写状态再重启 dnsmasq 也无妨,但放在 commit 之后能保证"状态文件存在 ⇒ uci 已经写过"
   await ctx.writeFile(
@@ -67,7 +97,7 @@ export const applyDnsTakeover = async (ctx, paths, { mode, forwardDomains = [] }
   )
   return {
     changed: true,
-    actions: ['backup', perDomain ? 'set-per-domain' : 'set-upstream', 'restart-dnsmasq'],
+    actions: ['backup', perDomain ? 'set-per-domain' : badDomain ? 'set-upstream:bad-domain' : 'set-upstream', 'restart-dnsmasq'],
   }
 }
 

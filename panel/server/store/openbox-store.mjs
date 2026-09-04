@@ -10,7 +10,9 @@ export const KEYS = {
   deployState: 'openbox/deploy-state',
   clashSecret: 'openbox/clash-secret',
   // 内核里各 selector 当前选的线路的快照(system/scheduler.mjs 每分钟刷新)
-  selections: 'openbox.selections',
+  // 必须带 openbox/ 前缀:index.mjs 的 isProtectedStorageKey 只认这个前缀,浏览器每次
+  // 同步设置(PUT /api/storage)会把不受保护的键整个清掉——以前用点号,快照每次都被删
+  selections: 'openbox/selections',
 }
 
 export const DEFAULT_PROFILE = {
@@ -132,12 +134,25 @@ export const createStore = ({ get, set, del }, { randomHex = defaultRandomHex } 
   // 内核跑着的时候从 clash API 读到的「每个 selector 现在选的是谁」。内核没在跑时
   // (升级脚本停掉内核后用户点启动、开机自启)拿它生成 DNS 规则,不然所有站点集都
   // 会按配置里的默认项判直连/代理,和内核用 cache_file 恢复出来的实际选择对不上。
+  const LEGACY_SELECTIONS_KEY = 'openbox.selections'
   const getSelectionsSnapshot = () => {
-    const stored = parseJsonOr(get(KEYS.selections), {})
+    let raw = get(KEYS.selections)
+    if (raw === null || raw === undefined) {
+      // 旧键名的快照搬到新键下(能搬到就搬,搬不到也无妨:那份多半早被清空了)
+      const legacy = get(LEGACY_SELECTIONS_KEY)
+      if (legacy !== null && legacy !== undefined) {
+        set(KEYS.selections, legacy)
+        del(LEGACY_SELECTIONS_KEY)
+        raw = legacy
+      }
+    }
+    const stored = parseJsonOr(raw, {})
     return isPlainObject(stored) ? stored : {}
   }
   const setSelectionsSnapshot = (map) => {
     set(KEYS.selections, JSON.stringify(isPlainObject(map) ? map : {}))
+    // 内核在跑时每分钟都是直接写新快照、不经过 get,旧键名那份要顺手清掉
+    if (get(LEGACY_SELECTIONS_KEY) !== null && get(LEGACY_SELECTIONS_KEY) !== undefined) del(LEGACY_SELECTIONS_KEY)
   }
 
   const getClashSecret = () => {
@@ -180,6 +195,10 @@ export const createStore = ({ get, set, del }, { randomHex = defaultRandomHex } 
     setDeployState,
     getSelectionsSnapshot,
     setSelectionsSnapshot,
+    // 裸键读写:给部署锁这类"进程间协调"用,键必须带 openbox/ 前缀才不会被设置同步清掉
+    getRaw: (key) => get(key),
+    setRaw: (key, value) => set(key, value),
+    delRaw: (key) => del(key),
     getClashSecret,
   }
 }

@@ -97,7 +97,58 @@ const resolveDirectHostCidrs = async (store, systemDns, lookup) => {
   return resolveHostsToCidrs(domains, lookup ? { lookup } : { servers: systemDns })
 }
 
-export const runDeploy = async ({ store, ctx, paths, fetchImpl = globalThis.fetch, lookup }) => {
+// 部署流水线(uci 写 dhcp/firewall、重启 dnsmasq、重启内核、等几秒验证)没法交错执行:
+// 两条同时跑,一条的验证会撞上另一条的重启窗口,回滚把对方刚接管好的 DNS 撤掉却报成功。
+// 面板的启动/重启、POST /deploy、Geo 刷新、计划任务、升级脚本的 CLI 都会调到这里,
+// 进程内按调用顺序排队;跨进程(升级时 CLI 与面板)靠 store 里的锁记录互相等待。
+let deployQueue = Promise.resolve()
+const LOCK_KEY = 'openbox/deploy-lock'
+const LOCK_STALE_MS = 3 * 60 * 1000
+const LOCK_WAIT_MS = 90 * 1000
+
+const pidAlive = (pid) => {
+  if (!Number.isInteger(pid) || pid <= 0) return false
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (err) {
+    return Boolean(err && err.code === 'EPERM')
+  }
+}
+
+export const withDeployLock = async (store, fn, { sleep = (ms) => new Promise((r) => setTimeout(r, ms)), now = Date.now, waitMs = LOCK_WAIT_MS, pid = process.pid, alive = pidAlive } = {}) => {
+  const canLock = store && typeof store.getRaw === 'function' && typeof store.setRaw === 'function' && typeof store.delRaw === 'function'
+  const getLock = () => {
+    try { return JSON.parse(store.getRaw(LOCK_KEY) || 'null') } catch { return null }
+  }
+  if (canLock) {
+    const deadline = now() + waitMs
+    for (;;) {
+      const lock = getLock()
+      const held = lock && lock.pid !== pid && now() - Number(lock.at || 0) < LOCK_STALE_MS && alive(lock.pid)
+      if (!held) break
+      if (now() > deadline) throw new Error(`另一个部署(pid ${lock.pid})正在进行,等了 ${Math.round(waitMs / 1000)} 秒仍未结束`)
+      await sleep(500)
+    }
+    store.setRaw(LOCK_KEY, JSON.stringify({ pid, at: now() }))
+  }
+  try {
+    return await fn()
+  } finally {
+    if (canLock) {
+      const lock = getLock()
+      if (!lock || lock.pid === pid) store.delRaw(LOCK_KEY)
+    }
+  }
+}
+
+export const runDeploy = (args) => {
+  const run = deployQueue.then(() => withDeployLock(args.store, () => runDeployInner(args)))
+  deployQueue = run.catch(() => {})
+  return run
+}
+
+const runDeployInner = async ({ store, ctx, paths, fetchImpl = globalThis.fetch, lookup }) => {
   let result
   try {
     const [systemDns, localSubnets] = await Promise.all([readSystemDns(ctx), readLocalSubnets(ctx)])
@@ -106,7 +157,7 @@ export const runDeploy = async ({ store, ctx, paths, fetchImpl = globalThis.fetc
     const { config, profile } = buildCurrentConfig(store, systemDns, {
       cacheFilePath: paths.cacheDb, selections, tlsCert: { certPath: paths.tlsCert, keyPath: paths.tlsKey }, localSubnets, directHostCidrs,
     })
-    result = await deployConfig(ctx, paths, { config, profile, userGroups: store.getGroups() })
+    result = await deployConfig(ctx, paths, { config, profile, userGroups: store.getGroups(), selections })
     store.setDeployState({
       stage: result.stage,
       message: result.message || '',

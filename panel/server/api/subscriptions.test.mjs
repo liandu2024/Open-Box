@@ -932,3 +932,32 @@ test('PUT /order:按给定 id 顺序重排订阅,节点池跟着重排;id 集合
     await close()
   }
 })
+
+test('刷新订阅期间删掉了另一条订阅 → 刷新完成后它不会复活(按此刻的列表写回,不用拉取前的快照)', async () => {
+  let store
+  let deleteDuringFetch = false
+  const fetchImpl = async () => {
+    if (deleteDuringFetch) {
+      // 模拟用户在拉取进行中删掉 Sub B(连同它的节点)
+      const keep = store.getSubscriptions().filter((s) => s.name !== 'Sub B')
+      const gone = store.getSubscriptions().find((s) => s.name === 'Sub B')
+      store.setSubscriptions(keep)
+      store.setNodes(store.getNodes().filter((n) => n.subscriptionId !== gone.id))
+    }
+    return { ok: true, status: 200, text: async () => HK_LINE }
+  }
+  const app = await startApp(fetchImpl)
+  store = app.store
+  try {
+    const a = await (await postJson(app.baseUrl, '/api/openbox/subscriptions', { url: 'http://a', name: 'Sub A' })).json()
+    await postJson(app.baseUrl, '/api/openbox/subscriptions', { url: 'http://b', name: 'Sub B' })
+    assert.equal(store.getSubscriptions().length, 2)
+    deleteDuringFetch = true
+    const res = await postJson(app.baseUrl, `/api/openbox/subscriptions/${a.id}/refresh`, {})
+    assert.equal(res.status, 200)
+    assert.deepEqual(store.getSubscriptions().map((s) => s.name), ['Sub A'])
+    assert.ok(store.getNodes().every((n) => n.subscriptionId === a.id))
+  } finally {
+    await app.close()
+  }
+})

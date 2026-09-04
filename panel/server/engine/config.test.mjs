@@ -234,3 +234,11 @@ test('dnsmasq 模式:多一个绑定 lo 的 dnsmasq 专用直连出站,局域网
   assert.ok(!h.outbounds.some((o) => o.tag === 'dnsmasq'))
   assert.ok(!h.route.rules.some((r) => r.override_address))
 })
+
+test('出站 tag 撞名 → 生成配置时直接报人话,而不是让内核 duplicate tag FATAL', () => {
+  // 两个节点同名(订阅层的去重被绕过 / 手工导入),或站点集 / 节点组和节点同名,都是同一条闸
+  const twin = createNode({ tag: '美国-01', type: 'shadowsocks', server: 'b.com', server_port: 8388, fields: { method: 'aes-256-gcm', password: 'pw' }, source: 'clash' })
+  assert.throws(() => buildConfig({ nodes: [...nodes, twin], regionGroups, profile }), /出站名称重复:「美国-01」/)
+  const policyClash = { ...profile, routing: { ...profile.routing, policies: [{ name: '美国-01', domainSuffix: ['x.com'] }] } }
+  assert.throws(() => buildConfig({ nodes, regionGroups, profile: policyClash }), /出站名称重复:「美国-01」/)
+})

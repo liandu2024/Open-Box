@@ -90,7 +90,16 @@ export const runScheduledTasks = async ({ store, ctx, paths, fetchImpl = globalT
 }
 
 export const startScheduler = (deps, { intervalMs = 60_000 } = {}) => {
-  const tick = () => { runScheduledTasks(deps).catch((err) => deps.log?.(`[schedule] ${err}`)) }
+  // 一次 tick 可能跑好几分钟(探版本、下规则集、重新部署),期间下一次 tick 看到的还是
+  // 旧的 geoDay,会再跑一遍并发部署——上一轮没结束就跳过这一轮
+  let busy = false
+  const tick = () => {
+    if (busy) return
+    busy = true
+    runScheduledTasks(deps)
+      .catch((err) => deps.log?.(`[schedule] ${err}`))
+      .finally(() => { busy = false })
+  }
   const timer = setInterval(tick, intervalMs)
   timer.unref?.()
   return () => clearInterval(timer)

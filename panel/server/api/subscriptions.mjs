@@ -434,8 +434,12 @@ export const registerSubscriptionRoutes = (app, { store, fetchImpl = subscriptio
       }
       const newNodesForSub = renamed.map((n) => ({ ...n, subscriptionId: id }))
 
-      store.setNodes(rebuildNodePool(store.getNodes(), subs, id, newNodesForSub))
-      store.setSubscriptions(subs.map((s, i) => (i === idx ? updated : s)))
+      // 拉取可能花几十秒,期间用户可能删了别的订阅或新建了订阅:必须按此刻的列表写回,
+      // 否则旧快照会把删掉的复活、把新建的连节点一起丢掉
+      const nowSubs = store.getSubscriptions()
+      if (!nowSubs.some((s) => s.id === id)) throw new Error('subscription was deleted while refreshing')
+      store.setNodes(rebuildNodePool(store.getNodes(), nowSubs, id, newNodesForSub))
+      store.setSubscriptions(nowSubs.map((s) => (s.id === id ? { ...s, ...updated } : s)))
 
       res.json({ id, name, nodeCount: renamed.length, skipped })
     } catch (err) {
@@ -465,10 +469,12 @@ export const registerSubscriptionRoutes = (app, { store, fetchImpl = subscriptio
 
       const updated = { ...existing, format, nodeCount: renamed.length, renameOptions, updatedAt: Date.now() }
       const newNodesForSub = renamed.map((n) => ({ ...n, subscriptionId: id }))
-      const updatedSubs = subs.map((s, i) => (i === idx ? updated : s))
 
-      store.setNodes(rebuildNodePool(store.getNodes(), subs, id, newNodesForSub))
-      store.setSubscriptions(updatedSubs)
+      // 同 PATCH:按此刻的订阅列表写回,不用拉取前的快照
+      const nowSubs = store.getSubscriptions()
+      if (!nowSubs.some((s) => s.id === id)) throw new Error('subscription was deleted while refreshing')
+      store.setNodes(rebuildNodePool(store.getNodes(), nowSubs, id, newNodesForSub))
+      store.setSubscriptions(nowSubs.map((s) => (s.id === id ? { ...s, ...updated } : s)))
 
       res.json({ id, name: updated.name, nodeCount: renamed.length, skipped })
     } catch (err) {

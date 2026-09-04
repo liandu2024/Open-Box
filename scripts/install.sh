@@ -241,8 +241,12 @@ resolve_latest_tag() {
   _rlt_url="https://github.com/$REPO/releases/latest"
   case "$DOWNLOADER" in
     curl) curl -sI --connect-timeout 8 --max-time 12 "$_rlt_url" 2>/dev/null ;;
-    wget) wget --spider -S --max-redirect=0 --timeout=12 "$_rlt_url" 2>&1 ;;
-  esac | sed -n 's/^[Ll]ocation: .*\/releases\/tag\/\([^/?#[:space:]]*\).*/\1/p' | head -n 1
+    # OpenWrt 自带的 wget 是 uclient-fetch,没有 -S / --max-redirect(错误会被吞掉,
+    # 静默退回稳定资产名,镜像缓存旧包的问题就回来了):改为跟着 302 把 releases/latest
+    # 的页面拉下来,从里面的 /releases/tag/<tag> 链接取版本号
+    # 页面里还有 /releases/tag/*name 这种模板链接,只认 v 开头的版本号
+    wget) wget -q -O - --timeout=12 "$_rlt_url" 2>/dev/null | sed -n 's|.*/releases/tag/\(v[0-9][0-9A-Za-z._-]*\).*|\1|p' | head -n 1 ;;
+  esac | sed -n 's/^[Ll]ocation: .*\/releases\/tag\/\(v[0-9][0-9A-Za-z._-]*\).*/\1/p; /^v[0-9][0-9A-Za-z._-]*$/p' | head -n 1
 }
 LATEST_TAG=$(resolve_latest_tag)
 case "$LATEST_TAG" in

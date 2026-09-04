@@ -37,6 +37,17 @@ const TUN_UDP_TIMEOUT = '60s'
 // 内核 DNS 入站端口(system/dns-takeover.mjs 的 SINGBOX_DNS_UPSTREAM 与之一致)
 export const DNS_INBOUND_PORT = 7853
 // dnsmasq 模式下把被 auto_redirect 改写进 tun 的局域网 DNS 交回本机 dnsmasq 用的专用出站
+export const findDuplicateTag = (list) => {
+  const seen = new Set()
+  for (const o of list) {
+    const tag = o && o.tag
+    if (typeof tag !== 'string') continue
+    if (seen.has(tag)) return tag
+    seen.add(tag)
+  }
+  return null
+}
+
 // dnsmasq 分流模式专用的回送出站;init 脚本用这个 tag 判断"这份配置需要接管 dnsmasq"
 export const DNSMASQ_OUTBOUND_TAG = 'dnsmasq'
 
@@ -99,6 +110,13 @@ export const buildConfig = ({ nodes, profile, userGroups, systemDns, localSubnet
   if (dnsMode === 'dnsmasq') {
     // 绑定 lo 才拨得通 127.0.0.1(auto_detect_interface 对写了 bind_interface 的出站不生效)
     outbounds.push({ type: 'direct', tag: DNSMASQ_OUTBOUND_TAG, bind_interface: 'lo' })
+  }
+  // 出站 / endpoint 的 tag 在内核里是同一个命名空间:节点组、站点集、节点、内置直连/拒绝、
+  // dnsmasq 回送出站之间只要有一对同名,内核就 duplicate tag FATAL。API 层各自只查自己那份
+  // 列表,这里是最后一道闸——报一句人能看懂的话,而不是让部署死在 check 上。
+  const duplicateTag = findDuplicateTag([...outbounds, ...endpoints])
+  if (duplicateTag) {
+    throw new Error(`出站名称重复:「${duplicateTag}」——节点组、站点集、节点、内置直连/拒绝之间不能同名,请改名后再启动`)
   }
   const { route } = buildRoute(sanitizedRouting, profile.rulesetDir, {
     dnsMode, directTag: builtin.direct, directHosts,

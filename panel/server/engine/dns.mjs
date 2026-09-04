@@ -1,4 +1,4 @@
-import { DEFAULT_BUILTIN, effectiveOutbound, normalizeRouting, policyOutboundOptions } from './routing-model.mjs'
+import { DEFAULT_BUILTIN, normalizeRouting, policyOutboundOptions, policyGoesDirect } from './routing-model.mjs'
 
 const extractHost = (url) => {
   // "https://1.1.1.1/dns-query" -> "1.1.1.1";裸 host 原样返回
@@ -89,21 +89,7 @@ export const buildDns = (profile, options = {}) => {
   const builtin = options.builtin || DEFAULT_BUILTIN
   const members = policyOutboundOptions(conf.outboundOptions, options.groupTags || [], builtin)
   const selections = options.selections && typeof options.selections === 'object' ? options.selections : {}
-  const leafOf = (name) => {
-    let current = name
-    const seen = new Set()
-    for (let i = 0; i < 16 && Object.prototype.hasOwnProperty.call(selections, current) && !seen.has(current); i++) {
-      seen.add(current)
-      current = selections[current]
-    }
-    return current
-  }
-  const goesDirect = (name, fallbackDefault) => {
-    const chosen = Object.prototype.hasOwnProperty.call(selections, name)
-      ? leafOf(name)
-      : effectiveOutbound(fallbackDefault, members, builtin)
-    return chosen === builtin.direct
-  }
+  const goesDirect = (name, fallbackDefault) => policyGoesDirect(name, fallbackDefault, members, builtin, selections)
   conf.activePolicies.forEach((policy, index) => {
     if (!hasDomainCondition(policy)) return
     if (goesDirect(policy.name, policy.default)) {

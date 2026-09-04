@@ -2,6 +2,15 @@ import express from 'express'
 import { RESERVED_PORTS, SERVER_PROTOCOLS, SS_METHODS } from '../engine/servers.mjs'
 import { isIpOrCidr } from '../engine/client-routes.mjs'
 import { FALLBACK_TAG, normalizeRouting } from '../engine/routing-model.mjs'
+import { builtinTags, normalizeGroups } from '../engine/user-groups.mjs'
+import { DNSMASQ_OUTBOUND_TAG } from '../engine/config.mjs'
+
+// 站点集不能叫的名字:节点组名、内置直连/拒绝现在的名字、dnsmasq 回送出站——都是同一个出站命名空间
+export const reservedPolicyNames = (groups) => {
+  const normalized = normalizeGroups(groups || [])
+  const builtin = builtinTags(groups || [])
+  return [...new Set([...normalized.map((g) => g.name), builtin.direct, builtin.block, DNSMASQ_OUTBOUND_TAG])]
+}
 
 const isPlainObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v)
 const isString = (v) => typeof v === 'string'
@@ -29,7 +38,9 @@ const isValidRulesetDir = (v) => isString(v) && v.startsWith('/') && !containsPa
 // 只校验 patch 里"出现"的字段——深合并本身保证未提及字段维持已有值(来自 DEFAULT_PROFILE
 // 或此前已通过校验的写入),所以一个只碰 ipv6 的 patch 不应因为没带 dns 而报错。
 // 校验通过返回 null;失败返回一条可直接塞进 400 响应体的错误说明。
-export const validateProfilePatch = (patch) => {
+// reservedNames:站点集不能用的名字——节点组的名字、内置直连/拒绝现在叫什么、dnsmasq 回送出站。
+// 站点集名就是内核里的出站 tag,和这些撞上会生成两个同名出站(内核 FATAL)。
+export const validateProfilePatch = (patch, { reservedNames = [] } = {}) => {
   if (!isPlainObject(patch)) return 'patch must be an object'
 
   if ('ipv6' in patch && !isBoolean(patch.ipv6)) {
@@ -130,7 +141,7 @@ export const validateProfilePatch = (patch) => {
     }
 
     if ('policies' in routing) {
-      const error = validatePolicies(routing.policies, isString(routing.fallbackName) ? routing.fallbackName.trim() : '')
+      const error = validatePolicies(routing.policies, isString(routing.fallbackName) ? routing.fallbackName.trim() : '', reservedNames)
       if (error) return error
     }
 
@@ -204,11 +215,18 @@ export const validateServers = (servers) => {
 // 类型检查,不限制字符——域名里带下划线、CIDR 带斜杠都是合法的。
 const POLICY_LIST_FIELDS = ['domain', 'domainSuffix', 'domainKeyword', 'ipCidr']
 
-const validatePolicies = (policies, fallbackName = '') => {
+const validatePolicies = (policies, fallbackName = '', reservedNames = []) => {
   if (!Array.isArray(policies)) return 'routing.policies must be an array'
+  const reserved = new Set(reservedNames)
+  const seen = new Set()
   for (const p of policies) {
     if (!isPlainObject(p)) return 'routing.policies entries must be objects'
     if (!isString(p.name) || !p.name.trim()) return 'routing.policies[].name is required'
+    if (seen.has(p.name.trim())) return `routing.policies[].name "${p.name.trim()}" is duplicated`
+    seen.add(p.name.trim())
+    if (reserved.has(p.name.trim())) {
+      return `routing.policies[].name "${p.name.trim()}" collides with a node group / built-in outbound name`
+    }
     // 兜底站点集占着的名字(默认「其他」,或用户改过的):重名会在内核里生成两个同名出站
     if (p.name.trim() === FALLBACK_TAG || (fallbackName && p.name.trim() === fallbackName)) {
       return `routing.policies[].name "${p.name.trim()}" is reserved for the built-in fallback`
@@ -279,7 +297,7 @@ export const registerProfileRoutes = (app, { store } = {}) => {
 
   router.put('/', (req, res) => {
     const patch = req.body || {}
-    const error = validateProfilePatch(patch)
+    const error = validateProfilePatch(patch, { reservedNames: reservedPolicyNames(store.getGroups()) })
     if (error) {
       res.status(400).json({ error })
       return

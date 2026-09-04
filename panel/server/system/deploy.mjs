@@ -40,7 +40,7 @@ const lastKernelFatal = async (ctx) => {
   }
 }
 
-export const deployConfig = async (ctx, paths, { config, profile, userGroups, fetchImpl } = {}) => {
+export const deployConfig = async (ctx, paths, { config, profile, userGroups, fetchImpl, selections = {} } = {}) => {
   // 1. 冲突检测
   const { conflicts, hasRunning } = await detectConflicts(ctx)
   if (hasRunning) {
@@ -104,6 +104,7 @@ export const deployConfig = async (ctx, paths, { config, profile, userGroups, fe
         profile.routing,
         fallbackSelector ? fallbackSelector.outbounds : [],
         builtinTags(userGroups || []),
+        selections || {},
       ),
     })
 

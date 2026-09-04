@@ -1,6 +1,7 @@
 import { FALLBACK_TAG, normalizeRouting } from '../engine/routing-model.mjs'
 import express from 'express'
 import { normalizeGroups, emitUserGroups, GROUP_TYPES } from '../engine/user-groups.mjs'
+import { DNSMASQ_OUTBOUND_TAG } from '../engine/config.mjs'
 
 // 用户自定义节点组的读写。整份列表一次性存取(PUT 全量覆盖),不做逐条 CRUD:
 // 组之间可以互相引用,逐条改会让"中间状态"出现悬空引用或环,而整份写入天然是原子的。
@@ -39,10 +40,17 @@ export const registerGroupRoutes = (app, { store } = {}) => {
     // 组名即 sing-box 的出站 tag,重名会让配置里出现两个同名出站(内核行为未定义),
     // 所以在写入前就拦住,而不是等部署时才炸。
     const seen = new Set()
+    const routing = normalizeRouting(store.getProfile()?.routing)
+    // 站点集(含停用的:一启用就撞)和 dnsmasq 回送出站也在同一个出站命名空间里
+    const policyNames = new Set(routing.policies.map((p) => p.name))
     for (const g of normalized) {
-      const fallbackName = normalizeRouting(store.getProfile()?.routing).fallback.name
+      const fallbackName = routing.fallback.name
       if (g.name === FALLBACK_TAG || g.name === fallbackName) {
         res.status(400).json({ error: `「${g.name}」是兜底站点集占着的名字,分组不能叫这个` })
+        return
+      }
+      if (policyNames.has(g.name) || g.name === DNSMASQ_OUTBOUND_TAG) {
+        res.status(400).json({ error: `「${g.name}」已经是一个站点集的名字,分组不能和站点集同名` })
         return
       }
       if (seen.has(g.name)) {

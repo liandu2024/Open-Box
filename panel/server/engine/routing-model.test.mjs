@@ -181,3 +181,24 @@ test('停用的站点集留在 policies 里但不进 activePolicies;兜底名字
   assert.equal(conf.fallback.name, '默认')
   assert.equal(conf.fallback.icon, 'brand:google')
 })
+
+test('dnsmasqForwardDomains:按内核里此刻的选择判断谁走代理,和 DNS 规则一致', async () => {
+  const mod = await import('./routing-model.mjs')
+  const routing = {
+    fallbackDefault: 'direct',
+    policies: [
+      { name: '谷歌', default: 'proxy', domainSuffix: ['google.com'] },
+      { name: '微软', default: 'direct', domainSuffix: ['microsoft.com'] },
+    ],
+  }
+  const members = ['直连', '拒绝', '香港']
+  const builtin = { direct: '直连', block: '拒绝' }
+  // 没有选择信息:按档案默认 → 只有谷歌走代理
+  assert.deepEqual(mod.dnsmasqForwardDomains(routing, members, builtin), ['google.com'])
+  // 用户在代理页把「微软」切到香港、把「谷歌」切回直连 → 转发表跟着变
+  assert.deepEqual(mod.dnsmasqForwardDomains(routing, members, builtin, { '微软': '香港', '谷歌': '直连' }), ['microsoft.com'])
+  // 兜底被切到代理 → 代理面没法枚举,回落全局转发
+  assert.deepEqual(mod.dnsmasqForwardDomains(routing, members, builtin, { '其他': '香港' }), [])
+  // 顺着 selector 链下钻到叶子:香港 → 香港-手动 → 直连
+  assert.equal(mod.resolveSelectionLeaf({ '谷歌': '香港', '香港': '香港-手动', '香港-手动': '直连' }, '谷歌'), '直连')
+})
