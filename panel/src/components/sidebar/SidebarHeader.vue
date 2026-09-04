@@ -3,15 +3,16 @@
   <!-- 不加内边距:上下左右统一吃侧边栏那层 p-2(8px),和底部卡片同一条边 -->
   <div
     class="flex items-center"
-    :class="isSidebarCollapsed ? 'justify-center' : 'justify-between gap-2'"
+    :class="isSidebarCollapsed ? 'flex-col gap-1' : 'justify-between gap-2'"
   >
-    <!-- 产品标识用图片(src/assets/logo.png,已抠掉背景)。深色主题下墨迹是深藏青,
-         在 forest 底色上几乎看不见,靠 main.css 里的滤镜整体翻亮,绿橙两个点缀色不变。
+    <!-- 产品标识(src/assets/logo.png / logo-mark.png,都是透明底)。展开时用横版
+         整标,折叠时只剩 56px 宽,放方形的盒子图标、按钮挪到它下面。
+         深色主题下墨迹是深藏青,在 forest 底色上几乎看不见,靠 main.css 里的滤镜整体
+         翻亮,绿橙两个点缀色不变。
          版本号和发布日期不在这里显示了——「设置 → 后端设置」的更新卡片上就有 -->
     <img
-      v-if="!isSidebarCollapsed"
-      :src="logoUrl"
-      class="app-logo h-6 w-auto min-w-0"
+      :src="isSidebarCollapsed ? logoMarkUrl : logoUrl"
+      :class="['app-logo w-auto min-w-0', isSidebarCollapsed ? 'h-7' : 'h-6']"
       alt="Open-Box"
     />
     <button
@@ -44,5 +45,6 @@
 
 <script setup lang="ts">
 import logoUrl from '@/assets/logo.png'
+import logoMarkUrl from '@/assets/logo-mark.png'
 import { isSidebarCollapsed } from '@/store/settings'
 </script>
