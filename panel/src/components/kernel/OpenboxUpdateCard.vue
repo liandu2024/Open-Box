@@ -21,20 +21,9 @@
         </template>
       </div>
 
-      <!-- 操作 -->
+      <!-- 操作:[通道] [一个按钮]。按钮按状态变身:检查更新 → 探到新版就变成 立即更新 →
+           升级进行中变成 查看进度。没探到新版按钮不变,只弹一条「已是最新」。 -->
       <div class="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          class="btn btn-sm"
-          :disabled="checking || Boolean(progress?.running)"
-          @click="check"
-        >
-          <span
-            v-if="checking"
-            class="loading loading-spinner loading-xs"
-          />
-          {{ $t('obUpdateCheck') }}
-        </button>
         <select
           v-model="channel"
           class="select select-sm"
@@ -44,12 +33,20 @@
           <option value="direct">{{ $t('obUpdateChannelDirect') }}</option>
           <option value="mirror">{{ $t('obUpdateChannelMirror') }}</option>
         </select>
-        <!-- 先检查、探到新版才能点:没新版就没有东西可更,点了也只会把同一版再装一遍 -->
         <button
-          v-if="!progress?.running"
+          v-if="progress?.running"
+          type="button"
+          class="btn btn-sm"
+          @click="dialogOpen = true"
+        >
+          <span class="loading loading-spinner loading-xs" />
+          {{ $t('obUpdateViewProgress') }}
+        </button>
+        <button
+          v-else-if="latest?.hasUpdate"
           type="button"
           class="btn btn-primary btn-sm"
-          :disabled="starting || !latest?.hasUpdate"
+          :disabled="starting"
           @click="start"
         >
           <span
@@ -62,10 +59,14 @@
           v-else
           type="button"
           class="btn btn-sm"
-          @click="dialogOpen = true"
+          :disabled="checking"
+          @click="check"
         >
-          <span class="loading loading-spinner loading-xs" />
-          {{ $t('obUpdateViewProgress') }}
+          <span
+            v-if="checking"
+            class="loading loading-spinner loading-xs"
+          />
+          {{ $t('obUpdateCheck') }}
         </button>
         <span
           v-if="info?.channel"

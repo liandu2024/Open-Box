@@ -34,20 +34,9 @@
         />
       </div>
 
-      <!-- 操作:检查 → 选通道 → 更新。与 Open-Box 更新卡一致,没探到新版就不能点 -->
+      <!-- 操作:[通道] [一个按钮]。与 Open-Box 更新卡一致:检查更新 → 探到新版就变成 立即更新;
+           没探到按钮不变,只弹一条「已是最新」。 -->
       <div class="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          class="btn btn-sm"
-          :disabled="checking || refreshing"
-          @click="check"
-        >
-          <span
-            v-if="checking"
-            class="loading loading-spinner loading-xs"
-          />
-          {{ $t('geoUpdateCheck') }}
-        </button>
         <select
           v-model="channel"
           class="select select-sm"
@@ -58,9 +47,10 @@
           <option value="mirror">{{ $t('obUpdateChannelMirror') }}</option>
         </select>
         <button
+          v-if="latest?.hasUpdate"
           type="button"
           class="btn btn-primary btn-sm"
-          :disabled="refreshing || !latest?.hasUpdate"
+          :disabled="refreshing"
           @click="refresh"
         >
           <span
@@ -68,6 +58,19 @@
             class="loading loading-spinner loading-xs"
           />
           {{ $t('geoUpdateNow') }}
+        </button>
+        <button
+          v-else
+          type="button"
+          class="btn btn-sm"
+          :disabled="checking"
+          @click="check"
+        >
+          <span
+            v-if="checking"
+            class="loading loading-spinner loading-xs"
+          />
+          {{ $t('geoUpdateCheck') }}
         </button>
         <span class="text-base-content/50 text-xs">{{ $t('geoUpdateNowHint') }}</span>
       </div>
