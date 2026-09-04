@@ -53,69 +53,72 @@
           @end="persist([...servers])"
         >
           <template #item="{ element: s }">
-        <div class="card">
-          <div class="app-card-inset flex flex-wrap items-center gap-3">
-            <Bars3Icon class="drag-handle text-base-content/40 h-4 w-4 shrink-0 cursor-move" />
-            <div class="flex min-w-0 flex-1 flex-col gap-1">
-              <div class="flex min-w-0 flex-wrap items-center gap-2">
-                <span class="text-base">{{ s.name }}</span>
-                <!-- 和站点集卡片一致:只在停用时挂个标签 -->
-                <StatusBadge
-                  v-if="s.enabled === false"
-                  :on="false"
-                  on-text=""
-                  :off-text="$t('groupDisabledBadge')"
-                />
+            <!-- 一行一台服务器。卡片外观和内边距用列表行的统一写法(和目标分流 / 终端分流 /
+             节点管理 三处一致:border + p-3),不要再单独用 app-card-inset 的 16px -->
+            <div
+              class="card bg-base-100 border-base-content/10 flex flex-row items-center gap-2 border p-3"
+            >
+              <Bars3Icon class="drag-handle text-base-content/40 h-4 w-4 shrink-0 cursor-move" />
+              <div class="flex min-w-0 flex-1 flex-col gap-1">
+                <div class="flex min-w-0 flex-wrap items-center gap-2">
+                  <span class="text-base">{{ s.name }}</span>
+                  <!-- 和站点集卡片一致:只在停用时挂个标签 -->
+                  <StatusBadge
+                    v-if="s.enabled === false"
+                    :on="false"
+                    on-text=""
+                    :off-text="$t('groupDisabledBadge')"
+                  />
+                </div>
+                <div class="text-base-content/60 flex flex-wrap gap-x-3 text-xs">
+                  <span>{{ protocolLabel(s.protocol) }}</span>
+                  <span>{{ $t('serverPortLabel') }} {{ s.port }}</span>
+                  <span v-if="s.address">{{ s.address }}</span>
+                  <span
+                    v-else
+                    class="text-warning"
+                    >{{ $t('serverNoAddress') }}</span
+                  >
+                </div>
               </div>
-              <div class="text-base-content/60 flex flex-wrap gap-x-3 text-xs">
-                <span>{{ protocolLabel(s.protocol) }}</span>
-                <span>{{ $t('serverPortLabel') }} {{ s.port }}</span>
-                <span v-if="s.address">{{ s.address }}</span>
-                <span
-                  v-else
-                  class="text-warning"
-                >{{ $t('serverNoAddress') }}</span>
+              <div class="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  class="btn btn-circle btn-sm"
+                  :disabled="!buildShareLink(s)"
+                  v-tip="$t('copyLink')"
+                  @click="copyText(buildShareLink(s))"
+                >
+                  <ClipboardDocumentIcon class="h-4 w-4" />
+                </button>
+                <!-- 电源键按状态变色:启用中绿色,停用后灰色(和站点集 / 节点管理一致) -->
+                <button
+                  type="button"
+                  class="btn btn-circle btn-sm"
+                  :class="s.enabled === false ? 'text-base-content/40' : 'text-success'"
+                  v-tip="$t(s.enabled === false ? 'groupEnable' : 'groupDisable')"
+                  @click="toggle(s)"
+                >
+                  <PowerIcon class="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-circle btn-sm"
+                  v-tip="$t('edit')"
+                  @click="openEdit(s)"
+                >
+                  <PencilSquareIcon class="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-circle btn-sm"
+                  v-tip="$t('delete')"
+                  @click="remove(s)"
+                >
+                  <TrashIcon class="h-4 w-4" />
+                </button>
               </div>
             </div>
-            <div class="flex shrink-0 items-center gap-2">
-              <button
-                type="button"
-                class="btn btn-circle btn-sm"
-                :disabled="!buildShareLink(s)"
-                v-tip="$t('copyLink')"
-                @click="copyText(buildShareLink(s))"
-              >
-                <ClipboardDocumentIcon class="h-4 w-4" />
-              </button>
-              <!-- 电源键按状态变色:启用中绿色,停用后灰色(和站点集 / 节点管理一致) -->
-              <button
-                type="button"
-                class="btn btn-circle btn-sm"
-                :class="s.enabled === false ? 'text-base-content/40' : 'text-success'"
-                v-tip="$t(s.enabled === false ? 'groupEnable' : 'groupDisable')"
-                @click="toggle(s)"
-              >
-                <PowerIcon class="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                class="btn btn-circle btn-sm"
-                v-tip="$t('edit')"
-                @click="openEdit(s)"
-              >
-                <PencilSquareIcon class="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                class="btn btn-circle btn-sm"
-                v-tip="$t('delete')"
-                @click="remove(s)"
-              >
-                <TrashIcon class="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        </div>
           </template>
         </Draggable>
       </div>
@@ -131,7 +134,12 @@
 </template>
 
 <script setup lang="ts">
-import { fetchProfile, saveProfile, type OpenboxServer, type OpenboxServerProtocol } from '@/api/openbox'
+import {
+  fetchProfile,
+  saveProfile,
+  type OpenboxServer,
+  type OpenboxServerProtocol,
+} from '@/api/openbox'
 import StatusBadge from '@/components/common/StatusBadge.vue'
 import ServerEditDialog from '@/components/share/ServerEditDialog.vue'
 import { usePaddingForViews } from '@/composables/paddingViews'
@@ -164,7 +172,9 @@ const PROTOCOL_LABEL: Record<OpenboxServerProtocol, string> = {
 }
 const protocolLabel = (p: OpenboxServerProtocol) => PROTOCOL_LABEL[p] || p
 
-const usedPorts = computed(() => servers.value.filter((s) => s.id !== editing.value?.id).map((s) => s.port))
+const usedPorts = computed(() =>
+  servers.value.filter((s) => s.id !== editing.value?.id).map((s) => s.port),
+)
 
 const load = async () => {
   loading.value = true
@@ -212,7 +222,9 @@ const onSaved = (s: OpenboxServer) => {
   void persist(next)
 }
 const toggle = (s: OpenboxServer) => {
-  void persist(servers.value.map((x) => (x.id === s.id ? { ...x, enabled: x.enabled === false } : x)))
+  void persist(
+    servers.value.map((x) => (x.id === s.id ? { ...x, enabled: x.enabled === false } : x)),
+  )
 }
 const remove = (s: OpenboxServer) => {
   void persist(servers.value.filter((x) => x.id !== s.id))
@@ -220,7 +232,11 @@ const remove = (s: OpenboxServer) => {
 const copyText = async (text: string) => {
   if (!text) return
   const ok = await copyToClipboard(text)
-  showNotification(ok ? { content: 'copySuccess', type: 'alert-success' } : { content: 'copyFailed', type: 'alert-error' })
+  showNotification(
+    ok
+      ? { content: 'copySuccess', type: 'alert-success' }
+      : { content: 'copyFailed', type: 'alert-error' },
+  )
 }
 
 onMounted(load)
