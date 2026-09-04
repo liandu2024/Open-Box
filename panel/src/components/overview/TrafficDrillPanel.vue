@@ -16,8 +16,9 @@
         {{ dimLabel(d) }}<template v-if="cache[d]"> ({{ cache[d]!.count }})</template>
       </a>
     </div>
-    <div class="app-plain-table bg-base-100/60 overflow-x-auto rounded-lg">
-      <table class="table-xs table">
+    <!-- 卡片内边距用全局统一的 app-card-inset;表格密度和外层主表一致(table-sm),不再用更紧的 table-xs -->
+    <div class="app-plain-table app-card-inset bg-base-100/60 overflow-x-auto rounded-lg">
+      <table class="table-sm table">
         <thead>
           <tr class="text-base-content/60">
             <th>{{ $t('trafficName') }}</th>
