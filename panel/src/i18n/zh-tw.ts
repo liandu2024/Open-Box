@@ -201,6 +201,8 @@ const zhTW: LANG_MESSAGE = {
   displaySelectedNode: '顯示選中節點',
   displayLatencyNumber: '顯示延遲數字',
   disconnectOnRuleDisable: '禁用規則時打斷連接',
+  marketPromo: '優惠購買AI介面、機場、VPS、住宅IP，請造訪：',
+  marketName: '安格超市',
   tipForFixed: '當前策略組被固定在了當前節點，點擊測速來恢復{type}行為',
   urlTestStaleTip: '這條線路已經失效:核心經它撥號失敗後刪掉了延遲記錄,但不會自己換線路。面板正在背景重測這個組並重新擇優。',
   remoteAddress: '遠端地址',

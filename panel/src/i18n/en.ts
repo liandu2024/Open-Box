@@ -203,6 +203,8 @@ const en = {
   displaySelectedNode: 'Show selected node',
   displayLatencyNumber: 'Show latency numbers',
   disconnectOnRuleDisable: 'Disconnect connections when disabling rule',
+  marketPromo: 'Deals on AI APIs, proxy subscriptions, VPS and residential IPs:',
+  marketName: 'AnGe Market',
   tipForFixed:
     'The current policy group is locked to the current node. Run a speed test to restore {type} behavior.',
   urlTestStaleTip:

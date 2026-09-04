@@ -201,6 +201,8 @@ const zh: LANG_MESSAGE = {
   displaySelectedNode: '显示选中节点',
   displayLatencyNumber: '显示延迟数字',
   disconnectOnRuleDisable: '禁用规则时打断连接',
+  marketPromo: '优惠购买AI接口、机场、VPS、住宅IP，请访问：',
+  marketName: '安格超市',
   tipForFixed: '当前策略组被固定在了当前节点，点击测速来恢复{type}行为',
   urlTestStaleTip: '这条线路已经失效:内核经它拨号失败后删掉了延迟记录,但不会自己换线路。面板正在后台重测这个组并重新择优。',
   remoteAddress: '远端地址',
