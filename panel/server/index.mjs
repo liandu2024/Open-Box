@@ -92,7 +92,7 @@ if ('serviceWorker' in navigator) {
 
 fs.mkdirSync(path.dirname(dbPath), { recursive: true })
 
-const db = new DatabaseSync(dbPath)
+const db = new DatabaseSync(dbPath, { timeout: 5000 })
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS app_storage (
@@ -653,9 +653,8 @@ const websocketServer = new WebSocketServer({ noServer: true })
 app.set('case sensitive routing', true)
 
 app.use('/api/auth', express.json({ limit: '2kb' }))
-app.use('/api/storage', express.json({ limit: '25mb' }))
-app.use('/api/background-image', express.json({ limit: '25mb' }))
-app.use('/api/controller', express.raw({ type: '*/*', limit: '25mb' }))
+// 25MB 的 body 解析器放在鉴权守卫之后(见下方 /api/health 之前):未登录的请求不能先让
+// 面板把 25MB 深嵌套 JSON 读进内存再被 401——1GB 内存的路由器几个并发就被打 OOM。
 
 app.get('/api/auth/status', (req, res) => {
   const authStatus = getRequestAccessAuthStatus(req)
@@ -719,6 +718,12 @@ app.post('/api/auth/change-password', (req, res) => {
 
   res.setHeader('Cache-Control', 'no-store')
 
+  const lockedMs = authLockedFor(req)
+  if (lockedMs > 0) {
+    sendAuthLocked(res, lockedMs)
+    return
+  }
+
   if (!currentStoredPassword) {
     res.status(409).json({
       error: PASSWORD_SETUP_REQUIRED_CODE,
@@ -731,6 +736,7 @@ app.post('/api/auth/change-password', (req, res) => {
   const newPassword = typeof req.body?.newPassword === 'string' ? req.body.newPassword : ''
 
   if (!safeTokenEquals(currentPassword, currentStoredPassword)) {
+    noteAuthFailure(req)
     res.status(401).json({
       code: ACCESS_PASSWORD_INVALID_CODE,
       message: 'Current password is incorrect',
@@ -746,6 +752,7 @@ app.post('/api/auth/change-password', (req, res) => {
     return
   }
 
+  clearAuthFailures(req)
   upsertStorageValueStatement.run(ACCESS_PASSWORD_KEY, newPassword)
 
   // 会话 token 是 HMAC(密码) 派生的(见 createAccessSessionToken):改密后旧 token 自动
@@ -760,10 +767,49 @@ app.post('/api/auth/change-password', (req, res) => {
   })
 })
 
+// 登录 / 改密的暴力破解防护:按来源 IP 记连续失败次数,5 次起锁定,锁定时长按次数翻倍
+// (5 秒起、最长 10 分钟),成功一次清零。面板对路由器有 root 级权限、密码最短只有 4 位,
+// 局域网里一台中了木马的设备几百 req/s 几十秒就能穷尽 4 位数字 PIN——没有这道闸不行。
+const AUTH_FAIL_THRESHOLD = 5
+const AUTH_LOCK_BASE_MS = 5_000
+const AUTH_LOCK_MAX_MS = 10 * 60_000
+const authFailures = new Map()
+const authClientKey = (req) => String((req.socket && req.socket.remoteAddress) || 'unknown')
+const authLockedFor = (req) => {
+  const rec = authFailures.get(authClientKey(req))
+  if (!rec || !rec.until) return 0
+  const left = rec.until - Date.now()
+  if (left <= 0) return 0
+  return left
+}
+const noteAuthFailure = (req) => {
+  const key = authClientKey(req)
+  const rec = authFailures.get(key) || { fails: 0, until: 0 }
+  rec.fails += 1
+  if (rec.fails >= AUTH_FAIL_THRESHOLD) {
+    rec.until = Date.now() + Math.min(AUTH_LOCK_MAX_MS, AUTH_LOCK_BASE_MS * 2 ** (rec.fails - AUTH_FAIL_THRESHOLD))
+  }
+  authFailures.set(key, rec)
+  // 别让这张表无限长:只留最近失败过的 1000 个来源
+  if (authFailures.size > 1000) authFailures.delete(authFailures.keys().next().value)
+}
+const clearAuthFailures = (req) => authFailures.delete(authClientKey(req))
+const sendAuthLocked = (res, leftMs) => {
+  const seconds = Math.ceil(leftMs / 1000)
+  res.setHeader('Retry-After', String(seconds))
+  res.status(429).json({ code: 'ACCESS_LOCKED', message: `Too many failed attempts, try again in ${seconds}s`, retryAfter: seconds })
+}
+
 app.post('/api/auth/login', (req, res) => {
   const { enabled, password } = readAccessAuthConfig()
 
   res.setHeader('Cache-Control', 'no-store')
+
+  const lockedMs = authLockedFor(req)
+  if (lockedMs > 0) {
+    sendAuthLocked(res, lockedMs)
+    return
+  }
 
   // login/logout 注册在通用守卫之前(它们必须始终可达才能起到登录/登出的作用),
   // 所以"未设密时全部拒绝"这条规则要在这里单独补一次,通用守卫管不到它们。
@@ -784,6 +830,7 @@ app.post('/api/auth/login', (req, res) => {
   const inputPassword = typeof req.body?.password === 'string' ? req.body.password : ''
 
   if (!safeTokenEquals(inputPassword, password)) {
+    noteAuthFailure(req)
     clearAccessSessionCookie(res)
     res.status(401).json({
       code: ACCESS_PASSWORD_INVALID_CODE,
@@ -794,6 +841,7 @@ app.post('/api/auth/login', (req, res) => {
     return
   }
 
+  clearAuthFailures(req)
   setAccessSessionCookie(res, password)
   res.json({
     enabled: true,
@@ -856,6 +904,10 @@ app.use((req, res, next) => {
 
   sendAccessPasswordRequired(res)
 })
+
+app.use('/api/storage', express.json({ limit: '25mb' }))
+app.use('/api/background-image', express.json({ limit: '25mb' }))
+app.use('/api/controller', express.raw({ type: '*/*', limit: '25mb' }))
 
 app.get('/api/health', (_req, res) => {
   res.json({

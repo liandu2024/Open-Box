@@ -16,7 +16,9 @@ const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..',
 const dbPath = process.env.ZASHBOARD_DB_PATH || path.join(rootDir, 'data', 'zashboard.sqlite')
 const openboxRoot = process.env.OPENBOX_ROOT || '/opt/open-box'
 
-const db = new DatabaseSync(dbPath)
+// 和面板进程同时开这个库:面板每分钟 flush 流量记录、启动时 prune 大表,撞上就是 SQLITE_BUSY,
+// 给 5 秒等待,否则内核已经起了、这里却报"部署失败"
+const db = new DatabaseSync(dbPath, { timeout: 5000 })
 const getStmt = db.prepare('SELECT value FROM app_storage WHERE key = ?')
 const setStmt = db.prepare('INSERT INTO app_storage (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at')
 const delStmt = db.prepare('DELETE FROM app_storage WHERE key = ?')

@@ -55,6 +55,35 @@ export const rulesetUrls = (tag, mirrors = RULESET_MIRRORS) => {
   return mirrors.map((mirror) => (mirror ? `${mirror}${path}` : path))
 }
 
+// 把响应体读进内存,但上限要在读之前、读的过程中就卡住:来源里有三个第三方加速站,任一
+// 被劫持 / 回源异常吐几百 MB,1GB 内存的路由器在"先整段读完再比大小"时就已经 OOM 了。
+// 先看 content-length,再按块累加,超了立刻断开。测试里的假响应只有 arrayBuffer,照旧兼容。
+const readBodyLimited = async (res, limit, tag) => {
+  const declared = Number(res.headers && typeof res.headers.get === 'function' ? res.headers.get('content-length') : 0)
+  if (Number.isFinite(declared) && declared > limit) {
+    throw new Error(`规则集 ${tag} 超过 ${limit} 字节上限(content-length ${declared})`)
+  }
+  if (res.body && typeof res.body.getReader === 'function') {
+    const reader = res.body.getReader()
+    const chunks = []
+    let total = 0
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      total += value.byteLength
+      if (total > limit) {
+        try { await reader.cancel() } catch { /* 断开就行 */ }
+        throw new Error(`规则集 ${tag} 超过 ${limit} 字节上限`)
+      }
+      chunks.push(Buffer.from(value))
+    }
+    return Buffer.concat(chunks, total)
+  }
+  const data = Buffer.from(await res.arrayBuffer())
+  if (data.length > limit) throw new Error(`规则集 ${tag} 超过 ${limit} 字节上限`)
+  return data
+}
+
 // 单个规则集的下载(多来源依次重试)。除了部署时补齐,「详情」也要用它:用户可能
 // 想看一个还没部署过、本地根本没有的分类里有什么。
 export const downloadRuleset = async (fetchImpl, tag, { mirrors = RULESET_MIRRORS } = {}) => {
@@ -71,15 +100,12 @@ export const downloadRuleset = async (fetchImpl, tag, { mirrors = RULESET_MIRROR
         lastError = new Error(`HTTP ${res ? res.status : '无响应'}`)
         continue
       }
-      const data = Buffer.from(await res.arrayBuffer())
+      const data = await readBodyLimited(res, MAX_RULESET_BYTES, tag)
       // 空文件要当失败:某些加速站在回源失败时会返回 200 + 空体,写下去就是一个
       // 看起来存在、实际加载必炸的规则集,而且下次部署会因为"文件已存在"直接跳过。
       if (!data.length) {
         lastError = new Error('响应为空')
         continue
-      }
-      if (data.length > MAX_RULESET_BYTES) {
-        throw new Error(`规则集 ${tag} 超过 ${MAX_RULESET_BYTES} 字节上限`)
       }
       return data
     } catch (err) {

@@ -66,7 +66,7 @@ test('未设密时:/api/health、/api/auth/status、/api/auth/setup 不受守卫
   assert.equal(statusRes.status, 200)
 
   // setup 用短密码触发的是路由自身的 400,而不是守卫的 403 —— 证明守卫放行了这条路径。
-  const setupRes = await postSetup('short')
+  const setupRes = await postSetup('abc')
   assert.equal(setupRes.status, 400)
 })
 
@@ -95,8 +95,8 @@ test('GET /api/auth/status 的 passwordSet 字段随设密前后切换', async (
   assert.equal(after1.passwordSet, true)
 })
 
-test('POST /api/auth/setup 密码 < 8 位 → 400,且未落库(passwordSet 仍为 false)', async () => {
-  const res = await postSetup('short')
+test('POST /api/auth/setup 密码 < 4 位 → 400,且未落库(passwordSet 仍为 false)', async () => {
+  const res = await postSetup('abc')
   assert.equal(res.status, 400)
 
   const statusBody = await (await fetch(`${baseUrl}/api/auth/status`)).json()

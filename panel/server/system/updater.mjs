@@ -68,6 +68,16 @@ export const readChannel = async (ctx, paths) => {
 
 // /tmp/openbox-update.status:pid= stage= bytes= total= message=
 const RUNNING_STAGES = new Set(['starting', 'probing', 'downloading', 'verifying', 'extracting', 'committing'])
+const pidAlive = (pid) => {
+  if (!Number.isInteger(pid) || pid <= 0) return false
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (err) {
+    return Boolean(err && err.code === 'EPERM')
+  }
+}
+
 export const readUpdateStatus = async (ctx, paths) => {
   let raw = ''
   try { raw = await ctx.readFile(paths.updateStatusPath) } catch { return { stage: '', running: false } }
@@ -79,7 +89,9 @@ export const readUpdateStatus = async (ctx, paths) => {
     bytes: num(kv.bytes),
     total: num(kv.total),
     message: kv.message || '',
-    running: RUNNING_STAGES.has(kv.stage || ''),
+    // worker 被 OOM / 断电杀掉时状态文件会永远停在 downloading 之类:pid 已经不在就不算进行中,
+    // 否则面板一直 409「已有一次更新在进行中」直到重启路由器
+    running: RUNNING_STAGES.has(kv.stage || '') && (!kv.pid || pidAlive(Number(kv.pid))),
   }
 }
 

@@ -168,27 +168,27 @@ test('dns.mode=hijack(默认)生成全局 hijack-dns 路由规则;dns-in 入站�
   const c = buildConfig({ nodes, regionGroups, profile })
   assert.ok(c.route.rules.some((r) => r.action === 'hijack-dns' && r.protocol === 'dns'))
   const dnsIn = c.inbounds.find((i) => i.tag === 'dns-in')
-  assert.deepEqual(dnsIn, { type: 'direct', tag: 'dns-in', listen: '0.0.0.0', listen_port: 7853 })
+  assert.deepEqual(dnsIn, { type: 'direct', tag: 'dns-in', listen: '::', listen_port: 7853 })
 })
 
 test('dns.mode=off:不改写任何 DNS(只劫持 dns-in 自己收到的查询),保留 dns-in 入站,且即使开了 tun.autoRedirect 也不写 auto_redirect', () => {
   const c = buildConfig({ nodes, regionGroups, profile: { ...profile, tun: { autoRedirect: true }, dns: { ...profile.dns, mode: 'off' } } })
   const hijacks = c.route.rules.filter((r) => r.action === 'hijack-dns')
   assert.deepEqual(hijacks, [{ inbound: ['dns-in'], action: 'hijack-dns' }])
-  assert.ok(c.inbounds.some((i) => i.tag === 'dns-in' && i.listen === '0.0.0.0'))
+  assert.ok(c.inbounds.some((i) => i.tag === 'dns-in' && ['0.0.0.0', '::'].includes(i.listen)))
   assert.equal(c.inbounds[0].auto_redirect, undefined)
   assert.equal(c.inbounds[0].auto_route, true)
   assert.ok(!c.outbounds.some((o) => o.tag === 'dnsmasq'))
 })
 
-test('dns.mode=dnsmasq: hijack 规则仅限 dns-in 入站(不自环),DNS 入站监听 0.0.0.0:7853', () => {
+test('dns.mode=dnsmasq: hijack 规则仅限 dns-in 入站(不自环),DNS 入站监听 :7853(开 v6 时双栈)', () => {
   const c = buildConfig({ nodes, regionGroups, profile: { ...profile, dns: { ...profile.dns, mode: 'dnsmasq' } } })
   const hijack = c.route.rules.find((r) => r.action === 'hijack-dns')
   assert.ok(hijack)
   assert.deepEqual(hijack.inbound, ['dns-in'])
   assert.ok(!hijack.protocol)
   const dnsIn = c.inbounds.find((i) => i.type === 'direct')
-  assert.equal(dnsIn.listen, '0.0.0.0')
+  assert.ok(['0.0.0.0', '::'].includes(dnsIn.listen))
   assert.equal(dnsIn.listen_port, 7853)
 })
 
@@ -241,4 +241,11 @@ test('出站 tag 撞名 → 生成配置时直接报人话,而不是让内核 du
   assert.throws(() => buildConfig({ nodes: [...nodes, twin], regionGroups, profile }), /出站名称重复:「美国-01」/)
   const policyClash = { ...profile, routing: { ...profile.routing, policies: [{ name: '美国-01', domainSuffix: ['x.com'] }] } }
   assert.throws(() => buildConfig({ nodes, regionGroups, profile: policyClash }), /出站名称重复:「美国-01」/)
+})
+
+test('dns-in 监听地址:开 IPv6 双栈 ::(AdGuard 用路由器 v6 地址当上游也到得了),关 IPv6 只监听 0.0.0.0', () => {
+  const on = buildConfig({ nodes, regionGroups, profile: { ...profile, ipv6: true } }).inbounds.find((i) => i.tag === 'dns-in')
+  const off = buildConfig({ nodes, regionGroups, profile: { ...profile, ipv6: false } }).inbounds.find((i) => i.tag === 'dns-in')
+  assert.equal(on.listen, '::')
+  assert.equal(off.listen, '0.0.0.0')
 })

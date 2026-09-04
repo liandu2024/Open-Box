@@ -222,13 +222,17 @@ const stageText = computed(() => {
 
 let timer = 0
 let wasRunning = false
+// 卸载后仍在途的 load() 不能再排下一次轮询,也不能在别的页面触发整页 reload
+let disposed = false
 // 面板重启窗口内连续失败的次数;升级进行中最多再试 45 次(约 90 秒),重连上就清零
 let offline = 0
 const load = async () => {
+  if (disposed) return
   try {
     info.value = await fetchUpdateStatus()
     offline = 0
   } catch {
+    if (disposed) return
     // 升级到换文件阶段时面板会重启,接口短暂不可用是正常的。之前这里直接 return,
     // 轮询就此停掉:弹窗停在「正在替换文件…」,升级其实已完成、页面却不会刷新。
     // 升级进行中就隔两秒再试,直到重新读到状态(done / failed 会照常提示、刷新)。
@@ -238,6 +242,7 @@ const load = async () => {
     }
     return
   }
+  if (disposed) return
   const running = Boolean(info.value.status.running)
   // 打开页面时升级已经在跑(比如自动更新),也把弹窗弹出来
   if (running && !wasRunning) dialogOpen.value = true
@@ -307,5 +312,8 @@ onMounted(() => {
   channel.value = 'auto'
   void load()
 })
-onBeforeUnmount(() => window.clearTimeout(timer))
+onBeforeUnmount(() => {
+  disposed = true
+  window.clearTimeout(timer)
+})
 </script>

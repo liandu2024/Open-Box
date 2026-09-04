@@ -162,8 +162,11 @@ const props = defineProps<{
 const { t } = useI18n()
 const by = ref<OpenboxTrafficDim>(props.dims[0])
 const cache = ref<Partial<Record<OpenboxTrafficDim, OpenboxTrafficDrill>>>({})
-const loading = ref(false)
-const error = ref('')
+// 加载中 / 出错都按维度记:快速切页签时先发的请求回来不能把当前页签的 spinner 收掉或把错误贴过来
+const loadingBy = ref<Partial<Record<OpenboxTrafficDim, boolean>>>({})
+const errorBy = ref<Partial<Record<OpenboxTrafficDim, string>>>({})
+const loading = computed(() => Boolean(loadingBy.value[by.value]))
+const error = computed(() => errorBy.value[by.value] || '')
 const restExpanded = ref(false)
 
 const LABEL_KEY: Record<OpenboxTrafficDim, string> = {
@@ -198,15 +201,15 @@ const share = (r: { up: number; down: number }) =>
 
 const load = async () => {
   const dim = by.value
-  if (cache.value[dim]) return
-  loading.value = true
-  error.value = ''
+  if (cache.value[dim] || loadingBy.value[dim]) return
+  loadingBy.value = { ...loadingBy.value, [dim]: true }
+  errorBy.value = { ...errorBy.value, [dim]: '' }
   try {
     cache.value[dim] = await fetchTrafficDrill(props.day, props.kind, props.itemKey, dim)
   } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e)
+    errorBy.value = { ...errorBy.value, [dim]: e instanceof Error ? e.message : String(e) }
   } finally {
-    loading.value = false
+    loadingBy.value = { ...loadingBy.value, [dim]: false }
   }
 }
 watch(

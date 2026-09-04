@@ -75,12 +75,12 @@ test('currentPassword 不匹配 → 401,密码未被更改', async () => {
   assert.equal(loginRes.status, 200) // 原密码仍然有效
 })
 
-test('newPassword 长度 < 8 → 400,密码未被更改', async () => {
+test('newPassword 长度 < 4 → 400,密码未被更改', async () => {
   await postJson('/api/auth/setup', { password: 'original-password-1' })
 
   const res = await postJson('/api/auth/change-password', {
     currentPassword: 'original-password-1',
-    newPassword: 'short',
+    newPassword: 'abc',
   })
   assert.equal(res.status, 400)
 
@@ -120,4 +120,18 @@ test('改密成功:旧密码登录失败、新密码登录成功、当前会话�
   // 改密响应里带的新 cookie 可以直接访问受保护路由——当前会话续上了,不需要重新登录
   const newCookieCheck = await fetch(`${baseUrl}/api/storage`, { headers: { cookie: newCookie } })
   assert.equal(newCookieCheck.status, 200)
+})
+
+test('登录暴力破解防护:同一来源连续 5 次错密码后被锁,正确密码也要等锁过期(429 + retryAfter)', async () => {
+  await postJson('/api/auth/setup', { password: 'original-password-1' })
+  for (let i = 0; i < 5; i++) {
+    const r = await postJson('/api/auth/login', { password: 'wrong-' + i })
+    assert.equal(r.status, 401, `第 ${i + 1} 次错密码应是 401`)
+  }
+  const locked = await postJson('/api/auth/login', { password: 'original-password-1' })
+  assert.equal(locked.status, 429)
+  const body = await locked.json()
+  assert.equal(body.code, 'ACCESS_LOCKED')
+  assert.ok(body.retryAfter >= 1)
+  assert.ok(locked.headers.get('retry-after'))
 })

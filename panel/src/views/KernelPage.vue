@@ -56,8 +56,9 @@
 </template>
 
 <script setup lang="ts">
+import { refreshServiceStatus } from '@/composables/kernelService'
 import type { OpenboxKernelVersion, OpenboxProfile, OpenboxServiceStatus } from '@/api/openbox'
-import { fetchKernelVersion, fetchProfile, fetchServiceStatus, saveProfile } from '@/api/openbox'
+import { fetchKernelVersion, fetchProfile, saveProfile } from '@/api/openbox'
 import DnsModeCard from '@/components/kernel/DnsModeCard.vue'
 import GeoUpdateCard from '@/components/kernel/GeoUpdateCard.vue'
 import KernelServiceCard from '@/components/kernel/KernelServiceCard.vue'
@@ -82,8 +83,9 @@ const loading = ref(true)
 // 首次加载和每个动作(启动/停止/重启/自启开关)之后的刷新都走这里
 const loadStatus = async () => {
   try {
-    const [fetchedStatus, fetchedVersion] = await Promise.all([fetchServiceStatus(), fetchKernelVersion()])
-    status.value = fetchedStatus
+    // 走共享状态的刷新(带序号保护),卡片和侧边栏看到的是同一份
+    const [fetchedStatus, fetchedVersion] = await Promise.all([refreshServiceStatus(), fetchKernelVersion()])
+    status.value = fetchedStatus ?? null
     kernelVersion.value = fetchedVersion
   } catch (error) {
     showNotification({

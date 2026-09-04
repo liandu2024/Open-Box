@@ -124,7 +124,8 @@ export const buildConfig = ({ nodes, profile, userGroups, systemDns, localSubnet
     dnsmasqTag: dnsMode === 'dnsmasq' ? DNSMASQ_OUTBOUND_TAG : '',
     // 终端分流(engine/client-routes.mjs);出口只认配置里真有的 outbound
     clientRoutes: normalizeClientRoutes(profile.clientRoutes),
-    knownOutbounds: new Set(outbounds.map((o) => o.tag)),
+    // wireguard 是 endpoint 不是 outbound,但路由规则一样能指向它的 tag
+    knownOutbounds: new Set([...outbounds, ...endpoints].map((o) => o.tag)),
   })
   // groupTags 传给 DNS:它要按"这个站点集默认走哪"决定用直连还是代理侧解析,
   // 而"默认走哪"在 default 为空时取决于成员表的第一项(见 effectiveOutbound)。
@@ -157,7 +158,8 @@ export const buildConfig = ({ nodes, profile, userGroups, systemDns, localSubnet
   // <路由器 IP>:7853 用内核的分流解析——尤其是「禁用」模式,不劫持任何 DNS,但把入口留着。
   // 此前只在 dnsmasq 模式开、且只听 127.0.0.1,用户在禁用模式下把 AdGuard 上游指到 7853,
   // 整个局域网的 DNS 就死了(正式路由器实测)。
-  inbounds.push({ type: 'direct', tag: 'dns-in', listen: '0.0.0.0', listen_port: DNS_INBOUND_PORT })
+  // 开了 IPv6 就双栈监听(AdGuard 用路由器的 v6 地址当上游时才到得了);'::' 在 sing-box 里同时收 v4
+  inbounds.push({ type: 'direct', tag: 'dns-in', listen: profile.ipv6 ? '::' : '0.0.0.0', listen_port: DNS_INBOUND_PORT })
   // 共享网络:用户在设置里开的服务器入站(engine/servers.mjs)
   inbounds.push(...buildServerInbounds(profile.servers, tlsCert))
 

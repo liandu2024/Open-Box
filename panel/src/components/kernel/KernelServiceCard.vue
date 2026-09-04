@@ -33,7 +33,7 @@
         <div class="flex items-center gap-2">
           <span class="font-medium">{{ $t('kernelCoreLabel') }}</span>
           <StatusBadge
-            :on="Boolean(status?.core.running)"
+            :on="Boolean(serviceStatus?.core.running)"
             :on-text="$t('kernelStatusRunning')"
             :off-text="$t('kernelStatusStopped')"
           />
@@ -41,7 +41,7 @@
         <div class="flex items-center gap-2">
           <span class="font-medium">{{ $t('kernelPanelLabel') }}</span>
           <StatusBadge
-            :on="Boolean(status?.panel.running)"
+            :on="Boolean(serviceStatus?.panel.running)"
             :on-text="$t('kernelStatusRunning')"
             :off-text="$t('kernelStatusStopped')"
           />
@@ -49,7 +49,7 @@
         <div class="flex items-center gap-2">
           <span class="font-medium">{{ $t('kernelAutostartLabel') }}</span>
           <StatusBadge
-            :on="Boolean(status?.core.autostart)"
+            :on="Boolean(serviceStatus?.core.autostart)"
             :on-text="$t('kernelAutostartOn')"
             :off-text="$t('kernelAutostartOff')"
           />
@@ -130,9 +130,9 @@ import {
   useKernelActions,
 } from '@/composables/kernelService'
 import { ArrowPathIcon, CpuChipIcon, ExclamationTriangleIcon, PlayIcon, StopIcon } from '@heroicons/vue/24/outline'
-import { watch } from 'vue'
 
-const props = defineProps<{
+// status 仍作为 prop 保留给页面传入(刷新时序由页面掌握),卡片本身只读共享状态
+defineProps<{
   status: OpenboxServiceStatus | null
   kernelVersion: OpenboxKernelVersion | null
 }>()
@@ -141,14 +141,9 @@ const emit = defineEmits<{
   refresh: []
 }>()
 
-// 页面拿到的状态同步进共享状态,侧边栏的按钮也跟着变
-watch(
-  () => props.status,
-  (v) => {
-    if (v) serviceStatus.value = v
-  },
-  { immediate: true },
-)
+// 状态标签和按钮读的是同一份共享状态(composables/kernelService.ts):页面自己再拿一份
+// 会分叉——在侧边栏点停止、内核被外部停掉时标签不跟着变;直接往共享状态里写又绕过了
+// refreshSeq,旧响应能把新状态盖回去。
 
 const { runKernelAction: run } = useKernelActions()
 const runKernelAction = async (action: Parameters<typeof run>[0]) => {

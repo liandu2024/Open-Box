@@ -29,7 +29,9 @@ export const keywordMatches = (normalizedName: string, keyword: string): boolean
   const needle = normalizeForMatch(keyword).trim()
   if (!needle) return false
   if (SHORT_ASCII_CODE.test(needle)) {
-    return new RegExp(`(^|[^a-z])${needle}([^a-z]|$)`, 'i').test(normalizedName)
+    // 与 server/engine/rename.mjs 一致:cn 不匹配 CN2 线路名(CN2 GIA / CN2-01),否则预览和内核不一致
+    const tail = needle === 'cn' ? '(?!2(?![0-9]))' : ''
+    return new RegExp(`(^|[^a-z])${needle}${tail}([^a-z]|$)`, 'i').test(normalizedName)
   }
   return normalizedName.includes(needle)
 }

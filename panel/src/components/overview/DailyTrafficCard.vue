@@ -459,22 +459,33 @@ const dayClass = (d: DayBar) =>
 
 const errorText = (e: unknown) => t('trafficLoadError', { message: e instanceof Error ? e.message : String(e) })
 
+// 请求序号:30 秒一次的静默轮询和用户的切换会交错,晚到的旧响应不能盖掉新状态
+// (轮询在途时点「上月」,轮询回来会把月份改回当月、再把选中的日子重置成今天)
+let monthSeq = 0
+let daySeq = 0
+
 const loadDay = async (day: string | null) => {
+  const seq = ++daySeq
   if (!day) {
     detail.value = null
     return
   }
   try {
-    detail.value = await fetchTrafficDay(day)
+    const data = await fetchTrafficDay(day)
+    if (seq !== daySeq || selectedDay.value !== day) return
+    detail.value = data
   } catch (e) {
+    if (seq !== daySeq) return
     error.value = errorText(e)
   }
 }
 
 const loadMonth = async (m?: string, { silent = false } = {}) => {
+  const seq = ++monthSeq
   if (!silent) loading.value = true
   try {
     const data = await fetchTrafficMonth(m)
+    if (seq !== monthSeq) return
     error.value = ''
     monthData.value = data
     month.value = data.month
@@ -491,9 +502,10 @@ const loadMonth = async (m?: string, { silent = false } = {}) => {
     }
     await loadDay(selectedDay.value)
   } catch (e) {
+    if (seq !== monthSeq) return
     error.value = errorText(e)
   } finally {
-    loading.value = false
+    if (seq === monthSeq) loading.value = false
   }
 }
 

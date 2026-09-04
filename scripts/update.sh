@@ -93,6 +93,8 @@ write_status() {
     echo "total=$_ws_total"
     echo "message=$_ws_message"
   } > "$_ws_tmp" 2>/dev/null && mv -f "$_ws_tmp" "$STATUS_PATH" 2>/dev/null
+  # /tmp 被下载顶满时这里会失败:状态没更新是小事,set -e 把 worker 无声杀掉才是大事
+  return 0
 }
 
 # 读状态文件里某一个字段的值(取第一处匹配),供 --cancel 判断当前阶段/PID 用。
@@ -165,8 +167,8 @@ fetch_to_stdout() {
 
 fetch_to_file() {
   case "$DOWNLOADER" in
-    curl) curl -fsSL -o "$2" "$1" ;;
-    wget) wget -q -O "$2" "$1" ;;
+    curl) curl -fsSL --connect-timeout 15 --max-time 300 -o "$2" "$1" ;;
+    wget) wget -q --timeout=60 -O "$2" "$1" ;;
   esac
 }
 
@@ -635,6 +637,15 @@ if [ "$DETACH" = "1" ]; then
   # "stage=starting"(还没有 pid,子进程调度起来后会自己补上完整记录),避免
   # LuCI 轮询到的是上一次更新遗留的 done/failed/cancelled 状态;顺带清掉可能
   # 残留的取消标志,防止新这次更新一启动就被上一次的取消请求误伤。
+  # 已有一个活着的 worker 在跑就不再派第二个:两个 worker 会互删暂存目录、互写状态文件
+  _live_pid=$(sed -n 's/^pid=\([0-9][0-9]*\)$/\1/p' "$STATUS_PATH" 2>/dev/null | head -n 1)
+  _live_stage=$(sed -n 's/^stage=//p' "$STATUS_PATH" 2>/dev/null | head -n 1)
+  if [ -n "$_live_pid" ] && kill -0 "$_live_pid" 2>/dev/null; then
+    case "$_live_stage" in
+      done|failed|cancelled|"") ;;
+      *) die "已有一次更新在进行中(pid $_live_pid,阶段 $_live_stage),请等它结束或先取消。" ;;
+    esac
+  fi
   : > "$UPDATE_LOG" 2>/dev/null || true
   { echo "stage=starting"; } > "$STATUS_PATH" 2>/dev/null || true
   rm -f "$CANCEL_FLAG" 2>/dev/null || true
@@ -656,7 +667,7 @@ if [ "$DETACH" = "1" ]; then
     warn "$_detach_msg"
     exit 0
   fi
-  OPENBOX_UPDATE_CHANNEL_OVERRIDE="$CHANNEL_OVERRIDE" OPENBOX_UPDATE_MIRROR_PREFIX="$CLI_MIRROR_PREFIX" OPENBOX_UPDATE_EXPECT="$EXPECT_VERSION" \
+  OPENBOX_UPDATE_CHANNEL_OVERRIDE="$CHANNEL_OVERRIDE" OPENBOX_UPDATE_MIRROR_PREFIX="$CLI_MIRROR_PREFIX" OPENBOX_UPDATE_EXPECT="$EXPECT_VERSION" OPENBOX_UPDATE_DISPATCHED=1 \
     setsid sh "$0" >"$UPDATE_LOG" 2>&1 </dev/null &
   info "升级已在后台启动,日志:$UPDATE_LOG"
   exit 0
@@ -788,7 +799,20 @@ resolve_channel() {
 # 残留的取消标志:防止上一次更新遗留、没能及时清理的标志,把这一次刚启动的全新
 # 更新立刻取消掉。
 STATUS_PID=$$
-rm -f "$CANCEL_FLAG" 2>/dev/null || true
+# 单实例锁:mkdir 是原子的;锁里记 pid,持锁进程已死(OOM、断电后重启)就接管
+UPDATE_LOCK="$STATUS_PATH.lock"
+if ! mkdir "$UPDATE_LOCK" 2>/dev/null; then
+  _lock_pid=$(cat "$UPDATE_LOCK/pid" 2>/dev/null)
+  if [ -n "$_lock_pid" ] && kill -0 "$_lock_pid" 2>/dev/null; then
+    die "已有一次更新在进行中(pid $_lock_pid),请等它结束或先取消。"
+  fi
+  rm -rf "$UPDATE_LOCK" 2>/dev/null
+  mkdir "$UPDATE_LOCK" 2>/dev/null || die "无法创建更新锁 $UPDATE_LOCK。"
+fi
+echo "$$" > "$UPDATE_LOCK/pid" 2>/dev/null || true
+# 派发进程在 fork 之前已经清过一次取消标志;这里再清会把"派发到 worker 启动之间"到达的
+# 取消请求抹掉。只有前台直接执行(没有派发进程)才需要在这里清残留。
+[ "${OPENBOX_UPDATE_DISPATCHED:-0}" = "1" ] || rm -f "$CANCEL_FLAG" 2>/dev/null || true
 write_status starting "" "" ""
 
 info "预检..."
@@ -901,6 +925,13 @@ cleanup() {
   if [ "${OPENBOX_UPDATE_RELOCATED:-0}" = "1" ]; then
     rm -f -- "$0"
   fi
+  # 文件已经换过、面板还没拉起来就走到这里(比如铺 LuCI 文件时 die 了):无论如何把面板
+  # 起来,用户至少还能进面板看到发生了什么;卡在"面板停着"是最糟的结局
+  if [ "${POST_SWAP:-0}" = "1" ] && [ "${PANEL_STARTED:-0}" != "1" ] && [ -x /etc/init.d/openbox-panel ]; then
+    /etc/init.d/openbox-panel start >/dev/null 2>&1 || true
+  fi
+  [ -n "${UPDATE_LOCK:-}" ] && rm -rf "$UPDATE_LOCK" 2>/dev/null
+  return 0
 }
 TMP_DL=$(mktemp -d "${TMPDIR:-/tmp}/open-box-update.XXXXXX") || die "无法创建临时目录。"
 trap cleanup EXIT INT TERM
@@ -1038,6 +1069,10 @@ if [ -x /etc/init.d/openbox ]; then
 fi
 
 info "替换 node/ panel/ bin/ openwrt/(保留 data/ 与 etc/)..."
+# 换文件期间不响应 Ctrl-C / 关机的 TERM:这时 cleanup 一跑会把还没搬过去的组件连同暂存
+# 目录一起删掉,安装就成了半新半旧
+trap '' INT TERM
+POST_SWAP=1
 for comp in node panel bin openwrt; do
   [ -e "$INSTALL_ROOT/$comp.old" ] && safe_rm_rf "$INSTALL_ROOT/$comp.old"
   if [ -e "$INSTALL_ROOT/$comp" ]; then
@@ -1072,15 +1107,15 @@ cp "$INSTALL_ROOT/openwrt/initd/openbox" /etc/init.d/openbox || die "无法安�
 cp "$INSTALL_ROOT/openwrt/initd/openbox-panel" /etc/init.d/openbox-panel || die "无法安装 /etc/init.d/openbox-panel。"
 chmod +x /etc/init.d/openbox /etc/init.d/openbox-panel
 
-mkdir -p /www/luci-static/resources/view/openbox || die "无法创建 LuCI 视图目录。"
+mkdir -p /www/luci-static/resources/view/openbox || warn "无法创建 LuCI 视图目录(不影响面板本身,LuCI 页面可能是旧的)。"
 cp "$INSTALL_ROOT/openwrt/luci/htdocs/luci-static/resources/view/openbox/status.js" \
-  /www/luci-static/resources/view/openbox/status.js || die "无法安装 LuCI 视图文件。"
+  /www/luci-static/resources/view/openbox/status.js || warn "无法安装 LuCI 视图文件(不影响面板本身,LuCI 页面可能是旧的)。"
 
-mkdir -p /usr/share/luci/menu.d || die "无法创建 LuCI 菜单目录。"
+mkdir -p /usr/share/luci/menu.d || warn "无法创建 LuCI 菜单目录(不影响面板本身,LuCI 页面可能是旧的)。"
 cp "$INSTALL_ROOT/openwrt/luci/root/usr/share/luci/menu.d/luci-app-openbox.json" \
-  /usr/share/luci/menu.d/luci-app-openbox.json || die "无法安装 LuCI 菜单文件。"
+  /usr/share/luci/menu.d/luci-app-openbox.json || warn "无法安装 LuCI 菜单文件(不影响面板本身,LuCI 页面可能是旧的)。"
 
-mkdir -p /usr/share/rpcd/acl.d || die "无法创建 rpcd ACL 目录。"
+mkdir -p /usr/share/rpcd/acl.d || warn "无法创建 rpcd ACL 目录(不影响面板本身,LuCI 页面可能是旧的)。"
 # 先比对再覆盖:rpcd 只有在 ACL 真的变了时才需要重启,而重启 rpcd 会清空它内存里的
 # 全部 LuCI 会话——用户每升一次级就被踢回登录页(实测反馈:「更新之后,一定要重新
 # 登录?」)。ACL 文件多数升级里根本没动,那种情况不该付出重新登录的代价。
@@ -1090,7 +1125,7 @@ _acl_changed=0
 if [ ! -f "$_ACL_DST" ] || ! cmp -s "$_ACL_SRC" "$_ACL_DST"; then
   _acl_changed=1
 fi
-cp "$_ACL_SRC" "$_ACL_DST" || die "无法安装 rpcd ACL 文件。"
+cp "$_ACL_SRC" "$_ACL_DST" || warn "无法安装 rpcd ACL 文件(不影响面板本身,LuCI 页面可能是旧的)。"
 
 # 用 -rf 而不是 -f:OpenWrt <=22.03 的 Lua 版 LuCI 里 /tmp/luci-modulecache 是
 # 目录,rm -f 对目录返回非零,在 set -eu 下会直接中止脚本(P6 终审 Important 4)。
@@ -1104,6 +1139,7 @@ fi
 info "启动面板..."
 /etc/init.d/openbox-panel enable || warn "设置面板开机自启失败,可稍后在 LuCI → 服务 → Open-Box 中手动开启。"
 /etc/init.d/openbox-panel start || warn "面板启动命令返回了非零状态,请稍后访问面板地址确认;如不可用可到 LuCI → 服务 → Open-Box 中重试。"
+PANEL_STARTED=1
 
 # 升级前内核在跑 → 现在按新版本重新生成配置并启动,走面板同款流水线(panel/server/cli/
 # deploy.mjs:冲突检测 → 规则集 → 校验 → 落盘 → DNS 接管 → 防火墙 → 启动 → 验证)。
