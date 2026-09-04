@@ -152,3 +152,18 @@ test('GET /clients:租约里的设备 + 今天流量里的来源 IP', async () =
     await close()
   }
 })
+
+test('readLocalAddresses:问 netifd 哪个逻辑接口占着这个设备,eth0 是 wan 就标 wan;问不到按设备名猜', async () => {
+  const { readLocalAddresses } = await import('../system/local-subnets.mjs')
+  const ctx = createMockContext({ execResults: {
+    'ip -4 -o addr': { code: 0, stdout: '2: eth0    inet 192.168.3.35/24 brd 192.168.3.255 scope global eth0\n3: br-lan    inet 10.0.0.1/24 brd 10.0.0.255 scope global br-lan\n' },
+    'ubus call network.interface dump': { code: 0, stdout: JSON.stringify({ interface: [{ interface: 'wan', l3_device: 'eth0', device: 'eth0' }, { interface: 'lan', l3_device: 'br-lan', device: 'br-lan' }] }) },
+  } })
+  const out = await readLocalAddresses(ctx)
+  assert.deepEqual(out, [
+    { iface: 'eth0', address: '192.168.3.35', kind: 'wan', logical: 'wan' },
+    { iface: 'br-lan', address: '10.0.0.1', kind: 'lan', logical: 'lan' },
+  ])
+  const noUbus = createMockContext({ execResults: { 'ip -4 -o addr': { code: 0, stdout: '5: pppoe-wan0    inet 10.65.3.225 peer 10.65.0.1/32 scope global pppoe-wan0\n' } } })
+  assert.deepEqual(await readLocalAddresses(noUbus), [{ iface: 'pppoe-wan0', address: '10.65.3.225', kind: 'wan' }])
+})

@@ -168,6 +168,22 @@ export const parseIpAddresses = (text) => {
   }
   return out
 }
+// 设备名不一定看得出角色(开发路由器的 WAN 就是 eth0):问 netifd 哪个逻辑接口(wan / wan0 /
+// wan6 / lan…)占着这个设备,按逻辑接口名定 kind;问不到再退回上面按设备名猜。
+export const parseInterfaceDump = (text) => {
+  const map = new Map()
+  try {
+    const list = JSON.parse(String(text || '')).interface || []
+    for (const it of list) {
+      const dev = it && (it.l3_device || it.device)
+      if (dev && it.interface) map.set(dev, String(it.interface))
+    }
+  } catch {
+    // 不是 JSON 就当没有
+  }
+  return map
+}
+export const classifyLogical = (name) => (/^lan/i.test(name) ? 'lan' : /^w(w)?an/i.test(name) ? 'wan' : null)
 export const readLocalAddresses = async (ctx) => {
   const out = []
   for (const family of ['-4', '-6']) {
@@ -178,5 +194,17 @@ export const readLocalAddresses = async (ctx) => {
       // 读不到就不标
     }
   }
-  return out
+  if (!out.length) return out
+  let logical = new Map()
+  try {
+    const r = await ctx.exec('ubus', ['call', 'network.interface', 'dump'], { timeoutMs: 5000 })
+    if (r && r.code === 0) logical = parseInterfaceDump(r.stdout)
+  } catch {
+    // 没有 ubus(非 OpenWrt)就按设备名猜
+  }
+  return out.map((a) => {
+    const name = logical.get(a.iface)
+    const kind = (name && classifyLogical(name)) || a.kind
+    return name ? { ...a, kind, logical: name } : { ...a, kind }
+  })
 }
