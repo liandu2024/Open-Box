@@ -1,8 +1,9 @@
 <template>
   <!-- 侧边栏顶部:左边产品名 + 版本号,右边收起/展开侧边栏。折叠时只剩那个图标。 -->
-  <!-- 不加左右内边距:标题左边、图标右边和菜单项、底部卡片对齐同一条线 -->
+  <!-- 不加内边距:上下左右都吃侧边栏那层 p-2(8px)。之前额外加了 pt-1,顶上就比
+       底部的卡片多出 4px,一眼看得出不齐 -->
   <div
-    class="flex items-center pt-1"
+    class="flex items-center"
     :class="isSidebarCollapsed ? 'justify-center' : 'justify-between gap-2'"
   >
     <div
