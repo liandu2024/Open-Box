@@ -63,7 +63,7 @@ export const registerUpdateRoutes = (app, { store, ctx, paths, fetchImpl = globa
     const channel = String(req.query.channel || 'auto')
     if (!CHANNELS.has(channel)) return res.status(400).json({ message: `channel must be one of ${[...CHANNELS].join(', ')}` })
     try {
-      res.json(await checkGeoUpdate(ctx, paths, { fetchImpl, channel }))
+      res.json(await checkGeoUpdate(ctx, paths, { fetchImpl }))
     } catch (error) {
       res.status(503).json({ message: error instanceof Error ? error.message : String(error) })
     }
@@ -85,7 +85,8 @@ export const registerUpdateRoutes = (app, { store, ctx, paths, fetchImpl = globa
       }
       // 没下到新文件(全失败 / 没配置)就沿用上次记的版本
       const versions = result.updated.length ? { ...(previous.versions || {}), ...result.versions } : previous.versions || {}
-      const record = { lastAt: new Date().toISOString(), updated: result.updated, failed: result.failed, restarted, source: 'manual', channel, versions }
+      // source 记的是规则集来源(sagernet / metacubex),换来源后旧版本号不再可比;trigger 才是"谁发起的"
+      const record = { lastAt: new Date().toISOString(), updated: result.updated, failed: result.failed, restarted, trigger: 'manual', channel, versions, source: result.source }
       await writeJsonFile(ctx, paths.geoUpdateStatePath, record)
       res.json({ ok: result.failed.length === 0 && !restartMessage, ...result, versions, restarted, restartMessage })
     } catch (error) {
@@ -102,7 +103,7 @@ export const registerUpdateRoutes = (app, { store, ctx, paths, fetchImpl = globa
     } catch { /* 没生成过配置 */ }
     res.json({
       count, lastAt: state.lastAt || '', updated: state.updated || [], failed: state.failed || [], restarted: Boolean(state.restarted),
-      versions: state.versions || {},
+      versions: state.versions || {}, source: state.source || '',
     })
   })
 

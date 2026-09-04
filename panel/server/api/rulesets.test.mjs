@@ -87,7 +87,7 @@ test('本地没有的分类现下一份,顺手留在正式目录里', async () =
   try {
     const res = await fetch(`${baseUrl}/api/openbox/rulesets/entries?tag=geosite-openai`)
     assert.equal(res.status, 200)
-    assert.match(asked, /sing-geosite\/rule-set\/geosite-openai\.srs$/)
+    assert.match(asked, /meta-rules-dat\/sing\/geo\/geosite\/openai\.srs$/)
     assert.ok(ctx.writes.some((w) => w.path === `${paths.rulesetDir}/geosite-openai.srs`))
   } finally {
     await close()

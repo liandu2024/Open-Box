@@ -201,6 +201,8 @@ test('规则集拉不下来 → stage:rulesets,且不动系统(没落盘、没�
 test('规则集已存在时不再下载(GitHub 连不上也能照常部署)', async () => {
   const ctx = okCtx()
   ctx.files['/opt/open-box/data/rulesets/geosite-cn.srs'] = Buffer.from('already-here')
+  // 目录标记:这个文件就是当前来源(MetaCubeX)下的;没有标记的老安装目录会整体重下(rulesets.test 另有用例)
+  ctx.files['/opt/open-box/data/rulesets/.source'] = 'metacubex\n'
   let called = false
   const fetchImpl = async () => { called = true; throw new Error('不该被调用') }
   const r = await deployConfig(ctx, paths, { config: configWithRulesets, profile, fetchImpl })

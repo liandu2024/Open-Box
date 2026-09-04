@@ -325,7 +325,7 @@ const en = {
   obUpdateCheckFailed: 'Update check failed: {message}',
   obUpdatePlanSaved: 'Auto-update plan saved.',
   geoUpdateTitle: 'Geosite / GeoIP Update',
-  geoUpdateDescription: 'Re-downloads every rule set used by the current config; restarts the kernel so the new rules take effect.',
+  geoUpdateDescription: 'Rule sets come from MetaCubeX/meta-rules-dat (updated daily, includes the gfw list). Re-downloads every rule set used by the current config; restarts the kernel so the new rules take effect.',
   geoUpdateCount: 'Rule sets',
   geoUpdateLast: 'Last update',
   geoUpdateLastOk: '{count} updated',

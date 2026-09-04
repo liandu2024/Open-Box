@@ -3,15 +3,15 @@
 // 升级本身交给随包发布的 scripts/update.sh(--detach 后台跑、--cancel 协作式取消、
 // /tmp/openbox-update.status 报进度),面板只负责:读版本、探最新版、发起/取消、
 // 读进度。这样 LuCI 兜底页和面板用的是同一条升级路径,不会各有一套坑。
-import { downloadRuleset, RULESET_MIRRORS } from './rulesets.mjs'
+import { downloadRuleset, RULESET_MIRRORS, SOURCE_MARKER, RULESET_SOURCE } from './rulesets.mjs'
 
 export const REPO = 'liandu2024/Open-Box'
 
-// Geo 规则集的上游:两个仓库各自发版,tag 是日期时间串(如 20260831141734),
-// rule-set 分支上的 .srs 随每次发版更新。"当前版本"就记这两个 tag。
+// Geo 规则集分两类(geosite / geoip),现在都来自 MetaCubeX 同一个仓库(见 system/rulesets.mjs),
+// 版本号是那个仓库 sing 分支最近一次提交,两类记同一个值。
 export const GEO_REPOS = Object.freeze([
-  { key: 'geosite', prefix: 'geosite-', repo: 'SagerNet/sing-geosite' },
-  { key: 'geoip', prefix: 'geoip-', repo: 'SagerNet/sing-geoip' },
+  { key: 'geosite', prefix: 'geosite-' },
+  { key: 'geoip', prefix: 'geoip-' },
 ])
 
 // 下载通道 → 来源前缀顺序('' 是直连):
@@ -169,30 +169,40 @@ const usedGeoRepos = async (ctx, paths) => {
   }
 }
 
-// 探 Geo 规则集有没有新版:上游两个仓库的最新 tag 对比本地上次下载时记下的 tag。
-// 本地没记过(老版本装的、或从没更新过)就当有新版——不知道新旧,只能让用户更一次。
-// 返回 { current, latest, hasUpdate, via };一个仓库都探不到就抛错。
-export const checkGeoUpdate = async (ctx, paths, { fetchImpl = globalThis.fetch, channel = 'auto', timeoutMs = 8000 } = {}) => {
-  const [state, installed, used] = await Promise.all([
-    readJsonFile(ctx, paths.geoUpdateStatePath, {}), readChannel(ctx, paths), usedGeoRepos(ctx, paths),
-  ])
-  const current = (state && state.versions) || {}
-  const sources = geoSources(channel, installed)
-  const latest = {}
-  let via = ''
-  let lastError = null
-  for (const repo of used) {
-    try {
-      const r = await fetchLatestTag(fetchImpl, repo.repo, { sources, timeoutMs })
-      latest[repo.key] = r.latest
-      via = via || r.via
-    } catch (err) {
-      lastError = err
-    }
+// MetaCubeX 的 release tag 永远叫 latest,版本只能看 sing 分支最近一次提交:日期 + 短 sha。
+// api.github.com 加速站不代理,只能直连;探不到就当"不知道新旧"(hasUpdate),让用户能更一次。
+const METACUBEX_COMMITS_API = 'https://api.github.com/repos/MetaCubeX/meta-rules-dat/commits/sing'
+export const fetchMetacubexVersion = async (fetchImpl, { timeoutMs = 8000 } = {}) => {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const res = await fetchImpl(METACUBEX_COMMITS_API, { headers: { accept: 'application/vnd.github+json' }, signal: controller.signal })
+    if (!res || !res.ok) throw new Error(`HTTP ${res ? res.status : '无响应'}`)
+    const body = await res.json()
+    const sha = String(body.sha || '').slice(0, 8)
+    const date = String(body.commit?.committer?.date || body.commit?.author?.date || '').slice(0, 10)
+    if (!sha || !date) throw new Error('响应里没有提交信息')
+    return { latest: `${date} ${sha}`, via: 'direct' }
+  } finally {
+    clearTimeout(timer)
   }
-  if (!Object.keys(latest).length) throw lastError || new Error('所有来源均不可用')
-  const hasUpdate = used.some((r) => latest[r.key] && latest[r.key] !== current[r.key])
-  return { current, latest, hasUpdate, via, used: used.map((r) => r.key) }
+}
+
+// 探 Geo 规则集有没有新版:MetaCubeX sing 分支最近一次提交 对比本地上次下载时记下的版本。
+// 本地没记过、或记的是以前官方来源的版本号(不可比)就当有新版;探不到上游也当有新版——
+// 不知道新旧,只能让用户能更一次。返回 { current, latest, hasUpdate, via, used, source }。
+export const checkGeoUpdate = async (ctx, paths, { fetchImpl = globalThis.fetch, timeoutMs = 8000 } = {}) => {
+  const [state, used] = await Promise.all([readJsonFile(ctx, paths.geoUpdateStatePath, {}), usedGeoRepos(ctx, paths)])
+  const current = state && state.source === RULESET_SOURCE ? state.versions || {} : {}
+  let probe = null
+  try {
+    probe = await fetchMetacubexVersion(fetchImpl, { timeoutMs })
+  } catch {
+    probe = null
+  }
+  const latest = probe ? Object.fromEntries(used.map((r) => [r.key, probe.latest])) : {}
+  const hasUpdate = !probe || used.some((r) => latest[r.key] !== current[r.key])
+  return { current, latest, hasUpdate, via: probe ? probe.via : 'unknown', used: used.map((r) => r.key), source: RULESET_SOURCE }
 }
 
 // Geo 规则集刷新:把当前配置里所有本地规则集按所选通道重新下载一遍(全部下完再落盘,
@@ -200,6 +210,7 @@ export const checkGeoUpdate = async (ctx, paths, { fetchImpl = globalThis.fetch,
 // versions 是这次下到的上游 tag(传入 latest 就直接记;没传就自己探一次,探不到留空,
 // 下次检查会当作"不知道新旧"),调用方把它写进 geo-update.json 当"当前版本"。
 export const refreshRulesets = async (ctx, paths, { fetchImpl = globalThis.fetch, channel = 'auto', latest = null } = {}) => {
+  const src = RULESET_SOURCE
   let config
   try {
     config = JSON.parse(await ctx.readFile(paths.configPath))
@@ -211,7 +222,7 @@ export const refreshRulesets = async (ctx, paths, { fetchImpl = globalThis.fetch
   let versions = latest && typeof latest === 'object' ? { ...latest } : null
   if (!versions) {
     try {
-      versions = (await checkGeoUpdate(ctx, paths, { fetchImpl, channel })).latest
+      versions = (await checkGeoUpdate(ctx, paths, { fetchImpl })).latest
     } catch {
       versions = {}
     }
@@ -232,11 +243,16 @@ export const refreshRulesets = async (ctx, paths, { fetchImpl = globalThis.fetch
     await ctx.writeFileBinary(entry.path, data)
     updated.push(entry.tag)
   }
+  // 全部下成功才算这个目录属于该来源(部分失败时混着新旧,标记留旧的,下次部署会整体重下)
+  if (entries.length && !failed.length) {
+    const dir = entries[0].path.slice(0, entries[0].path.lastIndexOf('/'))
+    if (dir) await ctx.writeFile(`${dir}/${SOURCE_MARKER}`, `${src}\n`)
+  }
   // 有失败的仓库就不记它的版本:文件还是旧的,记了新 tag 下次检查会误判"已是最新"
   for (const repo of GEO_REPOS) {
     if (failed.some((f) => f.tag.startsWith(repo.prefix))) delete versions[repo.key]
   }
-  return { updated, failed, total: entries.length, versions }
+  return { updated, failed, total: entries.length, versions, source: src }
 }
 
 export const readJsonFile = async (ctx, path, fallback = {}) => {

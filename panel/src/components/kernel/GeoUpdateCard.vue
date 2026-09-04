@@ -157,8 +157,11 @@ const lastText = computed(() => (status.value?.lastAt ? dayjs(status.value.lastA
 const GEO_REPOS = ['geosite', 'geoip'] as const
 // 「geosite 20260831141734 · geoip 20260812」;一个都没有就是未知(老安装没记过)
 const versionText = (v?: OpenboxGeoVersions | null) => {
-  const parts = GEO_REPOS.filter((k) => v?.[k]).map((k) => `${k} ${v?.[k]}`)
-  return parts.length ? parts.join(' · ') : t('geoUpdateUnknown')
+  const present = GEO_REPOS.filter((k) => v?.[k])
+  if (!present.length) return t('geoUpdateUnknown')
+  // geosite / geoip 现在来自同一个仓库、记同一个版本号(提交日期 + 短 sha),相同就只显示一次
+  const distinct = new Set(present.map((k) => v?.[k]))
+  return distinct.size === 1 ? String(v?.[present[0]]) : present.map((k) => `${k} ${v?.[k]}`).join(' · ')
 }
 
 const load = async () => {

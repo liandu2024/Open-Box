@@ -322,7 +322,7 @@ const zhTW: LANG_MESSAGE = {
   obUpdateCheckFailed: '檢查更新失敗:{message}',
   obUpdatePlanSaved: '自動更新計劃已儲存。',
   geoUpdateTitle: 'Geosite / GeoIP 更新',
-  geoUpdateDescription: '把目前設定用到的規則集全部重新下載一遍;有更新時自動重啟核心讓新規則生效。',
+  geoUpdateDescription: '規則集來自 MetaCubeX/meta-rules-dat(每天更新,含 gfw 被牆網域)。把目前設定用到的規則集全部重新下載一遍;有更新時自動重啟核心讓新規則生效。',
   geoUpdateCount: '規則集數量',
   geoUpdateLast: '上次更新',
   geoUpdateLastOk: '成功 {count} 個',

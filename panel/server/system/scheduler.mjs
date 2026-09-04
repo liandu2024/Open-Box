@@ -33,7 +33,7 @@ export const runScheduledTasks = async ({ store, ctx, paths, fetchImpl = globalT
     if (due) {
       const channel = geo.channel || 'auto'
       try {
-        const check = await checkGeoUpdate(ctx, paths, { fetchImpl, channel })
+        const check = await checkGeoUpdate(ctx, paths, { fetchImpl })
         if (!check.hasUpdate) {
           state.geoLastAt = now.toISOString()
           log(`[schedule] geo rulesets up to date (${Object.values(check.latest).join(', ')})`)
@@ -47,7 +47,7 @@ export const runScheduledTasks = async ({ store, ctx, paths, fetchImpl = globalT
           state.geoLastAt = now.toISOString()
           const versions = result.updated.length ? { ...(previous.versions || {}), ...result.versions } : previous.versions || {}
           await writeJsonFile(ctx, paths.geoUpdateStatePath, {
-            lastAt: state.geoLastAt, updated: result.updated, failed: result.failed, restarted, source: 'schedule', channel, versions,
+            lastAt: state.geoLastAt, updated: result.updated, failed: result.failed, restarted, trigger: 'schedule', channel, versions, source: result.source,
           })
           log(`[schedule] geo rulesets: ${result.updated.length} updated, ${result.failed.length} failed`)
         }

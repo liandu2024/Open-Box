@@ -111,11 +111,13 @@ test('POST /rulesets/refresh:按配置里的本地规则集重新下载,记录�
 })
 
 // Geo 上游:HEAD releases/latest 给 302 + tag;.srs 下载给字节。记下所有 GET 过的地址
-const geoFetch = (tags = { 'sing-geosite': '20260831141734', 'sing-geoip': '20260812' }, urls = []) => async (url, init = {}) => {
-  if (init.method === 'HEAD') {
-    const repo = /SagerNet\/(sing-[a-z]+)\/releases/.exec(url)?.[1]
-    if (!repo || !tags[repo]) throw new Error('offline')
-    return { status: 302, headers: new Map([['location', `https://github.com/SagerNet/${repo}/releases/tag/${tags[repo]}`]]), url: '' }
+// 规则集只有 MetaCubeX 一个来源:版本 = sing 分支最近一次提交(日期 + 短 sha),走 api.github.com;
+// 文件走 raw.githubusercontent.com(镜像加前缀)
+const META_VERSION = '2026-09-04 8d48edb4'
+const geoFetch = (commit = { sha: '8d48edb493bc1234', date: '2026-09-04T00:16:34Z' }, urls = []) => async (url) => {
+  if (url.startsWith('https://api.github.com/repos/MetaCubeX/meta-rules-dat/commits/sing')) {
+    if (!commit) throw new Error('offline')
+    return { ok: true, status: 200, json: async () => ({ sha: commit.sha, commit: { committer: { date: commit.date } } }) }
   }
   urls.push(url)
   return { ok: true, status: 200, arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer }
@@ -128,12 +130,12 @@ test('GET /rulesets/check:本地没记过版本 → 有新版;记过且相同 �
   try {
     let r = await (await fetch(`${base}/api/openbox/rulesets/check`)).json()
     assert.equal(r.hasUpdate, true)
-    assert.deepEqual(r.latest, { geosite: '20260831141734' })
+    assert.deepEqual(r.latest, { geosite: META_VERSION })
     assert.deepEqual(r.used, ['geosite'])
-    await ctx.writeFile(paths.geoUpdateStatePath, JSON.stringify({ versions: { geosite: '20260831141734' } }))
+    await ctx.writeFile(paths.geoUpdateStatePath, JSON.stringify({ source: 'metacubex', versions: { geosite: META_VERSION } }))
     r = await (await fetch(`${base}/api/openbox/rulesets/check`)).json()
     assert.equal(r.hasUpdate, false)
-    assert.deepEqual(r.current, { geosite: '20260831141734' })
+    assert.deepEqual(r.current, { geosite: META_VERSION })
     const bad = await fetch(`${base}/api/openbox/rulesets/check?channel=x`)
     assert.equal(bad.status, 400)
   } finally {
@@ -156,11 +158,11 @@ test('POST /rulesets/refresh {channel:mirror}:只走镜像下载,并把上游 ta
     const r = await (await fetch(`${base}/api/openbox/rulesets/refresh`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ channel: 'mirror' }) })).json()
     assert.equal(r.ok, true)
     assert.deepEqual(r.updated, ['geosite-cn', 'geoip-cn'])
-    assert.deepEqual(r.versions, { geosite: '20260831141734', geoip: '20260812' })
+    assert.deepEqual(r.versions, { geosite: META_VERSION, geoip: META_VERSION })
     // 安装时用的镜像排最前,且没有直连
     assert.ok(urls.every((u) => u.startsWith('https://gh-proxy.com/https://raw.githubusercontent.com/')), urls.join('\n'))
     const st = await (await fetch(`${base}/api/openbox/rulesets/refresh/status`)).json()
-    assert.deepEqual(st.versions, { geosite: '20260831141734', geoip: '20260812' })
+    assert.deepEqual(st.versions, { geosite: META_VERSION, geoip: META_VERSION })
     const check = await (await fetch(`${base}/api/openbox/rulesets/check`)).json()
     assert.equal(check.hasUpdate, false)
   } finally {
@@ -185,7 +187,7 @@ test('定时器:到点且未做过 → 先探上游,有新版才下并记录;同
   const state = JSON.parse(await ctx.readFile(paths.scheduleStatePath))
   assert.ok(state.geoLastAt)
   const geo = JSON.parse(await ctx.readFile(paths.geoUpdateStatePath))
-  assert.deepEqual(geo.versions, { geosite: '20260831141734' })
+  assert.deepEqual(geo.versions, { geosite: META_VERSION })
   // 8 天后再到点:上游没变 → 不下载,但 lastAt 前移
   const later = new Date(2026, 8, 11, 4, 5)
   await runScheduledTasks({ store, ctx, paths, fetchImpl, now: later })
@@ -211,4 +213,51 @@ test('定时器:Open-Box 自身更新按「每隔几天」探,间隔内不重复
   // 第 8 天到点:再探
   await runScheduledTasks({ store, ctx, paths, fetchImpl, now: new Date(2026, 8, 11, 4, 5) })
   assert.equal(probes, 2)
+})
+
+test('上次记的是以前官方来源的版本号(没有 source 字段)→ 不可比,当作有新版;刷新后记下来源与提交版本', async () => {
+  const config = { route: { rule_set: [
+    { type: 'local', tag: 'geosite-gfw', path: `${paths.rulesetDir}/geosite-gfw.srs` },
+    { type: 'local', tag: 'geoip-cn', path: `${paths.rulesetDir}/geoip-cn.srs` },
+  ] } }
+  const ctx = createMockContext({ files: {
+    [paths.configPath]: JSON.stringify(config),
+    [paths.geoUpdateStatePath]: JSON.stringify({ versions: { geosite: '20260831141734', geoip: '20260812' } }),
+  } })
+  const urls = []
+  const { base, close } = await startApp(ctx, { getProfile: () => ({}) }, geoFetch(undefined, urls))
+  try {
+    const check = await (await fetch(`${base}/api/openbox/rulesets/check`)).json()
+    assert.equal(check.source, 'metacubex')
+    assert.equal(check.hasUpdate, true)
+    assert.deepEqual(check.current, {}, '官方来源记的版本不能拿来比')
+    assert.deepEqual(check.latest, { geosite: META_VERSION, geoip: META_VERSION })
+
+    const refresh = await (await fetch(`${base}/api/openbox/rulesets/refresh`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ channel: 'direct' }) })).json()
+    assert.equal(refresh.ok, true)
+    assert.deepEqual(refresh.updated, ['geosite-gfw', 'geoip-cn'])
+    assert.ok(urls.includes('https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/gfw.srs'))
+    assert.ok(urls.includes('https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geoip/cn.srs'))
+    const state = JSON.parse(ctx.files[paths.geoUpdateStatePath])
+    assert.equal(state.source, 'metacubex')
+    assert.deepEqual(state.versions, { geosite: META_VERSION, geoip: META_VERSION })
+    assert.equal((ctx.files[`${paths.rulesetDir}/.source`] || '').trim(), 'metacubex')
+    const again = await (await fetch(`${base}/api/openbox/rulesets/check`)).json()
+    assert.equal(again.hasUpdate, false)
+  } finally {
+    await close()
+  }
+})
+
+test('探不到上游提交(api.github.com 不通)→ 当作有新版,让用户能更一次', async () => {
+  const config = { route: { rule_set: [{ type: 'local', tag: 'geosite-cn', path: `${paths.rulesetDir}/geosite-cn.srs` }] } }
+  const ctx = createMockContext({ files: { [paths.configPath]: JSON.stringify(config) } })
+  const { base, close } = await startApp(ctx, { getProfile: () => ({}) }, geoFetch(null))
+  try {
+    const r = await (await fetch(`${base}/api/openbox/rulesets/check`)).json()
+    assert.equal(r.hasUpdate, true)
+    assert.equal(r.via, 'unknown')
+  } finally {
+    await close()
+  }
 })
