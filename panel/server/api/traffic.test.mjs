@@ -157,7 +157,8 @@ test('readLocalAddresses:问 netifd 哪个逻辑接口占着这个设备,eth0 �
   const { readLocalAddresses } = await import('../system/local-subnets.mjs')
   const ctx = createMockContext({ execResults: {
     'ip -4 -o addr': { code: 0, stdout: '2: eth0    inet 192.168.3.35/24 brd 192.168.3.255 scope global eth0\n3: br-lan    inet 10.0.0.1/24 brd 10.0.0.255 scope global br-lan\n' },
-    'ubus call network.interface dump': { code: 0, stdout: JSON.stringify({ interface: [{ interface: 'wan', l3_device: 'eth0', device: 'eth0' }, { interface: 'lan', l3_device: 'br-lan', device: 'br-lan' }] }) },
+    // wan6 和 wan 共用 eth0(顺序故意把 wan6 放前面):要留 wan
+    'ubus call network.interface dump': { code: 0, stdout: JSON.stringify({ interface: [{ interface: 'wan6', l3_device: 'eth0', device: 'eth0' }, { interface: 'wan', l3_device: 'eth0', device: 'eth0' }, { interface: 'lan', l3_device: 'br-lan', device: 'br-lan' }] }) },
   } })
   const out = await readLocalAddresses(ctx)
   assert.deepEqual(out, [

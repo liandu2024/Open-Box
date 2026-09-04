@@ -176,7 +176,11 @@ export const parseInterfaceDump = (text) => {
     const list = JSON.parse(String(text || '')).interface || []
     for (const it of list) {
       const dev = it && (it.l3_device || it.device)
-      if (dev && it.interface) map.set(dev, String(it.interface))
+      if (!dev || !it.interface) continue
+      const name = String(it.interface)
+      // wan 和 wan6 共用一个设备:留不带 6 的那个(v4 那份)
+      const prev = map.get(dev)
+      if (!prev || (/6$/.test(prev) && !/6$/.test(name))) map.set(dev, name)
     }
   } catch {
     // 不是 JSON 就当没有
