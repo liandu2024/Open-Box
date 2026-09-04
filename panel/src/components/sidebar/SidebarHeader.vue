@@ -10,7 +10,13 @@
       v-if="!isSidebarCollapsed"
       class="flex min-w-0 flex-col leading-tight"
     >
-      <span class="text-base font-semibold">Open-Box</span>
+      <!-- 产品标识用图片(src/assets/logo.png,已抠掉背景)。深色主题下墨迹是深藏青,
+           在 forest 底色上几乎看不见,靠 main.css 里的滤镜整体翻亮,绿橙两个点缀色不变 -->
+      <img
+        :src="logoUrl"
+        class="app-logo h-6 w-auto self-start"
+        alt="Open-Box"
+      />
       <span
         class="text-base-content/60 truncate font-mono text-[11px]"
         :title="openboxBuiltAt"
@@ -45,6 +51,7 @@
 </template>
 
 <script setup lang="ts">
+import logoUrl from '@/assets/logo.png'
 import { fetchUpdateStatus } from '@/api/openbox'
 import { isSidebarCollapsed } from '@/store/settings'
 import { computed, onMounted, ref } from 'vue'
