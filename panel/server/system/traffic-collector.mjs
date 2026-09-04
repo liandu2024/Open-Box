@@ -6,12 +6,15 @@
 // 比出增量,按"当天 / 节点 / 域名或 IP"三个维度累加,攒够 flushMs 一次写进 sqlite。
 //
 // 精度说明(前端"未采样到的短连接"那一行就是这么来的):
-// - 当天总量用内核的 uploadTotal/downloadTotal 增量,是精确的;
+// - 当天总量用内核的 uploadTotal/downloadTotal 增量,再减去采样到的 dnsmasq 回环部分
+//   (见下面 applySnapshot 里的说明);
 // - 节点/域名的分量只能从连接表逐条比增量,存活不到一个采样周期的连接根本看不见,
 //   连接关闭前最后不到一个周期的字节也会丢。总量 − 各节点之和 = 这部分误差。
 //
 // 方向:clash API 的 upload = 发往外网的字节(出口),download = 从外网收到的(入口)。
 // 库里和接口里一律叫 up/down,前端再翻成 入口/出口。
+
+import { DNSMASQ_OUTBOUND_TAG } from '../engine/config.mjs'
 
 const pad2 = (n) => String(n).padStart(2, '0')
 
@@ -238,9 +241,18 @@ export const createTrafficCollector = ({
     }
 
     // 内核重启计数会归零:比上次小就当作从 0 起算
-    bump(day, 'total', '', up >= lastUp ? up - lastUp : up, down >= lastDown ? down - lastDown : down, 0)
+    const totalUp = up >= lastUp ? up - lastUp : up
+    const totalDown = down >= lastDown ? down - lastDown : down
     lastUp = up
     lastDown = down
+
+    // 经 dnsmasq 回环出站的那些不算流量:它是绑在 lo 上的专用直连,只把发往 tun 网段
+    // 53 端口的 DNS 查询交回路由器自己的 dnsmasq(见 engine/routing.mjs),字节根本没
+    // 出过路由器。dnsmasq 接管模式下局域网每一次域名解析都从这里过,量还不小——正式
+    // 路由器上一天 4.9 万条连接、14.8 GB,占了当天"出口"的三分之二,全是假的。
+    // 内核的 uploadTotal/downloadTotal 把它算在内,所以总量也要把采样到的这部分减掉。
+    let loopUp = 0
+    let loopDown = 0
 
     const alive = new Set()
     for (const c of list) {
@@ -261,6 +273,11 @@ export const createTrafficCollector = ({
       const conns = isNew ? 1 : 0
       if (!du && !dd && !conns) continue
       const node = leafOf(c.chains)
+      if (node === DNSMASQ_OUTBOUND_TAG) {
+        loopUp += du
+        loopDown += dd
+        continue
+      }
       const host = hostOf(c.metadata)
       const client = clientOf(c.metadata)
       bump(day, 'total', '', 0, 0, conns)
@@ -271,6 +288,11 @@ export const createTrafficCollector = ({
       bump(day, 'client_node', client + PAIR_SEP + node, du, dd, conns)
       bump(day, 'node_host', node + PAIR_SEP + host, du, dd, conns)
     }
+    // 总量减掉回环那部分。只能减"采样到的"——活不满一个采样周期的回环查询仍留在内核
+    // 计数器里,和其它短连接一样进不了明细,这是采样精度的固有取舍(见文件开头)。
+    // 连接数不用另外扣:回环的连接在上面 continue 掉了,本来就没进 total 的计数
+    bump(day, 'total', '', Math.max(0, totalUp - loopUp), Math.max(0, totalDown - loopDown), 0)
+
     for (const id of seen.keys()) {
       if (!alive.has(id)) seen.delete(id)
     }

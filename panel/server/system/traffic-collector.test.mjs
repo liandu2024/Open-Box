@@ -172,3 +172,23 @@ test('sqlite store:交叉表按前一维 / 后一维查构成,含空串 key;交�
   assert.deepEqual(store.drill('2026-09-02', 'client', '10.0.0.9', 'host', 10), { rows: [], count: 0, sum: { up: 0, down: 0 } })
   assert.deepEqual(store.day('2026-09-02', 'client', 10), [{ key: '10.0.0.9', up: 9, down: 9, conns: 1 }])
 })
+
+test('dnsmasq 回环出站不算流量:不进任何维度,总量也把它减掉', () => {
+  const store = fakeStore()
+  const c = createTrafficCollector({ store, now: () => at })
+  const dnsConn = (id, up, down) => ({ id, upload: up, download: down, chains: ['dnsmasq'], metadata: { sourceIP: '10.0.0.9', destinationIP: '127.0.0.1' } })
+  c.applySnapshot({ uploadTotal: 0, downloadTotal: 0, connections: [] }, at)
+  // 内核总量涨了 1000/500,其中 700/300 是回环的 DNS,另有一条真实连接 300/200
+  c.applySnapshot({ uploadTotal: 1000, downloadTotal: 500, connections: [dnsConn('d1', 700, 300), conn('a', 300, 200)] }, at)
+  c.flush()
+  const rows = store.rows
+  const total = rows.find((r) => r.kind === 'total')
+  assert.equal(total.up, 300, '总量要减掉回环的 700')
+  assert.equal(total.down, 200)
+  assert.equal(total.conns, 1, '回环连接不计入连接数')
+  assert.ok(!rows.some((r) => String(r.key).includes('dnsmasq')), '回环不进节点 / 交叉表')
+  assert.ok(!rows.some((r) => r.kind === 'client_host' && r.key.includes('127.0.0.1')), '回环不进交叉表')
+  assert.equal(rows.find((r) => r.kind === 'node' && r.key === '节点A').up, 300)
+  assert.equal(rows.filter((r) => r.kind === 'client' && r.key === '10.0.0.9').length, 1, '终端只剩真实连接那一条')
+  assert.equal(rows.find((r) => r.kind === 'client' && r.key === '10.0.0.9').up, 300)
+})
