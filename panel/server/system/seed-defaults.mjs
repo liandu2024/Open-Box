@@ -32,9 +32,11 @@ export const loadStorageDefaults = (dir = DEFAULTS_DIR) => {
 }
 
 // 随包的默认档案(server/defaults/profile-defaults.json):目前只带 routing——一套现成的
-// 目标分流(AI / Youtube / Google / Microsoft / Apple / Games / 国内 + 兜底「其他」),取自
-// 开发路由器上调好的那份,新装用户加完订阅、启动内核就能用。只在全新安装时写入
-// (还没有任何 config/*,也没有 openbox/profile),已经在用的安装一律不动。
+// 目标分流(AI / Youtube / TikTok / Netflix / Github / Google / Microsoft / Apple / Games /
+// 国外 / 国内 + 兜底「其他」),取自正式路由器上长期在用的那份。兜底走直连、「国外」带
+// gfw 被墙域名表:没被站点集挑走的默认不占节点流量。各站点集的出口存的是占位符
+// 'proxy'(= 成员表里的第一个节点组)或 'direct',新装机器上没有作者那些节点组也能用。
+// 只在全新安装时写入(还没有任何 config/*,也没有 openbox/profile),已经在用的安装一律不动。
 export const PROFILE_KEY = 'openbox/profile'
 
 export const loadProfileDefaults = (dir = DEFAULTS_DIR) => {

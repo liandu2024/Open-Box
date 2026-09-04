@@ -49,7 +49,11 @@ test('全新安装同时写入默认档案(目标分流);已有 openbox/profile 
   for (const n of ['AI', 'Youtube', 'Google', 'Microsoft', 'Apple', 'Games', '国内']) assert.ok(names.includes(n), n)
   assert.equal(defaults.routing.fallbackName, '其他')
   // 不带任何个人域名
-  for (const p of defaults.routing.policies) for (const d of p.domainSuffix || []) assert.ok(!/angeworld|opendoor/.test(d), d)
+  // 默认档案取自作者自己的路由器,发出去之前必须把个人域名摘干净
+  const PERSONAL = /angeworld|opendoor|superdoor|wanhouse|wan\.family|ok1248/
+  for (const p of defaults.routing.policies)
+    for (const d of [...(p.domain || []), ...(p.domainSuffix || []), ...(p.domainKeyword || [])])
+      assert.ok(!PERSONAL.test(d), d)
   // 全新:写入
   const fresh = new Map()
   const r1 = seedDefaultStorage({ countConfigEntries: () => 0, insert: (k, v) => fresh.set(k, v), hasKey: (k) => fresh.has(k) })

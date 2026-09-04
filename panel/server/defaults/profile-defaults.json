@@ -41,7 +41,7 @@
         "id": "policy-1788339689004",
         "name": "AI",
         "icon": "brand:openai-light",
-        "default": "",
+        "default": "proxy",
         "rulesets": [
           "geosite-category-ai-!cn"
         ],
@@ -54,8 +54,50 @@
         "id": "policy-1788349674530",
         "name": "Youtube",
         "icon": "brand:youtube",
+        "default": "proxy",
         "rulesets": [
           "geosite-youtube"
+        ],
+        "domain": [],
+        "domainSuffix": [],
+        "domainKeyword": [],
+        "ipCidr": []
+      },
+      {
+        "id": "policy-1788503446572",
+        "name": "TikTok",
+        "icon": "brand:tiktok",
+        "default": "proxy",
+        "rulesets": [
+          "geosite-tiktok",
+          "geosite-tiktok@!cn"
+        ],
+        "domain": [],
+        "domainSuffix": [],
+        "domainKeyword": [],
+        "ipCidr": []
+      },
+      {
+        "id": "policy-1788503496373",
+        "name": "Netflix",
+        "icon": "brand:netflix-mono",
+        "default": "proxy",
+        "rulesets": [
+          "geosite-netflix",
+          "geoip-netflix"
+        ],
+        "domain": [],
+        "domainSuffix": [],
+        "domainKeyword": [],
+        "ipCidr": []
+      },
+      {
+        "id": "policy-1788467369681",
+        "name": "Github",
+        "icon": "brand:github-mono",
+        "default": "proxy",
+        "rulesets": [
+          "geosite-github"
         ],
         "domain": [],
         "domainSuffix": [],
@@ -66,7 +108,7 @@
         "id": "policy-1788338176669",
         "name": "Google",
         "icon": "brand:google",
-        "default": "",
+        "default": "proxy",
         "rulesets": [
           "geosite-google"
         ],
@@ -79,7 +121,7 @@
         "id": "policy-1788339749192",
         "name": "Microsoft",
         "icon": "brand:microsoft",
-        "default": "",
+        "default": "proxy",
         "rulesets": [
           "geosite-microsoft"
         ],
@@ -92,6 +134,7 @@
         "id": "policy-1788367850896",
         "name": "Apple",
         "icon": "brand:apple-light",
+        "default": "direct",
         "rulesets": [
           "geosite-apple"
         ],
@@ -104,6 +147,7 @@
         "id": "policy-1788368131895",
         "name": "Games",
         "icon": "misc:game-soft",
+        "default": "proxy",
         "rulesets": [
           "geosite-steam",
           "geosite-sony"
@@ -114,13 +158,36 @@
         "ipCidr": []
       },
       {
+        "id": "policy-1788494862755",
+        "name": "国外",
+        "icon": "globe:earth-americas",
+        "default": "proxy",
+        "rulesets": [
+          "geosite-gfw",
+          "geoip-cloudflare",
+          "geoip-facebook",
+          "geoip-cloudfront",
+          "geoip-fastly",
+          "geoip-google",
+          "geoip-netflix",
+          "geoip-telegram",
+          "geoip-tor",
+          "geoip-twitter"
+        ],
+        "domain": [],
+        "domainSuffix": [],
+        "domainKeyword": [],
+        "ipCidr": []
+      },
+      {
         "id": "policy-1788341212171",
         "name": "国内",
         "icon": "misc:shield",
-        "default": "",
+        "default": "direct",
         "rulesets": [
           "geosite-cn",
-          "geoip-cn"
+          "geoip-cn",
+          "geoip-private"
         ],
         "domain": [],
         "domainSuffix": [],
@@ -131,7 +198,7 @@
     "adBlock": false,
     "adRuleset": "geosite-category-ads-all",
     "regionId": "cn",
-    "fallbackDefault": "proxy",
+    "fallbackDefault": "direct",
     "fallbackName": "其他",
     "fallbackIcon": "globe:generic"
   }
