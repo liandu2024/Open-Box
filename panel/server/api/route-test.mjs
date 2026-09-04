@@ -136,9 +136,10 @@ export const registerRouteTestRoutes = (app, { store, ctx, paths, fetchImpl = gl
       }
     }
 
-    // 1b. 内核配置是不是旧的:DoH 的 detour 顺着内核里当前的选择下钻,落到直连出站就说明
-    //     该站点集已经切到直连了,重启内核后 DNS 规则会改成本地解析。反过来(dns-direct 但
-    //     站点集已切到代理)同样标出来。
+    // 1b. 内核配置是不是旧的:配置里这条 DNS 决策是"直连解析"还是"代理解析",是生成配置
+    //     那一刻按站点集走哪定死的。拿它和内核里此刻的选择比——两边不一样就说明这份
+    //     dns.rules 过期了。正常情况下面板在代理页改完出口就会在后台重新生成(见
+    //     server/index.mjs),所以这里标出来的只有那几秒窗口、或者后台那次生成失败了。
     if (out.dns && out.dns.server) {
       try {
         const selections = await fetchSelections(fetchImpl, secret)
@@ -150,15 +151,19 @@ export const registerRouteTestRoutes = (app, { store, ctx, paths, fetchImpl = gl
         }
         const directTag = builtinTags(store.getGroups ? store.getGroups() : []).direct
         const detour = out.dns.server.detour
-        if (detour) {
-          const leaf = leafOf(detour)
-          out.dns.runtimeLeaf = leaf
-          if (leaf === directTag) out.dns.stale = 'direct'
-        } else if (out.dns.ruleIndex !== null && out.dns.ruleIndex !== undefined) {
-          // dns-direct 规则来自某个站点集:看它现在是否已切到代理
-          const rule = (config.dns.rules || [])[out.dns.ruleIndex] || {}
-          const policy = (routingConf.activePolicies || []).find((p) => (rule.rule_set && p.rulesets.join() === [].concat(rule.rule_set).join()) || (rule.domain_suffix && p.domainSuffix.join() === [].concat(rule.domain_suffix).join()))
-          if (policy && Object.prototype.hasOwnProperty.call(selections, policy.name) && leafOf(policy.name) !== directTag) out.dns.stale = 'proxy'
+        if (detour) out.dns.runtimeLeaf = leafOf(detour)
+        // 这条决策归谁管:一条规则都没命中就是兜底,命中了就按条件反查是哪个站点集写的
+        const hitRule = out.dns.ruleIndex === null || out.dns.ruleIndex === undefined
+          ? null
+          : (config.dns.rules || [])[out.dns.ruleIndex] || {}
+        const owner = hitRule
+          ? (routingConf.activePolicies || []).find((p) => (hitRule.rule_set && p.rulesets.join() === [].concat(hitRule.rule_set).join()) || (hitRule.domain_suffix && p.domainSuffix.join() === [].concat(hitRule.domain_suffix).join()))
+          : routingConf.fallback
+        if (owner && Object.prototype.hasOwnProperty.call(selections, owner.name)) {
+          // 带 detour 的解析器 = 当时判成走代理;dns-direct / dns-local 没有 detour = 判成走直连
+          const baked = detour ? 'proxy' : 'direct'
+          const now = leafOf(owner.name) === directTag ? 'direct' : 'proxy'
+          if (now !== baked) out.dns.stale = now
         }
       } catch { /* 拿不到内核状态就不标 */ }
     }

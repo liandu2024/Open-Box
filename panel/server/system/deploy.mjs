@@ -3,6 +3,7 @@ import { validateConfigObject, attributeBadNodes } from './validate.mjs'
 import { restartService, stopService, serviceStatus } from './service.mjs'
 import { applyDnsTakeover, restoreDnsTakeover, dnsTakeoverBackupPath } from './dns-takeover.mjs'
 import { dnsmasqForwardDomains, normalizeRouting } from '../engine/routing-model.mjs'
+import { dnsPolicyClasses } from '../engine/dns.mjs'
 import { builtinTags } from '../engine/user-groups.mjs'
 import { applyPanelLanRule, applyDnsLanRule, applyIpv6Block, removeProxyRules, applyServerPortRules } from './firewall.mjs'
 import { ensureTlsKeypair } from './tls-keypair.mjs'
@@ -81,9 +82,22 @@ export const deployConfig = async (ctx, paths, { config, profile, userGroups, fe
     // 旁边放一份元数据给 init 脚本:开机时它要知道这份配置是不是 dnsmasq 分流模式
     // (要不要重新接管 dnsmasq)。以前靠在 config.json 里 grep 出站 tag,节点名撞上就误判。
     const dnsMode = (profile.dns && profile.dns.mode) || 'hijack'
+    // 站点集的成员表 = 兜底 selector 的成员(刚生成的这份配置里就有,不另算一遍)
+    const fallbackTag = normalizeRouting(profile?.routing).fallback.name
+    const fallbackSelector = (config.outbounds || []).find((o) => o.tag === fallbackTag)
+    const policyMembers = fallbackSelector ? fallbackSelector.outbounds : []
+    const builtin = builtinTags(userGroups || [])
     await ctx.writeFile(
       configMetaPath(paths),
-      JSON.stringify({ dnsMode, autoRedirect: Boolean(profile.tun && profile.tun.autoRedirect && dnsMode !== 'off'), generatedAt: new Date().toISOString() }, null, 2),
+      JSON.stringify({
+        dnsMode,
+        autoRedirect: Boolean(profile.tun && profile.tun.autoRedirect && dnsMode !== 'off'),
+        generatedAt: new Date().toISOString(),
+        // 这份 dns.rules 是按"谁走直连、谁走代理"定死的,把当时的判断和成员表一并存下来:
+        // 代理页改出口后要拿它比对,翻面了才重新生成(见 api/deploy-runner.mjs)
+        dnsPolicyMembers: policyMembers,
+        dnsPolicyClasses: dnsPolicyClasses(profile.routing, policyMembers, builtin, selections || {}),
+      }, null, 2),
     )
 
     // 5. DNS 接管
@@ -96,16 +110,9 @@ export const deployConfig = async (ctx, paths, { config, profile, userGroups, fe
     // 代理面能被逐条列出来时,只把那几个域名转给内核,其余交回路由器自己解析——
     // 直连的 DNS 就真的不经过 Open-Box 了。列不出来就照旧全局转发。
     // 成员表从刚生成的配置里取(兜底 selector 的成员就是那一份),不另算一遍。
-    const fallbackTag = normalizeRouting(profile?.routing).fallback.name
-    const fallbackSelector = (config.outbounds || []).find((o) => o.tag === fallbackTag)
     await applyDnsTakeover(ctx, paths, {
       mode: dnsMode,
-      forwardDomains: dnsmasqForwardDomains(
-        profile.routing,
-        fallbackSelector ? fallbackSelector.outbounds : [],
-        builtinTags(userGroups || []),
-        selections || {},
-      ),
+      forwardDomains: dnsmasqForwardDomains(profile.routing, policyMembers, builtin, selections || {}),
     })
 
     // 6. 防火墙

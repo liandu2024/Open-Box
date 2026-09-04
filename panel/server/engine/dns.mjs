@@ -24,6 +24,14 @@ const directServerFor = (profile, options) => {
   return { type: 'udp', tag: 'dns-direct', server }
 }
 
+// 代理侧的解析器:明文 DNS over TCP,detour 到某条代理线路。
+// 用 TCP 而不是 DoH:这台服务器的查询整段都封在代理隧道里,出了节点才是明文——路上没人
+// 看得见,再套一层 TLS 只是每次查询多一次握手。DoH 还有两处实打实的坏处:一是节点到
+// DoH 站点这一段偶尔被对端拒(实测 1.12.12.12 经香港节点 EOF、经美国节点正常),二是
+// 用域名形态的 DoH 地址会引出"解析 DoH 域名"的自举问题。TCP 而不是 UDP:UDP 经代理常被
+// 截断/丢包,TCP 的可靠性正好抵掉它多出来的那次握手。端口不写就是 53。
+const proxyServerFor = (server, tag, detour) => ({ type: 'tcp', tag, server, detour })
+
 // 劫持模式下局域网的查询根本到不了 dnsmasq,而本地主机名(DHCP 租约名、/etc/hosts、
 // *.lan)只有 dnsmasq 认得:这类名字交给 local(→ 路由器自己的 dnsmasq),其余一律不走
 // local。dnsmasq 转发模式不需要:客户端本来就先经过 dnsmasq。禁用模式 sing-box 不答 DNS。
@@ -67,7 +75,7 @@ export const buildDns = (profile, options = {}) => {
   const proxyHost = extractHost(profile.dns.proxy)
   // 代理侧的解析 detour 到兜底站点集「其他」:上面没被任何站点集挑走的域名,走哪条线路
   // 就用哪条线路解析,和各站点集各自 detour 到自己的 selector 是同一个道理。
-  const servers = [directServer, { type: 'https', tag: 'dns-proxy', server: proxyHost, detour: conf.fallback.name }]
+  const servers = [directServer, proxyServerFor(proxyHost, 'dns-proxy', conf.fallback.name)]
 
   // 本地主机名最前(劫持模式才有),然后是订阅和节点站点直连:它们的域名也用直连侧解析
   const rules = [...localRules]
@@ -81,11 +89,15 @@ export const buildDns = (profile, options = {}) => {
 
   // 每个站点集的域名怎么解析,看它此刻实际走哪:
   //   · 走直连 → dns-direct(本地/直连解析,国内站点才拿得到就近的 CDN 地址)
-  //   · 走代理 → 一台专属 DoH,detour 指向同名 selector,解析和流量同一条路
+  //   · 走代理 → 一台专属的 TCP 解析器,detour 指向同名 selector,解析和流量同一条路
   // "此刻走哪"优先用内核里当前的选择(options.selections:生成配置时从跑着的内核读
   // 出来的各 selector 的 now,顺着 now 一路下钻到叶子),内核没在跑时才退回档案里的默认。
-  // 这样重启内核会按用户在代理页选好的线路重新生成 DNS 规则;两次重启之间切换了
-  // 直连/代理,DNS 侧要等下次重启才跟上——这是配置层的取舍。
+  // 这一判断只在生成配置时做一次,之后就定死在 dns.rules 里了:代理页把某个站点集从
+  // 直连改成代理(或反过来),这份规则就过期了。所以每次部署都把这张"谁走直连、谁走代理"
+  // 的表落进 config.meta.json(见 system/deploy.mjs),代理页一改动就比对一次,真的翻面
+  // 了才在后台重新生成配置(见 index.mjs)——用户不用自己去点重启。
+  // 反过来,在代理线路之间换(香港 → 美国)不影响这张表:代理侧的解析器 detour 的是站点集
+  // 自己的 selector,换线路它跟着换,不用重新生成。
   const builtin = options.builtin || DEFAULT_BUILTIN
   const members = policyOutboundOptions(conf.outboundOptions, options.groupTags || [], builtin)
   const selections = options.selections && typeof options.selections === 'object' ? options.selections : {}
@@ -97,7 +109,7 @@ export const buildDns = (profile, options = {}) => {
       return
     }
     const tag = `dns-policy-${index}`
-    servers.push({ type: 'https', tag, server: proxyHost, detour: policy.name })
+    servers.push(proxyServerFor(proxyHost, tag, policy.name))
     rules.push(policyDnsRule(policy, tag))
   })
 
@@ -110,4 +122,20 @@ export const buildDns = (profile, options = {}) => {
     strategy,
     reverse_mapping: true,
   }
+}
+
+// 这次生成把每个站点集(以及兜底)判成了"直连解析"还是"代理解析"。落进 config.meta.json,
+// 下次代理页有人改出口时拿它比对:同一个名字两边不一样,说明磁盘上那份 dns.rules 已经
+// 过期,要重新生成配置(见 api/deploy-runner.mjs 的 dnsClassesFlipped)。
+// 只收有域名条件的站点集:只按 IP 分流的那些本来就不进 DNS 规则,改它不会让规则过期。
+export const dnsPolicyClasses = (routing, members = ['direct'], builtin = DEFAULT_BUILTIN, selections = {}) => {
+  const conf = normalizeRouting(routing)
+  const klass = (name, def) => (policyGoesDirect(name, def, members, builtin, selections) ? 'direct' : 'proxy')
+  const out = {}
+  for (const p of conf.activePolicies) {
+    if (!hasDomainCondition(p)) continue
+    out[p.name] = klass(p.name, p.default)
+  }
+  out[conf.fallback.name] = klass(conf.fallback.name, conf.fallback.default)
+  return out
 }

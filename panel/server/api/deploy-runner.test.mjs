@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { fetchSelections, resolveSelections } from './deploy-runner.mjs'
+import { fetchSelections, resolveSelections, dnsClassesFlipped } from './deploy-runner.mjs'
+import { createMockContext } from '../system/context.mjs'
+import { createPaths } from '../system/paths.mjs'
+import { configMetaPath } from '../system/deploy.mjs'
 
 const memStore = () => {
   let snap = {}
@@ -71,4 +74,27 @@ test('选择即默认:代理页挑的出口写进档案当站点集 / 兜底的 
   // 空选择 / 没有 setProfile 的 store 都安静返回
   assert.equal(persistSelectionsAsDefaults(store2, {}), false)
   assert.equal(persistSelectionsAsDefaults({ getProfile: () => profile2 }, { '国外': 'x' }), false)
+})
+
+test('dnsClassesFlipped:站点集在直连 / 代理之间翻面才算 DNS 规则过期,换代理线路不算', async () => {
+  const paths = createPaths('/opt/open-box')
+  const routing = { fallbackDefault: 'proxy', policies: [{ name: '国内', default: 'direct', rulesets: ['geosite-cn'] }] }
+  const store = { getProfile: () => ({ routing }), getGroups: () => [] }
+  const meta = {
+    dnsMode: 'dnsmasq',
+    dnsPolicyMembers: ['直连', '香港-自动', '美国-自动', '拒绝'],
+    dnsPolicyClasses: { 国内: 'direct', 其他: 'proxy' },
+  }
+  const ctx = createMockContext({ files: { [configMetaPath(paths)]: JSON.stringify(meta) } })
+  // 兜底从香港换到美国:两边都还是"走代理",dns.rules 照旧能用,不重新生成
+  assert.equal(await dnsClassesFlipped(ctx, paths, store, { 其他: '美国-自动' }), false)
+  // 兜底切到直连:翻面了,磁盘上那份 dns.rules 的 final 还指着代理侧解析器
+  assert.equal(await dnsClassesFlipped(ctx, paths, store, { 其他: '直连' }), true)
+  // 走直连的站点集切到节点组:同样翻面
+  assert.equal(await dnsClassesFlipped(ctx, paths, store, { 国内: '香港-自动' }), true)
+  // 档案里新加、还没部署过的站点集不算数(不能顺带把没生效的设置应用出去)
+  const store2 = { getProfile: () => ({ routing: { ...routing, policies: [...routing.policies, { name: '新加的', default: 'direct', rulesets: ['geosite-x'] }] } }), getGroups: () => [] }
+  assert.equal(await dnsClassesFlipped(ctx, paths, store2, { 其他: '香港-自动' }), false)
+  // 没有元数据(还没部署过 / 老版本升上来)就不动
+  assert.equal(await dnsClassesFlipped(createMockContext({}), paths, store, { 其他: '直连' }), false)
 })

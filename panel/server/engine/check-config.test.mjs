@@ -41,7 +41,7 @@ test('生成的配置通过 sing-box check(全协议 + wireguard + DNS 分流 + 
     const { groups } = groupNodesByRegion(renamed)
     const profile = {
       ipv6: true,
-      dns: { split: true, direct: '223.5.5.5', proxy: 'https://1.1.1.1/dns-query' },
+      dns: { split: true, direct: '223.5.5.5', proxy: '1.1.1.1' },
       routing: { proxyTag: 'PROXY', categories: [{ ruleset: 'geosite-geolocation-!cn', target: groups[0]?.name || 'PROXY' }], directRulesets: ['geosite-cn', 'geoip-cn'], adBlock: true, adRuleset: 'geosite-category-ads-all', fallback: 'PROXY' },
       rulesetDir: dir,
       clashApiSecret: 'testsecret',
@@ -103,7 +103,7 @@ test('生成的配置通过 sing-box check(sing-box JSON 订阅 → wireguard en
     const { groups } = groupNodesByRegion(renamed)
     const profile = {
       ipv6: true,
-      dns: { split: true, direct: '223.5.5.5', proxy: 'https://1.1.1.1/dns-query' },
+      dns: { split: true, direct: '223.5.5.5', proxy: '1.1.1.1' },
       routing: { proxyTag: 'PROXY', categories: [{ ruleset: 'geosite-geolocation-!cn', target: groups[0]?.name || 'PROXY' }], directRulesets: ['geosite-cn', 'geoip-cn'], adBlock: false, fallback: 'PROXY' },
       rulesetDir: dir,
       clashApiSecret: 'testsecret',
@@ -138,7 +138,7 @@ test('生成的配置通过 sing-box check(dns.mode=dnsmasq;仅 dns-in 入站被
     const { groups } = groupNodesByRegion(renamed)
     const profile = {
       ipv6: true,
-      dns: { split: true, mode: 'dnsmasq', direct: '223.5.5.5', proxy: 'https://1.1.1.1/dns-query' },
+      dns: { split: true, mode: 'dnsmasq', direct: '223.5.5.5', proxy: '1.1.1.1' },
       routing: { proxyTag: 'PROXY', categories: [{ ruleset: 'geosite-geolocation-!cn', target: groups[0]?.name || 'PROXY' }], directRulesets: ['geosite-cn', 'geoip-cn'], adBlock: true, adRuleset: 'geosite-category-ads-all', fallback: 'PROXY' },
       rulesetDir: dir,
       clashApiSecret: 'testsecret',
@@ -181,7 +181,7 @@ test('一个节点都没命中的用户组也能过 sing-box check(挂 direct �
       regionGroups: groups,
       profile: {
         ipv6: false,
-        dns: { split: true, direct: '223.5.5.5', proxy: 'https://1.1.1.1/dns-query' },
+        dns: { split: true, direct: '223.5.5.5', proxy: '1.1.1.1' },
         // 策略指向那个空组:这正是"组不能被丢掉"的理由——丢了它,策略的 default 就悬空
         routing: {
           proxyTag: 'PROXY',
@@ -233,7 +233,7 @@ for (const fallbackDefault of ['direct', 'proxy']) {
       assert.ok(groups.some((g) => g.name === '其他地区'), '认不出国别的节点该落到「其他地区」组')
       const profile = {
         ipv6: false,
-        dns: { split: true, mode: 'dnsmasq', direct: '223.5.5.5', proxy: 'https://1.1.1.1/dns-query' },
+        dns: { split: true, mode: 'dnsmasq', direct: '223.5.5.5', proxy: '1.1.1.1' },
         routing: {
           proxyTag: 'PROXY',
           fallbackDefault,
@@ -306,7 +306,7 @@ for (const mode of ['hijack', 'off']) {
       const profile = {
         ipv6: false,
         tun: { autoRedirect: true },
-        dns: { split: true, mode, direct: '223.5.5.5', proxy: 'https://1.1.1.1/dns-query' },
+        dns: { split: true, mode, direct: '223.5.5.5', proxy: '1.1.1.1' },
         routing: { proxyTag: 'PROXY', categories: [{ ruleset: 'geosite-geolocation-!cn', target: groups[0]?.name || 'PROXY' }], directRulesets: ['geosite-cn', 'geoip-cn'], adBlock: true, adRuleset: 'geosite-category-ads-all', fallback: 'PROXY' },
         rulesetDir: dir,
         clashApiSecret: 'testsecret',

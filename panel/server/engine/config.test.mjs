@@ -10,7 +10,7 @@ const nodes = [
 const regionGroups = [{ name: '美国', type: 'urltest', nodeTags: ['美国-01'] }]
 const profile = {
   ipv6: true,
-  dns: { split: true, direct: '223.5.5.5', proxy: 'https://1.1.1.1/dns-query' },
+  dns: { split: true, direct: '223.5.5.5', proxy: '1.1.1.1' },
   routing: { proxyTag: 'PROXY', categories: [], directRulesets: ['geosite-cn'], adBlock: false, fallback: 'PROXY' },
   rulesetDir: '/data/rulesets',
   clashApiSecret: 's3cr3t',

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createMockContext } from './context.mjs'
 import { createPaths } from './paths.mjs'
-import { deployConfig, rollbackToDirect } from './deploy.mjs'
+import { deployConfig, rollbackToDirect, configMetaPath } from './deploy.mjs'
 import { dnsTakeoverBackupPath } from './dns-takeover.mjs'
 
 const paths = createPaths('/opt/open-box')
@@ -50,6 +50,20 @@ test('成功路径:写配置 + 防火墙 + 重启 + 验证', async () => {
   const c = cmds(ctx)
   assert.ok(c.includes('uci set firewall.openbox_panel=rule'))
   assert.ok(c.includes('/etc/init.d/openbox restart'))
+})
+
+test('元数据带上"谁走直连、谁走代理"的判断:代理页改完出口靠它判 dns.rules 有没有过期', async () => {
+  const ctx = okCtx()
+  await deployConfig(ctx, paths, {
+    config: { ...config, outbounds: [{ type: 'direct', tag: '直连' }, { type: 'selector', tag: '其他', outbounds: ['直连', '香港-自动'] }] },
+    profile: { ...profile, routing: { fallbackDefault: 'proxy', policies: [{ name: '国内', default: 'direct', rulesets: ['geosite-cn'] }] } },
+    selections: { 其他: '香港-自动' },
+  })
+  const meta = JSON.parse(ctx.writes.find((w) => w.path === configMetaPath(paths)).content)
+  assert.deepEqual(meta.dnsPolicyClasses, { 国内: 'direct', 其他: 'proxy' })
+  assert.deepEqual(meta.dnsPolicyMembers, ['直连', '香港-自动'])
+  // init 脚本靠 grep 这一行判 dnsmasq 模式,加字段不能把它挤走
+  assert.match(JSON.stringify(meta, null, 2), /"dnsMode": "hijack"/)
 })
 
 test('IPv6 关闭时下发 v6 拦截规则', async () => {

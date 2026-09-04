@@ -18,7 +18,7 @@ import { registerRouteTestRoutes } from './api/route-test.mjs'
 import { registerTrafficRoutes } from './api/traffic.mjs'
 import { registerServerRoutes } from './api/servers.mjs'
 import { seedDefaultStorage } from './system/seed-defaults.mjs'
-import { runDeploy, fetchSelections, resolveSelections } from './api/deploy-runner.mjs'
+import { runDeploy, fetchSelections, resolveSelections, dnsClassesFlipped } from './api/deploy-runner.mjs'
 import { startScheduler } from './system/scheduler.mjs'
 import { createTrafficCollector, createTrafficStore } from './system/traffic-collector.mjs'
 import { registerSubscriptionRoutes } from './api/subscriptions.mjs'
@@ -475,6 +475,28 @@ const buildProxyPath = (basePath, suffix) => {
   return `${normalizedBasePath}/${normalizedSuffix}`
 }
 
+// 代理页改完出口之后要做两件事:把选择读回来(存快照 + 按"选择即默认"写进档案),
+// 再看这次改动有没有让磁盘上那份 DNS 规则过期——站点集在"直连"和"代理"之间翻面了就会。
+// 翻面了就在后台重新生成配置并重启内核:这一步只能重启(dns.rules 是生成时定死的),
+// 但用户不必知道,也不用自己去点。在代理线路之间换(香港 → 美国)不算翻面,不重启。
+// 连点几下只跑最后一次:每次点都重启内核的话,一轮切换下来要断好几次流。
+let selectionSyncTimer = null
+const syncSelectionsAfterProxySwitch = () => {
+  if (selectionSyncTimer) clearTimeout(selectionSyncTimer)
+  selectionSyncTimer = setTimeout(async () => {
+    selectionSyncTimer = null
+    try {
+      const selections = resolveSelections(store, await fetchSelections(fetch, store.getClashSecret()))
+      if (!(await dnsClassesFlipped(obCtx, obPaths, store, selections))) return
+      console.log('[proxies] 站点集在直连/代理之间翻面,后台重新生成配置')
+      const r = await runDeploy({ store, ctx: obCtx, paths: obPaths })
+      if (!r.ok) console.warn(`[proxies] 重新生成配置失败(${r.stage}):${r.message}`)
+    } catch (error) {
+      console.warn('[proxies] 同步选择失败:', error instanceof Error ? error.message : error)
+    }
+  }, 600)
+}
+
 const proxyControllerRequest = async (req, res) => {
   try {
     const { base, secret } = getProxyTarget(req)
@@ -533,11 +555,7 @@ const proxyControllerRequest = async (req, res) => {
     // 写进档案(api/deploy-runner.mjs)。不等每分钟一次的计划任务——刚切完就升级 / 重启时,
     // 生成配置用的是快照,晚一分钟就是一份错的 DNS 规则。
     if (response.ok && (req.method === 'PUT' || req.method === 'DELETE') && /\/proxies\//.test(req.path || req.url || '')) {
-      setTimeout(() => {
-        fetchSelections(fetch, store.getClashSecret())
-          .then((live) => resolveSelections(store, live))
-          .catch(() => {})
-      }, 300)
+      syncSelectionsAfterProxySwitch()
     }
   } catch (error) {
     res.status(502).json({

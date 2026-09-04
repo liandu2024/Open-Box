@@ -5,7 +5,8 @@ import { collectDirectHosts } from '../engine/direct-hosts.mjs'
 import { normalizeRouting } from '../engine/routing-model.mjs'
 import { builtinTags } from '../engine/user-groups.mjs'
 import { buildConfig } from '../engine/config.mjs'
-import { deployConfig } from '../system/deploy.mjs'
+import { dnsPolicyClasses } from '../engine/dns.mjs'
+import { deployConfig, configMetaPath } from '../system/deploy.mjs'
 import { enableService, disableService, serviceStatus } from '../system/service.mjs'
 import { CLASH_API_BASE } from './penetration.mjs'
 
@@ -72,6 +73,28 @@ export const persistSelectionsAsDefaults = (store, selections) => {
   if (fallbackDefault !== undefined) patch.routing.fallbackDefault = fallbackDefault
   store.setProfile(patch)
   return true
+}
+
+// 磁盘上那份配置的 dns.rules 是按"哪个站点集走直连、哪个走代理"定死的(见 engine/dns.mjs)。
+// 用户在代理页把某个站点集从直连改到代理(或反过来),这份规则就过期了:走代理的域名还在用
+// 直连侧解析(拿到的是被污染的地址),或者走直连的域名还在往代理侧的解析器发查询——而那台
+// 解析器此刻 detour 的是一条已经改成直连的线路,查询直接超时,整个域名解析全断。
+// 所以每次改完出口都比一次:部署时落进 config.meta.json 的那张表 vs 现在的选择。
+// 只比两边都有的名字——档案里新加、还没部署过的站点集不算数,免得把"设置已保存但用户还
+// 没点生效"的改动顺带应用出去。
+export const dnsClassesFlipped = async (ctx, paths, store, selections) => {
+  try {
+    const meta = JSON.parse(await ctx.readFile(configMetaPath(paths)))
+    const prev = meta && meta.dnsPolicyClasses
+    const members = meta && Array.isArray(meta.dnsPolicyMembers) ? meta.dnsPolicyMembers : []
+    if (!prev || typeof prev !== 'object' || !members.length) return false
+    const builtin = builtinTags(typeof store.getGroups === 'function' ? store.getGroups() : [])
+    const next = dnsPolicyClasses((store.getProfile() || {}).routing, members, builtin, selections || {})
+    return Object.keys(next).some((k) => Object.prototype.hasOwnProperty.call(prev, k) && prev[k] !== next[k])
+  } catch {
+    // 没有元数据(还没部署过 / 老版本升上来的)就不动:下次部署会把表补上
+    return false
+  }
 }
 
 // 内核在跑就用它此刻的选择并顺手存快照(同时按"选择即默认"写进档案);读不到(内核停着、

@@ -10,8 +10,8 @@ const config = {
   dns: {
     servers: [
       { type: 'local', tag: 'dns-direct' },
-      { type: 'https', tag: 'dns-proxy', server: '1.1.1.1', detour: '其他' },
-      { type: 'https', tag: 'dns-policy-0', server: '1.1.1.1', detour: 'AI' },
+      { type: 'tcp', tag: 'dns-proxy', server: '1.1.1.1', detour: '其他' },
+      { type: 'tcp', tag: 'dns-policy-0', server: '1.1.1.1', detour: 'AI' },
     ],
     rules: [
       { rule_set: ['geosite-openai'], server: 'dns-policy-0' },
@@ -64,4 +64,54 @@ test('POST /route-test:内核解析 + 真实访问 + 在连接表里找到这条
   } finally {
     await new Promise((r) => server.close(r))
   }
+})
+
+// 配置里的 DNS 决策是生成那一刻定死的:站点集在直连 / 代理之间翻面之后,这条决策就过期了。
+// 正常情况下面板会在后台重新生成(见 server/index.mjs),这里标出来的是那几秒窗口。
+test('DNS 规则过期:内核里的选择和配置里定死的判断对不上就标出来,只换代理线路不标', async () => {
+  const staleConfig = {
+    dns: {
+      servers: [
+        { type: 'udp', tag: 'dns-direct', server: '192.168.1.1' },
+        { type: 'tcp', tag: 'dns-proxy', server: '1.1.1.1', detour: '其他' },
+      ],
+      rules: [{ domain_suffix: ['baidu.com'], server: 'dns-direct' }],
+      final: 'dns-proxy',
+    },
+    route: { rule_set: [] },
+  }
+  const ctx = createMockContext({ files: { [paths.configPath]: JSON.stringify(staleConfig), [paths.singbox]: 'x' } })
+  const store = {
+    getClashSecret: () => 's',
+    getGroups: () => [],
+    getProfile: () => ({ routing: { fallbackDefault: 'proxy', policies: [{ name: '国内', default: 'direct', domainSuffix: ['baidu.com'] }] } }),
+  }
+  const run = async (proxies, target) => {
+    const fetchImpl = async (url) => {
+      if (url.includes('/proxies')) return { ok: true, status: 200, json: async () => ({ proxies }) }
+      if (url.includes('/dns/query')) return { ok: true, status: 200, json: async () => ({ Answer: [] }) }
+      if (url.includes('/connections')) return { ok: true, status: 200, json: async () => ({ connections: [] }) }
+      throw new Error('unexpected fetch ' + url)
+    }
+    const app = express()
+    registerRouteTestRoutes(app, { store, ctx, paths, fetchImpl, probe: async () => ({ ok: false, error: 'timeout', ms: 1 }) })
+    const server = app.listen(0)
+    await new Promise((r) => server.once('listening', r))
+    try {
+      const res = await fetch(`http://127.0.0.1:${server.address().port}/api/openbox/route-test`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ target }) })
+      return (await res.json()).dns
+    } finally {
+      await new Promise((r) => server.close(r))
+    }
+  }
+  // 兜底还在走代理(只是从香港换到了美国):final 指着代理侧解析器,没过期
+  const fresh = await run({ 其他: { now: '美国-自动' } }, 'example.org')
+  assert.equal(fresh.stale, undefined)
+  assert.equal(fresh.runtimeLeaf, '美国-自动')
+  // 兜底切到了直连:配置里 final 还指着代理侧解析器(detour 已经变成直连,查询会超时)
+  const stale = await run({ 其他: { now: '直连' } }, 'example.org')
+  assert.equal(stale.stale, 'direct')
+  // 走直连的站点集切到了节点组:配置里那条规则还写着 dns-direct
+  const staleProxy = await run({ 国内: { now: '香港-自动' } }, 'www.baidu.com')
+  assert.equal(staleProxy.stale, 'proxy')
 })
