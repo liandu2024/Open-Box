@@ -22,6 +22,8 @@ import {
 
 const app = ref<HTMLElement>()
 const toast = ref<HTMLElement>()
+// 见模板里 OpenboxUpdateDialog 的说明:Teleport 目标就是根节点自己,得等它进了文档再挂
+const appMounted = ref(false)
 let cleanupWindowResizeState: (() => void) | undefined
 
 initNotification(toast as Ref<HTMLElement>)
@@ -93,6 +95,7 @@ watch(
 )
 
 onMounted(() => {
+  appMounted.value = true
   cleanupWindowResizeState = initializeWindowResizeState()
 
   // 后台可能正在升级(自己点的、定时任务发起的,或者刚被面板重启打断过):接着把弹窗显示出来
@@ -169,8 +172,12 @@ useKeyboard()
     :style="appStyles"
   >
     <RouterView />
-    <!-- 升级弹窗挂在根上:升级期间面板和内核各会重启一次,不管用户在哪一页都盖上去 -->
-    <OpenboxUpdateDialog />
+    <!-- 升级弹窗挂在根上:升级期间面板和内核各会重启一次,不管用户在哪一页都盖上去。
+         必须等 App 挂载完成再渲染:弹窗用 Teleport 送到 #app-content,而这个 id 就在上面这个
+         div 上——首次渲染时它还没进文档,子组件此时挂载会拿不到目标,Vue 只警告一句
+         "Failed to locate Teleport target" 然后什么都不渲染(v0.1.77/78 就是这样,点了升级
+         没有弹窗)。路由页的弹窗不受影响,因为路由是懒加载的、挂载时根节点已经在文档里了。 -->
+    <OpenboxUpdateDialog v-if="appMounted" />
     <div
       ref="toast"
       class="toast-sm toast toast-end toast-top z-[100000] max-w-80 text-sm md:max-w-96 md:translate-y-8"
