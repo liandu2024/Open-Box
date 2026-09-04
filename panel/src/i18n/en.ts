@@ -150,7 +150,6 @@ const en = {
   proxyGroupIconMargin: 'Proxy group icon margin',
   allowLan: 'Allow LAN',
   proxyChainDirection: 'Proxy chain direction',
-  showFullProxyChain: 'Show full proxy chain',
   reverse: 'Reverse',
   sniffHost: 'Sniff host',
   ipScreenshotTip: 'Please hide the IP when taking screenshots.',
@@ -182,9 +181,6 @@ const en = {
   importing: 'Importing...',
   hideConnection: 'Hide connection',
   showConnection: 'Show connection',
-  hideConnectionRegex: 'Hide connection regex',
-  hideConnectionTip:
-    'You can use case-insensitive regular expressions to match and hide unwanted connections.',
   hideLog: 'Hide log',
   showLog: 'Show log',
   hideLogRegex: 'Hide log regex',
@@ -213,7 +209,6 @@ const en = {
   urlTestStaleTip:
     'This line is dead: after a failed dial the kernel dropped its latency record but does not switch on its own. The panel is retesting this group in the background to pick a new one.',
   remoteAddress: 'Remote address',
-  moreSettings: 'More settings',
   customIcon: 'Custom icon',
   disablePullToRefresh: 'Disable pull to refresh',
   disablePullToRefreshTip:

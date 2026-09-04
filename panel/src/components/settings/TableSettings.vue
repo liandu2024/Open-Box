@@ -1,13 +1,5 @@
 <template>
   <div class="flex flex-col gap-4">
-    <div class="flex items-center gap-2">
-      <span class="shrink-0">{{ $t('showFullProxyChain') }}</span>
-      <input
-        type="checkbox"
-        class="toggle"
-        v-model="showFullProxyChain"
-      />
-    </div>
     <div>{{ $t('customTableColumns') }}</div>
     <div class="flex gap-4 rounded-sm">
       <Draggable
@@ -42,7 +34,7 @@
 
 <script setup lang="ts">
 import { CONNECTIONS_TABLE_ACCESSOR_KEY } from '@/constant'
-import { connectionTableColumns, showFullProxyChain } from '@/store/settings'
+import { connectionTableColumns } from '@/store/settings'
 import { ref } from 'vue'
 import Draggable from 'vuedraggable'
 

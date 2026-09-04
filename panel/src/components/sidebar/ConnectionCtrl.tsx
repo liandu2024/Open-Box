@@ -1,7 +1,7 @@
 import { disconnectAllAPI, disconnectByIdAPI } from '@/api'
 import { normalizeRuleTarget } from '@/store/rules'
 import { useCtrlsBar } from '@/composables/useCtrlsBar'
-import { ROUTE_NAME, SETTINGS_MENU_KEY, SORT_DIRECTION, SORT_TYPE } from '@/constant'
+import { SORT_DIRECTION, SORT_TYPE } from '@/constant'
 import { useTooltip } from '@/helper/tooltip'
 import {
   connectionFilter,
@@ -10,7 +10,6 @@ import {
   connectionSortType,
   isPaused,
   quickFilterEnabled,
-  quickFilterRegex,
   renderConnections,
 } from '@/store/connections'
 import { useConnectionCard } from '@/store/settings'
@@ -21,12 +20,10 @@ import {
   LinkSlashIcon,
   PauseIcon,
   PlayIcon,
-  QuestionMarkCircleIcon,
   WrenchScrewdriverIcon,
   XMarkIcon, SparklesIcon } from '@heroicons/vue/24/outline'
 import { defineComponent, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRouter } from 'vue-router'
 import DialogWrapper from '../common/DialogWrapper.vue'
 import TextInput from '../common/TextInput.vue'
 import ConnectionCardSettings from '../settings/ConnectionCardSettings.vue'
@@ -53,7 +50,6 @@ export default defineComponent({
   },
   setup() {
     const { t } = useI18n()
-    const router = useRouter()
     const settingsModel = ref(false)
     const { showTip, updateTip } = useTooltip()
     const { isLargeCtrlsBar } = useCtrlsBar(useConnectionCard.value ? 860 : 720)
@@ -109,45 +105,11 @@ export default defineComponent({
             v-model={settingsModel.value}
             title={t('connectionSettings')}
           >
+            {/* 这个弹窗只管表格列。「隐藏连接」的开关在工具栏上(链条图标)就有,匹配用的
+                正则固定用默认那条;「完整显示代理链」恒开。跳去设置页的入口也去掉了——
+                这里能改的东西本来就都在眼前。 */}
             <div class="flex flex-col gap-4 p-2 text-sm">
-              <div class="flex items-center gap-2">
-                <span class="shrink-0">{t('hideConnectionRegex')}</span>
-                <TextInput
-                  class="w-32 max-w-64 flex-1"
-                  v-model={quickFilterRegex.value}
-                />
-              </div>
-              <div class="flex items-center gap-2">
-                {t('hideConnection')}
-                <input
-                  type="checkbox"
-                  class="toggle"
-                  v-model={quickFilterEnabled.value}
-                />
-                <div
-                  onMouseenter={(e) =>
-                    showTip(e, t('hideConnectionTip'), {
-                      appendTo: 'parent',
-                    })
-                  }
-                >
-                  <QuestionMarkCircleIcon class="h-4 w-4" />
-                </div>
-              </div>
               {useConnectionCard.value ? <ConnectionCardSettings /> : <TableSettings />}
-              <div class="divider m-0"></div>
-              <button
-                class="btn btn-block"
-                onClick={() => {
-                  settingsModel.value = false
-                  router.push({
-                    name: ROUTE_NAME.settings,
-                    query: { scrollTo: SETTINGS_MENU_KEY.connections },
-                  })
-                }}
-              >
-                {t('moreSettings')}
-              </button>
             </div>
           </DialogWrapper>
         </>
