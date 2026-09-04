@@ -180,7 +180,9 @@ export const createTrafficCollector = ({
   now = () => new Date(),
   log = () => {},
 }) => {
-  // 待写入的增量:key = day|kind|key
+  // 待写入的增量:key = day|kind|key。写库连续失败时最多攒这么多条(约几 MB),再多就丢
+  const MAX_PENDING = 20_000
+  let flushFailing = false
   const pending = new Map()
   // 上次快照里每条连接的累计字节,id → { up, down }
   const seen = new Map()
@@ -271,10 +273,16 @@ export const createTrafficCollector = ({
     try {
       store.add(rows)
     } catch (err) {
-      for (const r of rows) bump(r.day, r.kind, r.key, r.up, r.down, r.conns)
-      log(`[traffic] 写入流量记录失败:${err instanceof Error ? err.message : err}`)
+      // 放回去下次再试——但不能无限攒:闪存写满时每次都失败,pending 会一直长到把面板
+      // 进程撑爆。超过上限就丢掉这批(丢的是统计,不是配置),并且只在第一次失败时记日志。
+      if (pending.size + rows.length <= MAX_PENDING) {
+        for (const r of rows) bump(r.day, r.kind, r.key, r.up, r.down, r.conns)
+      }
+      if (!flushFailing) log(`[traffic] 写入流量记录失败:${err instanceof Error ? err.message : err}`)
+      flushFailing = true
       return 0
     }
+    flushFailing = false
     return rows.length
   }
 
