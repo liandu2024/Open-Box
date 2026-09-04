@@ -82,6 +82,7 @@
                 <div
                   class="hover:bg-base-200 flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-left"
                   :class="{ 'bg-base-200': b === modelValue }"
+                  :data-active="b === modelValue"
                   @click="choose(b)"
                 >
                   <span class="min-w-0 flex-1 truncate">{{ b }}</span>
@@ -115,6 +116,7 @@
                 <div
                   class="hover:bg-base-200 flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-left"
                   :class="{ 'bg-base-200': n === modelValue }"
+                  :data-active="n === modelValue"
                   @click="choose(n)"
                 >
                   <span class="min-w-0 flex-1 truncate">{{ n }}</span>
@@ -143,6 +145,7 @@
               <div
                 class="hover:bg-base-200 flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-left"
                 :class="{ 'bg-base-200': g.name === modelValue }"
+                :data-active="g.name === modelValue"
                 @click="choose(g.name)"
               >
                 <span class="min-w-0 flex-1 truncate">{{ g.name }}</span>

@@ -64,6 +64,7 @@
               type="button"
               class="hover:bg-base-200 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm"
               :class="{ 'bg-base-200': b.value === modelValue }"
+              :data-active="b.value === modelValue"
               @click="choose(b.value)"
             >
               <CountryFlag
@@ -81,6 +82,7 @@
               type="button"
               class="hover:bg-base-200 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm"
               :class="{ 'bg-base-200': m.value === modelValue }"
+              :data-active="m.value === modelValue"
               @click="choose(m.value)"
             >
               <CountryFlag
@@ -101,6 +103,7 @@
               type="button"
               class="hover:bg-base-200 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm"
               :class="{ 'bg-base-200': g.value === modelValue }"
+              :data-active="g.value === modelValue"
               @click="choose(g.value)"
             >
               <CountryFlag
@@ -128,6 +131,7 @@
               type="button"
               class="hover:bg-base-200 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm"
               :class="{ 'bg-base-200': c.code === modelValue }"
+              :data-active="c.code === modelValue"
               @click="choose(c.code)"
             >
               <CountryFlag

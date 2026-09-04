@@ -72,6 +72,7 @@
               type="button"
               class="hover:bg-base-200 flex w-full flex-col items-start gap-0.5 rounded-md px-2 py-1.5 text-left"
               :class="{ 'bg-base-200': row[0] === modelValue }"
+              :data-active="row[0] === modelValue"
               @click="choose(row[0])"
             >
               <span class="font-mono text-xs">{{ row[0] }}</span>
@@ -131,7 +132,7 @@ const cache = { geosite: [] as readonly GeoCategoryRow[], geoip: [] as readonly 
 const rows = ref<readonly GeoCategoryRow[]>(cache[props.kind])
 const loading = ref(false)
 
-const { open, triggerRef, panelRef, style, toggle, close } = useAnchoredDropdown({ minWidth: 320 })
+const { open, triggerRef, panelRef, style, toggle, close, focusAndReveal } = useAnchoredDropdown({ minWidth: 320 })
 
 const ensureLoaded = async () => {
   if (rows.value.length || loading.value) return
@@ -227,9 +228,19 @@ watch([keyword, scope, () => props.kind], () => {
 // 名字面板这边一点反应都没有,直到部署时卡在"拉规则集"——错误离犯错的地方太远了。
 // 上游加了新分类,重跑 scripts/gen-geo-catalog.mjs 刷新名单即可。
 
+// 名单是分批渲染的(PAGE_SIZE 一批),选中的那条可能排在第几百位——先把它所在的那一批
+// 放出来,焦点和居中滚动才有东西可落。目录是按需加载的,所以要等 ensureLoaded 完再来一次。
+const revealSelected = () => {
+  const index = props.modelValue ? filtered.value.findIndex((r) => r[0] === props.modelValue) : -1
+  if (index >= shown.value) shown.value = (Math.floor(index / PAGE_SIZE) + 1) * PAGE_SIZE
+  focusAndReveal()
+}
+
 const onTriggerClick = () => {
   toggle()
-  if (open.value) void ensureLoaded()
+  if (!open.value) return
+  revealSelected()
+  void ensureLoaded().then(revealSelected)
 }
 
 const choose = (value: string) => {

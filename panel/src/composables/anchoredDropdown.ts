@@ -6,7 +6,7 @@
 //
 // 所以面板 Teleport 到 #app-content,用 fixed 定位对齐触发元素;开合自己管
 // (focus-within 那套跨不过 Teleport,teleport 出去的节点不是触发元素的后代)。
-import { onBeforeUnmount, ref, type Ref } from 'vue'
+import { nextTick, onBeforeUnmount, ref, type Ref } from 'vue'
 
 export interface AnchoredDropdown {
   open: Ref<boolean>
@@ -15,6 +15,8 @@ export interface AnchoredDropdown {
   style: Ref<Record<string, string>>
   toggle: () => void
   close: () => void
+  // 打开之后把光标放进搜索框、把选中项滚到中间;有的下拉框要先把选中项渲染出来再调
+  focusAndReveal: () => void
 }
 
 export const useAnchoredDropdown = (
@@ -69,6 +71,18 @@ export const useAnchoredDropdown = (
     window.removeEventListener('scroll', place, true)
   }
 
+  // 打开之后:光标落进面板里的搜索框,列表滚到当前选中的那条并居中。
+  // 选中的那条由各个下拉框自己标 data-active="true"。名单动辄上千条(geosite 有一千九),
+  // 打开就停在最顶上等于每次都要重新搜一遍。
+  const focusAndReveal = () => {
+    nextTick(() => {
+      const panel = panelRef.value
+      if (!panel) return
+      panel.querySelector<HTMLInputElement>('input')?.focus()
+      panel.querySelector<HTMLElement>('[data-active="true"]')?.scrollIntoView({ block: 'center' })
+    })
+  }
+
   const toggle = () => {
     if (open.value) {
       close()
@@ -76,6 +90,7 @@ export const useAnchoredDropdown = (
     }
     place()
     open.value = true
+    focusAndReveal()
     document.addEventListener('mousedown', onDocumentDown, true)
     document.addEventListener('keydown', onKeydown, true)
     // 捕获阶段:滚动的是弹窗内部那个容器,事件不会冒泡到 window
@@ -85,5 +100,5 @@ export const useAnchoredDropdown = (
 
   onBeforeUnmount(close)
 
-  return { open, triggerRef, panelRef, style, toggle, close }
+  return { open, triggerRef, panelRef, style, toggle, close, focusAndReveal }
 }
