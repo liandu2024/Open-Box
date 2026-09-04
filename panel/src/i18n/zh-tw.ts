@@ -170,6 +170,7 @@ const zhTW: LANG_MESSAGE = {
   testFinishedTip: '{name}\n{number}/{total} 測試完成',
   testFinishedResultTip: '{name}\n測試完成: {success} 成功，{failed} 超時',
   testFailedTip: '{name}\n測速超時',
+  urlTestManualSelectTip: '「{name}」是自動擇優組,走哪個節點由核心按測速自己定,不能手動指定。想換線路就點它的閃電重測一次。',
   updateFinishedTip: '{number} 更新完成',
   refreshing: '刷新中',
   independentLatencyTest: '獨立延遲測試',

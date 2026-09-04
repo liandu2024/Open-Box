@@ -14,6 +14,17 @@ axios.interceptors.request.use((config) => {
 
 const ignoreNotificationUrls = ['/delay', '/healthcheck', '/weights']
 
+const decodeRequestUrl = (url?: string) => {
+  if (!url) return ''
+
+  try {
+    return decodeURIComponent(url)
+  } catch {
+    // 单独的 % 之类的畸形转义会让 decodeURIComponent 抛错,那就原样显示
+    return url
+  }
+}
+
 axios.interceptors.response.use(
   null,
   (
@@ -32,10 +43,13 @@ axios.interceptors.response.use(
 
     if (!ignoreNotificationUrls.some((url) => error.config?.url?.endsWith(url))) {
       const errorMessage = error.response?.data?.message || error.message
+      // 请求路径里的组名 / 节点名是 encodeURIComponent 过的,原样弹出来就是一串
+      // %E6%96%B0%E5%8A%A0…。解码后再显示,用户才认得出是哪个组出的错。
+      const requestUrl = decodeRequestUrl(error.config?.url)
 
       showNotification({
         key: errorMessage,
-        content: `${error.config?.url} \n${errorMessage}`,
+        content: `${requestUrl} \n${errorMessage}`,
         type: 'alert-error',
       })
       return Promise.reject(error)

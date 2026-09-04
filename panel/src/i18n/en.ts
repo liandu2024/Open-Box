@@ -170,6 +170,8 @@ const en = {
   testFinishedTip: '{name}\n{number}/{total} test finished',
   testFinishedResultTip: '{name}\nTest finished: {success} success, {failed} timeout',
   testFailedTip: '{name}\nTest failed',
+  urlTestManualSelectTip:
+    '"{name}" is an auto-select group: the kernel picks the node by latency, so it cannot be set manually. Tap its lightning icon to retest and pick again.',
   updateFinishedTip: '{number} update(s) finished',
   refreshing: 'Refreshing',
   independentLatencyTest: 'Independent latency test',

@@ -413,6 +413,17 @@ export const handlerProxySelect = async (proxyGroupName: string, proxyName: stri
   const proxyGroup = proxyMap.value[proxyGroupName]
 
   if (proxyGroup.type.toLowerCase() === PROXY_TYPE.LoadBalance) return
+  // 内核只允许对 selector 下发选择,对自动择优组会直接回 "Must be a Selector"。
+  // 与其把那句英文连着 encode 过的请求路径弹给用户,不如在这里就说清楚:这个组的节点
+  // 是按测速自己选的,想换就点它的闪电重测一次(见 ProxyNodeCard 的闪电)。
+  if (proxyGroup.type.toLowerCase() === PROXY_TYPE.URLTest) {
+    showNotification({
+      content: 'urlTestManualSelectTip',
+      params: { name: proxyGroupName },
+      type: 'alert-info',
+    })
+    return
+  }
   if (proxyGroup.now === proxyName) {
     await fetchProxies()
     if (proxyGroup.now === proxyName) return
