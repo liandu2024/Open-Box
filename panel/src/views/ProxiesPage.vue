@@ -56,6 +56,8 @@
           class="text-base-content/60 py-10 text-center text-sm"
         >
           {{ $t('subscriptionEmptyHint') }}
+          <MarketLink />
+          {{ $t('subscriptionEmptyHintSuffix') }}
         </p>
         <SubscriptionCard
           v-for="sub in openboxSubscriptions"
@@ -83,6 +85,7 @@
 </template>
 
 <script setup lang="ts">
+import MarketLink from '@/components/common/MarketLink.vue'
 import ProxyGroup from '@/components/proxies/ProxyGroup.vue'
 import ProxyGroupRulePenetrationDialog from '@/components/proxies/ProxyGroupRulePenetrationDialog.vue'
 import ProxyGroupForMobile from '@/components/proxies/ProxyGroupForMobile.vue'

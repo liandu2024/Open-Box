@@ -63,7 +63,11 @@
           class="border-base-content/15 flex flex-col items-center gap-3 rounded-lg border border-dashed py-14 text-center"
         >
           <RssIcon class="text-base-content/30 h-10 w-10" />
-          <p class="text-base-content/60 text-sm">{{ $t('subscriptionEmptyHint') }}</p>
+          <p class="text-base-content/60 text-sm">
+            {{ $t('subscriptionEmptyHint') }}
+            <MarketLink />
+            {{ $t('subscriptionEmptyHintSuffix') }}
+          </p>
           <button
             type="button"
             class="btn btn-primary btn-sm"
@@ -153,6 +157,7 @@
 </template>
 
 <script setup lang="ts">
+import MarketLink from '@/components/common/MarketLink.vue'
 import type { OpenboxSubscription } from '@/api/openbox'
 import { deleteSubscription, fetchSubscriptions, refreshSubscription, reorderSubscriptions } from '@/api/openbox'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
