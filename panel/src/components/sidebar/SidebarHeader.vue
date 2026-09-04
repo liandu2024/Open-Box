@@ -12,8 +12,8 @@
       <span class="text-base font-semibold">Open-Box</span>
       <span
         class="text-base-content/60 truncate font-mono text-[11px]"
-        :title="openboxVersion"
-      >{{ openboxVersion || '—' }}</span>
+        :title="openboxBuiltAt"
+      >{{ versionLabel || '—' }}</span>
     </div>
     <button
       type="button"
@@ -46,14 +46,25 @@
 <script setup lang="ts">
 import { fetchUpdateStatus } from '@/api/openbox'
 import { isSidebarCollapsed } from '@/store/settings'
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 
 // 版本号整个会话里不会变,取一次就够
 const openboxVersion = ref('')
+// 发布时间(meta.json 的 builtAt,UTC ISO),侧边栏显示成 v0.1.79 | 20260904(按浏览器所在时区取日期)
+const openboxBuiltAt = ref('')
+const versionLabel = computed(() => {
+  if (!openboxVersion.value) return ''
+  const d = openboxBuiltAt.value ? new Date(openboxBuiltAt.value) : null
+  if (!d || Number.isNaN(d.getTime())) return openboxVersion.value
+  const ymd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`
+  return `${openboxVersion.value} | ${ymd}`
+})
 onMounted(async () => {
   if (openboxVersion.value) return
   try {
-    openboxVersion.value = (await fetchUpdateStatus()).version || ''
+    const status = await fetchUpdateStatus()
+    openboxVersion.value = status.version || ''
+    openboxBuiltAt.value = status.builtAt || ''
   } catch {
     openboxVersion.value = ''
   }
