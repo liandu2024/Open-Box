@@ -2,6 +2,8 @@ import { readSystemDns } from '../system/resolv.mjs'
 import { readLocalSubnets } from '../system/local-subnets.mjs'
 import { resolveHostsToCidrs } from '../system/resolve-hosts.mjs'
 import { collectDirectHosts } from '../engine/direct-hosts.mjs'
+import { normalizeRouting } from '../engine/routing-model.mjs'
+import { builtinTags } from '../engine/user-groups.mjs'
 import { buildConfig } from '../engine/config.mjs'
 import { deployConfig } from '../system/deploy.mjs'
 import { enableService, disableService, serviceStatus } from '../system/service.mjs'
@@ -31,11 +33,54 @@ export const fetchSelections = async (fetchImpl, secret) => {
   }
 }
 
-// 内核在跑就用它此刻的选择并顺手存快照;读不到(内核停着、API 没起来)就退回上次的快照。
+// 选择即默认:用户在代理页给某个站点集(或兜底)挑了出口,就把它写进档案当这个站点集的 default。
+// 不写的话,用户新建的站点集没有 default,生成配置时按"成员表第一项"= 直连算;内核停着时的
+// 部署(升级脚本)又只能靠快照——快照每分钟才刷新一次,刚切换就升级,生成的 DNS 规则还是直连,
+// 规则页就一直提示"DNS 规则是旧的,重启内核",重启后 selector 又退回 直连,循环往复。
+// 写进档案后,不管快照新不新,selector 的 default 和 DNS 规则都跟着用户的选择走。
+// 内置直连 / 拒绝按占位符('direct' / 'block')存:它们可以改名,档案里不存当时的名字。
+export const persistSelectionsAsDefaults = (store, selections) => {
+  if (!store || typeof store.getProfile !== 'function' || typeof store.setProfile !== 'function') return false
+  const map = selections && typeof selections === 'object' ? selections : {}
+  if (!Object.keys(map).length) return false
+  const profile = store.getProfile() || {}
+  const routing = profile.routing && typeof profile.routing === 'object' ? profile.routing : {}
+  const builtin = builtinTags(typeof store.getGroups === 'function' ? store.getGroups() : [])
+  const stored = (name) => (name === builtin.direct ? 'direct' : name === builtin.block ? 'block' : name)
+  const conf = normalizeRouting(routing)
+  let changed = false
+  const policies = (Array.isArray(routing.policies) ? routing.policies : []).map((p) => {
+    if (!p || typeof p !== 'object' || typeof p.name !== 'string') return p
+    const picked = map[p.name.trim()]
+    if (typeof picked !== 'string' || !picked) return p
+    const next = stored(picked)
+    if ((p.default || '') === next) return p
+    changed = true
+    return { ...p, default: next }
+  })
+  let fallbackDefault = routing.fallbackDefault
+  const pickedFallback = map[conf.fallback.name]
+  if (typeof pickedFallback === 'string' && pickedFallback) {
+    const next = stored(pickedFallback)
+    if ((fallbackDefault || '') !== next) {
+      fallbackDefault = next
+      changed = true
+    }
+  }
+  if (!changed) return false
+  const patch = { routing: { ...routing, policies } }
+  if (fallbackDefault !== undefined) patch.routing.fallbackDefault = fallbackDefault
+  store.setProfile(patch)
+  return true
+}
+
+// 内核在跑就用它此刻的选择并顺手存快照(同时按"选择即默认"写进档案);读不到(内核停着、
+// API 没起来)就退回上次的快照。
 export const resolveSelections = (store, live) => {
   const hasLive = live && typeof live === 'object' && Object.keys(live).length > 0
   if (hasLive) {
     try { store.setSelectionsSnapshot?.(live) } catch { /* 存不上不影响这次部署 */ }
+    try { persistSelectionsAsDefaults(store, live) } catch { /* 写不进档案也不影响这次部署 */ }
     return live
   }
   try { return store.getSelectionsSnapshot?.() || {} } catch { return {} }

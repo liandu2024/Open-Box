@@ -18,7 +18,7 @@ import { registerRouteTestRoutes } from './api/route-test.mjs'
 import { registerTrafficRoutes } from './api/traffic.mjs'
 import { registerServerRoutes } from './api/servers.mjs'
 import { seedDefaultStorage } from './system/seed-defaults.mjs'
-import { runDeploy } from './api/deploy-runner.mjs'
+import { runDeploy, fetchSelections, resolveSelections } from './api/deploy-runner.mjs'
 import { startScheduler } from './system/scheduler.mjs'
 import { createTrafficCollector, createTrafficStore } from './system/traffic-collector.mjs'
 import { registerSubscriptionRoutes } from './api/subscriptions.mjs'
@@ -528,6 +528,17 @@ const proxyControllerRequest = async (req, res) => {
 
     const body = Buffer.from(await response.arrayBuffer())
     res.send(body)
+
+    // 代理页切换 / 重置了某个 selector 的出口:马上把内核里的选择读回来存快照、按"选择即默认"
+    // 写进档案(api/deploy-runner.mjs)。不等每分钟一次的计划任务——刚切完就升级 / 重启时,
+    // 生成配置用的是快照,晚一分钟就是一份错的 DNS 规则。
+    if (response.ok && (req.method === 'PUT' || req.method === 'DELETE') && /\/proxies\//.test(req.path || req.url || '')) {
+      setTimeout(() => {
+        fetchSelections(fetch, store.getClashSecret())
+          .then((live) => resolveSelections(store, live))
+          .catch(() => {})
+      }, 300)
+    }
   } catch (error) {
     res.status(502).json({
       message: error instanceof Error ? error.message : String(error),

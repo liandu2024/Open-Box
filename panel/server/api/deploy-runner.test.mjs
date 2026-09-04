@@ -46,3 +46,29 @@ test('withDeployLock:别的进程持锁且活着就等它释放;锁过期或进�
   m.set('openbox/deploy-lock', JSON.stringify({ pid: 999, at: t }))
   await assert.rejects(() => withDeployLock(store, async () => 'x', { sleep: async (ms) => { t += ms }, now, pid: 1, alive: () => true, waitMs: 2000 }), /另一个部署/)
 })
+
+test('选择即默认:代理页挑的出口写进档案当站点集 / 兜底的 default;内置直连按占位符存;没变化不写', async () => {
+  const { persistSelectionsAsDefaults } = await import('./deploy-runner.mjs')
+  const writes = []
+  const profile = { routing: { fallbackName: '其他', fallbackDefault: 'proxy', policies: [
+    { name: '国外', rulesets: ['geosite-gfw'] },
+    { name: '国内', default: 'direct', rulesets: ['geosite-cn'] },
+  ] } }
+  const store = { getProfile: () => profile, getGroups: () => [], setProfile: (patch) => writes.push(patch) }
+  // 国外 → 香港-手动;兜底 其他 → 直连(内置,存成 'direct');国内 已是 direct 不动
+  assert.equal(persistSelectionsAsDefaults(store, { '国外': '香港-手动', '其他': '直连', '国内': '直连', '香港-手动': 'WFOS-HK | 香港-03' }), true)
+  assert.equal(writes.length, 1)
+  const r = writes[0].routing
+  assert.equal(r.policies.find((p) => p.name === '国外').default, '香港-手动')
+  assert.equal(r.policies.find((p) => p.name === '国内').default, 'direct')
+  assert.deepEqual(r.policies.find((p) => p.name === '国内').rulesets, ['geosite-cn'], '其它字段原样保留')
+  assert.equal(r.fallbackDefault, 'direct')
+  // 再来一次同样的选择:没有变化就不写档案
+  const profile2 = { routing: writes[0].routing }
+  const store2 = { getProfile: () => profile2, getGroups: () => [], setProfile: (patch) => writes.push(patch) }
+  assert.equal(persistSelectionsAsDefaults(store2, { '国外': '香港-手动', '其他': '直连' }), false)
+  assert.equal(writes.length, 1)
+  // 空选择 / 没有 setProfile 的 store 都安静返回
+  assert.equal(persistSelectionsAsDefaults(store2, {}), false)
+  assert.equal(persistSelectionsAsDefaults({ getProfile: () => profile2 }, { '国外': 'x' }), false)
+})
