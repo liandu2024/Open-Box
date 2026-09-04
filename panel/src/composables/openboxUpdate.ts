@@ -18,6 +18,9 @@ const ACTIVE_KEY = 'openbox/update-active'
 const CANCELLABLE = new Set(['starting', 'probing', 'downloading', 'verifying', 'extracting'])
 // 面板重启窗口内最多再试这么多次(约 90 秒),重连上就清零
 const MAX_OFFLINE_RETRIES = 45
+// 空闲时也慢速探一下:升级可能是定时任务在 04:00 发起的,或者用户在另一台设备上点的,
+// 这边不探就永远不知道后台正在升级(用户报的正是"不点进设置就不知道")
+const IDLE_POLL_MS = 30_000
 
 export const updateInfo = ref<OpenboxUpdateStatus | null>(null)
 export const updateDialogOpen = ref(false)
@@ -71,6 +74,8 @@ const finish = (stage: string, message: string) => {
   }
 }
 
+const idleDelay = () => (serverAuthenticated.value && serverPasswordSet.value ? IDLE_POLL_MS : 0)
+
 const poll = async () => {
   try {
     updateInfo.value = await fetchUpdateStatus()
@@ -81,9 +86,10 @@ const poll = async () => {
     if (polling && offline < MAX_OFFLINE_RETRIES) {
       offline += 1
       schedule(2000)
-    } else if (polling) {
+    } else {
+      if (polling) writeActiveFlag(false)
       polling = false
-      writeActiveFlag(false)
+      schedule(idleDelay())
     }
     return
   }
@@ -96,7 +102,7 @@ const poll = async () => {
     finish(updateInfo.value.status.stage, updateInfo.value.status.message)
   }
   wasRunning = running
-  schedule(running ? 1500 : 0)
+  schedule(running ? 1500 : idleDelay())
 }
 
 // 只读一次状态(卡片要显示当前版本 / 安装通道),不影响轮询
@@ -111,10 +117,13 @@ export const refreshUpdateInfo = async () => {
 
 // App 启动、以及登录成功之后调用:后台可能正在升级(用户自己点的、或者定时任务发起的),
 // 接着把弹窗显示出来
+let watching = false
 export const resumeUpdateWatch = async () => {
   if (!serverAuthenticated.value || !serverPasswordSet.value) return
   if (polling) return
   if (readActiveFlag()) polling = true
+  if (watching && !polling) return
+  watching = true
   await poll()
 }
 
