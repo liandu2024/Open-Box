@@ -37,7 +37,8 @@ const TUN_UDP_TIMEOUT = '60s'
 // 内核 DNS 入站端口(system/dns-takeover.mjs 的 SINGBOX_DNS_UPSTREAM 与之一致)
 export const DNS_INBOUND_PORT = 7853
 // dnsmasq 模式下把被 auto_redirect 改写进 tun 的局域网 DNS 交回本机 dnsmasq 用的专用出站
-const DNSMASQ_OUTBOUND_TAG = 'dnsmasq'
+// dnsmasq 分流模式专用的回送出站;init 脚本用这个 tag 判断"这份配置需要接管 dnsmasq"
+export const DNSMASQ_OUTBOUND_TAG = 'dnsmasq'
 
 // systemDns:路由器 WAN 下发的 DNS 上游(部署时从 resolv.conf.auto 读,见
 // system/resolv.mjs)。只有 dnsmasq 接管模式用得上——那时不能让 sing-box 去问

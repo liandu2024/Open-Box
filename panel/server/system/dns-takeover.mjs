@@ -1,7 +1,12 @@
 const BACKUP_NAME = 'dnsmasq-backup.txt'
+// 这次接管往 dnsmasq 写了什么(server 列表 + 是否 noresolv),给 init 脚本开机时照抄:
+// 干净重启时 K10 stop 会把接管还原,开机 S99 只拉内核不接管,dnsmasq 走运营商上游又被
+// 内核的 nft 劫持回来,打环到全 LAN 无解析、内核内存冲到几百 MB(2026-09-04 正式路由器)。
+const STATE_NAME = 'dnsmasq-takeover.txt'
 const SINGBOX_DNS_UPSTREAM = '127.0.0.1#7853'
 
 export const dnsTakeoverBackupPath = (paths) => `${paths.dataDir}/${BACKUP_NAME}`
+export const dnsTakeoverStatePath = (paths) => `${paths.dataDir}/${STATE_NAME}`
 const backupPath = dnsTakeoverBackupPath
 
 const parseBackup = (text) => {
@@ -41,20 +46,25 @@ export const applyDnsTakeover = async (ctx, paths, { mode, forwardDomains = [] }
   }
 
   const perDomain = Array.isArray(forwardDomains) && forwardDomains.length > 0
+  const servers = perDomain
+    ? forwardDomains.map((domain) => `/${domain}/${SINGBOX_DNS_UPSTREAM}`)
+    : [SINGBOX_DNS_UPSTREAM]
   await ctx.exec('uci', ['-q', 'delete', 'dhcp.@dnsmasq[0].server'])
   if (perDomain) {
     // 不设 noresolv:其余域名还要靠路由器自己的上游解析。反而要把可能残留的那条删掉,
     // 否则上一次全局接管留下的 noresolv=1 会让"没被转发的域名"彻底无解析。
     await ctx.exec('uci', ['-q', 'delete', 'dhcp.@dnsmasq[0].noresolv'])
-    for (const domain of forwardDomains) {
-      await ctx.exec('uci', ['add_list', `dhcp.@dnsmasq[0].server=/${domain}/${SINGBOX_DNS_UPSTREAM}`])
-    }
   } else {
     await ctx.exec('uci', ['set', 'dhcp.@dnsmasq[0].noresolv=1'])
-    await ctx.exec('uci', ['add_list', `dhcp.@dnsmasq[0].server=${SINGBOX_DNS_UPSTREAM}`])
   }
+  for (const s of servers) await ctx.exec('uci', ['add_list', `dhcp.@dnsmasq[0].server=${s}`])
   await ctx.exec('uci', ['commit', 'dhcp'])
   await ctx.exec('/etc/init.d/dnsmasq', ['restart'])
+  // 先写状态再重启 dnsmasq 也无妨,但放在 commit 之后能保证"状态文件存在 ⇒ uci 已经写过"
+  await ctx.writeFile(
+    dnsTakeoverStatePath(paths),
+    [...servers.map((s) => `server=${s}`), ...(perDomain ? [] : ['noresolv=1'])].join('\n') + '\n',
+  )
   return {
     changed: true,
     actions: ['backup', perDomain ? 'set-per-domain' : 'set-upstream', 'restart-dnsmasq'],
@@ -63,6 +73,9 @@ export const applyDnsTakeover = async (ctx, paths, { mode, forwardDomains = [] }
 
 export const restoreDnsTakeover = async (ctx, paths) => {
   const bp = backupPath(paths)
+  // 还原 = 这份配置不再需要接管(切到别的模式,或部署失败回滚),开机也不要再照抄
+  const sp = dnsTakeoverStatePath(paths)
+  if (await ctx.exists(sp)) await ctx.remove(sp)
   if (await ctx.exists(bp)) {
     // 有备份 = Open-Box 确实接管过 dnsmasq:整段清空后按备份重建,恢复到接管前状态。
     await ctx.exec('uci', ['-q', 'delete', 'dhcp.@dnsmasq[0].server'])

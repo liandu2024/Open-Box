@@ -57,6 +57,38 @@ test('内核停止清理:dnsmasq 清理仅在接管标记(备份文件)存在时
   )
 })
 
+test('内核启动:dnsmasq 模式先把 dnsmasq 上游重新指向内核,再拉起 sing-box(干净重启后不再打环)', async () => {
+  // 2026-09-04 正式路由器:干净重启时 K10 stop 按设计还原了接管,开机 S99 只拉内核,dnsmasq
+  // 走运营商上游又被内核 nft 劫持回来,打环到全 LAN 无解析。start_service 必须在
+  // procd_open_instance 之前完成接管;状态文件名、出站 tag 与面板侧常量一致。
+  const { dnsTakeoverStatePath } = await import('./dns-takeover.mjs')
+  const { DNSMASQ_OUTBOUND_TAG } = await import('../engine/config.mjs')
+  assert.ok(dnsTakeoverStatePath(paths).endsWith('/dnsmasq-takeover.txt'), 'dns-takeover.mjs 状态文件名假设已变化,需同步更新此测试')
+  assert.match(core, /^DNSMASQ_TAKEOVER="\$DATA\/dnsmasq-takeover\.txt"$/m, 'init 脚本状态文件路径与 dns-takeover.mjs 不一致')
+  assert.match(core, new RegExp(`^DNSMASQ_OUTBOUND_TAG=${DNSMASQ_OUTBOUND_TAG}$`, 'm'), 'init 脚本判断 dnsmasq 模式用的出站 tag 与 engine/config.mjs 不一致')
+  const start = core.match(/^start_service\(\)\s*\{([^]*?)^\}/m)
+  assert.ok(start, '无法提取 start_service 函数体')
+  const body = start[1]
+  const takeoverAt = body.indexOf('openbox_apply_takeover')
+  const markAt = body.indexOf('openbox_apply_dns_mark')
+  const procdAt = body.indexOf('procd_open_instance')
+  assert.ok(takeoverAt !== -1 && markAt !== -1 && procdAt !== -1, 'start_service 必须调用 openbox_apply_takeover 与 openbox_apply_dns_mark')
+  assert.ok(takeoverAt < procdAt && markAt < procdAt, '接管与防环标记必须在 procd_open_instance 之前完成')
+  // 照抄的目标值就是 P3 写入的上游;没有状态文件时全局接管兜底
+  assert.match(core, /openbox_apply_takeover\(\)\s*\{[^]*?_ob_want=" \$OPENBOX_DNS_UPSTREAM"[^]*?_ob_want_noresolv=1/, '没有状态文件时必须回落到全局接管')
+  // 幂等:先比对再改,避免面板 deploy 之后的 restart 再重启一次 dnsmasq
+  assert.match(core, /openbox_apply_takeover\(\)\s*\{[^]*?sort\)" \][^]*?return 0[^]*?uci -q commit dhcp/, 'openbox_apply_takeover 必须先比对当前值、一致就直接返回')
+})
+
+test('内核启动:dnsmasq 模式给 dnsmasq 自己的外部查询打 sing-box 的 fwmark 防打环,停止时撤掉', () => {
+  // 0x2024 是 tun 的 auto_redirect_output_mark 默认值:内核 nft output 链对它 return、
+  // ip rule 9000 对它跳过 tun 表。别的模式不装(劫持模式要让路由器自己的解析进内核)。
+  assert.match(core, /^SINGBOX_OUTPUT_MARK=0x2024$/m)
+  assert.match(core, /openbox_apply_dns_mark\(\)\s*\{[^]*?if ! openbox_dnsmasq_mode; then[^]*?nft delete table \$NFT_TABLE/, '非 dnsmasq 模式启动时必须删掉标记表')
+  assert.match(core, /meta skuid \$_ob_uid meta l4proto \{ tcp, udp \} th dport 53 meta mark set \$SINGBOX_OUTPUT_MARK/)
+  assert.match(core, /openbox_cleanup\(\)\s*\{[^]*?nft delete table \$NFT_TABLE/, 'openbox_cleanup 必须撤掉标记表')
+})
+
 test('内核停止清理:移除 v6 拦截但保留面板放行规则', () => {
   assert.match(core, /uci -q delete firewall\.openbox_v6block/)
   assert.ok(

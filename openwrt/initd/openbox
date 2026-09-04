@@ -14,6 +14,98 @@ OPENBOX_DNS_UPSTREAM='127.0.0.1#7853'
 # <=> applyDnsTakeover 曾经接管过 dnsmasq(仅 dnsmasq 分流模式会写)。默认 hijack 模式
 # 从不创建它,借此判断"是否需要清理"而不是无脑动 dnsmasq。
 DNSMASQ_BACKUP="$DATA/dnsmasq-backup.txt"
+# 与 dns-takeover.mjs 的 dnsTakeoverStatePath 一致:面板最近一次接管往 dnsmasq 写了什么
+# (每行 server=<值>,全局接管再加一行 noresolv=1)。开机时照抄,见 openbox_apply_takeover。
+DNSMASQ_TAKEOVER="$DATA/dnsmasq-takeover.txt"
+# 与 engine/config.mjs 的 DNSMASQ_OUTBOUND_TAG 一致:配置里有这个出站 <=> dnsmasq 分流模式
+DNSMASQ_OUTBOUND_TAG=dnsmasq
+# sing-box 自己流量的 fwmark(tun 的 auto_redirect_output_mark 默认值):带这个标记的包
+# 会被内核的 nft output 链直接放行、ip rule 9000 跳过 tun 路由表
+SINGBOX_OUTPUT_MARK=0x2024
+NFT_TABLE="inet openbox"
+
+openbox_dnsmasq_mode() {
+	grep -qE "\"tag\": *\"$DNSMASQ_OUTBOUND_TAG\"" "$CONF" 2>/dev/null
+}
+
+# 这份配置是 dnsmasq 分流模式时,确保 dnsmasq 的上游指向内核。
+# 为什么要在这里做:干净重启时 K10 的 stop 会按设计把接管还原(内核死了不能让全 LAN 无解析),
+# 开机 S99 只用 procd 拉起内核、没人重新接管——dnsmasq 走运营商上游,被内核 nft 的
+# output 链 DNAT 回 172.19.0.2,内核再按规则回送给 dnsmasq,打环到全 LAN 超时、内核内存
+# 冲到几百 MB(2026-09-04 正式路由器)。有面板写的状态文件就照抄,没有就全局接管兜底。
+# 幂等:已经是目标状态就一个字不动,面板 deploy 之后的 restart 不会多重启一次 dnsmasq。
+openbox_apply_takeover() {
+	openbox_dnsmasq_mode || return 0
+	command -v uci >/dev/null 2>&1 || return 0
+	_ob_want=""
+	_ob_want_noresolv=""
+	if [ -f "$DNSMASQ_TAKEOVER" ]; then
+		while IFS= read -r _ob_line || [ -n "$_ob_line" ]; do
+			case "$_ob_line" in
+				server=*) _ob_want="$_ob_want ${_ob_line#server=}" ;;
+				noresolv=1) _ob_want_noresolv=1 ;;
+			esac
+		done < "$DNSMASQ_TAKEOVER"
+	fi
+	if [ -z "$_ob_want" ]; then
+		_ob_want=" $OPENBOX_DNS_UPSTREAM"
+		_ob_want_noresolv=1
+	fi
+	_ob_have=""
+	for _ob_server in $(uci -q get dhcp.@dnsmasq[0].server); do
+		case "$_ob_server" in
+			*"$OPENBOX_DNS_UPSTREAM") _ob_have="$_ob_have $_ob_server" ;;
+		esac
+	done
+	_ob_have_noresolv="$(uci -q get dhcp.@dnsmasq[0].noresolv)"
+	[ "$_ob_have_noresolv" = "1" ] || _ob_have_noresolv=""
+	if [ "$(printf '%s\n' $_ob_want | sort)" = "$(printf '%s\n' $_ob_have | sort)" ] \
+		&& [ "$_ob_want_noresolv" = "$_ob_have_noresolv" ]; then
+		return 0
+	fi
+	# 备份文件是 stop 清理与面板还原的依据:第一次接管前先留底
+	if [ ! -f "$DNSMASQ_BACKUP" ]; then
+		mkdir -p "$DATA"
+		uci -q show dhcp.@dnsmasq[0] > "$DNSMASQ_BACKUP"
+	fi
+	for _ob_server in $_ob_have; do
+		uci -q del_list dhcp.@dnsmasq[0].server="$_ob_server"
+	done
+	for _ob_server in $_ob_want; do
+		uci -q add_list dhcp.@dnsmasq[0].server="$_ob_server"
+	done
+	if [ -n "$_ob_want_noresolv" ]; then
+		uci -q set dhcp.@dnsmasq[0].noresolv=1
+	else
+		uci -q delete dhcp.@dnsmasq[0].noresolv
+	fi
+	uci -q commit dhcp
+	/etc/init.d/dnsmasq restart >/dev/null 2>&1
+	echo "openbox: dnsmasq upstream re-pointed to sing-box ($_ob_want )" >&2
+}
+
+# 兜底,防打环:dnsmasq 自己发往外部上游的查询打上内核自身的 fwmark,内核的 nft 就不再把它
+# DNAT 回 172.19.0.2。正常接管时 dnsmasq 只问 127.0.0.1#7853(走 lo,本就不会被 DNAT);
+# 按域名转发时其余域名交给路由器上游、以及接管丢失的异常情况,都靠这条不打环。
+# 只在 dnsmasq 分流模式装:劫持模式本来就要让路由器自己的解析进内核。
+openbox_apply_dns_mark() {
+	command -v nft >/dev/null 2>&1 || return 0
+	if ! openbox_dnsmasq_mode; then
+		nft delete table $NFT_TABLE >/dev/null 2>&1
+		return 0
+	fi
+	_ob_uid="$(id -u dnsmasq 2>/dev/null)"
+	[ -n "$_ob_uid" ] || return 0
+	nft -f - >/dev/null 2>&1 <<-EOF
+		table $NFT_TABLE {
+			chain dns_out {
+				type filter hook output priority -150; policy accept;
+			}
+		}
+		flush chain $NFT_TABLE dns_out
+		add rule $NFT_TABLE dns_out meta skuid $_ob_uid meta l4proto { tcp, udp } th dport 53 meta mark set $SINGBOX_OUTPUT_MARK
+	EOF
+}
 
 start_service() {
 	# 注意:procd 的 rc_procd 包装(procd_open_service; "$@"; procd_close_service)
@@ -28,6 +120,9 @@ start_service() {
 		echo "openbox: config not found at $CONF" >&2
 		return 1
 	fi
+
+	openbox_apply_takeover
+	openbox_apply_dns_mark
 
 	procd_open_instance openbox
 	procd_set_param command "$BIN" run -c "$CONF" -D "$DATA"
@@ -73,6 +168,10 @@ openbox_cleanup() {
 		uci -q commit firewall
 		/etc/init.d/firewall reload >/dev/null 2>&1
 	fi
+
+	# 内核停了,dnsmasq 已回到自己的上游,打标记的兜底也一起撤
+	command -v nft >/dev/null 2>&1 && nft delete table $NFT_TABLE >/dev/null 2>&1
+	return 0
 }
 
 # 停止时默认做安全清理;但 restart 不应该清理——上游 rc.common 在 USE_PROCD=1 下
