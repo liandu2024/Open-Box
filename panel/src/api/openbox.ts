@@ -23,6 +23,9 @@ export interface OpenboxRoutingPolicy {
   // 停用 = 留在列表里,不进内核配置
   enabled?: boolean
   rulesets?: string[]
+  // 规则集链接:一个网址,里面是现成的域名 / IP 名单(Clash 的 .list 或一行一个),
+  // 部署时下回来编成规则集(见 server/system/rule-lists.mjs)
+  ruleUrls?: string[]
   domain?: string[]
   domainSuffix?: string[]
   domainKeyword?: string[]

@@ -431,12 +431,17 @@ const toggleEnabled = async (policy: OpenboxRoutingPolicy) => {
 
 const { t } = useI18n()
 
-type ConditionKey = 'rulesets' | 'domain' | 'domainSuffix' | 'domainKeyword' | 'ipCidr'
+type ConditionKey = 'rulesets' | 'ruleUrls' | 'domain' | 'domainSuffix' | 'domainKeyword' | 'ipCidr'
 const CONDITION_FIELDS: { key: ConditionKey; labelKey: string; placeholderKey: string }[] = [
   {
     key: 'rulesets',
     labelKey: 'routingPolicyRulesets',
     placeholderKey: 'routingPolicyRulesetsPlaceholder',
+  },
+  {
+    key: 'ruleUrls',
+    labelKey: 'routingPolicyRuleUrl',
+    placeholderKey: 'routingPolicyRuleUrlPlaceholder',
   },
   {
     key: 'domainSuffix',
@@ -470,6 +475,7 @@ type RuleType =
   | 'ipCidr'
   | 'geosite'
   | 'geoip'
+  | 'ruleUrl'
   | 'ruleset'
 const RULE_TYPES: { type: RuleType; labelKey: string; placeholderKey: string }[] = [
   {
@@ -502,6 +508,13 @@ const RULE_TYPES: { type: RuleType; labelKey: string; placeholderKey: string }[]
     labelKey: 'routingPolicyGeoip',
     placeholderKey: 'routingPolicyRuleGeoPlaceholder',
   },
+  {
+    type: 'ruleUrl',
+    labelKey: 'routingPolicyRuleUrl',
+    placeholderKey: 'routingPolicyRuleUrlPlaceholder',
+  },
+  // 老档案里可能存着不带 geosite- / geoip- 前缀的规则集名字,得有地方显示,
+  // 但不进新增的下拉(见 ruleTypeOptions)
   {
     type: 'ruleset',
     labelKey: 'routingPolicyRulesets',
@@ -574,6 +587,7 @@ const openEditor = (policy: OpenboxRoutingPolicy | null) => {
   draft.value = policy ? JSON.parse(JSON.stringify(policy)) : { id: '', name: '', icon: '' }
   rules.value = []
   if (policy) {
+    for (const url of policy.ruleUrls || []) rules.value.push({ key: ++ruleKeySeed, type: 'ruleUrl', value: url })
     for (const tag of policy.rulesets || []) rules.value.push(rulesetToRow(tag))
     for (const type of ['domainSuffix', 'domain', 'domainKeyword', 'ipCidr'] as const) {
       for (const value of policy[type] || []) addRule(type, value)
@@ -606,6 +620,7 @@ const saveDraft = async () => {
   // 规则行 → 存储用的那五个数组。空值的行直接忽略(加了一行没填就是没填)
   const collected: Record<ConditionKey, string[]> = {
     rulesets: [],
+    ruleUrls: [],
     domain: [],
     domainSuffix: [],
     domainKeyword: [],
@@ -617,6 +632,7 @@ const saveDraft = async () => {
     if (row.type === 'geosite' || row.type === 'geoip')
       collected.rulesets.push(`${row.type}-${value}`)
     else if (row.type === 'ruleset') collected.rulesets.push(value)
+    else if (row.type === 'ruleUrl') collected.ruleUrls.push(value)
     else collected[row.type].push(value)
   }
   // 规则集 tag 会被拼进 .srs 路径,和服务端同一道校验(路径穿越防线,不是排版讲究)

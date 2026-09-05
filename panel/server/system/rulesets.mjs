@@ -15,6 +15,8 @@
 // (比官方的 MaxMind 多 1700 多段),.srs 已经编好、每天更新。路径 geo/<kind>/<名字>.srs,
 // 文件名不带 geosite-/geoip- 前缀。以前用的是 SagerNet 官方仓库(没有 gfw);两家同名分类
 // 内容不同(cn 尤其),所以老安装第一次部署时按目录里的来源标记把规则集整体重下。
+import { isRuleListTag } from '../engine/rule-list.mjs'
+
 export const RULESET_SOURCE = 'metacubex'
 const KIND_BY_PREFIX = [
   { prefix: 'geoip-', kind: 'geoip' },
@@ -136,7 +138,12 @@ const readSourceMarker = async (ctx, dir) => {
 
 export const ensureRulesets = async (ctx, config, { fetchImpl = globalThis.fetch } = {}) => {
   const entries = (config && config.route && config.route.rule_set) || []
-  const local = entries.filter((e) => e && e.type === 'local' && e.tag && e.path)
+  // list- 开头的是「规则集链接」:由 system/rule-lists.mjs 从用户填的网址下载、解析、编译,
+  // 不在 MetaCubeX 上,拿它的名字去那边找必然 404。只跳过这一种——其余认不出前缀的名字
+  // 仍然要走下面的报错路径(路径穿越那道闸也在那儿)。
+  const local = entries.filter(
+    (e) => e && e.type === 'local' && e.tag && e.path && !isRuleListTag(e.tag),
+  )
   if (!local.length) return { ok: true, downloaded: [] }
 
   const src = RULESET_SOURCE

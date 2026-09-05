@@ -631,6 +631,8 @@ const zh: LANG_MESSAGE = {
   routingPolicyNamePlaceholder: '比如:谷歌',
   routingPolicyNameRequired: '请填写站点集名称。',
   routingPolicyNameDuplicate: '已有同名站点集;这个名字会直接用作内核里的出站名称,不能重复。',
+  routingPolicyRuleUrl: '规则集链接',
+  routingPolicyRuleUrlPlaceholder: 'https://例子/list/Check.list',
   routingPolicyRulesets: '规则集',
   routingPolicyRulesetsPlaceholder: 'geosite-google(一行一个)',
   routingPolicyDomain: '域名',

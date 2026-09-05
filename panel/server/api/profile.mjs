@@ -58,6 +58,17 @@ export const validateProfilePatch = (patch, { reservedNames = [] } = {}) => {
     if (key in patch && !isHttpUrl(patch[key])) return `${key} must be an http(s) URL`
   }
 
+  // 站点集里的规则集链接:必须是 http(s) 网址(部署时会去拉,拉回来的东西要编成规则集)
+  if ('routing' in patch && isPlainObject(patch.routing) && Array.isArray(patch.routing.policies)) {
+    for (const p of patch.routing.policies) {
+      if (!isPlainObject(p) || !('ruleUrls' in p)) continue
+      if (!Array.isArray(p.ruleUrls)) return 'routing.policies[].ruleUrls must be an array'
+      if (p.ruleUrls.some((u) => typeof u !== 'string' || !/^https?:\/\/[^\s]+$/i.test(u.trim()))) {
+        return 'routing.policies[].ruleUrls must be http(s) URLs'
+      }
+    }
+  }
+
   // 分析数据保留时长(月)
   if ('traffic' in patch) {
     const tr = patch.traffic

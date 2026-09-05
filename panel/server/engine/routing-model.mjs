@@ -1,3 +1,4 @@
+import { listTagForUrl } from './rule-list.mjs'
 // 分流模型的归一化与老档案迁移。
 //
 // 现在只有一层:**站点集**。一个站点集 = 一组匹配规则 + 内核里一个同名 selector,
@@ -109,21 +110,38 @@ export const normalizeRegion = (raw, index = 0) => ({
       : 'proxy',
 })
 
-export const normalizePolicy = (raw, index = 0) => ({
-  id: isNonEmptyString(raw?.id) ? raw.id.trim() : `policy-${index}`,
-  name: isNonEmptyString(raw?.name) ? raw.name.trim() : `策略-${index + 1}`,
-  // 图标是纯界面的东西(国家代码或 globe:xxx),不进内核配置
-  icon: isNonEmptyString(raw?.icon) ? raw.icon.trim() : '',
-  // selector 首次生成时的默认选中项;空则由 config.mjs 用成员表里的第一个兜底
-  default: isNonEmptyString(raw?.default) ? raw.default.trim() : '',
-  // 停用的站点集留在档案里、界面上能看到,但不进内核配置(没有 selector、没有规则)
-  enabled: raw?.enabled !== false,
-  rulesets: strList(raw?.rulesets),
-  domain: strList(raw?.domain),
-  domainSuffix: strList(raw?.domainSuffix),
-  domainKeyword: strList(raw?.domainKeyword),
-  ipCidr: strList(raw?.ipCidr),
-})
+export const normalizePolicy = (raw, index = 0) => {
+  // 规则集链接:存的是网址,部署时下回来编成 <listTagForUrl(url)>.srs(见
+  // system/rule-lists.mjs)。这里就把它折算成规则集名字并进 rulesets——下游的路由规则、
+  // DNS 规则、域名穿透一律按"这个站点集引用了哪些规则集"办事,不必各自再认一遍链接。
+  const ruleUrls = strList(raw?.ruleUrls).filter((u) => /^https?:\/\//i.test(u))
+  return {
+    id: isNonEmptyString(raw?.id) ? raw.id.trim() : `policy-${index}`,
+    name: isNonEmptyString(raw?.name) ? raw.name.trim() : `策略-${index + 1}`,
+    // 图标是纯界面的东西(国家代码或 globe:xxx),不进内核配置
+    icon: isNonEmptyString(raw?.icon) ? raw.icon.trim() : '',
+    // selector 首次生成时的默认选中项;空则由 config.mjs 用成员表里的第一个兜底
+    default: isNonEmptyString(raw?.default) ? raw.default.trim() : '',
+    // 停用的站点集留在档案里、界面上能看到,但不进内核配置(没有 selector、没有规则)
+    enabled: raw?.enabled !== false,
+    ruleUrls,
+    rulesets: [...new Set([...strList(raw?.rulesets), ...ruleUrls.map(listTagForUrl)])],
+    domain: strList(raw?.domain),
+    domainSuffix: strList(raw?.domainSuffix),
+    domainKeyword: strList(raw?.domainKeyword),
+    ipCidr: strList(raw?.ipCidr),
+  }
+}
+
+// 整份档案里用到的规则集链接:部署时要按这张表把它们下回来编译(见 system/rule-lists.mjs)。
+// 停用的站点集不算——它本来就不进配置。
+export const collectRuleListUrls = (routing) => {
+  const seen = new Map()
+  for (const p of normalizeRouting(routing).activePolicies) {
+    for (const url of p.ruleUrls) if (!seen.has(url)) seen.set(url, listTagForUrl(url))
+  }
+  return [...seen.entries()].map(([url, tag]) => ({ url, tag }))
+}
 
 // 一条策略至少要有一个匹配条件,否则它生成的规则会匹配不到任何东西(或者更糟:
 // 一条空条件的规则在 sing-box 里等价于"全部命中",把后面的规则全盖住)。

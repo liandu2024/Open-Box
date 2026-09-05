@@ -636,6 +636,8 @@ const en = {
   routingPolicyNamePlaceholder: 'e.g. Google',
   routingPolicyNameRequired: 'Give the site set a name.',
   routingPolicyNameDuplicate: 'A site set with that name already exists — the name becomes the outbound tag in the kernel, so it has to be unique.',
+  routingPolicyRuleUrl: 'Rule list URL',
+  routingPolicyRuleUrlPlaceholder: 'https://example/list/Check.list',
   routingPolicyRulesets: 'Rule sets',
   routingPolicyRulesetsPlaceholder: 'geosite-google (one per row)',
   routingPolicyDomain: 'Domain',
