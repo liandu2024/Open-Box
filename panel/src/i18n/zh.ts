@@ -159,7 +159,6 @@ const zh: LANG_MESSAGE = {
   reverse: '反向',
   sniffHost: '嗅探主机',
   ipScreenshotTip: '截图时请确保隐藏IP',
-  showStatisticsWhenSidebarCollapsed: '侧边栏折叠时显示统计',
   totalConnections: '连接统计',
   totalConnectionsTip: '只能统计面板打开期间的连接。\n记录开始时间：{statsStartTime}',
   mostDownloadHost: '最多下载主机',

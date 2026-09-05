@@ -159,7 +159,6 @@ const en = {
   reverse: 'Reverse',
   sniffHost: 'Sniff host',
   ipScreenshotTip: 'Please hide the IP when taking screenshots.',
-  showStatisticsWhenSidebarCollapsed: 'Show statistics when sidebar collapsed',
   totalConnections: 'Connection statistics',
   totalConnectionsTip:
     'Only connections opened while the panel is open are counted. \nRecording start time: {statsStartTime}',

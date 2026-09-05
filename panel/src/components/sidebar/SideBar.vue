@@ -33,14 +33,10 @@
           </a>
         </li>
       </ul>
+      <!-- 折叠时底部只留启动 / 停止 / 重启三个按钮,不套卡片、不摆统计——那一列全是单色
+           小图标,中间夹一块白卡片会打乱视觉线;按钮居中,左右和上面的菜单图标对齐 -->
       <template v-if="isSidebarCollapsed">
-        <VerticalInfos v-if="showStatisticsWhenSidebarCollapsed">
-          <KernelActionButtons vertical />
-        </VerticalInfos>
-        <KernelActionButtons
-          v-else
-          vertical
-        />
+        <KernelActionButtons vertical />
       </template>
       <template v-else>
         <OverviewCarousel v-if="route.name !== ROUTE_NAME.overview" />
@@ -56,14 +52,13 @@ import { ROUTE_ICON_MAP, ROUTE_NAME } from '@/constant'
 import { renderRoutes } from '@/helper'
 import { useTooltip } from '@/helper/tooltip'
 import router from '@/router'
-import { isSidebarCollapsed, showStatisticsWhenSidebarCollapsed } from '@/store/settings'
+import { isSidebarCollapsed } from '@/store/settings'
 import { twMerge } from 'tailwind-merge'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import OverviewCarousel from './OverviewCarousel.vue'
 import KernelActionButtons from './KernelActionButtons.vue'
 import SidebarHeader from './SidebarHeader.vue'
-import VerticalInfos from './VerticalInfos.vue'
 
 const { showTip } = useTooltip()
 const { t } = useI18n()

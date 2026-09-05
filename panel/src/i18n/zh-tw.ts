@@ -159,7 +159,6 @@ const zhTW: LANG_MESSAGE = {
   reverse: '反向',
   sniffHost: '嗅探主機',
   ipScreenshotTip: '截圖時請確保隱藏IP',
-  showStatisticsWhenSidebarCollapsed: '側邊欄摺疊時顯示統計',
   totalConnections: '連接統計',
   totalConnectionsTip: '只能統計面板開啟期間的連接。\n記錄開始時間：{statsStartTime}',
   mostDownloadHost: '最多下載主機',
