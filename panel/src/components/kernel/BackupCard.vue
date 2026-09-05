@@ -45,15 +45,18 @@
           />
           {{ $t('backupExport') }}
         </button>
+        <!-- 这台路由器上没有的部分(没订阅、没终端分流、没共享网络)置灰不可选 -->
         <label
           v-for="opt in EXPORT_OPTIONS"
           :key="opt.key"
-          class="flex cursor-pointer items-center gap-2 text-sm"
+          class="flex items-center gap-2 text-sm"
+          :class="available[opt.key] ? 'cursor-pointer' : 'text-base-content/40 cursor-not-allowed'"
         >
           <input
             v-model="include[opt.key]"
             type="checkbox"
             class="checkbox checkbox-sm"
+            :disabled="!available[opt.key]"
           />
           {{ $t(opt.label) }}
         </label>
@@ -156,14 +159,17 @@ import {
   type OpenboxBackup,
   type OpenboxBackupOptions,
   type OpenboxBackupSubscriptionsMode,
+  type OpenboxProfile,
 } from '@/api/openbox'
+import { loadOpenboxSubscriptions, openboxSubscriptions } from '@/store/openboxSubscriptions'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import { showNotification } from '@/helper/notification'
 import { ArrowDownTrayIcon, ArrowUpTrayIcon } from '@heroicons/vue/24/outline'
 import dayjs from 'dayjs'
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+const props = defineProps<{ profile: OpenboxProfile | null }>()
 const emit = defineEmits<{ imported: [] }>()
 const { t } = useI18n()
 
@@ -174,6 +180,22 @@ const EXPORT_OPTIONS: { key: keyof OpenboxBackupOptions; label: string }[] = [
   { key: 'servers', label: 'backupIncludeServers' },
 ]
 const include = reactive<OpenboxBackupOptions>({ subscriptions: true, clientRoutes: true, servers: true })
+// 这台路由器上有没有这三块:订阅看订阅列表,终端分流 / 共享网络看档案。没有的置灰、不勾
+const available = computed<OpenboxBackupOptions>(() => ({
+  subscriptions: openboxSubscriptions.value.length > 0,
+  clientRoutes: (props.profile?.clientRoutes?.length ?? 0) > 0,
+  servers: (props.profile?.servers?.length ?? 0) > 0,
+}))
+watch(
+  () => JSON.stringify(available.value),
+  () => {
+    for (const key of Object.keys(include) as (keyof OpenboxBackupOptions)[]) include[key] = available.value[key]
+  },
+  { immediate: true },
+)
+onMounted(() => {
+  void loadOpenboxSubscriptions()
+})
 const exporting = ref(false)
 const importing = ref(false)
 const inputRef = ref<HTMLInputElement>()
@@ -285,6 +307,7 @@ const confirmImport = async () => {
     showConfirm.value = false
     pending.value = null
     void r
+    void loadOpenboxSubscriptions()
     showNotification({
       content: 'backupImportedNeedRestart',
       type: 'alert-success',

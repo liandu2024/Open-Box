@@ -42,7 +42,10 @@
             :patch-profile="patchProfile"
           />
           <!-- 导出 / 导入:导入后档案换了,重新拉一遍状态和档案 -->
-          <BackupCard @imported="onImported" />
+          <BackupCard
+            :profile="profile"
+            @imported="onImported"
+          />
         </template>
 
         <!-- Open-Box 自身更新 / Geo 规则集更新(各带自动更新计划) -->
