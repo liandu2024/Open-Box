@@ -1106,7 +1106,7 @@ const toggleEnabled = async (group: OpenboxUserGroup) => {
   }
 }
 
-// ---- 内置出站:只改名字和图标 ----
+// ---- 内置出站:只改名字、图标和图标缩放 ----
 const showBuiltinEditor = ref(false)
 const builtinDraft = ref<OpenboxUserGroup | null>(null)
 const openBuiltinEditor = (group: OpenboxUserGroup) => {
@@ -1128,7 +1128,7 @@ const saveBuiltin = async () => {
   }
   saving.value = true
   try {
-    await persist(groups.value.map((g) => (g.id === d.id ? { ...g, name, icon: d.icon } : g)))
+    await persist(groups.value.map((g) => (g.id === d.id ? { ...g, name, icon: d.icon, iconScale: d.iconScale || 0 } : g)))
     showBuiltinEditor.value = false
   } catch (err) {
     notifyError(err)
