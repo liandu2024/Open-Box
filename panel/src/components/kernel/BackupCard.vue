@@ -1,23 +1,31 @@
 <template>
   <!-- 导出 / 导入:把这台路由器上配出来的东西打成一个 JSON(server/api/backup.mjs),
        新设备导入就能用。导入只写库不重启内核,和订阅那边一个规矩:提示「重启内核生效」。 -->
-  <div class="card bg-base-100 border-base-300/60 border">
+  <!-- 整张卡片都能拖文件进来导入:拖到上面时描一圈虚线、盖一层「松开导入」。dragenter / dragleave
+       在子元素之间来回触发,用计数器判断是不是真的离开了卡片 -->
+  <div
+    class="card bg-base-100 border-base-300/60 relative border transition-colors"
+    :class="dragging && 'border-primary bg-primary/5 border-dashed'"
+    @dragenter.prevent="onDragEnter"
+    @dragover.prevent
+    @dragleave="onDragLeave"
+    @drop.prevent="onDrop"
+  >
+    <div
+      v-if="dragging"
+      class="text-primary pointer-events-none absolute inset-0 z-10 flex items-center justify-center gap-2 text-sm font-medium"
+    >
+      <ArrowUpTrayIcon class="h-5 w-5" />
+      {{ $t('backupDropHint') }}
+    </div>
     <div class="card-body gap-3 p-4">
       <div>
         <h2 class="text-base font-semibold">{{ $t('backupTitle') }}</h2>
         <p class="text-base-content/60 text-xs">{{ $t('backupDescription') }}</p>
       </div>
 
-      <!-- 导出:[包含订阅和节点] [导出] -->
+      <!-- 导出:[导出] [包含订阅和节点]。按钮放最前面,和下面的「导入」左对齐 -->
       <div class="flex flex-wrap items-center gap-3">
-        <label class="flex cursor-pointer items-center gap-2 text-sm">
-          <input
-            v-model="withSubscriptions"
-            type="checkbox"
-            class="checkbox checkbox-sm"
-          />
-          {{ $t('backupIncludeSubscriptions') }}
-        </label>
         <button
           type="button"
           class="btn btn-sm"
@@ -34,6 +42,14 @@
           />
           {{ $t('backupExport') }}
         </button>
+        <label class="flex cursor-pointer items-center gap-2 text-sm">
+          <input
+            v-model="withSubscriptions"
+            type="checkbox"
+            class="checkbox checkbox-sm"
+          />
+          {{ $t('backupIncludeSubscriptions') }}
+        </label>
         <span class="text-base-content/50 text-xs">{{ $t('backupExportHint') }}</span>
       </div>
 
@@ -151,6 +167,24 @@ const pendingHasSubscriptions = computed(() => Array.isArray(pending.value?.subs
 
 const pad2 = (n: number) => String(n).padStart(2, '0')
 
+// 拖拽导入:进入 / 离开计数,子元素间切换不算离开
+const dragging = ref(false)
+let dragDepth = 0
+const onDragEnter = () => {
+  dragDepth += 1
+  dragging.value = true
+}
+const onDragLeave = () => {
+  dragDepth = Math.max(0, dragDepth - 1)
+  if (dragDepth === 0) dragging.value = false
+}
+const onDrop = (e: DragEvent) => {
+  dragDepth = 0
+  dragging.value = false
+  const file = e.dataTransfer?.files?.[0]
+  if (file) handleFile(file)
+}
+
 // 拉一份 JSON,浏览器存成文件:open-box-backup-20260905-2130.json
 const doExport = async () => {
   exporting.value = true
@@ -192,11 +226,13 @@ const pendingParts = computed(() => {
   return t('backupPartsBase') + subs
 })
 
-// 选了文件:先读出来看格式对不对,对了再弹确认
+// 选了文件(点按钮选的、或拖进来的):先读出来看格式对不对,对了再弹确认
 const onFilePicked = () => {
   const file = inputRef.value?.files?.[0]
   if (inputRef.value) inputRef.value.value = ''
-  if (!file) return
+  if (file) handleFile(file)
+}
+const handleFile = (file: File) => {
   const reader = new FileReader()
   reader.onload = () => {
     try {
