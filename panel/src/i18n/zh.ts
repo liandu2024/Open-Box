@@ -698,6 +698,7 @@ const zh: LANG_MESSAGE = {
   kernel: '\u5185\u6838',
   kernelLoadFailed: '\u6ca1\u52a0\u8f7d\u51fa\u670d\u52a1\u72b6\u6001:{message}',
   kernelServiceTitle: '\u5185\u6838\u4e0e\u9762\u677f\u670d\u52a1',
+  openboxGithubHint: '在 GitHub 上查看 Open-Box(新开页签)',
   kernelConflictTitle: '\u68c0\u6d4b\u5230\u5176\u4ed6\u4ee3\u7406\u670d\u52a1\u6b63\u5728\u8fd0\u884c',
   kernelConflictItem: '\u8bf7\u5148\u505c\u6b62 {name}\u2014\u2014\u5b83\u5728\u8fd0\u884c\u65f6 Open-Box \u4f1a\u62d2\u7edd\u542f\u52a8\u3002',
   kernelVersionLabel: '\u5185\u6838\u7248\u672c',

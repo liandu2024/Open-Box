@@ -703,6 +703,7 @@ const en = {
   kernel: 'Kernel',
   kernelLoadFailed: "Couldn't load service status: {message}",
   kernelServiceTitle: 'Core & panel service',
+  openboxGithubHint: 'Open-Box on GitHub (opens in a new tab)',
   kernelConflictTitle: 'Another proxy service is running',
   kernelConflictItem: "Stop {name} first — Open-Box refuses to start while it's running.",
   kernelVersionLabel: 'Kernel version',
