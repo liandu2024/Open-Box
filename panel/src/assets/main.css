@@ -842,7 +842,7 @@ div::-webkit-scrollbar-thumb:hover {
    会把整页衬得刺眼、文字也不好读。用 multiply 和一层半透明黑混合,图片整体暗下去,
    不动内联的 background-image,亮色主题不受影响。 */
 [data-theme='forest'] .custom-background {
-  background-color: rgb(0 0 0 / 0.55);
+  background-color: rgb(0 0 0 / 0.65);
   background-blend-mode: multiply;
 }
 
