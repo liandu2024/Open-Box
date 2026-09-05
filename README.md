@@ -25,9 +25,9 @@ OpenWrt 上的一体化透明代理:一条命令装完 sing-box 内核和管理�
 
 ![订阅管理](docs/pic/settings-subscriptions.webp)
 
-**出口管理**:自动择优组和手动组混排,动态组按关键词自动收编新节点,不用每次刷新订阅回来重勾一遍。
+**出口节点**:自动择优组和手动组混排,动态组按关键词自动收编新节点,不用每次刷新订阅回来重勾一遍。
 
-![出口管理](docs/pic/settings-groups.webp)
+![出口节点](docs/pic/settings-groups.webp)
 
 **目标分流**:一个站点集 = 一组匹配条件 + 一个同名出口,规则集来自 MetaCubeX 的 meta-rules-dat(含被墙域名表)。
 

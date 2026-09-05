@@ -49,7 +49,7 @@ const en = {
   directTestUrlHint: 'Only for the built-in direct outbound. Testing direct against a Google host from China measures distance to Google, not the direct line itself.',
   testUrlHint: 'For node groups and Proxies-page latency tests. Defaults to Google\'s 204 endpoint.',
   testUrlLabel: 'Test URL',
-  testUrlDescription: 'Used by url-test groups and the latency test on the Proxies page; each url-test group can also set its own under Outbounds.',
+  testUrlDescription: 'Used by url-test groups and the latency test on the Proxies page; each url-test group can also set its own under Outbound nodes.',
   trafficRetentionTitle: 'Analytics retention',
   trafficRetentionDescription:
     'How long the daily traffic charts, rankings and drill-down details are kept on the router. Expired records are cleaned up every minute.',
@@ -440,7 +440,7 @@ const en = {
 
   // --- Subscriptions & rename rules (P4b Task 5) ---
   subscriptions: 'Subscriptions',
-  groupsTab: 'Outbounds',
+  groupsTab: 'Outbound nodes',
   groupBuiltinEditHint: 'Built-in outbounds: only the name and icon can be changed.',
   groupBuiltinBlockSummary: 'Matched traffic is dropped.',
   groupBuiltinDirectSummary: 'Traffic leaves the router directly, bypassing any proxy. The kernel needs it; disabling only hides it from site sets.',
@@ -792,7 +792,7 @@ const en = {
   trafficTotal: 'Total',
   trafficConns: '{n} connections',
   trafficDirectionHint: 'Inbound = bytes received from the internet (download); outbound = bytes sent out (upload)',
-  trafficByNode: 'By outbound',
+  trafficByNode: 'By outbound node',
   trafficByHost: 'Destinations',
   trafficByClient: 'Devices',
   trafficDrillEmpty: 'No breakdown: this row was recorded by an older version; cross-dimension detail is kept from this version on',
@@ -808,10 +808,10 @@ const en = {
   trafficName: 'Name',
   trafficShare: 'Share',
   trafficOther: 'Short-lived connections not sampled',
-  trafficOtherHint: 'The panel reads the kernel connection table every 2 s. Connections that live less than one sampling period cannot be attributed to an outbound or host and only count towards the day total.',
+  trafficOtherHint: 'The panel reads the kernel connection table every 2 s. Connections that live less than one sampling period cannot be attributed to an outbound node or host and only count towards the day total.',
   trafficEmptyDay: 'No traffic recorded on this day',
   trafficMoreRows: '{n} more rows hidden, narrow down with the search box',
-  trafficPickDay: "Click a bar to see that day's devices, outbounds and destinations",
+  trafficPickDay: "Click a bar to see that day's devices, outbound nodes and destinations",
   trafficLoadError: 'Failed to load traffic records: {message}',
   // 侧边栏
   sidebarCollapse: 'Collapse sidebar',
