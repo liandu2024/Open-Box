@@ -31,7 +31,8 @@
         <CountryFlag
           v-if="group.icon"
           :code="group.icon"
-          :size="18 + (group.iconScale || 0)"
+          :size="18"
+          :scale="group.iconScale"
           :title="group.icon"
         />
         <div class="min-w-0 flex-1">

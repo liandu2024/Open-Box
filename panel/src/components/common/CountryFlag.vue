@@ -5,9 +5,17 @@
        和一个扁长方形摆在一起,圆看着明显更大(视觉重心问题,不是尺寸问题)。 -->
   <span
     class="inline-flex shrink-0 items-center justify-center"
+    :class="scaleStyle && 'overflow-hidden'"
     :style="{ width: `${boxWidth}px`, height: `${size}px` }"
     :title="title || code"
   >
+    <!-- 缩放只发生在盒子里(从中心放大 / 缩小),放不下就裁掉,外框尺寸不变,旁边的文字不动。
+         只有真的缩放了才裁:线条地球的元素框本来就比盒子高两像素(见下面 monoGlyph),
+         不缩放时照旧让它探出去,别把描边切掉。 -->
+    <span
+      class="inline-flex shrink-0 items-center justify-center"
+      :style="scaleStyle"
+    >
     <!-- 彩色标识:整段 svg 当 data: URI 塞进 <img>。不用 v-html——<img> 里的 svg
          不执行脚本,而且这些标记是编译进来的常量,走 <img> 一劳永逸。 -->
     <img
@@ -45,6 +53,7 @@
       :class="isGlobe ? 'text-base-content/70' : 'text-base-content/30'"
       :style="{ width: `${monoGlyph}px`, height: `${monoGlyph}px` }"
     />
+    </span>
   </span>
 </template>
 
@@ -66,9 +75,16 @@ const props = withDefaults(
     code?: string
     size?: number
     title?: string
+    // 像素偏移:+1 画成 size+1 那么大,-1 画成 size-1;外框不变(见 IconScaleInput.vue)
+    scale?: number
   }>(),
-  { code: '', size: 16, title: '' },
+  { code: '', size: 16, title: '', scale: 0 },
 )
+
+const scaleStyle = computed(() => {
+  const factor = props.size > 0 ? (props.size + (props.scale || 0)) / props.size : 1
+  return factor === 1 ? undefined : { transform: `scale(${factor})`, transformOrigin: 'center' }
+})
 
 // 编译期把 src/assets/flags 下的 svg 全部登记成 URL,浏览器只会真正去取显示到的那几个。
 // 不用 `new URL('../assets/flags/' + code + '.svg', import.meta.url)`:那种拼接

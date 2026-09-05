@@ -21,7 +21,8 @@
             <ProxyIcon
               v-if="element.icon"
               :icon="element.icon"
-              :size="16 + scaleOf(element.name)"
+              :size="16"
+              :scale="scaleOf(element.name)"
               :margin="0"
             />
             <span class="truncate text-sm">{{ element.name }}</span>
@@ -43,7 +44,8 @@
           <ProxyIcon
             v-if="iconOf(name)"
             :icon="iconOf(name)"
-            :size="16 + scaleOf(name)"
+            :size="16"
+            :scale="scaleOf(name)"
             :margin="0"
           />
           <span class="truncate text-sm">{{ name }}</span>

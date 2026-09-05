@@ -16,7 +16,8 @@
         >
           <ProxyIcon
             :icon="dialogGroup.icon"
-            :size="20 + (dialogGroup.iconScale || 0)"
+            :size="20"
+            :scale="dialogGroup.iconScale"
             :margin="0"
           />
         </div>

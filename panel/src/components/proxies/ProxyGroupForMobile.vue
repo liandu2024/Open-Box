@@ -61,7 +61,8 @@
         <ProxyIcon
           v-if="proxyGroup?.icon"
           :icon="proxyGroup.icon"
-          :size="40 + (proxyGroup.iconScale || 0)"
+          :size="40"
+          :scale="proxyGroup.iconScale"
           :margin="0"
           class="absolute top-2 right-2"
         />

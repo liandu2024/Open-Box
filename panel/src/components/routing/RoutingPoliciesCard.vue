@@ -35,7 +35,8 @@
           <CountryFlag
             v-if="policy.icon"
             :code="policy.icon"
-            :size="18 + (policy.iconScale || 0)"
+            :size="18"
+            :scale="policy.iconScale"
           />
           <div class="min-w-0 flex-1">
             <div class="flex items-center gap-2">
@@ -93,7 +94,8 @@
       <span class="w-4 shrink-0" />
       <CountryFlag
         :code="fallbackIcon"
-        :size="18 + fallbackIconScale"
+        :size="18"
+        :scale="fallbackIconScale"
       />
       <div class="min-w-0 flex-1">
         <div class="flex items-center gap-2">

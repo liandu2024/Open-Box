@@ -4,7 +4,8 @@
       v-if="icon"
       :icon="icon"
       :margin="iconMargin"
-      :size="iconSize + (node?.iconScale || 0)"
+      :size="iconSize"
+      :scale="node?.iconScale"
     />
     {{ name }}
     <template v-if="dialerProxy"> ({{ dialerProxy }}) </template>
