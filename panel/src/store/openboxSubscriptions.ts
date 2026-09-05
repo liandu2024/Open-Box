@@ -1,21 +1,16 @@
-import type { OpenboxApplyResult, OpenboxSubscription } from '@/api/openbox'
-import { applySubscriptionChanges, fetchSubscriptions, refreshSubscription } from '@/api/openbox'
+import type { OpenboxSubscription } from '@/api/openbox'
+import { fetchSubscriptions, refreshSubscription } from '@/api/openbox'
 import { showNotification } from '@/helper/notification'
 import { ref } from 'vue'
 
-// 订阅变动后服务端会把节点应用到内核(见 server/api/subscriptions.mjs):成了说一声,
-// 失败把原因摆出来——订阅本身已经存好,只是内核那一步没过。内核没在跑时不吭声。
-export const notifySubscriptionApplied = (applied?: OpenboxApplyResult) => {
-  if (!applied) return
-  if (!('ok' in applied)) {
-    // 节点没变就不重启内核,说一声免得以为刷新没生效;内核没在跑 / 先记账的情况不吭声
-    if (applied.skipped === 'nothing-changed') showNotification({ content: 'subscriptionNodesUnchanged', type: 'alert-info' })
-    return
-  }
-  if (applied.ok) {
-    showNotification({ content: 'subscriptionAppliedToCore', type: 'alert-success' })
+// 订阅的动作从不自动重启内核(重启会把连接全断一次,什么时候重启由用户决定)。
+// 服务端只告诉我们节点池变没变:变了就提示"重启内核生效",没变说"节点没有变化"。
+export const notifySubscriptionSaved = (changed: boolean | undefined, kind: 'saved' | 'refreshed' = 'saved') => {
+  if (changed === undefined) return
+  if (changed) {
+    showNotification({ content: kind === 'refreshed' ? 'subscriptionRefreshedNeedRestart' : 'subscriptionSavedNeedRestart', type: 'alert-success' })
   } else {
-    showNotification({ content: 'subscriptionApplyFailed', type: 'alert-error', params: { message: applied.message || applied.stage || '' } })
+    showNotification({ content: 'subscriptionNodesUnchanged', type: 'alert-info' })
   }
 }
 
@@ -43,19 +38,17 @@ export const loadOpenboxSubscriptions = async () => {
 
 // 「全部刷新」:逐个串行刷,不并发。刷新会让服务端去机场拉取,四五个订阅同时拉既容易
 // 撞上机场的频率限制,失败了也分不清是哪一条的问题。任一条失败不影响其余继续。
-// 每条都带 apply=false,最后只应用一次:不然几条订阅就重启几次内核。
 export const refreshAllOpenboxSubscriptions = async () => {
+  let changed = false
   for (const sub of [...openboxSubscriptions.value]) {
     try {
-      await refreshSubscription(sub.id, undefined, { apply: false })
+      const res = await refreshSubscription(sub.id)
+      if (res.changed) changed = true
     } catch {
       // 单条失败不中断整体;具体原因在订阅设置页逐条刷新时会显示出来
     }
   }
-  try {
-    notifySubscriptionApplied((await applySubscriptionChanges()).applied)
-  } catch (error) {
-    notifySubscriptionApplied({ ok: false, message: error instanceof Error ? error.message : String(error) })
-  }
+  // 几条里只要有一条的节点变了,就提醒一次
+  notifySubscriptionSaved(changed, 'refreshed')
   await loadOpenboxSubscriptions()
 }

@@ -157,7 +157,7 @@
 </template>
 
 <script setup lang="ts">
-import { notifySubscriptionApplied } from '@/store/openboxSubscriptions'
+import { notifySubscriptionSaved } from '@/store/openboxSubscriptions'
 import MarketLink from '@/components/common/MarketLink.vue'
 import type { OpenboxSubscription } from '@/api/openbox'
 import { deleteSubscription, fetchSubscriptions, refreshSubscription, reorderSubscriptions } from '@/api/openbox'
@@ -258,7 +258,7 @@ const handleRefresh = async (id: string) => {
   try {
     const res = await refreshSubscription(id)
     await loadSubscriptions()
-    notifySubscriptionApplied(res.applied)
+    notifySubscriptionSaved(res.changed, 'refreshed')
   } catch (error) {
     showNotification({
       content: 'subscriptionRefreshFailed',

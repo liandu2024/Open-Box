@@ -108,7 +108,7 @@ import { loadOpenboxNodeGroups, loadOpenboxSiteSets, nodeProviders } from '@/sto
 import { PROXY_TAB_TYPE, ROUTE_NAME, SETTINGS_TAB } from '@/constant'
 import {
   loadOpenboxSubscriptions,
-  notifySubscriptionApplied,
+  notifySubscriptionSaved,
   openboxSubscriptions,
 } from '@/store/openboxSubscriptions'
 import { useRouter } from 'vue-router'
@@ -162,9 +162,7 @@ const handleSubscriptionRefresh = async (id: string) => {
   try {
     const res = await refreshSubscription(id)
     await loadOpenboxSubscriptions()
-    // 服务端已经把新节点应用进内核了,这里马上重拉一遍,新节点立刻出现在卡片上
-    await fetchProxies()
-    notifySubscriptionApplied(res.applied)
+    notifySubscriptionSaved(res.changed, 'refreshed')
   } catch {
     // 失败原因在订阅设置页会逐条显示;这里是只读入口,不重复铺错误文案
   } finally {

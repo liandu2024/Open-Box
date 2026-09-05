@@ -29,10 +29,10 @@ const fakePublicLookup = async (hostname) => {
 
 // 起一个绑定临时端口的最小 express app,注册待测路由,返回 baseUrl 供 fetch 打真实 HTTP 请求;
 // close() 必须在 finally 里调用,防止测试遗留监听中的 server。
-const startApp = async (fetchImpl, lookup = fakePublicLookup, applyChanges) => {
+const startApp = async (fetchImpl, lookup = fakePublicLookup) => {
   const store = memStore()
   const app = express()
-  registerSubscriptionRoutes(app, { store, fetchImpl, lookup, applyChanges })
+  registerSubscriptionRoutes(app, { store, fetchImpl, lookup })
   const server = app.listen(0)
   await new Promise((resolve, reject) => {
     server.once('listening', resolve)
@@ -164,7 +164,7 @@ test('POST 创建订阅后 GET 列表可见;DELETE 后消失(同时移除节点)
 
     const delRes = await fetch(`${baseUrl}/api/openbox/subscriptions/${created.id}`, { method: 'DELETE' })
     assert.equal(delRes.status, 200)
-    assert.deepEqual(await delRes.json(), { ok: true })
+    assert.deepEqual(await delRes.json(), { ok: true, changed: true })
 
     const listRes2 = await fetch(`${baseUrl}/api/openbox/subscriptions`)
     assert.deepEqual((await listRes2.json()).subscriptions, [])
@@ -179,7 +179,7 @@ test('DELETE 不存在的 id 仍是幂等的 ok:true', async () => {
   try {
     const res = await fetch(`${baseUrl}/api/openbox/subscriptions/does-not-exist`, { method: 'DELETE' })
     assert.equal(res.status, 200)
-    assert.deepEqual(await res.json(), { ok: true })
+    assert.deepEqual(await res.json(), { ok: true, changed: false })
   } finally {
     await close()
   }
@@ -1044,83 +1044,36 @@ test('老字段 url 照旧能用:只传 url 时记录里 urls 就是它一条', 
   }
 })
 
-// -------- 变动后应用到内核 --------
+// -------- 节点池变没变:前端凭它决定要不要提示"重启内核生效" --------
 
-test('只有节点池真变了才应用到内核:上游没动的刷新、只改名字都不重启;apply=0 记账后 POST /apply 一次', async () => {
-  let applied = 0
-  const applyChanges = async () => { applied += 1; return { ok: true, stage: 'running' } }
+test('每个动作都如实报 changed:上游没动的刷新、只改名字是 false;换了节点、换地址、删除是 true;任何动作都不自动重启', async () => {
   let body = HK_LINE
   const fetchImpl = async () => ({ ok: true, status: 200, text: async () => body })
-  const { baseUrl, close } = await startApp(fetchImpl, fakePublicLookup, applyChanges)
-  const patch = (id, data) => fetch(`${baseUrl}/api/openbox/subscriptions/${id}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(data) })
-  const refresh = (id, q = '') => postJson(baseUrl, `/api/openbox/subscriptions/${id}/refresh${q}`, {}).then((r) => r.json())
+  const { baseUrl, close } = await startApp(fetchImpl)
+  const patch = (id, data) => fetch(`${baseUrl}/api/openbox/subscriptions/${id}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(data) }).then((r) => r.json())
+  const refresh = (id) => postJson(baseUrl, `/api/openbox/subscriptions/${id}/refresh`, {}).then((r) => r.json())
   try {
     const created = await (await postJson(baseUrl, '/api/openbox/subscriptions', { url: 'http://a', name: 'A' })).json()
-    assert.deepEqual(created.applied, { ok: true, stage: 'running' })
-    assert.equal(applied, 1)
+    assert.equal(created.changed, true)
 
-    // 上游没动:刷新一次节点一模一样,不重启
-    const same = await refresh(created.id)
-    assert.deepEqual(same.applied, { skipped: 'nothing-changed' })
-    assert.equal(applied, 1)
-
-    // 上游换了节点:重启
+    assert.equal((await refresh(created.id)).changed, false, '上游没动')
     body = JP_LINE
-    const changed = await refresh(created.id)
-    assert.equal(changed.applied.ok, true)
-    assert.equal(applied, 2)
+    assert.equal((await refresh(created.id)).changed, true, '上游换了节点')
 
-    // apply=0:变了也先记着,不立刻重启;之后 POST /apply 才重启一次;再 /apply 一次没有待应用的就跳过
-    body = HK_LINE
-    const deferred = await refresh(created.id, '?apply=0')
-    assert.deepEqual(deferred.applied, { skipped: 'deferred' })
-    assert.equal(applied, 2)
-    const flushed = await (await postJson(baseUrl, '/api/openbox/subscriptions/apply', {})).json()
-    assert.equal(flushed.applied.ok, true)
-    assert.equal(applied, 3)
-    const nothing = await (await postJson(baseUrl, '/api/openbox/subscriptions/apply', {})).json()
-    assert.deepEqual(nothing.applied, { skipped: 'nothing-changed' })
-    assert.equal(applied, 3)
-
-    // 只改名字:不重拉、不重启
-    const renamed = await (await patch(created.id, { name: 'B' })).json()
-    assert.equal(renamed.applied, undefined)
-    assert.equal(applied, 3)
-
-    // 换地址、上游内容也不同:重启
+    assert.equal((await patch(created.id, { name: 'B' })).changed, false, '只改名字')
     body = VMESS_US
-    const moved = await (await patch(created.id, { urls: ['http://b'] })).json()
-    assert.equal(moved.applied.ok, true)
-    assert.equal(applied, 4)
+    assert.equal((await patch(created.id, { urls: ['http://b'] })).changed, true, '换地址且内容不同')
 
-    // 排序:只有一条,顺序没变,节点池没变,不重启
     const order = await (await fetch(`${baseUrl}/api/openbox/subscriptions/order`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ids: [created.id] }) })).json()
-    assert.deepEqual(order.applied, { skipped: 'nothing-changed' })
-    assert.equal(applied, 4)
+    assert.equal(order.changed, false, '只有一条,顺序没变')
 
-    // 删除:节点没了,重启;再删一次什么都没变,不重启
     const del = await (await fetch(`${baseUrl}/api/openbox/subscriptions/${created.id}`, { method: 'DELETE' })).json()
-    assert.equal(del.applied.ok, true)
-    assert.equal(applied, 5)
+    assert.equal(del.changed, true)
     const delAgain = await (await fetch(`${baseUrl}/api/openbox/subscriptions/${created.id}`, { method: 'DELETE' })).json()
-    assert.deepEqual(delAgain.applied, { skipped: 'nothing-changed' })
-    assert.equal(applied, 5)
-  } finally {
-    await close()
-  }
-})
-
-test('应用到内核失败时订阅照样保存,失败原因带在 applied 里,不返回 4xx', async () => {
-  const applyChanges = async () => { throw new Error('内核起不来') }
-  const fetchImpl = async () => ({ ok: true, status: 200, text: async () => HK_LINE })
-  const { baseUrl, store, close } = await startApp(fetchImpl, fakePublicLookup, applyChanges)
-  try {
-    const res = await postJson(baseUrl, '/api/openbox/subscriptions', { url: 'http://a', name: 'A' })
-    assert.equal(res.status, 200)
-    const body = await res.json()
-    assert.equal(body.applied.ok, false)
-    assert.match(body.applied.message, /内核起不来/)
-    assert.equal(store.getSubscriptions().length, 1)
+    assert.equal(delAgain.changed, false, '本来就不存在')
+    // 没有任何 /apply 一类的接口:重启由用户在面板上点
+    const apply = await postJson(baseUrl, '/api/openbox/subscriptions/apply', {})
+    assert.equal(apply.status, 404)
   } finally {
     await close()
   }

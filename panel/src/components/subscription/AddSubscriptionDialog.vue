@@ -189,7 +189,7 @@ import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import { PlusIcon, TrashIcon } from '@heroicons/vue/24/outline'
 import { debounce } from 'lodash'
 import { showNotification } from '@/helper/notification'
-import { notifySubscriptionApplied } from '@/store/openboxSubscriptions'
+import { notifySubscriptionSaved } from '@/store/openboxSubscriptions'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import RenameRulesEditor from './RenameRulesEditor.vue'
@@ -388,7 +388,7 @@ const handleSave = async () => {
       : await createSubscription(payload)
     emit('saved')
     isOpen.value = false
-    notifySubscriptionApplied(res.applied)
+    notifySubscriptionSaved(res.changed)
   } catch (error) {
     showNotification({
       content: 'subscriptionSaveFailed',

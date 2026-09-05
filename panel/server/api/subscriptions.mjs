@@ -316,45 +316,16 @@ const rebuildNodePool = (existingNodes, subscriptionsInOrder, subscriptionId, ne
 
 const nodeSummary = (n) => ({ tag: n.tag, originalTag: n.originalTag, type: n.type, server: n.server, regionCode: n.regionCode || '' })
 
-export const registerSubscriptionRoutes = (app, { store, fetchImpl = subscriptionFetch, lookup = dns.lookup, applyChanges } = {}) => {
+export const registerSubscriptionRoutes = (app, { store, fetchImpl = subscriptionFetch, lookup = dns.lookup } = {}) => {
   const router = express.Router({ caseSensitive: true })
   router.use(express.json({ limit: '10mb' }))
 
-  // 节点池变了(新建 / 刷新 / 换地址 / 删除 / 排序)就把配置重新生成、应用到内核——
-  // 以前刷新只更新数据库,内核里还是上一次部署的那批节点,订阅页看着"刷新成功"却怎么也
-  // 等不到新节点(正式路由器上实测:库里 12 个、内核里 8 个)。内核没在跑就跳过,等它下次
-  // 启动自然带上。连着刷好几条订阅时前端带 ?apply=0,最后单独 POST /apply 一次,
-  // 免得每条都重启一遍内核。
-  // 重启内核的代价不小(连接全断一次),所以只在节点池**真的变了**才重启:每个路由进来先拍一张
-  // 节点池的快照,写完再比一次,tag / 服务器 / 参数任何一处不同才算变。刷新一次上游没动、
-  // 保存时只是把改名规则原样存一遍——这些都不重启。
+  // 订阅的任何动作都不自动重启内核——重启会把连接全断一次,什么时候重启该由用户决定。
+  // 但要如实告诉前端节点池变没变(新增 / 刷新 / 换地址 / 删除 / 排序都可能变),变了面板才提示
+  // "重启内核生效";上游没动的刷新、只是把规则原样存一遍,就说"节点没有变化"。每个路由进来
+  // 先拍一张节点池快照,写完再比一次:tag / 服务器 / 参数任何一处不同都算变。
   const snapshot = () => JSON.stringify(store.getNodes())
-  // 连着刷好几条时(apply=0)只记一笔"有变动待应用",最后 POST /apply 一次;没变动就连那一次也省了
-  let pendingApply = false
-  const applyAfter = async (req, before) => {
-    if (!applyChanges) return undefined
-    if (before !== undefined && snapshot() === before) return { skipped: 'nothing-changed' }
-    if (req.query.apply === '0') {
-      pendingApply = true
-      return { skipped: 'deferred' }
-    }
-    pendingApply = false
-    try {
-      return await applyChanges()
-    } catch (err) {
-      return { ok: false, stage: 'apply', message: errorMessage(err) }
-    }
-  }
-  router.post('/apply', async (_req, res) => {
-    if (!applyChanges) return res.json({})
-    if (!pendingApply) return res.json({ applied: { skipped: 'nothing-changed' } })
-    pendingApply = false
-    try {
-      res.json({ applied: await applyChanges() })
-    } catch (err) {
-      res.json({ applied: { ok: false, stage: 'apply', message: errorMessage(err) } })
-    }
-  })
+  const changedSince = (before) => snapshot() !== before
 
   // 预览:纯解析/改名/分组,不落库。
   router.post('/preview', async (req, res) => {
@@ -413,7 +384,7 @@ export const registerSubscriptionRoutes = (app, { store, fetchImpl = subscriptio
       store.setNodes(rebuildNodePool(store.getNodes(), subsInOrder, id, newNodesForSub))
       store.setSubscriptions(subsInOrder)
 
-      res.json({ id, name, nodeCount: renamed.length, skipped, applied: await applyAfter(req, before) })
+      res.json({ id, name, nodeCount: renamed.length, skipped, changed: changedSince(before) })
     } catch (err) {
       res.status(400).json({ error: errorMessage(err) })
     }
@@ -441,7 +412,7 @@ export const registerSubscriptionRoutes = (app, { store, fetchImpl = subscriptio
     const ordered = ids.map((id) => byId.get(id))
     store.setSubscriptions(ordered)
     store.setNodes(orderNodesBySubscriptions(store.getNodes(), ordered))
-    res.json({ ok: true, subscriptions: ordered, applied: await applyAfter(req, before) })
+    res.json({ ok: true, subscriptions: ordered, changed: changedSince(before) })
   })
 
   // 删除:同时清掉该订阅的节点。幂等——id 不存在也返回 ok:true。
@@ -450,8 +421,8 @@ export const registerSubscriptionRoutes = (app, { store, fetchImpl = subscriptio
     const before = snapshot()
     store.setSubscriptions(store.getSubscriptions().filter((s) => s.id !== id))
     store.setNodes(store.getNodes().filter((n) => n.subscriptionId !== id))
-    // 本来就不存在的 id、或者本来就没有节点的订阅:节点池没变,applyAfter 自己会跳过
-    res.json({ ok: true, applied: await applyAfter(req, before) })
+    // 本来就不存在的 id、或者本来就没有节点的订阅:节点池没变,changed 就是 false
+    res.json({ ok: true, changed: changedSince(before) })
   })
 
   // 修改:改名 / 换订阅链接 / 调整重命名规则。
@@ -498,7 +469,7 @@ export const registerSubscriptionRoutes = (app, { store, fetchImpl = subscriptio
       if (!needsRefetch) {
         const updated = { ...existing, name, updatedAt: Date.now() }
         store.setSubscriptions(subs.map((s, i) => (i === idx ? updated : s)))
-        res.json({ id, name, nodeCount: existing.nodeCount, skipped: [] })
+        res.json({ id, name, nodeCount: existing.nodeCount, skipped: [], changed: false })
         return
       }
 
@@ -525,7 +496,7 @@ export const registerSubscriptionRoutes = (app, { store, fetchImpl = subscriptio
       store.setNodes(rebuildNodePool(store.getNodes(), nowSubs, id, newNodesForSub))
       store.setSubscriptions(nowSubs.map((s) => (s.id === id ? { ...s, ...updated } : s)))
 
-      res.json({ id, name, nodeCount: renamed.length, skipped, applied: await applyAfter(req, before) })
+      res.json({ id, name, nodeCount: renamed.length, skipped, changed: changedSince(before) })
     } catch (err) {
       res.status(400).json({ error: errorMessage(err) })
     }
@@ -564,7 +535,7 @@ export const registerSubscriptionRoutes = (app, { store, fetchImpl = subscriptio
       store.setNodes(rebuildNodePool(store.getNodes(), nowSubs, id, newNodesForSub))
       store.setSubscriptions(nowSubs.map((s) => (s.id === id ? { ...s, ...updated } : s)))
 
-      res.json({ id, name: updated.name, nodeCount: renamed.length, skipped, applied: await applyAfter(req, before) })
+      res.json({ id, name: updated.name, nodeCount: renamed.length, skipped, changed: changedSince(before) })
     } catch (err) {
       res.status(400).json({ error: errorMessage(err) })
     }

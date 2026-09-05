@@ -218,15 +218,13 @@ export interface OpenboxSubscriptionPreview {
   groups: OpenboxNodeGroup[]
 }
 
-// 订阅变动后服务端顺手把配置应用到内核的结果:ok 是部署结果;内核没在跑时是 skipped
-export type OpenboxApplyResult = { ok: boolean; stage?: string; message?: string } | { skipped: string }
-
 export interface OpenboxSubscriptionSaveResult {
   id: string
   name: string
   nodeCount: number
   skipped: Array<{ name: string; type: string }>
-  applied?: OpenboxApplyResult
+  // 节点池变没变:变了面板提示"重启内核生效"(订阅的动作从不自动重启内核)
+  changed?: boolean
 }
 
 export interface OpenboxDeployResult {
@@ -481,15 +479,11 @@ export const saveNodeGroups = async (
   requestJson('/api/openbox/groups', { method: 'PUT', body: JSON.stringify({ groups }) })
 
 // 拖拽排序:传全部订阅 id 的新顺序;服务端把节点池也按这个顺序重排(选择器、内核出站顺序都跟着)
-export const reorderSubscriptions = async (ids: string[]): Promise<{ ok: boolean; subscriptions: OpenboxSubscription[]; applied?: OpenboxApplyResult }> => {
+export const reorderSubscriptions = async (ids: string[]): Promise<{ ok: boolean; subscriptions: OpenboxSubscription[]; changed?: boolean }> => {
   return requestJson('/api/openbox/subscriptions/order', { method: 'PUT', body: JSON.stringify({ ids }) })
 }
 
-// 把订阅的节点应用到内核(重新生成配置、重启内核;内核没在跑就跳过)
-export const applySubscriptionChanges = async (): Promise<{ applied?: OpenboxApplyResult }> =>
-  requestJson('/api/openbox/subscriptions/apply', { method: 'POST', body: '{}' })
-
-export const deleteSubscription = async (id: string): Promise<{ ok: boolean; applied?: OpenboxApplyResult }> => {
+export const deleteSubscription = async (id: string): Promise<{ ok: boolean; changed?: boolean }> => {
   return requestJson(`/api/openbox/subscriptions/${encodeURIComponent(id)}`, {
     method: 'DELETE',
   })
@@ -497,13 +491,11 @@ export const deleteSubscription = async (id: string): Promise<{ ok: boolean; app
 
 // Re-fetches from the subscription's saved url and replaces only that subscription's nodes.
 // Omitting renameOptions reuses whatever was saved at create time (server-side default).
-// apply=false:只更新数据库、先不应用到内核——连着刷好几条时用,最后调一次 applySubscriptionChanges
 export const refreshSubscription = async (
   id: string,
   renameOptions?: OpenboxRenameOptions,
-  { apply = true }: { apply?: boolean } = {},
 ): Promise<OpenboxSubscriptionSaveResult> => {
-  return requestJson(`/api/openbox/subscriptions/${encodeURIComponent(id)}/refresh${apply ? '' : '?apply=0'}`, {
+  return requestJson(`/api/openbox/subscriptions/${encodeURIComponent(id)}/refresh`, {
     method: 'POST',
     body: JSON.stringify(renameOptions ? { renameOptions } : {}),
   })
