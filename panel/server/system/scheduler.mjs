@@ -118,6 +118,10 @@ export const runScheduledTasks = async ({ store, ctx, paths, fetchImpl = globalT
         subState[sub.id] = { day: today, lastAt: st.lastAt, result: `error:${err instanceof Error ? err.message : err}` }
         log(`[schedule] subscription ${sub.name} failed: ${err instanceof Error ? err.message : err}`)
       }
+      // 每拉完一条就落一次状态:几条订阅串行要跑一两分钟,中途面板重启(比如赶上自动升级)
+      // 的话,拉过的不会在下一分钟再拉一遍、再多重启一次内核
+      state.subscriptions = subState
+      await writeJsonFile(ctx, paths.scheduleStatePath, state)
     }
     state.subscriptions = subState
     if (poolChanged && runDeploy && (await serviceStatus(ctx, paths.initd.core)).running) {
