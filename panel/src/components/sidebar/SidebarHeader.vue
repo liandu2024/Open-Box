@@ -21,6 +21,7 @@
     <button
       type="button"
       class="btn btn-ghost btn-sm btn-square shrink-0"
+      :class="isSidebarCollapsed && 'h-9 w-9'"
       v-tip="$t(isSidebarCollapsed ? 'sidebarExpand' : 'sidebarCollapse')"
       @click="isSidebarCollapsed = !isSidebarCollapsed"
     >

@@ -1,10 +1,12 @@
 <template>
   <div
     class="sidebar bg-base-200 text-base-content scrollbar-hidden h-full overflow-x-hidden p-2 transition-all"
-    :class="isSidebarCollapsed ? 'w-18' : 'w-64'"
+    :class="isSidebarCollapsed ? 'w-13' : 'w-64'"
   >
     <!-- 展开/收缩都保留外层 p-2 的 8px 安全边距:收缩态内容列 56px,菜单项、顶部图标、底部卡片同一条边 -->
-    <div :class="twMerge('flex h-full flex-col gap-2', isSidebarCollapsed ? 'w-14' : 'w-60')">
+    <!-- 折叠时整栏 52px = 36px 的一列(菜单项、底部按钮、顶上的展开键都是这个宽)+ 左右各 8px,
+         和上下的 p-2 一样——四边留白相等,元素不用在一条更宽的槽里居中 -->
+    <div :class="twMerge('flex h-full flex-col gap-2', isSidebarCollapsed ? 'w-9' : 'w-60')">
       <SidebarHeader />
       <!-- 菜单去掉 daisyUI 自带的 p-2:菜单项、顶部标题、底部卡片共用同一条左右边 -->
       <ul class="menu w-full flex-1 p-0">
