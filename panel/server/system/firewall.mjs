@@ -7,47 +7,70 @@ const V6BLOCK_RULE = 'firewall.openbox_v6block'
 // 共享网络每台服务器一条:firewall.openbox_srv_<id>
 const SERVER_RULE_PREFIX = 'openbox_srv_'
 
-const commitReload = async (ctx) => {
+// `/etc/init.d/firewall reload`(fw4)在规则多的路由器上一次要好几秒(正式路由器实测一次
+// 部署 reload 四遍就是十几秒),而绝大多数部署防火墙这块根本没变。所以下面每条规则都按
+// "目标状态"写:先读现在的样子,一样就一个字不动;真变了才 commit + reload。部署流程里
+// 各条规则传 commit:false,最后由 deploy.mjs 看有没有任何一条变了,只 reload 一次。
+export const commitFirewall = async (ctx) => {
   await ctx.exec('uci', ['commit', 'firewall'])
   await ctx.exec('/etc/init.d/firewall', ['reload'])
 }
+const commitReload = commitFirewall
 
-export const applyPanelLanRule = async (ctx, { port = 2026 } = {}) => {
-  await ctx.exec('uci', ['-q', 'delete', PANEL_RULE])
-  await ctx.exec('uci', ['set', `${PANEL_RULE}=rule`])
-  await ctx.exec('uci', ['set', `${PANEL_RULE}.name=Open-Box Panel (LAN)`])
-  await ctx.exec('uci', ['set', `${PANEL_RULE}.src=lan`])
-  await ctx.exec('uci', ['set', `${PANEL_RULE}.proto=tcp`])
-  await ctx.exec('uci', ['set', `${PANEL_RULE}.dest_port=${port}`])
-  await ctx.exec('uci', ['set', `${PANEL_RULE}.target=ACCEPT`])
-  await commitReload(ctx)
-  return { applied: true }
-}
-
-export const applyDnsLanRule = async (ctx, { port = 7853 } = {}) => {
-  await ctx.exec('uci', ['-q', 'delete', DNS_RULE])
-  await ctx.exec('uci', ['set', `${DNS_RULE}=rule`])
-  await ctx.exec('uci', ['set', `${DNS_RULE}.name=Open-Box DNS (LAN)`])
-  await ctx.exec('uci', ['set', `${DNS_RULE}.src=lan`])
-  await ctx.exec('uci', ['set', `${DNS_RULE}.proto=tcp udp`])
-  await ctx.exec('uci', ['set', `${DNS_RULE}.dest_port=${port}`])
-  await ctx.exec('uci', ['set', `${DNS_RULE}.target=ACCEPT`])
-  await commitReload(ctx)
-  return { applied: true }
-}
-
-export const applyIpv6Block = async (ctx, { enabled }) => {
-  await ctx.exec('uci', ['-q', 'delete', V6BLOCK_RULE])
-  if (enabled) {
-    await ctx.exec('uci', ['set', `${V6BLOCK_RULE}=rule`])
-    await ctx.exec('uci', ['set', `${V6BLOCK_RULE}.name=Open-Box Block IPv6 Leak`])
-    await ctx.exec('uci', ['set', `${V6BLOCK_RULE}.src=lan`])
-    await ctx.exec('uci', ['set', `${V6BLOCK_RULE}.dest=wan`])
-    await ctx.exec('uci', ['set', `${V6BLOCK_RULE}.family=ipv6`])
-    await ctx.exec('uci', ['set', `${V6BLOCK_RULE}.target=REJECT`])
+// 读一个具名段现在的样子:{ type, options } 或 null(没有这个段)
+const readSection = async (ctx, section) => {
+  const { code, stdout } = await ctx.exec('uci', ['-q', 'show', section])
+  if (code !== 0) return null
+  const out = { type: '', options: {} }
+  for (const raw of String(stdout || '').split('\n')) {
+    const line = raw.trim()
+    const eq = line.indexOf('=')
+    if (eq < 0) continue
+    const key = line.slice(0, eq)
+    let val = line.slice(eq + 1)
+    if (val.length >= 2 && val.startsWith("'") && val.endsWith("'")) val = val.slice(1, -1)
+    if (key === section) out.type = val
+    else if (key.startsWith(`${section}.`)) out.options[key.slice(section.length + 1)] = val
   }
-  await commitReload(ctx)
-  return { applied: enabled === true }
+  return out.type ? out : null
+}
+
+// 把一个具名 rule 段调到目标状态。desired 为 null 表示不要这条;否则是它的选项表。
+// 返回这次有没有真的改动 uci。删除总是发一次 `uci -q delete`(幂等、便宜),但只有段确实
+// 存在过才算"变了"。
+const ensureRule = async (ctx, section, desired) => {
+  const current = await readSection(ctx, section)
+  if (!desired) {
+    await ctx.exec('uci', ['-q', 'delete', section])
+    return current !== null
+  }
+  const same = current && current.type === 'rule'
+    && Object.entries(desired).every(([k, v]) => current.options[k] === String(v))
+  if (same) return false
+  await ctx.exec('uci', ['-q', 'delete', section])
+  await ctx.exec('uci', ['set', `${section}=rule`])
+  for (const [k, v] of Object.entries(desired)) await ctx.exec('uci', ['set', `${section}.${k}=${v}`])
+  return true
+}
+
+export const applyPanelLanRule = async (ctx, { port = 2026, commit = true } = {}) => {
+  const changed = await ensureRule(ctx, PANEL_RULE, { name: 'Open-Box Panel (LAN)', src: 'lan', proto: 'tcp', dest_port: port, target: 'ACCEPT' })
+  if (changed && commit) await commitReload(ctx)
+  return { applied: true, changed }
+}
+
+export const applyDnsLanRule = async (ctx, { port = 7853, commit = true } = {}) => {
+  const changed = await ensureRule(ctx, DNS_RULE, { name: 'Open-Box DNS (LAN)', src: 'lan', proto: 'tcp udp', dest_port: port, target: 'ACCEPT' })
+  if (changed && commit) await commitReload(ctx)
+  return { applied: true, changed }
+}
+
+export const applyIpv6Block = async (ctx, { enabled, commit = true }) => {
+  const changed = await ensureRule(ctx, V6BLOCK_RULE, enabled
+    ? { name: 'Open-Box Block IPv6 Leak', src: 'lan', dest: 'wan', family: 'ipv6', target: 'REJECT' }
+    : null)
+  if (changed && commit) await commitReload(ctx)
+  return { applied: enabled === true, changed }
 }
 
 // 现有的共享网络放行规则(uci 里以 openbox_srv_ 开头的具名 rule 段)
@@ -66,21 +89,24 @@ const deleteServerRules = async (ctx) => {
   for (const name of await listServerRules(ctx)) await ctx.exec('uci', ['-q', 'delete', `firewall.${name}`])
 }
 
-// 共享网络:按当前启用的服务器重建放行规则(先清光旧的,再逐条加),从 WAN 进来的
+// 共享网络:按当前启用的服务器对齐放行规则——多出来的删,缺的加,一样的不动。从 WAN 进来的
 // 对应端口放行。id 只允许 [A-Za-z0-9_-],写进 uci 段名前把 - 换成 _。
-export const applyServerPortRules = async (ctx, servers = []) => {
-  await deleteServerRules(ctx)
-  for (const s of servers) {
-    const rule = `firewall.${SERVER_RULE_PREFIX}${String(s.id).replace(/-/g, '_')}`
-    await ctx.exec('uci', ['set', `${rule}=rule`])
-    await ctx.exec('uci', ['set', `${rule}.name=Open-Box Share ${s.name || s.id}`])
-    await ctx.exec('uci', ['set', `${rule}.src=wan`])
-    await ctx.exec('uci', ['set', `${rule}.proto=${serverFirewallProto(s)}`])
-    await ctx.exec('uci', ['set', `${rule}.dest_port=${s.port}`])
-    await ctx.exec('uci', ['set', `${rule}.target=ACCEPT`])
+export const applyServerPortRules = async (ctx, servers = [], { commit = true } = {}) => {
+  const desired = new Map(servers.map((s) => [
+    `${SERVER_RULE_PREFIX}${String(s.id).replace(/-/g, '_')}`,
+    { name: `Open-Box Share ${s.name || s.id}`, src: 'wan', proto: serverFirewallProto(s), dest_port: s.port, target: 'ACCEPT' },
+  ]))
+  let changed = false
+  for (const name of await listServerRules(ctx)) {
+    if (desired.has(name)) continue
+    await ctx.exec('uci', ['-q', 'delete', `firewall.${name}`])
+    changed = true
   }
-  await commitReload(ctx)
-  return { applied: servers.length }
+  for (const [name, rule] of desired) {
+    if (await ensureRule(ctx, `firewall.${name}`, rule)) changed = true
+  }
+  if (changed && commit) await commitReload(ctx)
+  return { applied: servers.length, changed }
 }
 
 // 仅移除代理相关规则(v6 拦截、共享网络放行),不动面板 LAN 放行——供 rollbackToDirect 使用。

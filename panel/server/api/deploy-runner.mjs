@@ -237,7 +237,10 @@ const runDeployInner = async ({ store, ctx, paths, fetchImpl = globalThis.fetch,
         cacheFilePath: paths.cacheDb, selections, tlsCert: { certPath: paths.tlsCert, keyPath: paths.tlsKey }, localSubnets, directHostCidrs,
         ruleLists: ruleLists.lists,
       })
+      const prepMs = Date.now() - startedAt
       result = await deployConfig(ctx, paths, { config, profile, userGroups: store.getGroups(), selections })
+      // 准备阶段 = 读系统 DNS / 解析节点域名 / 拉当前选择 / 规则集链接 / 生成配置
+      result.timings = { 准备: prepMs, ...(result.timings || {}) }
     }
     store.setDeployState({
       stage: result.stage,
@@ -246,7 +249,8 @@ const runDeployInner = async ({ store, ctx, paths, fetchImpl = globalThis.fetch,
       badTags: result.badTags || [],
     })
     // 部署多久,日志里直接能看到——用户反馈「重启要一分钟」时不用猜
-    console.log(`[deploy] ${result.ok ? '完成' : `失败(${result.stage})`},耗时 ${((Date.now() - startedAt) / 1000).toFixed(1)}s`)
+    const steps = Object.entries(result.timings || {}).map(([k, v]) => `${k} ${(v / 1000).toFixed(1)}`).join(' · ')
+    console.log(`[deploy] ${result.ok ? '完成' : `失败(${result.stage})`},耗时 ${((Date.now() - startedAt) / 1000).toFixed(1)}s${steps ? `(${steps})` : ''}`)
   } catch (error) {
     // deployConfig 只在"落盘"之后的步骤自行 try/catch;冲突检测(detectConflicts)、
     // mkdirp、validateConfigObject 这些落盘之前的步骤抛出的异常会冒泡到这里。不兜底的话

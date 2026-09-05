@@ -10,7 +10,7 @@ test('面板 LAN 规则:先删后建 + reload', async () => {
   const r = await applyPanelLanRule(ctx, { port: 2026 })
   assert.equal(r.applied, true)
   const c = cmds(ctx)
-  assert.equal(c[0], 'uci -q delete firewall.openbox_panel')
+  assert.ok(c.includes('uci -q delete firewall.openbox_panel'))
   assert.ok(c.includes('uci set firewall.openbox_panel=rule'))
   assert.ok(c.includes('uci set firewall.openbox_panel.src=lan'))
   assert.ok(c.includes('uci set firewall.openbox_panel.dest_port=2026'))
@@ -90,4 +90,28 @@ test('applyDnsLanRule:只放行 LAN 到 7853 的 tcp/udp;removeProxyRules 会一
   ctx.calls.length = 0
   await removeProxyRules(ctx)
   assert.ok(ctx.calls.some((c) => c.cmd === 'uci' && c.args.join(' ') === '-q delete firewall.openbox_dns'))
+})
+
+test('规则已经是目标状态:一个字不动、不 commit、不 reload;commit:false 时由调用方统一 reload 一次', async () => {
+  const present = [
+    "firewall.openbox_panel=rule",
+    "firewall.openbox_panel.name='Open-Box Panel (LAN)'",
+    "firewall.openbox_panel.src='lan'",
+    "firewall.openbox_panel.proto='tcp'",
+    "firewall.openbox_panel.dest_port='2026'",
+    "firewall.openbox_panel.target='ACCEPT'",
+  ].join('\n')
+  const ctx = createMockContext({ execResults: { 'uci -q show firewall.openbox_panel': { code: 0, stdout: present } } })
+  const r = await applyPanelLanRule(ctx, { port: 2026 })
+  assert.equal(r.changed, false)
+  const c = cmds(ctx)
+  assert.ok(!c.some((x) => x.startsWith('uci set')), '不该写')
+  assert.ok(!c.includes('uci commit firewall') && !c.includes('/etc/init.d/firewall reload'), '不该 commit / reload')
+
+  // 端口换了才算变;commit:false 时自己不 reload
+  ctx.calls.length = 0
+  const r2 = await applyPanelLanRule(ctx, { port: 2027, commit: false })
+  assert.equal(r2.changed, true)
+  assert.ok(cmds(ctx).includes('uci set firewall.openbox_panel.dest_port=2027'))
+  assert.ok(!cmds(ctx).includes('/etc/init.d/firewall reload'))
 })

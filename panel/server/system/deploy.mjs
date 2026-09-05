@@ -5,7 +5,7 @@ import { applyDnsTakeover, restoreDnsTakeover, dnsTakeoverBackupPath } from './d
 import { dnsmasqForwardDomains, normalizeRouting } from '../engine/routing-model.mjs'
 import { dnsPolicyClasses } from '../engine/dns.mjs'
 import { builtinTags } from '../engine/user-groups.mjs'
-import { applyPanelLanRule, applyDnsLanRule, applyIpv6Block, removeProxyRules, applyServerPortRules } from './firewall.mjs'
+import { applyPanelLanRule, applyDnsLanRule, applyIpv6Block, removeProxyRules, applyServerPortRules, commitFirewall } from './firewall.mjs'
 import { ensureTlsKeypair } from './tls-keypair.mjs'
 import { configNeedsTlsKeypair, enabledServers } from '../engine/servers.mjs'
 import { ensureRulesets } from './rulesets.mjs'
@@ -42,8 +42,19 @@ const lastKernelFatal = async (ctx) => {
 }
 
 export const deployConfig = async (ctx, paths, { config, profile, userGroups, fetchImpl, selections = {} } = {}) => {
+  // 每一步花了多久:随结果一起带回去写进日志,"重启要一分钟"这种反馈能直接看到卡在哪
+  const timings = {}
+  let stepStart = Date.now()
+  const mark = (name) => {
+    const now = Date.now()
+    timings[name] = (timings[name] || 0) + (now - stepStart)
+    stepStart = now
+  }
+  const withTimings = (result) => ({ ...result, timings })
+
   // 1. 冲突检测
   const { conflicts, hasRunning } = await detectConflicts(ctx)
+  mark('冲突检测')
   if (hasRunning) {
     return { ok: false, stage: 'conflict', message: `请先停止:${conflicts.map((c) => c.label).join('、')}` }
   }
@@ -53,8 +64,9 @@ export const deployConfig = async (ctx, paths, { config, profile, userGroups, fe
   // FATAL,而那条报错("open .../geosite-cn.srs: no such file or directory")对用户来说
   // 完全不知所云。这一步不动系统:只往 rulesetDir 里写文件,失败就原地返回。
   const rulesets = await ensureRulesets(ctx, config, fetchImpl ? { fetchImpl } : {})
+  mark('规则集')
   if (!rulesets.ok) {
-    return { ok: false, stage: 'rulesets', message: rulesets.message }
+    return withTimings({ ok: false, stage: 'rulesets', message: rulesets.message })
   }
 
   // (规则集链接的 .srs 由 api/deploy-runner.mjs 在生成配置之前补齐:路由 / DNS 规则要凭
@@ -74,6 +86,7 @@ export const deployConfig = async (ctx, paths, { config, profile, userGroups, fe
   }
   const candidatePath = `${paths.etc}/config.candidate.json`
   const validation = await validateConfigObject(ctx, paths, config, candidatePath)
+  mark('校验')
   if (!validation.ok) {
     const { badTags } = await attributeBadNodes(ctx, paths, config, `${paths.etc}/config.probe.json`)
     return { ok: false, stage: 'validate', message: validation.message, badTags }
@@ -117,14 +130,20 @@ export const deployConfig = async (ctx, paths, { config, profile, userGroups, fe
       mode: dnsMode,
       forwardDomains: dnsmasqForwardDomains(profile.routing, policyMembers, builtin, selections || {}),
     })
+    mark('DNS 接管')
 
-    // 6. 防火墙
-    await applyPanelLanRule(ctx, { port: 2026 })
-    // 内核 DNS 入站 :7853 只放行 LAN(config.mjs 的 dns-in)
-    await applyDnsLanRule(ctx, { port: 7853 })
-    await applyIpv6Block(ctx, { enabled: profile.ipv6 === false })
-    // 共享网络:从 WAN 放行各服务器的端口(局域网本来就能到路由器)
-    await applyServerPortRules(ctx, enabledServers(profile.servers))
+    // 6. 防火墙:四条规则各自对齐到目标状态,只要有一条真变了才 commit + reload,且只一次。
+    // fw4 reload 在规则多的路由器上一次好几秒,以前每条规则各 reload 一遍,一次部署要等十几秒。
+    const firewall = [
+      await applyPanelLanRule(ctx, { port: 2026, commit: false }),
+      // 内核 DNS 入站 :7853 只放行 LAN(config.mjs 的 dns-in)
+      await applyDnsLanRule(ctx, { port: 7853, commit: false }),
+      await applyIpv6Block(ctx, { enabled: profile.ipv6 === false, commit: false }),
+      // 共享网络:从 WAN 放行各服务器的端口(局域网本来就能到路由器)
+      await applyServerPortRules(ctx, enabledServers(profile.servers), { commit: false }),
+    ]
+    if (firewall.some((r) => r.changed)) await commitFirewall(ctx)
+    mark('防火墙')
 
     // 7. 重启内核前预检:procd 的 rc_procd 包装(procd_open_service; "$@"; procd_close_service)
     // 会吞掉 start_service 的返回码,二进制/配置缺失时 start 仍可能退出 0 且以零实例注册——
@@ -137,9 +156,10 @@ export const deployConfig = async (ctx, paths, { config, profile, userGroups, fe
 
     // 8. 重启内核
     const restart = await restartService(ctx, paths.initd.core)
+    mark('重启')
     if (!restart.ok) {
       await rollbackToDirect(ctx, paths)
-      return { ok: false, stage: 'start', message: restart.stderr || '内核启动失败,已恢复直连' }
+      return withTimings({ ok: false, stage: 'start', message: restart.stderr || '内核启动失败,已恢复直连' })
     }
 
     // 9. 验证运行。看两眼而不是一眼:有一类错误 `sing-box check` 查不出来、进程起来
@@ -151,11 +171,12 @@ export const deployConfig = async (ctx, paths, { config, profile, userGroups, fe
       const status = await serviceStatus(ctx, paths.initd.core)
       if (!status.running) {
         await rollbackToDirect(ctx, paths)
-        return { ok: false, stage: 'verify', message: await lastKernelFatal(ctx) }
+        return withTimings({ ok: false, stage: 'verify', message: await lastKernelFatal(ctx) })
       }
     }
+    mark('确认在跑')
 
-    return { ok: true, stage: 'running', message: '' }
+    return withTimings({ ok: true, stage: 'running', message: '' })
   } catch (error) {
     // 落盘之后任一步骤抛出异常(闪存写满、uci 调用失败等)都不能让部署直接 reject——
     // 必须尽力回滚到直连状态,不留半接管的死配置。
