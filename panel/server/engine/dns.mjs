@@ -1,4 +1,4 @@
-import { DEFAULT_BUILTIN, normalizeRouting, policyOutboundOptions, policyGoesDirect } from './routing-model.mjs'
+import { DEFAULT_BUILTIN, dnsRulesetTags, normalizeRouting, policyOutboundOptions, policyGoesDirect } from './routing-model.mjs'
 
 const extractHost = (url) => {
   // "https://1.1.1.1/dns-query" -> "1.1.1.1";裸 host 原样返回
@@ -43,17 +43,20 @@ const localServer = { type: 'local', tag: 'dns-local' }
 
 // 策略的域名类条件 → 一条 DNS 规则。ip_cidr 不进来:DNS 查询阶段还没有 IP,
 // 拿它当条件永远不会命中,写进去只会让人以为生效了。
-const policyDnsRule = (policy, server) => {
+// 规则集同理,只收纯域名的那些(geosite-*、规则集链接的域名那份):含 IP 的规则集进了 DNS 规则
+// 不是"不命中",而是更糟的"每个域名都先按这条查一遍再扔掉"——见 routing-model.mjs 的 dnsRulesetTags。
+const policyDnsRule = (policy, server, ruleLists) => {
   const rule = { server }
-  if (policy.rulesets.length) rule.rule_set = policy.rulesets
+  const rulesets = dnsRulesetTags(policy, ruleLists)
+  if (rulesets.length) rule.rule_set = rulesets
   if (policy.domain.length) rule.domain = policy.domain
   if (policy.domainSuffix.length) rule.domain_suffix = policy.domainSuffix
   if (policy.domainKeyword.length) rule.domain_keyword = policy.domainKeyword
   return rule
 }
 
-const hasDomainCondition = (p) =>
-  p.rulesets.length > 0 || p.domain.length > 0 || p.domainSuffix.length > 0 || p.domainKeyword.length > 0
+const hasDomainCondition = (p, ruleLists) =>
+  dnsRulesetTags(p, ruleLists).length > 0 || p.domain.length > 0 || p.domainSuffix.length > 0 || p.domainKeyword.length > 0
 
 export const buildDns = (profile, options = {}) => {
   const strategy = profile.ipv6 ? 'prefer_ipv4' : 'ipv4_only'
@@ -102,15 +105,17 @@ export const buildDns = (profile, options = {}) => {
   const members = policyOutboundOptions(conf.outboundOptions, options.groupTags || [], builtin)
   const selections = options.selections && typeof options.selections === 'object' ? options.selections : {}
   const goesDirect = (name, fallbackDefault) => policyGoesDirect(name, fallbackDefault, members, builtin, selections)
+  // 规则集链接的形状表(哪些有域名那份),部署时从 rule-lists.json 得来;没有就按老样子引用
+  const ruleLists = options.ruleLists && typeof options.ruleLists === 'object' ? options.ruleLists : {}
   conf.activePolicies.forEach((policy, index) => {
-    if (!hasDomainCondition(policy)) return
+    if (!hasDomainCondition(policy, ruleLists)) return
     if (goesDirect(policy.name, policy.default)) {
-      rules.push(policyDnsRule(policy, 'dns-direct'))
+      rules.push(policyDnsRule(policy, 'dns-direct', ruleLists))
       return
     }
     const tag = `dns-policy-${index}`
     servers.push(proxyServerFor(proxyHost, tag, policy.name))
-    rules.push(policyDnsRule(policy, tag))
+    rules.push(policyDnsRule(policy, tag, ruleLists))
   })
 
   servers.push(...localServers)
@@ -128,12 +133,14 @@ export const buildDns = (profile, options = {}) => {
 // 下次代理页有人改出口时拿它比对:同一个名字两边不一样,说明磁盘上那份 dns.rules 已经
 // 过期,要重新生成配置(见 api/deploy-runner.mjs 的 dnsClassesFlipped)。
 // 只收有域名条件的站点集:只按 IP 分流的那些本来就不进 DNS 规则,改它不会让规则过期。
+// 规则集链接这里一律当作有域名那份(不传形状表):写表和比对的两边都这么算,才不会因为
+// 一边知道形状、一边不知道而误判"翻面"。多算一个站点集只是多比对一次,没有代价。
 export const dnsPolicyClasses = (routing, members = ['direct'], builtin = DEFAULT_BUILTIN, selections = {}) => {
   const conf = normalizeRouting(routing)
   const klass = (name, def) => (policyGoesDirect(name, def, members, builtin, selections) ? 'direct' : 'proxy')
   const out = {}
   for (const p of conf.activePolicies) {
-    if (!hasDomainCondition(p)) continue
+    if (!hasDomainCondition(p, {})) continue
     out[p.name] = klass(p.name, p.default)
   }
   out[conf.fallback.name] = klass(conf.fallback.name, conf.fallback.default)

@@ -103,6 +103,37 @@ test('内核里当前的选择优先于档案默认:默认直连但代理页切�
   assert.equal(dns.final, 'dns-proxy')
 })
 
+test('geoip 规则集不进 DNS 规则:含 IP 的规则集会让内核对每个域名先按这条查一遍再扔掉重查', () => {
+  const dns = buildDns(
+    withRouting({
+      policies: [{ id: 'p1', name: 'Netflix', default: 'block', rulesets: ['geosite-netflix', 'geoip-netflix'] }],
+    }),
+    GROUPS,
+  )
+  assert.deepEqual(dns.rules[0], { server: 'dns-policy-0', rule_set: ['geosite-netflix'] })
+})
+
+test('只有 geoip 规则集的站点集不生成 DNS 规则,也不给专属解析器', () => {
+  const dns = buildDns(
+    withRouting({ policies: [{ id: 'p1', name: '电报', default: 'block', rulesets: ['geoip-telegram'] }] }),
+    GROUPS,
+  )
+  assert.deepEqual(dns.rules, [])
+  assert.equal(dns.servers.length, 2)
+})
+
+test('规则集链接:DNS 规则只引用域名那份;名单里只有 IP 的不进 DNS 规则;没有形状表就按老样子引用一份', () => {
+  const routing = { policies: [{ id: 'p1', name: 'Speed', default: 'block', ruleUrls: ['https://x.test/Check.list'] }] }
+  const tag = 'list-' + (() => { let h = 0x811c9dc5; for (const ch of 'https://x.test/Check.list') { h ^= ch.charCodeAt(0); h = Math.imul(h, 0x01000193) >>> 0 } return h.toString(16).padStart(8, '0') })()
+  const both = buildDns(withRouting(routing), { ...GROUPS, ruleLists: { [tag]: { domain: true, ip: true } } })
+  assert.deepEqual(both.rules[0], { server: 'dns-policy-0', rule_set: [tag] })
+  const ipOnly = buildDns(withRouting(routing), { ...GROUPS, ruleLists: { [tag]: { domain: false, ip: true } } })
+  assert.deepEqual(ipOnly.rules, [])
+  assert.equal(ipOnly.servers.length, 2)
+  const unknown = buildDns(withRouting(routing), GROUPS)
+  assert.deepEqual(unknown.rules[0], { server: 'dns-policy-0', rule_set: [tag] })
+})
+
 test('只有 IP 条件的站点集不进 DNS 规则:解析阶段还没有 IP,写进去只会让人以为生效了', () => {
   const dns = buildDns(withRouting({ policies: [{ id: 'p1', name: '内网', ipCidr: ['10.0.0.0/8'] }] }))
   assert.deepEqual(dns.rules, [])

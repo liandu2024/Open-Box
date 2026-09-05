@@ -16,7 +16,7 @@
 import { zstdDecompressSync } from 'node:zlib'
 import { collectRuleListUrls } from '../engine/routing-model.mjs'
 import { decodeMrs, looksLikeZstd } from '../engine/mrs.mjs'
-import { parseRuleList, ruleListIsEmpty, ruleListToSource } from '../engine/rule-list.mjs'
+import { parseRuleList, ruleListIsEmpty, ruleListShape, ruleListToSource, ruleListIpTag, splitRuleList } from '../engine/rule-list.mjs'
 
 const FETCH_TIMEOUT_MS = 30000
 // 一份名单撑死几百 KB;给 8MB 挡住"拿到一个几百 MB 的东西把路由器内存吃光"
@@ -27,6 +27,10 @@ const MAX_DECOMPRESSED = 32 * 1024 * 1024
 // 多久重下一次。名单是别人维护的,会变;但也不该每次部署都去拉一遍——
 // 部署是个本来纯本地的操作,不该动不动依赖外网。
 const REFRESH_MS = 24 * 60 * 60 * 1000
+// 编译产物的版式。2 = 域名 / IP 拆成两份 .srs(见 engine/rule-list.mjs 的 splitRuleList)。
+// 状态里记的版式不是这个数,说明本地那份是老版式(域名 IP 混在一个文件里),要重编——
+// 老版式的文件被 DNS 规则引用时,就是那个"每个域名先查一遍再扔掉"的毛病。
+const SPLIT_VERSION = 2
 
 export const listStatePath = (paths) => `${paths.dataDir}/rule-lists.json`
 
@@ -69,16 +73,10 @@ export const parseRuleListBody = (buf) => {
 
 export const loadRuleList = async (fetchImpl, url) => parseRuleListBody(await fetchRuleList(fetchImpl, url))
 
-// 一个链接 → 一份 .srs。写临时源文件、编译、删临时文件。
-const compileOne = async (ctx, paths, { url, tag }, fetchImpl) => {
-  const parsed = await loadRuleList(fetchImpl, url)
-  if (ruleListIsEmpty(parsed)) throw new Error('这份名单里没有解析出任何域名或 IP')
-  const counts = Object.fromEntries(Object.entries(parsed).filter(([, v]) => v.length).map(([k, v]) => [k, v.length]))
-
+// 一份源格式 → 一份 .srs。写临时源文件、编译、删临时文件。
+const compileSrs = async (ctx, paths, tag, parsed) => {
   const srcPath = `${paths.dataDir}/tmp/${tag}.json`
   const outPath = `${paths.rulesetDir}/${tag}.srs`
-  await ctx.mkdirp(`${paths.dataDir}/tmp`)
-  await ctx.mkdirp(paths.rulesetDir)
   await ctx.writeFile(srcPath, JSON.stringify(ruleListToSource(parsed)))
   try {
     const r = await ctx.exec(paths.singbox, ['rule-set', 'compile', '--output', outPath, srcPath])
@@ -86,11 +84,35 @@ const compileOne = async (ctx, paths, { url, tag }, fetchImpl) => {
   } finally {
     await ctx.remove(srcPath)
   }
+}
+
+const removeIfExists = async (ctx, path) => {
+  if (await ctx.exists(path)) await ctx.remove(path)
+}
+
+// 一个链接 → 域名一份 list-xxx.srs、IP 一份 list-xxx-ip.srs(哪边没有内容就不出那份文件,
+// 上次留下的同名旧文件也删掉,免得配置里引用不到它却还躺在磁盘上)。
+const compileOne = async (ctx, paths, { url, tag }, fetchImpl) => {
+  const parsed = await loadRuleList(fetchImpl, url)
+  if (ruleListIsEmpty(parsed)) throw new Error('这份名单里没有解析出任何域名或 IP')
+  const counts = Object.fromEntries(Object.entries(parsed).filter(([, v]) => v.length).map(([k, v]) => [k, v.length]))
+  const { domains, ips } = splitRuleList(parsed)
+  const shape = ruleListShape(counts)
+
+  await ctx.mkdirp(`${paths.dataDir}/tmp`)
+  await ctx.mkdirp(paths.rulesetDir)
+  if (shape.domain) await compileSrs(ctx, paths, tag, domains)
+  else await removeIfExists(ctx, `${paths.rulesetDir}/${tag}.srs`)
+  if (shape.ip) await compileSrs(ctx, paths, ruleListIpTag(tag), ips)
+  else await removeIfExists(ctx, `${paths.rulesetDir}/${ruleListIpTag(tag)}.srs`)
   return counts
 }
 
-// 部署前调一次:把档案里引用到的规则集链接补齐。
+// 部署前、生成配置之前调一次:把档案里引用到的规则集链接补齐。
 // 已经有、且没到重下时间的跳过;拉不动但本地有旧的就用旧的。
+// 返回的 lists 是形状表 { [tag]: { domain, ip } }:每条链接编成了哪几份 .srs,生成配置时
+// 路由规则 / DNS 规则凭它决定引用哪几份(见 engine/routing-model.mjs)。只有老版式、
+// 又拉不动的那种才会缺形状——生成配置时就按老样子引用一份。
 export const ensureRuleLists = async (
   ctx,
   paths,
@@ -98,7 +120,7 @@ export const ensureRuleLists = async (
   { fetchImpl = globalThis.fetch, now = () => Date.now(), log = () => {} } = {},
 ) => {
   const wanted = collectRuleListUrls(routing)
-  if (!wanted.length) return { ok: true, updated: [], failed: [] }
+  if (!wanted.length) return { ok: true, updated: [], failed: [], lists: {} }
 
   const state = await readState(ctx, paths)
   const next = {}
@@ -106,17 +128,19 @@ export const ensureRuleLists = async (
   const failed = []
   for (const item of wanted) {
     const prev = state[item.tag]
-    const exists = await ctx.exists(`${paths.rulesetDir}/${item.tag}.srs`)
-    const fresh = exists && prev && prev.url === item.url && now() - Number(prev.at || 0) < REFRESH_MS
+    const exists = (await ctx.exists(`${paths.rulesetDir}/${item.tag}.srs`))
+      || (await ctx.exists(`${paths.rulesetDir}/${ruleListIpTag(item.tag)}.srs`))
+    const fresh = exists && prev && prev.url === item.url && prev.split === SPLIT_VERSION
+      && now() - Number(prev.at || 0) < REFRESH_MS
     if (fresh) {
       next[item.tag] = prev
       continue
     }
     try {
       const counts = await compileOne(ctx, paths, item, fetchImpl)
-      next[item.tag] = { url: item.url, at: now(), counts }
+      next[item.tag] = { url: item.url, at: now(), counts, split: SPLIT_VERSION }
       updated.push(item.tag)
-      log(`[rule-list] ${item.url} → ${item.tag}.srs(${Object.entries(counts).map(([k, v]) => `${k} ${v}`).join(', ')})`)
+      log(`[rule-list] ${item.url} → ${item.tag}(${Object.entries(counts).map(([k, v]) => `${k} ${v}`).join(', ')})`)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       failed.push({ tag: item.tag, url: item.url, message })
@@ -130,5 +154,10 @@ export const ensureRuleLists = async (
     }
   }
   await ctx.writeFile(listStatePath(paths), JSON.stringify(next, null, 2))
-  return { ok: true, updated, failed }
+  const lists = {}
+  for (const [tag, entry] of Object.entries(next)) {
+    // 老版式(没有 split 标记)的本地文件是域名 IP 混在一起的一份,形状说不清,不填
+    if (entry && entry.split === SPLIT_VERSION && entry.counts) lists[tag] = ruleListShape(entry.counts)
+  }
+  return { ok: true, updated, failed, lists }
 }

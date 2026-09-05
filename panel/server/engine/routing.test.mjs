@@ -36,6 +36,19 @@ test('站点集按顺序生成规则,出站是它自己的同名 selector', () =
   ])
 })
 
+test('规则集链接:路由规则按形状表引用域名 / IP 两份 .srs,两份都登记进 rule_set 清单', () => {
+  const routing = { policies: [policy({ rulesets: [], ruleUrls: ['https://x.test/Check.list'] })] }
+  const tag = 'list-' + (() => { let h = 0x811c9dc5; for (const ch of 'https://x.test/Check.list') { h ^= ch.charCodeAt(0); h = Math.imul(h, 0x01000193) >>> 0 } return h.toString(16).padStart(8, '0') })()
+  const both = build(routing, { ruleLists: { [tag]: { domain: true, ip: true } } })
+  assert.deepEqual(both.route.rules[3], { rule_set: [tag, `${tag}-ip`], outbound: '谷歌' })
+  assert.deepEqual(both.route.rule_set.map((s) => s.path), [`${RULESET_DIR}/${tag}.srs`, `${RULESET_DIR}/${tag}-ip.srs`])
+  const ipOnly = build(routing, { ruleLists: { [tag]: { domain: false, ip: true } } })
+  assert.deepEqual(ipOnly.route.rules[3], { rule_set: [`${tag}-ip`], outbound: '谷歌' })
+  // 没有形状表(预览、还没拉过):按老样子引用一份
+  const unknown = build(routing)
+  assert.deepEqual(unknown.route.rules[3], { rule_set: [tag], outbound: '谷歌' })
+})
+
 test('一个站点集的五类条件落进同一条规则', () => {
   const { route, rulesetTags } = build({
     policies: [

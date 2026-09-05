@@ -9,7 +9,6 @@ import { applyPanelLanRule, applyDnsLanRule, applyIpv6Block, removeProxyRules, a
 import { ensureTlsKeypair } from './tls-keypair.mjs'
 import { configNeedsTlsKeypair, enabledServers } from '../engine/servers.mjs'
 import { ensureRulesets } from './rulesets.mjs'
-import { ensureRuleLists } from './rule-lists.mjs'
 
 // 与 openwrt/initd/openbox 的 CONF_META 一致
 export const configMetaPath = (paths) => `${paths.etc}/config.meta.json`
@@ -58,15 +57,8 @@ export const deployConfig = async (ctx, paths, { config, profile, userGroups, fe
     return { ok: false, stage: 'rulesets', message: rulesets.message }
   }
 
-  // 2b. 规则集链接:站点集里引用的网址,下回来解析、编成 .srs(见 system/rule-lists.mjs)。
-  // 同样排在校验之前,同样只往 rulesetDir 里写文件。
-  const ruleLists = await ensureRuleLists(ctx, paths, profile?.routing, {
-    ...(fetchImpl ? { fetchImpl } : {}),
-    log: (m) => console.log(m),
-  })
-  if (!ruleLists.ok) {
-    return { ok: false, stage: 'rulesets', message: ruleLists.message }
-  }
+  // (规则集链接的 .srs 由 api/deploy-runner.mjs 在生成配置之前补齐:路由 / DNS 规则要凭
+  // 每条名单编成了哪几份文件来决定引用什么,所以它必须排在 buildConfig 前面,不在这里。)
 
   // 3. 校验(失败则归因,不动系统)
   // mkdirp 必须在写 candidate 文件之前:全新安装时 paths.etc 尚不存在,

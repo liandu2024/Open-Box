@@ -56,7 +56,7 @@ export const DNSMASQ_OUTBOUND_TAG = 'dnsmasq'
 // 系统解析器,会绕回 dnsmasq 形成死循环。预览/测试不传就回落到档案里填的那台。
 // regionGroups 参数已经退役(以前按国家自动分的 urltest 组 + 一个 PROXY 聚合 selector,
 // 那是节点组功能出现之前的东西);留着这个参数名只是让老调用方不报错。
-export const buildConfig = ({ nodes, profile, userGroups, systemDns, localSubnets = [], directHostCidrs = [], subscriptions = [], cacheFilePath = '/opt/open-box/data/cache.db', selections = {}, tlsCert = { certPath: '/opt/open-box/etc/certs/server.crt', keyPath: '/opt/open-box/etc/certs/server.key' } }) => {
+export const buildConfig = ({ nodes, profile, userGroups, systemDns, localSubnets = [], directHostCidrs = [], subscriptions = [], ruleLists = {}, cacheFilePath = '/opt/open-box/data/cache.db', selections = {}, tlsCert = { certPath: '/opt/open-box/etc/certs/server.crt', keyPath: '/opt/open-box/etc/certs/server.key' } }) => {
   // 订阅和节点站点直连(默认开):见 engine/direct-hosts.mjs
   // directHostCidrs:部署时把节点域名解析出来的 IP(见 system/resolve-hosts.mjs),让按裸 IP
   // 直连节点服务器的客户端(SSH 等)也能命中直连规则;预览接口没有这份,只按域名匹配。
@@ -126,10 +126,12 @@ export const buildConfig = ({ nodes, profile, userGroups, systemDns, localSubnet
     clientRoutes: normalizeClientRoutes(profile.clientRoutes),
     // wireguard 是 endpoint 不是 outbound,但路由规则一样能指向它的 tag
     knownOutbounds: new Set([...outbounds, ...endpoints].map((o) => o.tag)),
+    // 规则集链接各自有没有域名 / IP 那份 .srs(见 system/rule-lists.mjs)
+    ruleLists,
   })
   // groupTags 传给 DNS:它要按"这个站点集默认走哪"决定用直连还是代理侧解析,
   // 而"默认走哪"在 default 为空时取决于成员表的第一项(见 effectiveOutbound)。
-  const dns = buildDns(profile, { systemDns, groupTags, builtin, selections, directHosts })
+  const dns = buildDns(profile, { systemDns, groupTags, builtin, selections, directHosts, ruleLists })
 
   const tunAddress = profile.ipv6 ? [TUN_V4, TUN_V6] : [TUN_V4]
 

@@ -1,4 +1,4 @@
-import { listTagForUrl } from './rule-list.mjs'
+import { isRuleListTag, listTagForUrl, ruleListIpTag } from './rule-list.mjs'
 // 分流模型的归一化与老档案迁移。
 //
 // 现在只有一层:**站点集**。一个站点集 = 一组匹配规则 + 内核里一个同名 selector,
@@ -142,6 +142,31 @@ export const collectRuleListUrls = (routing) => {
   }
   return [...seen.entries()].map(([url, tag]) => ({ url, tag }))
 }
+
+// 站点集引用的规则集,分别翻成路由规则和 DNS 规则各自该引用的 .srs 名字。
+//
+// ruleLists 是部署时从 rule-lists.json 得来的形状表:{ [list-xxxxxxxx]: { domain, ip } }
+// (见 system/rule-lists.mjs 的 ensureRuleLists)。一条规则集链接编成域名 / IP 两份文件,
+// 哪份存在就引用哪份;没有形状信息(预览、还没拉过)就按老样子引用一份。
+export const routeRulesetTags = (policy, ruleLists = {}) => policy.rulesets.flatMap((tag) => {
+  if (!isRuleListTag(tag)) return [tag]
+  const shape = ruleLists && ruleLists[tag]
+  if (!shape) return [tag]
+  return [...(shape.domain ? [tag] : []), ...(shape.ip ? [ruleListIpTag(tag)] : [])]
+})
+
+// DNS 规则只要纯域名的规则集。geoip-* 和规则集链接的 IP 那份不能进来:sing-box 对含 IP 的
+// 规则集是"先按这条规则的服务器解析一次、拿结果 IP 去对、对不上就丢掉重查"——等于每个路过的
+// 域名都被这条策略的线路白查一遍,排在后面的规则再查第二遍。正式路由器上实测过:Netflix
+// 站点集带着 geoip-netflix 排在 Speed 前面,Speed 名单里的域名先经台湾节点查(落到 Cloudflare
+// 香港)、再经美国节点查,browserleaks 显示两个出口;「国内」带着 geoip-cn 更会把没列名的
+// 国外域名明文送到运营商 DNS 问一遍。IP 该怎么分流,由路由规则里的同一批规则集去管。
+export const dnsRulesetTags = (policy, ruleLists = {}) => policy.rulesets.filter((tag) => {
+  if (tag.startsWith('geoip-')) return false
+  if (!isRuleListTag(tag)) return true
+  const shape = ruleLists && ruleLists[tag]
+  return !shape || shape.domain
+})
 
 // 一条策略至少要有一个匹配条件,否则它生成的规则会匹配不到任何东西(或者更糟:
 // 一条空条件的规则在 sing-box 里等价于"全部命中",把后面的规则全盖住)。

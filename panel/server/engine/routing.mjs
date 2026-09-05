@@ -1,11 +1,13 @@
-import { normalizeRouting } from './routing-model.mjs'
+import { normalizeRouting, routeRulesetTags } from './routing-model.mjs'
 
 // 一条策略的匹配条件 → 一条 sing-box 路由规则。
 // 同一条规则里的多个字段是「或」的关系(sing-box 规则内部各字段取并集),所以一条策略
 // 写了域名后缀又写了 IP 段时,任一命中即算这条策略命中——和用户在界面上的理解一致。
-const policyRule = (policy) => {
+// 规则集链接是域名 / IP 两份 .srs,路由规则两份都引用(见 routing-model.mjs 的 routeRulesetTags)
+const policyRule = (policy, ruleLists) => {
   const rule = {}
-  if (policy.rulesets.length) rule.rule_set = policy.rulesets
+  const rulesets = routeRulesetTags(policy, ruleLists)
+  if (rulesets.length) rule.rule_set = rulesets
   if (policy.domain.length) rule.domain = policy.domain
   if (policy.domainSuffix.length) rule.domain_suffix = policy.domainSuffix
   if (policy.domainKeyword.length) rule.domain_keyword = policy.domainKeyword
@@ -85,9 +87,10 @@ export const buildRoute = (routing, rulesetDir, options = {}) => {
   }
 
   // 站点集按用户排的顺序逐条匹配,首条命中生效。
+  const ruleLists = options.ruleLists || {}
   for (const policy of conf.activePolicies) {
-    for (const tag of policy.rulesets) addTag(tag)
-    rules.push(policyRule(policy))
+    for (const tag of routeRulesetTags(policy, ruleLists)) addTag(tag)
+    rules.push(policyRule(policy, ruleLists))
   }
 
   // 上面都没命中的流量交给兜底站点集(它也是一个 selector,见 config.mjs);

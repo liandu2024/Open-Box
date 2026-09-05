@@ -7,6 +7,7 @@ import { builtinTags } from '../engine/user-groups.mjs'
 import { buildConfig } from '../engine/config.mjs'
 import { dnsPolicyClasses } from '../engine/dns.mjs'
 import { deployConfig, configMetaPath } from '../system/deploy.mjs'
+import { ensureRuleLists } from '../system/rule-lists.mjs'
 import { enableService, disableService, serviceStatus } from '../system/service.mjs'
 import { CLASH_API_BASE } from './penetration.mjs'
 
@@ -132,7 +133,7 @@ export const STATUS_BY_STAGE = {
 // systemDns 是路由器 WAN 下发的 DNS 上游(见 system/resolv.mjs):dnsmasq 接管模式下
 // 直连侧要用它,不能让 sing-box 去问系统解析器——那时系统解析器就是 dnsmasq,而 dnsmasq
 // 的上游又是 sing-box,一问就死循环。预览接口没有 ctx 也照样能出配置,回落到档案里的值。
-export const buildCurrentConfig = (store, systemDns, { cacheFilePath, selections, tlsCert, localSubnets = [], directHostCidrs = [] } = {}) => {
+export const buildCurrentConfig = (store, systemDns, { cacheFilePath, selections, tlsCert, localSubnets = [], directHostCidrs = [], ruleLists = {} } = {}) => {
   const profile = store.getProfile()
   const nodes = store.getNodes()
   const clashApiSecret = store.getClashSecret()
@@ -149,6 +150,8 @@ export const buildCurrentConfig = (store, systemDns, { cacheFilePath, selections
     localSubnets,
     // 节点 / 订阅域名此刻的解析结果,并进直连规则的 ip_cidr(见 system/resolve-hosts.mjs)
     directHostCidrs,
+    // 规则集链接的形状表:每条链接编成了域名 / IP 哪几份 .srs(见 system/rule-lists.mjs)
+    ruleLists,
   })
   return { config, profile }
 }
@@ -222,10 +225,19 @@ const runDeployInner = async ({ store, ctx, paths, fetchImpl = globalThis.fetch,
     const [systemDns, localSubnets] = await Promise.all([readSystemDns(ctx), readLocalSubnets(ctx)])
     const directHostCidrs = await resolveDirectHostCidrs(store, systemDns, lookup)
     const selections = resolveSelections(store, await fetchSelections(fetchImpl, store.getClashSecret()))
-    const { config, profile } = buildCurrentConfig(store, systemDns, {
-      cacheFilePath: paths.cacheDb, selections, tlsCert: { certPath: paths.tlsCert, keyPath: paths.tlsKey }, localSubnets, directHostCidrs,
-    })
-    result = await deployConfig(ctx, paths, { config, profile, userGroups: store.getGroups(), selections })
+    // 规则集链接要排在生成配置之前:拉回来才知道每条名单编成了域名 / IP 哪几份 .srs,
+    // 路由规则和 DNS 规则要凭这个决定引用哪几份(见 engine/routing-model.mjs)。
+    // 这一步只往 rulesetDir 里写文件,失败原地返回,不动系统。
+    const ruleLists = await ensureRuleLists(ctx, paths, (store.getProfile() || {}).routing, { fetchImpl, log: (m) => console.log(m) })
+    if (!ruleLists.ok) {
+      result = { ok: false, stage: 'rulesets', message: ruleLists.message }
+    } else {
+      const { config, profile } = buildCurrentConfig(store, systemDns, {
+        cacheFilePath: paths.cacheDb, selections, tlsCert: { certPath: paths.tlsCert, keyPath: paths.tlsKey }, localSubnets, directHostCidrs,
+        ruleLists: ruleLists.lists,
+      })
+      result = await deployConfig(ctx, paths, { config, profile, userGroups: store.getGroups(), selections })
+    }
     store.setDeployState({
       stage: result.stage,
       message: result.message || '',

@@ -249,3 +249,31 @@ test('dns-in 监听地址:开 IPv6 双栈 ::(AdGuard 用路由器 v6 地址当�
   assert.equal(on.listen, '::')
   assert.equal(off.listen, '0.0.0.0')
 })
+
+test('回归:任何 DNS 规则都不引用含 IP 的规则集(geoip-* / 规则集链接的 -ip 那份),路由规则照旧两边都引用', () => {
+  const tag = 'list-' + (() => { let h = 0x811c9dc5; for (const ch of 'https://x.test/Check.list') { h ^= ch.charCodeAt(0); h = Math.imul(h, 0x01000193) >>> 0 } return h.toString(16).padStart(8, '0') })()
+  const c = buildConfig({
+    nodes,
+    regionGroups,
+    userGroups: [{ id: 'g', name: '香港-自动', type: 'urltest', mode: 'dynamic', keywords: [] }],
+    ruleLists: { [tag]: { domain: true, ip: true } },
+    profile: {
+      ...profile,
+      routing: {
+        proxyTag: 'PROXY',
+        regionMode: 'CN',
+        policies: [
+          { id: 'p1', name: 'Netflix', rulesets: ['geosite-netflix', 'geoip-netflix'], default: '香港-自动' },
+          { id: 'p2', name: 'Speed', ruleUrls: ['https://x.test/Check.list'], default: '香港-自动' },
+          { id: 'p3', name: '国内', rulesets: ['geosite-cn', 'geoip-cn'], default: '直连' },
+        ],
+      },
+    },
+  })
+  const dnsTags = c.dns.rules.flatMap((r) => [].concat(r.rule_set || []))
+  assert.ok(dnsTags.length > 0)
+  assert.ok(dnsTags.every((t) => !t.startsWith('geoip-') && !t.endsWith('-ip')), `DNS 规则里混进了含 IP 的规则集:${dnsTags.join(',')}`)
+  assert.deepEqual(c.route.rules.find((r) => r.outbound === 'Netflix').rule_set, ['geosite-netflix', 'geoip-netflix'])
+  assert.deepEqual(c.route.rules.find((r) => r.outbound === 'Speed').rule_set, [tag, `${tag}-ip`])
+  assert.deepEqual(c.dns.rules.find((r) => r.server === 'dns-direct' && r.rule_set)?.rule_set, ['geosite-cn'])
+})
