@@ -52,10 +52,31 @@ const fontClassName = computed(() => {
   )
 })
 
+// 手机浏览器 / PWA 的状态栏颜色跟着 <meta name="theme-color"> 走。
+// 以前直接拿根节点算出来的 background-color:设了背景图之后它是 bg-base-100/90 这种
+// 半透明色,Android Chrome 不认带透明度的 theme-color,会退回 manifest 里的颜色,于是
+// 亮色主题下顶部也是一条黑的。现在改成拿主题自己的 --color-base-100(不透明),再用
+// canvas 折算成 rgb——daisyUI 的颜色是 oklch 写法,老一点的 WebView 不一定认。
+const resolveOpaqueColor = (cssColor: string) => {
+  const canvas = document.createElement('canvas')
+  canvas.width = 1
+  canvas.height = 1
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return ''
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, 1, 1)
+  ctx.fillStyle = cssColor
+  ctx.fillRect(0, 0, 1, 1)
+  const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data
+  return `rgb(${r}, ${g}, ${b})`
+}
+
 const setThemeColor = () => {
-  const themeColor = getComputedStyle(app.value!).getPropertyValue('background-color').trim()
+  const base = getComputedStyle(document.body).getPropertyValue('--color-base-100').trim()
+  const fallback = app.value ? getComputedStyle(app.value).getPropertyValue('background-color').trim() : ''
+  const themeColor = resolveOpaqueColor(base || fallback) || fallback
   const metaThemeColor = document.querySelector('meta[name="theme-color"]')
-  if (metaThemeColor) {
+  if (metaThemeColor && themeColor) {
     metaThemeColor.setAttribute('content', themeColor)
   }
 }

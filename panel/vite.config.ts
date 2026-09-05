@@ -63,7 +63,9 @@ export default defineConfig({
         name: 'Open-Box',
         short_name: 'Open-Box',
         description: 'Open-Box - integrated sing-box management for OpenWrt',
-        theme_color: '#000000',
+        // 装成 PWA 时状态栏的兜底色;真正生效的是 App.vue 里按主题动态写的 <meta theme-color>
+        theme_color: '#FFFFFF',
+        background_color: '#FFFFFF',
         icons: [
           {
             src: './pwa-192x192.png',
