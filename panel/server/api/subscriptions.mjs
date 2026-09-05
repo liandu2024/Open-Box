@@ -316,9 +316,31 @@ const rebuildNodePool = (existingNodes, subscriptionsInOrder, subscriptionId, ne
 
 const nodeSummary = (n) => ({ tag: n.tag, originalTag: n.originalTag, type: n.type, server: n.server, regionCode: n.regionCode || '' })
 
-export const registerSubscriptionRoutes = (app, { store, fetchImpl = subscriptionFetch, lookup = dns.lookup } = {}) => {
+export const registerSubscriptionRoutes = (app, { store, fetchImpl = subscriptionFetch, lookup = dns.lookup, applyChanges } = {}) => {
   const router = express.Router({ caseSensitive: true })
   router.use(express.json({ limit: '10mb' }))
+
+  // 节点池变了(新建 / 刷新 / 换地址 / 删除 / 排序)就把配置重新生成、应用到内核——
+  // 以前刷新只更新数据库,内核里还是上一次部署的那批节点,订阅页看着"刷新成功"却怎么也
+  // 等不到新节点(正式路由器上实测:库里 12 个、内核里 8 个)。内核没在跑就跳过,等它下次
+  // 启动自然带上。连着刷好几条订阅时前端带 ?apply=0,最后单独 POST /apply 一次,
+  // 免得每条都重启一遍内核。
+  const applyAfter = async (req) => {
+    if (!applyChanges || req.query.apply === '0') return undefined
+    try {
+      return await applyChanges()
+    } catch (err) {
+      return { ok: false, stage: 'apply', message: errorMessage(err) }
+    }
+  }
+  router.post('/apply', async (_req, res) => {
+    if (!applyChanges) return res.json({})
+    try {
+      res.json({ applied: await applyChanges() })
+    } catch (err) {
+      res.json({ applied: { ok: false, stage: 'apply', message: errorMessage(err) } })
+    }
+  })
 
   // 预览:纯解析/改名/分组,不落库。
   router.post('/preview', async (req, res) => {
@@ -376,7 +398,7 @@ export const registerSubscriptionRoutes = (app, { store, fetchImpl = subscriptio
       store.setNodes(rebuildNodePool(store.getNodes(), subsInOrder, id, newNodesForSub))
       store.setSubscriptions(subsInOrder)
 
-      res.json({ id, name, nodeCount: renamed.length, skipped })
+      res.json({ id, name, nodeCount: renamed.length, skipped, applied: await applyAfter(req) })
     } catch (err) {
       res.status(400).json({ error: errorMessage(err) })
     }
@@ -389,7 +411,7 @@ export const registerSubscriptionRoutes = (app, { store, fetchImpl = subscriptio
 
   // 排序:ids 是全部订阅 id 的新顺序(必须一一对应,不能多也不能少)。节点池也按新顺序
   // 重排——节点组成员选择器、终端分流的出口选择器、内核里的出站顺序都是照节点池来的。
-  router.put('/order', (req, res) => {
+  router.put('/order', async (req, res) => {
     const ids = req.body && req.body.ids
     if (!Array.isArray(ids) || ids.some((x) => typeof x !== 'string')) {
       return res.status(400).json({ error: 'ids must be an array of strings' })
@@ -403,15 +425,17 @@ export const registerSubscriptionRoutes = (app, { store, fetchImpl = subscriptio
     const ordered = ids.map((id) => byId.get(id))
     store.setSubscriptions(ordered)
     store.setNodes(orderNodesBySubscriptions(store.getNodes(), ordered))
-    res.json({ ok: true, subscriptions: ordered })
+    res.json({ ok: true, subscriptions: ordered, applied: await applyAfter(req) })
   })
 
   // 删除:同时清掉该订阅的节点。幂等——id 不存在也返回 ok:true。
-  router.delete('/:id', (req, res) => {
+  router.delete('/:id', async (req, res) => {
     const { id } = req.params
+    const existed = store.getSubscriptions().some((s) => s.id === id)
     store.setSubscriptions(store.getSubscriptions().filter((s) => s.id !== id))
     store.setNodes(store.getNodes().filter((n) => n.subscriptionId !== id))
-    res.json({ ok: true })
+    // 本来就不存在的 id 什么都没变,不用动内核
+    res.json({ ok: true, applied: existed ? await applyAfter(req) : undefined })
   })
 
   // 修改:改名 / 换订阅链接 / 调整重命名规则。
@@ -484,7 +508,7 @@ export const registerSubscriptionRoutes = (app, { store, fetchImpl = subscriptio
       store.setNodes(rebuildNodePool(store.getNodes(), nowSubs, id, newNodesForSub))
       store.setSubscriptions(nowSubs.map((s) => (s.id === id ? { ...s, ...updated } : s)))
 
-      res.json({ id, name, nodeCount: renamed.length, skipped })
+      res.json({ id, name, nodeCount: renamed.length, skipped, applied: await applyAfter(req) })
     } catch (err) {
       res.status(400).json({ error: errorMessage(err) })
     }
@@ -522,7 +546,7 @@ export const registerSubscriptionRoutes = (app, { store, fetchImpl = subscriptio
       store.setNodes(rebuildNodePool(store.getNodes(), nowSubs, id, newNodesForSub))
       store.setSubscriptions(nowSubs.map((s) => (s.id === id ? { ...s, ...updated } : s)))
 
-      res.json({ id, name: updated.name, nodeCount: renamed.length, skipped })
+      res.json({ id, name: updated.name, nodeCount: renamed.length, skipped, applied: await applyAfter(req) })
     } catch (err) {
       res.status(400).json({ error: errorMessage(err) })
     }

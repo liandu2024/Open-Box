@@ -19,6 +19,7 @@ import { registerTrafficRoutes } from './api/traffic.mjs'
 import { registerServerRoutes } from './api/servers.mjs'
 import { seedDefaultStorage } from './system/seed-defaults.mjs'
 import { runDeploy, fetchSelections, resolveSelections, dnsClassesFlipped } from './api/deploy-runner.mjs'
+import { serviceStatus } from './system/service.mjs'
 import { startScheduler } from './system/scheduler.mjs'
 import { createTrafficCollector, createTrafficStore } from './system/traffic-collector.mjs'
 import { registerSubscriptionRoutes } from './api/subscriptions.mjs'
@@ -1021,7 +1022,13 @@ app.delete('/api/background-image', (_req, res) => {
 // Open-Box 业务路由:全部挂在守卫中间件之后、静态资源/SPA fallback 之前,
 // 因此天然继承"未设密一律 403、已设密未认证一律 401"的保护,无需各自重复鉴权。
 // 订阅拉取用不校验证书的 fetch(自签 / 过期证书的自建订阅也能加),不能传系统 fetch 把它盖掉
-registerSubscriptionRoutes(app, { store, fetchImpl: subscriptionFetch })
+// 订阅变动后把节点应用到内核:内核在跑才重新部署(内核会重启一次),没在跑就等它下次启动时自然带上
+const applySubscriptionChanges = async () => {
+  const status = await serviceStatus(obCtx, obPaths.initd.core)
+  if (!status.running) return { skipped: 'core-not-running' }
+  return runDeploy({ store, ctx: obCtx, paths: obPaths })
+}
+registerSubscriptionRoutes(app, { store, fetchImpl: subscriptionFetch, applyChanges: applySubscriptionChanges })
 registerProfileRoutes(app, { store })
 registerDeployRoutes(app, { store, ctx: obCtx, paths: obPaths })
 registerServiceRoutes(app, { store, ctx: obCtx, paths: obPaths })

@@ -29,10 +29,10 @@ const fakePublicLookup = async (hostname) => {
 
 // 起一个绑定临时端口的最小 express app,注册待测路由,返回 baseUrl 供 fetch 打真实 HTTP 请求;
 // close() 必须在 finally 里调用,防止测试遗留监听中的 server。
-const startApp = async (fetchImpl, lookup = fakePublicLookup) => {
+const startApp = async (fetchImpl, lookup = fakePublicLookup, applyChanges) => {
   const store = memStore()
   const app = express()
-  registerSubscriptionRoutes(app, { store, fetchImpl, lookup })
+  registerSubscriptionRoutes(app, { store, fetchImpl, lookup, applyChanges })
   const server = app.listen(0)
   await new Promise((resolve, reject) => {
     server.once('listening', resolve)
@@ -1039,6 +1039,70 @@ test('老字段 url 照旧能用:只传 url 时记录里 urls 就是它一条', 
   try {
     await postJson(baseUrl, '/api/openbox/subscriptions', { url: 'http://a', name: 'Sub' })
     assert.deepEqual(store.getSubscriptions()[0].urls, ['http://a'])
+  } finally {
+    await close()
+  }
+})
+
+// -------- 变动后应用到内核 --------
+
+test('新建 / 刷新 / 删除 / 排序都会应用到内核并把结果带回;只改名字不应用;?apply=0 跳过;POST /apply 单独应用', async () => {
+  let applied = 0
+  const applyChanges = async () => { applied += 1; return { ok: true, stage: 'running' } }
+  const fetchImpl = async () => ({ ok: true, status: 200, text: async () => HK_LINE })
+  const { baseUrl, close } = await startApp(fetchImpl, fakePublicLookup, applyChanges)
+  const patch = (id, body) => fetch(`${baseUrl}/api/openbox/subscriptions/${id}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+  try {
+    const created = await (await postJson(baseUrl, '/api/openbox/subscriptions', { url: 'http://a', name: 'A' })).json()
+    assert.deepEqual(created.applied, { ok: true, stage: 'running' })
+    assert.equal(applied, 1)
+
+    const refreshed = await (await postJson(baseUrl, `/api/openbox/subscriptions/${created.id}/refresh`, {})).json()
+    assert.equal(refreshed.applied.ok, true)
+    assert.equal(applied, 2)
+
+    const skipped = await (await postJson(baseUrl, `/api/openbox/subscriptions/${created.id}/refresh?apply=0`, {})).json()
+    assert.equal(skipped.applied, undefined)
+    assert.equal(applied, 2, '?apply=0 不该应用')
+
+    const renamed = await (await patch(created.id, { name: 'B' })).json()
+    assert.equal(renamed.applied, undefined)
+    assert.equal(applied, 2, '只改名字节点没变,不该应用')
+
+    const moved = await (await patch(created.id, { urls: ['http://b'] })).json()
+    assert.equal(moved.applied.ok, true)
+    assert.equal(applied, 3)
+
+    const single = await (await postJson(baseUrl, '/api/openbox/subscriptions/apply', {})).json()
+    assert.equal(single.applied.ok, true)
+    assert.equal(applied, 4)
+
+    const order = await (await fetch(`${baseUrl}/api/openbox/subscriptions/order`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ids: [created.id] }) })).json()
+    assert.equal(order.applied.ok, true)
+    assert.equal(applied, 5)
+
+    const del = await (await fetch(`${baseUrl}/api/openbox/subscriptions/${created.id}`, { method: 'DELETE' })).json()
+    assert.equal(del.applied.ok, true)
+    assert.equal(applied, 6)
+    const delAgain = await (await fetch(`${baseUrl}/api/openbox/subscriptions/${created.id}`, { method: 'DELETE' })).json()
+    assert.equal(delAgain.applied, undefined, '删一个本来就不存在的不用动内核')
+    assert.equal(applied, 6)
+  } finally {
+    await close()
+  }
+})
+
+test('应用到内核失败时订阅照样保存,失败原因带在 applied 里,不返回 4xx', async () => {
+  const applyChanges = async () => { throw new Error('内核起不来') }
+  const fetchImpl = async () => ({ ok: true, status: 200, text: async () => HK_LINE })
+  const { baseUrl, store, close } = await startApp(fetchImpl, fakePublicLookup, applyChanges)
+  try {
+    const res = await postJson(baseUrl, '/api/openbox/subscriptions', { url: 'http://a', name: 'A' })
+    assert.equal(res.status, 200)
+    const body = await res.json()
+    assert.equal(body.applied.ok, false)
+    assert.match(body.applied.message, /内核起不来/)
+    assert.equal(store.getSubscriptions().length, 1)
   } finally {
     await close()
   }

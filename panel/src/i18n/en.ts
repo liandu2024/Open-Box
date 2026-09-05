@@ -545,6 +545,8 @@ const en = {
   subscriptionContentPlaceholder: 'Paste ss:// / trojan:// / hysteria2:// lines, or a Clash/sing-box config…',
   subscriptionSave: 'Save',
   subscriptionPreviewFailed: "Couldn't preview: {message}",
+  subscriptionAppliedToCore: 'Nodes updated; the core has been reloaded',
+  subscriptionApplyFailed: 'Subscription saved, but applying it to the core failed: {message}',
   subscriptionSaveFailed: "Couldn't save: {message}",
   subscriptionDefaultName: 'Subscription',
   subscriptionPreviewEmptyHint: 'Enter a link or paste content to see a live preview here.',
