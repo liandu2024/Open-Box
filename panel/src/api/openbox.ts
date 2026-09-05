@@ -76,9 +76,10 @@ export interface OpenboxProfileDns {
 // The backend deep-merges patches onto this shape (see server/store/openbox-store.mjs), so a
 // profile is always fully populated — no field is ever missing on GET.
 // 自动更新计划(面板进程内的定时器)
+// channel 是自动更新走的通道;checkChannel 是卡片上手动检查 / 更新那个下拉框上次选的通道
 export interface OpenboxUpdatePlans {
-  openbox?: { auto?: boolean; hour?: number; days?: number; channel?: 'auto' | 'direct' | 'mirror' }
-  geo?: { auto?: boolean; hour?: number; days?: number; channel?: 'auto' | 'direct' | 'mirror' }
+  openbox?: { auto?: boolean; hour?: number; days?: number; channel?: 'auto' | 'direct' | 'mirror'; checkChannel?: 'auto' | 'direct' | 'mirror' }
+  geo?: { auto?: boolean; hour?: number; days?: number; channel?: 'auto' | 'direct' | 'mirror'; checkChannel?: 'auto' | 'direct' | 'mirror' }
 }
 
 // 「共享网络」里的一台服务器:本机开的一个入站(server/engine/servers.mjs)

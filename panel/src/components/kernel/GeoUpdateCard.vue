@@ -132,7 +132,7 @@ import { checkGeoUpdate, fetchRulesetsRefreshStatus, refreshRulesets } from '@/a
 import StatusBadge from '@/components/common/StatusBadge.vue'
 import { showNotification } from '@/helper/notification'
 import dayjs from 'dayjs'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{
@@ -145,13 +145,28 @@ const status = ref<Awaited<ReturnType<typeof fetchRulesetsRefreshStatus>> | null
 const latest = ref<Awaited<ReturnType<typeof checkGeoUpdate>> | null>(null)
 const checking = ref(false)
 const refreshing = ref(false)
-const channel = ref<OpenboxUpdateChannel>('auto')
 const plan = computed(() => ({
   auto: props.profile.updates?.geo?.auto === true,
   hour: props.profile.updates?.geo?.hour ?? 4,
   days: props.profile.updates?.geo?.days ?? 7,
   channel: props.profile.updates?.geo?.channel ?? 'auto',
+  checkChannel: props.profile.updates?.geo?.checkChannel ?? 'auto',
 }))
+// 手动检查 / 更新用的通道:记在档案里,下次进页面还是上次选的;改了就静默存一次
+const channel = ref<OpenboxUpdateChannel>(plan.value.checkChannel)
+watch(() => plan.value.checkChannel, (v) => { channel.value = v })
+watch(channel, async (v) => {
+  if (v === plan.value.checkChannel) return
+  try {
+    await props.patchProfile({ updates: { geo: { ...plan.value, checkChannel: v } } })
+  } catch (err) {
+    showNotification({
+      content: 'routingSaveFailed',
+      params: { message: err instanceof Error ? err.message : String(err) },
+      type: 'alert-error',
+    })
+  }
+})
 const lastText = computed(() => (status.value?.lastAt ? dayjs(status.value.lastAt).fromNow() : '—'))
 
 const GEO_REPOS = ['geosite', 'geoip'] as const

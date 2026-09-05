@@ -92,6 +92,7 @@ export const validateProfilePatch = (patch, { reservedNames = [] } = {}) => {
       if ('auto' in o && !isBoolean(o.auto)) return 'updates.openbox.auto must be a boolean'
       if ('hour' in o && !isHour(o.hour)) return 'updates.openbox.hour must be an integer 0-23'
       if ('channel' in o && !['auto', 'direct', 'mirror'].includes(o.channel)) return 'updates.openbox.channel must be auto, direct or mirror'
+      if ('checkChannel' in o && !['auto', 'direct', 'mirror'].includes(o.checkChannel)) return 'updates.openbox.checkChannel must be auto, direct or mirror'
       if ('days' in o && !(Number.isInteger(o.days) && o.days >= 1 && o.days <= 30)) return 'updates.openbox.days must be an integer 1-30'
     }
     if ('geo' in u) {
@@ -101,6 +102,7 @@ export const validateProfilePatch = (patch, { reservedNames = [] } = {}) => {
       if ('hour' in g && !isHour(g.hour)) return 'updates.geo.hour must be an integer 0-23'
       if ('days' in g && !(Number.isInteger(g.days) && g.days >= 1 && g.days <= 30)) return 'updates.geo.days must be an integer 1-30'
       if ('channel' in g && !['auto', 'direct', 'mirror'].includes(g.channel)) return 'updates.geo.channel must be auto, direct or mirror'
+      if ('checkChannel' in g && !['auto', 'direct', 'mirror'].includes(g.checkChannel)) return 'updates.geo.checkChannel must be auto, direct or mirror'
     }
   }
 

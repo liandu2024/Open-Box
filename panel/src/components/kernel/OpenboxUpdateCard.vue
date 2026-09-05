@@ -143,7 +143,7 @@ import {
   updateStarting,
 } from '@/composables/openboxUpdate'
 import { showNotification } from '@/helper/notification'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 
 const props = defineProps<{
   profile: OpenboxProfile
@@ -152,13 +152,28 @@ const props = defineProps<{
 
 const latest = ref<{ latest: string; hasUpdate: boolean } | null>(null)
 const checking = ref(false)
-const channel = ref<OpenboxUpdateChannel>('auto')
 const plan = computed(() => ({
   auto: props.profile.updates?.openbox?.auto === true,
   hour: props.profile.updates?.openbox?.hour ?? 4,
   days: props.profile.updates?.openbox?.days ?? 1,
   channel: props.profile.updates?.openbox?.channel ?? 'auto',
+  checkChannel: props.profile.updates?.openbox?.checkChannel ?? 'auto',
 }))
+// 手动检查 / 更新用的通道:记在档案里,下次进页面还是上次选的;改了就静默存一次
+const channel = ref<OpenboxUpdateChannel>(plan.value.checkChannel)
+watch(() => plan.value.checkChannel, (v) => { channel.value = v })
+watch(channel, async (v) => {
+  if (v === plan.value.checkChannel) return
+  try {
+    await props.patchProfile({ updates: { openbox: { ...plan.value, checkChannel: v } } })
+  } catch (err) {
+    showNotification({
+      content: 'routingSaveFailed',
+      params: { message: err instanceof Error ? err.message : String(err) },
+      type: 'alert-error',
+    })
+  }
+})
 
 const check = async () => {
   checking.value = true
@@ -197,7 +212,6 @@ const savePlan = async (patch: Partial<{ auto: boolean; hour: number; days: numb
 }
 
 onMounted(() => {
-  channel.value = 'auto'
   void refreshUpdateInfo()
 })
 </script>

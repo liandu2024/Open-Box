@@ -39,9 +39,11 @@ export const DEFAULT_PROFILE = {
   testUrl: 'https://www.gstatic.com/generate_204',
   directTestUrl: 'http://www.msftconnecttest.com/connecttest.txt',
   // 自动更新计划(面板进程内的定时器,见 system/scheduler.mjs):默认都关
+  // channel 是自动更新走的通道;checkChannel 是卡片上手动「检查更新 / 立即更新」那个下拉框
+  // 上次选的通道,记下来免得每次进页面都要重选
   updates: {
-    openbox: { auto: false, hour: 4, channel: 'auto' },
-    geo: { auto: false, hour: 4, days: 7 },
+    openbox: { auto: false, hour: 4, channel: 'auto', checkChannel: 'auto' },
+    geo: { auto: false, hour: 4, days: 7, channel: 'auto', checkChannel: 'auto' },
   },
   routing: {
     proxyTag: 'PROXY',
