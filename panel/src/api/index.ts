@@ -1,3 +1,4 @@
+import { serviceStatus } from '@/composables/kernelService'
 import { showNotification } from '@/helper/notification'
 import { ACCESS_PASSWORD_REQUIRED_CODE, markServerAuthenticationRequired } from '@/store/auth'
 import { autoUpgradeCore, checkUpgradeCore } from '@/store/settings'
@@ -38,6 +39,11 @@ axios.interceptors.response.use(
 
     if (responseStatus === 401 && responseCode === ACCESS_PASSWORD_REQUIRED_CODE) {
       markServerAuthenticationRequired()
+      return Promise.reject(error)
+    }
+
+    // 内核停着的时候,所有 clash API 请求都会失败——已经知道它停着了,一条条弹出来只是噪音
+    if (serviceStatus.value && !serviceStatus.value.core.running) {
       return Promise.reject(error)
     }
 
