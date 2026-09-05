@@ -176,11 +176,12 @@
           <span class="text-base-content/40">·</span>
           <span>{{ $t('trafficTotal') }} {{ fmt(detailTotal) }}</span>
           <span class="text-base-content/60 font-normal">{{ $t('trafficConns', { n: detail.total.conns }) }}</span>
-          <!-- 只看某个小时的时候,右上角给一个回整天的键 -->
+          <!-- 右上角回整天的键:平时就摆着但置灰,点了曲线上某个小时才能点;样式和设置页
+               「修改密码」那个键一样(btn btn-sm) -->
           <button
-            v-if="selectedHour !== null"
             type="button"
-            class="btn btn-primary btn-soft btn-xs ml-auto"
+            class="btn btn-sm ml-auto"
+            :disabled="selectedHour === null"
             @click="backToDay"
           >
             {{ $t('trafficBackToDay') }}
