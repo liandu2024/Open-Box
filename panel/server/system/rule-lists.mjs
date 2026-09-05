@@ -90,10 +90,9 @@ const removeIfExists = async (ctx, path) => {
   if (await ctx.exists(path)) await ctx.remove(path)
 }
 
-// 一个链接 → 域名一份 list-xxx.srs、IP 一份 list-xxx-ip.srs(哪边没有内容就不出那份文件,
-// 上次留下的同名旧文件也删掉,免得配置里引用不到它却还躺在磁盘上)。
-const compileOne = async (ctx, paths, { url, tag }, fetchImpl) => {
-  const parsed = await loadRuleList(fetchImpl, url)
+// 解析好的名单 → 域名一份 list-xxx.srs、IP 一份 list-xxx-ip.srs(哪边没有内容就不出那份文件,
+// 上次留下的同名旧文件也删掉,免得配置里引用不到它却还躺在磁盘上)。返回每类条数。
+const compileParsed = async (ctx, paths, tag, parsed) => {
   if (ruleListIsEmpty(parsed)) throw new Error('这份名单里没有解析出任何域名或 IP')
   const counts = Object.fromEntries(Object.entries(parsed).filter(([, v]) => v.length).map(([k, v]) => [k, v.length]))
   const { domains, ips } = splitRuleList(parsed)
@@ -106,6 +105,33 @@ const compileOne = async (ctx, paths, { url, tag }, fetchImpl) => {
   if (shape.ip) await compileSrs(ctx, paths, ruleListIpTag(tag), ips)
   else await removeIfExists(ctx, `${paths.rulesetDir}/${ruleListIpTag(tag)}.srs`)
   return counts
+}
+
+// 一个链接 → 拉回来、解析、编译
+const compileOne = async (ctx, paths, { url, tag }, fetchImpl) =>
+  compileParsed(ctx, paths, tag, await loadRuleList(fetchImpl, url))
+
+// 老版式的本地文件(域名 IP 混在一份 list-xxx.srs 里)不用重新下:用内核解回源格式,再拆成
+// 两份编译。这样升级后第一次部署就能拿到拆好的文件,不依赖外网(路由器拉 GitHub 未必通);
+// 名单本身到了重下时间照常重下。
+const resplitLegacy = async (ctx, paths, tag) => {
+  const legacyPath = `${paths.rulesetDir}/${tag}.srs`
+  const tmp = `${paths.dataDir}/tmp/${tag}.legacy.json`
+  await ctx.mkdirp(`${paths.dataDir}/tmp`)
+  const r = await ctx.exec(paths.singbox, ['rule-set', 'decompile', '--output', tmp, legacyPath])
+  if (r.code !== 0) throw new Error(`解开旧规则集失败:${(r.stderr || '').trim() || `exit ${r.code}`}`)
+  let source
+  try {
+    source = JSON.parse(await ctx.readFile(tmp))
+  } finally {
+    await removeIfExists(ctx, tmp)
+  }
+  const parsed = { domain: [], domain_suffix: [], domain_keyword: [], domain_regex: [], ip_cidr: [] }
+  for (const rule of Array.isArray(source?.rules) ? source.rules : []) {
+    // 解回来的字段单个值时是字符串,多个是数组
+    for (const k of Object.keys(parsed)) if (rule && rule[k] != null) parsed[k].push(...[].concat(rule[k]))
+  }
+  return compileParsed(ctx, paths, tag, parsed)
 }
 
 // 部署前、生成配置之前调一次:把档案里引用到的规则集链接补齐。
@@ -126,15 +152,27 @@ export const ensureRuleLists = async (
   const next = {}
   const updated = []
   const failed = []
+  const errText = (error) => (error instanceof Error ? error.message : String(error))
   for (const item of wanted) {
     const prev = state[item.tag]
     const exists = (await ctx.exists(`${paths.rulesetDir}/${item.tag}.srs`))
       || (await ctx.exists(`${paths.rulesetDir}/${ruleListIpTag(item.tag)}.srs`))
-    const fresh = exists && prev && prev.url === item.url && prev.split === SPLIT_VERSION
-      && now() - Number(prev.at || 0) < REFRESH_MS
-    if (fresh) {
+    const upToDate = exists && prev && prev.url === item.url && now() - Number(prev.at || 0) < REFRESH_MS
+    if (upToDate && prev.split === SPLIT_VERSION) {
       next[item.tag] = prev
       continue
+    }
+    if (upToDate) {
+      // 名单不旧、只是老版式:离线重编,不碰网络
+      try {
+        const counts = await resplitLegacy(ctx, paths, item.tag)
+        next[item.tag] = { ...prev, counts, split: SPLIT_VERSION }
+        updated.push(item.tag)
+        log(`[rule-list] ${item.tag} 由老版式重编为域名 / IP 两份`)
+        continue
+      } catch (error) {
+        log(`[rule-list] ${item.tag} 老版式重编失败(${errText(error)}),改为重新拉取`)
+      }
     }
     try {
       const counts = await compileOne(ctx, paths, item, fetchImpl)
@@ -142,15 +180,24 @@ export const ensureRuleLists = async (
       updated.push(item.tag)
       log(`[rule-list] ${item.url} → ${item.tag}(${Object.entries(counts).map(([k, v]) => `${k} ${v}`).join(', ')})`)
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
+      const message = errText(error)
       failed.push({ tag: item.tag, url: item.url, message })
-      if (exists) {
-        // 有旧的就接着用:名单在别人服务器上,不该因为对方今天抽风就让部署失败
-        next[item.tag] = prev || { url: item.url, at: 0 }
-        log(`[rule-list] ${item.url} 拉取失败(${message}),沿用本地已有的那份`)
-      } else {
+      if (!exists) {
         return { ok: false, updated, failed, message: `规则集链接拉取失败:${item.url} —— ${message}` }
       }
+      // 有旧的就接着用:名单在别人服务器上,不该因为对方今天抽风就让部署失败。
+      // 旧的是老版式就顺手离线拆一下,DNS 规则才引用得到纯域名那份。
+      let entry = prev || { url: item.url, at: 0 }
+      if (entry.split !== SPLIT_VERSION) {
+        try {
+          entry = { ...entry, counts: await resplitLegacy(ctx, paths, item.tag), split: SPLIT_VERSION }
+          log(`[rule-list] ${item.tag} 由老版式重编为域名 / IP 两份`)
+        } catch (e2) {
+          log(`[rule-list] ${item.tag} 老版式重编失败(${errText(e2)})`)
+        }
+      }
+      next[item.tag] = entry
+      log(`[rule-list] ${item.url} 拉取失败(${message}),沿用本地已有的那份`)
     }
   }
   await ctx.writeFile(listStatePath(paths), JSON.stringify(next, null, 2))

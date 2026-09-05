@@ -67,17 +67,47 @@ test('没到重下时间、文件还在:不再拉', async () => {
   assert.deepEqual(r.lists, { [TAG_A]: { domain: true, ip: false } })
 })
 
-test('本地是老版式(域名 IP 混在一份里、没有 split 标记):没到重下时间也要重编', async () => {
-  const ctx = createMockContext({
-    files: {
-      [paths.singbox]: 'x',
-      [`${paths.rulesetDir}/${TAG_A}.srs`]: 'bin',
-      [listStatePath(paths)]: JSON.stringify({ [TAG_A]: { url: URL_A, at: 1000, counts: { domain_suffix: 3, ip_cidr: 1 } } }),
-    },
+// 老版式 = 域名 IP 混在一份 list-xxx.srs 里、状态里没有 split 标记(升级前的版本编出来的)
+const legacyState = () => JSON.stringify({ [TAG_A]: { url: URL_A, at: 1000, counts: { domain_suffix: 1, ip_cidr: 1 } } })
+// mock 的 exec 不会真的产出文件:把「decompile 解出来的源文件」预先放好,模拟内核写了它
+const decompiled = { [`${paths.dataDir}/tmp/${TAG_A}.legacy.json`]: JSON.stringify({ version: 3, rules: [{ domain_suffix: 'a.com', ip_cidr: ['1.2.3.0/24'] }] }) }
+
+test('本地是老版式、名单没到重下时间:用内核解开旧文件离线拆成两份,不碰网络', async () => {
+  const ctx = createMockContext({ files: { [paths.singbox]: 'x', [`${paths.rulesetDir}/${TAG_A}.srs`]: 'bin', [listStatePath(paths)]: legacyState(), ...decompiled } })
+  const r = await ensureRuleLists(ctx, paths, routing([URL_A]), {
+    fetchImpl: async () => { throw new Error('不该碰网络') },
+    now: () => 1000 + 3600_000,
   })
+  assert.equal(r.ok, true)
+  assert.deepEqual(r.updated, [TAG_A])
+  const cmds = ctx.calls.filter((c) => c.cmd === paths.singbox).map((c) => `${c.args[1]} ${c.args[3]}`)
+  assert.deepEqual(cmds, [
+    `decompile ${paths.dataDir}/tmp/${TAG_A}.legacy.json`,
+    `compile ${paths.rulesetDir}/${TAG_A}.srs`,
+    `compile ${paths.rulesetDir}/${TAG_A}-ip.srs`,
+  ])
+  assert.deepEqual(r.lists, { [TAG_A]: { domain: true, ip: true } })
+  const state = JSON.parse(ctx.writes.find((w) => w.path === listStatePath(paths)).content)
+  assert.equal(state[TAG_A].split, 2)
+  assert.equal(state[TAG_A].at, 1000, '离线重编不算重下,时间戳不动')
+})
+
+test('老版式又解不开(比如文件坏了):改为重新拉取', async () => {
+  const ctx = createMockContext({ files: { [paths.singbox]: 'x', [`${paths.rulesetDir}/${TAG_A}.srs`]: 'bin', [listStatePath(paths)]: legacyState() } })
   const r = await ensureRuleLists(ctx, paths, routing([URL_A]), { fetchImpl: okFetch('a.com\n'), now: () => 1000 + 3600_000 })
   assert.deepEqual(r.updated, [TAG_A])
   assert.deepEqual(r.lists, { [TAG_A]: { domain: true, ip: false } })
+})
+
+test('老版式、拉不动但本地有旧的:沿用之余也离线拆一下,形状表就有了', async () => {
+  const ctx = createMockContext({ files: { [paths.singbox]: 'x', [`${paths.rulesetDir}/${TAG_A}.srs`]: 'bin', [listStatePath(paths)]: legacyState(), ...decompiled } })
+  const r = await ensureRuleLists(ctx, paths, routing([URL_A]), {
+    fetchImpl: async () => ({ ok: false, status: 502 }),
+    now: () => 1000 + 3 * 86400_000,
+  })
+  assert.equal(r.ok, true)
+  assert.equal(r.failed[0].tag, TAG_A)
+  assert.deepEqual(r.lists, { [TAG_A]: { domain: true, ip: true } })
 })
 
 test('拉不动:本地有旧的就沿用,没有就让部署停下来', async () => {
