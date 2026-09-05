@@ -721,6 +721,7 @@ const en = {
   kernelAutostartOn: 'On',
   kernelAutostartOff: 'Off',
   kernelActionSucceeded: '{action} succeeded.',
+  kernelActionSucceededIn: '{action} succeeded in {seconds}s.',
   kernelActionFailed: '{action} failed: {detail}',
   kernelActionNoDetail: 'exit code {code}, no further detail',
   kernelActionRequestFailed: "Couldn't reach the server: {message}",

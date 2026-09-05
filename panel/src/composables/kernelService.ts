@@ -86,7 +86,12 @@ export const useKernelActions = () => {
     try {
       const result = await runServiceAction(action)
       if (result.ok) {
-        showNotification({ content: 'kernelActionSucceeded', params: { action: actionLabel }, type: 'alert-success' })
+        // 启动 / 重启带着耗时:重启慢不慢,一眼就看到,不用去翻 logread
+        if (typeof result.durationMs === 'number') {
+          showNotification({ content: 'kernelActionSucceededIn', params: { action: actionLabel, seconds: (result.durationMs / 1000).toFixed(1) }, type: 'alert-success' })
+        } else {
+          showNotification({ content: 'kernelActionSucceeded', params: { action: actionLabel }, type: 'alert-success' })
+        }
       } else {
         // 这台开发机没有 /etc/init.d,ok:false 且 stderr 为空是常态:没细节时至少给个退出码
         const detail = result.stderr.trim() || t('kernelActionNoDetail', { code: String(result.code) })

@@ -36,12 +36,15 @@ export const registerServiceRoutes = (app, { store, ctx, paths, stopWaitMs = 800
 
     let result
     if (action === 'start' || action === 'restart') {
+      const startedAt = Date.now()
       const deployed = await runDeploy({ store, ctx, paths })
       // 统一成 service 动作的返回形状({ok,code,stderr}),失败原因原样带出去,
-      // 内核页那条结果横幅就能直接显示"哪一步没过"。
+      // 内核页那条结果横幅就能直接显示"哪一步没过"。耗时也带回去:面板的日志页看的是
+      // 内核日志,面板自己的部署日志只在 logread 里,用户在界面上看不到,就把数字直接放进提示。
+      const durationMs = Date.now() - startedAt
       result = deployed.ok
-        ? { ok: true, code: 0, stderr: '' }
-        : { ok: false, code: 1, stderr: failureDetail(deployed) }
+        ? { ok: true, code: 0, stderr: '', durationMs }
+        : { ok: false, code: 1, stderr: failureDetail(deployed), durationMs }
     } else if (action === 'stop') {
       // 停止内核时一并关闭开机自启:部署成功会把自启打开,若「停止」不关掉它,
       // 坏配置把网搞断时用户停了内核,一重启 procd 又会把它拉起来、网又断——

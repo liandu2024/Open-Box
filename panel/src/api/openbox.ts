@@ -566,6 +566,8 @@ export interface OpenboxServiceActionResult {
   ok: boolean
   code: number
   stderr: string
+  // 启动 / 重启时整条部署流程的耗时(生成配置 → 校验 → 重启内核 → 确认在跑)
+  durationMs?: number
 }
 
 export interface OpenboxKernelVersion {
