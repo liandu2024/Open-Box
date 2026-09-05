@@ -161,6 +161,7 @@ import {
   type OpenboxBackupSubscriptionsMode,
   type OpenboxProfile,
 } from '@/api/openbox'
+import { applyManagedStorageSnapshot } from '@/helper/persistentStorage'
 import { loadOpenboxSubscriptions, openboxSubscriptions } from '@/store/openboxSubscriptions'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import { showNotification } from '@/helper/notification'
@@ -193,8 +194,16 @@ watch(
   },
   { immediate: true },
 )
+// 导入带面板设置的文件后会刷新页面让设置生效;刷新前留个记号,回来再把「重启内核生效」提示补上
+const IMPORTED_FLAG = 'openbox/backup-imported'
 onMounted(() => {
   void loadOpenboxSubscriptions()
+  try {
+    if (sessionStorage.getItem(IMPORTED_FLAG)) {
+      sessionStorage.removeItem(IMPORTED_FLAG)
+      showNotification({ content: 'backupImportedNeedRestart', type: 'alert-success', timeout: 6000 })
+    }
+  } catch { /* 拿不到 sessionStorage 就不提示 */ }
 })
 const exporting = ref(false)
 const importing = ref(false)
@@ -270,6 +279,7 @@ const pendingParts = computed(() => {
   if (Array.isArray(routes)) s += t('backupPartsClientRoutes', { n: routes.length })
   const servers = p.profile?.servers
   if (Array.isArray(servers)) s += t('backupPartsServers', { n: servers.length })
+  if (p.panelSettings && typeof p.panelSettings === 'object') s += t(p.backgroundImage ? 'backupPartsPanelWithBackground' : 'backupPartsPanel')
   return s
 })
 
@@ -303,11 +313,19 @@ const confirmImport = async () => {
   if (!pending.value) return
   importing.value = true
   try {
-    const r = await importBackup(pending.value, pendingHasSubscriptions.value ? subscriptionsMode.value : 'replace')
+    const file = pending.value
+    const r = await importBackup(file, pendingHasSubscriptions.value ? subscriptionsMode.value : 'replace')
     showConfirm.value = false
     pending.value = null
-    void r
     void loadOpenboxSubscriptions()
+    // 带了面板设置:本地快照换成文件里的,再刷新页面让语言 / 主题 / 圆角这些立刻生效
+    // (useStorage 的值是启动时读的,不刷新不会变);提示留到刷新回来再弹
+    if (r.imported.panelSettings || r.imported.backgroundImage) {
+      if (file.panelSettings) applyManagedStorageSnapshot(file.panelSettings)
+      try { sessionStorage.setItem(IMPORTED_FLAG, '1') } catch { /* ignore */ }
+      window.setTimeout(() => window.location.reload(), 300)
+      return
+    }
     showNotification({
       content: 'backupImportedNeedRestart',
       type: 'alert-success',

@@ -1046,7 +1046,17 @@ const trafficCollector = createTrafficCollector({
 registerTrafficRoutes(app, { collector: trafficCollector, ctx: obCtx, paths: obPaths })
 registerServerRoutes(app, { store, ctx: obCtx })
 // 导出 / 导入(后端设置那张卡片):档案 + 节点组,可选订阅和节点
-registerBackupRoutes(app, { store, readVersion: async () => (await readMeta(obCtx, obPaths)).version || '' })
+registerBackupRoutes(app, {
+  store,
+  readVersion: async () => (await readMeta(obCtx, obPaths)).version || '',
+  // 面板设置和背景图跟着一起导:和 /api/storage、/api/background-image 用同一套读写
+  panelStorage: {
+    readEntries: readSnapshot,
+    writeEntries: replaceSnapshot,
+    getBackground: () => getStorageValueStatement.get(backgroundImageStorageKey)?.value || '',
+    setBackground: (image) => (image ? upsertStorageValueStatement.run(backgroundImageStorageKey, image) : deleteStorageValueStatement.run(backgroundImageStorageKey)),
+  },
+})
 // 自动更新计划:每分钟看一眼档案里的计划,到点就做(见 system/scheduler.mjs)
 startScheduler({ store, ctx: obCtx, paths: obPaths, fetchImpl: globalThis.fetch, subscriptionFetchImpl: subscriptionFetch, runDeploy, log: (m) => console.log(m) })
 

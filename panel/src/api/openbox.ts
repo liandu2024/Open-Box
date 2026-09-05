@@ -882,6 +882,9 @@ export interface OpenboxBackup {
   groups: unknown[]
   subscriptions?: unknown[]
   nodes?: unknown[]
+  // 面板设置(config/* 的键值,不含密码)和背景图(data URL,空串是没有)
+  panelSettings?: Record<string, string>
+  backgroundImage?: string
 }
 export interface OpenboxBackupOptions {
   subscriptions: boolean
@@ -891,7 +894,15 @@ export interface OpenboxBackupOptions {
 export type OpenboxBackupSubscriptionsMode = 'replace' | 'append'
 export interface OpenboxBackupImportResult {
   ok: boolean
-  imported: { profile: boolean; groups: number; subscriptions: number; nodes: number; subscriptionsMode: OpenboxBackupSubscriptionsMode | null }
+  imported: {
+    profile: boolean
+    groups: number
+    subscriptions: number
+    nodes: number
+    subscriptionsMode: OpenboxBackupSubscriptionsMode | null
+    panelSettings?: number
+    backgroundImage?: boolean
+  }
 }
 export const fetchBackup = (opts: OpenboxBackupOptions) =>
   requestJson<OpenboxBackup>(

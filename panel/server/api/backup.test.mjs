@@ -77,7 +77,7 @@ test('applyBackup:导进一个空库,档案 / 组 / 订阅 / 节点都在;rulese
   const dst = memStore()
   const r = applyBackup(dst, file)
   assert.equal(r.error, undefined)
-  assert.deepEqual(r.imported, { profile: true, groups: file.groups.length, subscriptions: 2, nodes: 2, subscriptionsMode: 'replace' })
+  assert.deepEqual(r.imported, { profile: true, groups: file.groups.length, subscriptions: 2, nodes: 2, subscriptionsMode: 'replace', panelSettings: 0, backgroundImage: false })
   assert.equal(dst.getProfile().dns.mode, 'hijack')
   assert.equal(dst.getProfile().traffic.keepMonths, 12)
   assert.equal(dst.getProfile().routing.policies[0].name, 'AI')
@@ -152,7 +152,7 @@ test('HTTP:GET /backup 按 subscriptions 参数决定带不带订阅;POST /backu
     try {
       const ok = await fetch(`${base2}/api/openbox/backup/import`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(full) })
       assert.equal(ok.status, 200)
-      assert.deepEqual((await ok.json()).imported, { profile: true, groups: full.groups.length, subscriptions: 2, nodes: 2, subscriptionsMode: 'replace' })
+      assert.deepEqual((await ok.json()).imported, { profile: true, groups: full.groups.length, subscriptions: 2, nodes: 2, subscriptionsMode: 'replace', panelSettings: 0, backgroundImage: false })
       assert.equal(dst.getNodes().length, 2)
       // 追加导入:现有的留着,文件里的加到后面;模式写错 400
       dst.setSubscriptions([{ id: 'old', name: '老订阅' }])
@@ -171,4 +171,53 @@ test('HTTP:GET /backup 按 subscriptions 参数决定带不带订阅;POST /backu
   } finally {
     await new Promise((r) => server.close(r))
   }
+})
+
+test('面板设置和背景图:导出只带 config/ 且不是密码的键;导入整份换掉面板设置、背景图给空串就清掉', () => {
+  const store = memStore()
+  seed(store)
+  const kv = new Map([
+    ['config/language', 'zh'],
+    ['config/global-radius', '15'],
+    ['config/access-password-hash', 'SECRET'],
+    ['openbox/profile', '{}'],
+  ])
+  let background = 'data:image/png;base64,AAAA'
+  const panelStorage = {
+    readEntries: () => Object.fromEntries([...kv].filter(([k]) => !k.startsWith('openbox/') && !k.startsWith('config/access-'))),
+    writeEntries: (entries) => {
+      for (const k of [...kv.keys()]) if (k.startsWith('config/') && !k.startsWith('config/access-')) kv.delete(k)
+      for (const [k, v] of Object.entries(entries)) kv.set(k, v)
+    },
+    getBackground: () => background,
+    setBackground: (img) => { background = img },
+  }
+  const file = buildBackup(store, { panelStorage })
+  assert.deepEqual(file.panelSettings, { 'config/language': 'zh', 'config/global-radius': '15' }, '密码和 openbox/* 不导')
+  assert.equal(file.backgroundImage, 'data:image/png;base64,AAAA')
+  // 不给 panelStorage 就不带这两块(老调用方)
+  assert.equal(buildBackup(store).panelSettings, undefined)
+
+  // 导入:文件里夹带密码键 / 非字符串值 / 别的前缀,一律丢掉;背景图空串清掉
+  const incoming = JSON.parse(JSON.stringify(file))
+  incoming.panelSettings = { 'config/language': 'en', 'config/theme-mode': 'dark', 'config/access-password-hash': 'EVIL', 'openbox/profile': 'x', 'config/bad': 123 }
+  incoming.backgroundImage = ''
+  const r = applyBackup(store, incoming, { panelStorage })
+  assert.equal(r.error, undefined)
+  assert.equal(r.imported.panelSettings, 2)
+  assert.equal(r.imported.backgroundImage, true)
+  assert.equal(kv.get('config/language'), 'en')
+  assert.equal(kv.get('config/theme-mode'), 'dark')
+  assert.equal(kv.get('config/global-radius'), undefined, '整份替换:文件里没有的面板设置键删掉')
+  assert.equal(kv.get('config/access-password-hash'), 'SECRET', '密码不动')
+  assert.equal(kv.get('openbox/profile'), '{}')
+  assert.equal(background, '', '背景图空串 = 清掉')
+  // 文件里没有这两块就不碰
+  const plain = JSON.parse(JSON.stringify(buildBackup(store)))
+  background = 'keep'
+  const r2 = applyBackup(store, plain, { panelStorage })
+  assert.equal(r2.imported.panelSettings, 0)
+  assert.equal(r2.imported.backgroundImage, false)
+  assert.equal(background, 'keep')
+  assert.equal(kv.get('config/language'), 'en')
 })

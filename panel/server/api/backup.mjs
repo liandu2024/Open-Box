@@ -13,7 +13,16 @@ export const BACKUP_VERSION = 1
 
 const isPlainObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v)
 
-export const buildBackup = (store, { subscriptions = true, clientRoutes = true, servers = true, now = () => new Date(), openboxVersion = '' } = {}) => {
+// 面板设置(语言、主题、圆角、延迟阈值……)和背景图存在同一张 KV 表里、由浏览器同步
+// (index.mjs 的 /api/storage 和 /api/background-image),不在 store 对象上;由 index.mjs 把
+// 读写函数作为 panelStorage 传进来。密码(config/access-*)和 openbox/* 不在其中。
+const PANEL_KEY_PREFIX = 'config/'
+const PANEL_SECRET_PREFIX = 'config/access-'
+const isPanelKey = (k) => typeof k === 'string' && k.startsWith(PANEL_KEY_PREFIX) && !k.startsWith(PANEL_SECRET_PREFIX)
+
+export const buildBackup = (store, {
+  subscriptions = true, clientRoutes = true, servers = true, now = () => new Date(), openboxVersion = '', panelStorage = null,
+} = {}) => {
   const profile = store.getProfile()
   if (!clientRoutes) delete profile.clientRoutes
   if (!servers) delete profile.servers
@@ -30,6 +39,11 @@ export const buildBackup = (store, { subscriptions = true, clientRoutes = true, 
     out.subscriptions = store.getSubscriptions()
     out.nodes = store.getNodes()
   }
+  if (panelStorage) {
+    const entries = panelStorage.readEntries() || {}
+    out.panelSettings = Object.fromEntries(Object.entries(entries).filter(([k, v]) => isPanelKey(k) && typeof v === 'string'))
+    out.backgroundImage = panelStorage.getBackground() || ''
+  }
   return out
 }
 
@@ -40,7 +54,7 @@ export const buildBackup = (store, { subscriptions = true, clientRoutes = true, 
 //   replace(默认)整份换成文件里的;append 加到现有订阅后面,同一条订阅(id 相同)
 //   以文件里的为准、它的节点也跟着换——同一份文件导两次不会出现两份。
 export const SUBSCRIPTION_MODES = ['replace', 'append']
-export const applyBackup = (store, data, { subscriptionsMode = 'replace' } = {}) => {
+export const applyBackup = (store, data, { subscriptionsMode = 'replace', panelStorage = null } = {}) => {
   if (!SUBSCRIPTION_MODES.includes(subscriptionsMode)) return { error: `subscriptions 应为 ${SUBSCRIPTION_MODES.join(' / ')}` }
   if (!isPlainObject(data) || data.format !== BACKUP_FORMAT) return { error: '不是 Open-Box 导出的文件' }
   if (!(Number.isInteger(data.version) && data.version >= 1 && data.version <= BACKUP_VERSION)) {
@@ -58,6 +72,14 @@ export const applyBackup = (store, data, { subscriptionsMode = 'replace' } = {})
   void rulesetDir
   const profileError = validateProfilePatch(profilePatch, { reservedNames: reservedPolicyNames(groups || store.getGroups()) })
   if (profileError) return { error: `档案不合法:${profileError}` }
+
+  // 面板设置:只收 config/ 开头、不是密码的键,值必须是字符串;背景图给了空串就是清掉
+  let panelSettings = null
+  if (data.panelSettings !== undefined) {
+    if (!isPlainObject(data.panelSettings)) return { error: 'panelSettings 应为对象' }
+    panelSettings = Object.fromEntries(Object.entries(data.panelSettings).filter(([k, v]) => isPanelKey(k) && typeof v === 'string'))
+  }
+  if (data.backgroundImage !== undefined && typeof data.backgroundImage !== 'string') return { error: 'backgroundImage 应为字符串' }
 
   let subscriptions = null
   let nodes = null
@@ -83,6 +105,18 @@ export const applyBackup = (store, data, { subscriptionsMode = 'replace' } = {})
       store.setNodes(nodes)
     }
   }
+  let panelWritten = false
+  let backgroundWritten = false
+  if (panelStorage) {
+    if (panelSettings) {
+      panelStorage.writeEntries(panelSettings)
+      panelWritten = true
+    }
+    if (typeof data.backgroundImage === 'string') {
+      panelStorage.setBackground(data.backgroundImage)
+      backgroundWritten = true
+    }
+  }
   return {
     imported: {
       profile: true,
@@ -90,14 +124,16 @@ export const applyBackup = (store, data, { subscriptionsMode = 'replace' } = {})
       subscriptions: subscriptions ? subscriptions.length : 0,
       nodes: nodes ? nodes.length : 0,
       subscriptionsMode: subscriptions ? subscriptionsMode : null,
+      panelSettings: panelWritten ? Object.keys(panelSettings).length : 0,
+      backgroundImage: backgroundWritten,
     },
   }
 }
 
-export const registerBackupRoutes = (app, { store, readVersion = async () => '' } = {}) => {
+export const registerBackupRoutes = (app, { store, readVersion = async () => '', panelStorage = null } = {}) => {
   const router = express.Router({ caseSensitive: true })
-  // 几百个节点的订阅一份就有几百 KB,给足
-  router.use(express.json({ limit: '8mb' }))
+  // 几百个节点的订阅一份就有几百 KB;背景图是 base64,一张照片就是几 MB,给足
+  router.use(express.json({ limit: '32mb' }))
 
   // GET /api/openbox/backup?subscriptions=1|0&clientRoutes=1|0&servers=1|0(都默认 1)
   router.get('/backup', async (req, res) => {
@@ -109,6 +145,7 @@ export const registerBackupRoutes = (app, { store, readVersion = async () => '' 
       clientRoutes: flag('clientRoutes'),
       servers: flag('servers'),
       openboxVersion,
+      panelStorage,
     }))
   })
 
@@ -116,7 +153,7 @@ export const registerBackupRoutes = (app, { store, readVersion = async () => '' 
   // 只写库,不重启内核——和订阅那边一个规矩:页面提示「导入成功,重启内核生效」
   router.post('/backup/import', (req, res) => {
     const subscriptionsMode = typeof req.query.subscriptions === 'string' && req.query.subscriptions ? req.query.subscriptions : 'replace'
-    const r = applyBackup(store, req.body, { subscriptionsMode })
+    const r = applyBackup(store, req.body, { subscriptionsMode, panelStorage })
     if (r.error) return res.status(400).json({ error: r.error })
     res.json({ ok: true, ...r })
   })
