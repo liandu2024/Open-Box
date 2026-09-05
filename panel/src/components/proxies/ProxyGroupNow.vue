@@ -40,7 +40,6 @@
 import { PROXY_TYPE } from '@/constant'
 import { useTooltip } from '@/helper/tooltip'
 import { getProxyRouteChain, isUrlTestGroupStale, proxyMap } from '@/store/proxies'
-import { displayFinalOutbound } from '@/store/settings'
 import {
   ArrowRightCircleIcon,
   CheckCircleIcon,
@@ -55,7 +54,6 @@ const props = defineProps<{
   name: string
   mobile?: boolean
   includeSelf?: boolean
-  forceFullRoute?: boolean
 }>()
 const proxyGroup = computed(() => proxyMap.value[props.name])
 const { showTip } = useTooltip()
@@ -72,15 +70,10 @@ const routeNames = computed(() => {
     return []
   }
 
-  const shouldShowFullRoute = props.forceFullRoute || displayFinalOutbound.value
-
-  const baseRouteNames = !shouldShowFullRoute
-    ? [now]
-    : (() => {
-        const routeChain = getProxyRouteChain(props.name)
-
-        return routeChain.length > 0 ? routeChain : [now]
-      })()
+  // 一律显示完整的路由链(站点集 → 节点组 → 节点):以前有个「显示完整路由节点」开关,
+  // 默认就是开的,关掉只会让人看不出流量最终落在哪条线路上,所以去掉了开关。
+  const routeChain = getProxyRouteChain(props.name)
+  const baseRouteNames = routeChain.length > 0 ? routeChain : [now]
 
   if (!props.includeSelf || baseRouteNames[0] === props.name) {
     return baseRouteNames

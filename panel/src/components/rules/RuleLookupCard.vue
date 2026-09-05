@@ -31,7 +31,7 @@
             <div class="min-w-0 flex-1 overflow-hidden text-sm">
               <ProxyGroupNow
                 v-if="showProxyRoute(rule.proxy)"
-                v-bind="{ name: rule.proxy, includeSelf: true, forceFullRoute: true }"
+                v-bind="{ name: rule.proxy, includeSelf: true }"
               />
               <ProxyName
                 v-else

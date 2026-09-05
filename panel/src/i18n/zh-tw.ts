@@ -273,7 +273,6 @@ const zhTW: LANG_MESSAGE = {
     '啟用後，每次開啟zashboard時會自動從url設定匯入並計算hash，如果hash與上次匯入的hash不同，則重新匯入並重新整理頁面。',
   getting: '獲取中...',
   mmdbSizeTip: 'mmdb等格式的geo檔案無法統計數量，因此數量為0',
-  displayFinalOutbound: '顯示完整路由節點',
   groupTestUrls: '組測試連結',
   groupTestUrlsTip:
     '對於從面板手動觸發的測試，此處設定測試連結 > 配置中的連結 > 面板全域測試連結，但是對於UrlTest/Fallback等具有核心內部的定時測速邏輯的組，仍然需要修改配置中的連結，此處僅推薦Selector等場景',

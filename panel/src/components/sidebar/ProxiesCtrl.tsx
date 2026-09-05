@@ -16,7 +16,6 @@ import {
 } from '@/store/proxies'
 import {
   collapseGroupMap,
-  displayFinalOutbound,
   groupProxiesByProvider,
   minProxyCardWidth,
   providerProxyCategoryCollapseMap,
@@ -289,14 +288,6 @@ export default defineComponent({
                   type="checkbox"
                   class="toggle"
                   v-model={groupProxiesByProvider.value}
-                />
-              </div>
-              <div class="flex items-center gap-2">
-                {t('displayFinalOutbound')}
-                <input
-                  class="toggle"
-                  type="checkbox"
-                  v-model={displayFinalOutbound.value}
                 />
               </div>
               <div class="flex items-center gap-2">

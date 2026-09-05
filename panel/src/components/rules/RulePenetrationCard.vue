@@ -35,7 +35,6 @@
               v-else-if="outbound && proxyMap[outbound]"
               :name="outbound"
               include-self
-              force-full-route
             />
             <span
               v-else-if="outbound"

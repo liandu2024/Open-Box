@@ -46,7 +46,6 @@
             <div class="flex min-w-0 flex-1 items-center gap-1 truncate pr-3 text-sm">
               <ProxyGroupNow
                 :name="name"
-                force-full-route
               />
             </div>
           </div>
@@ -107,7 +106,6 @@
         <div class="flex flex-1 items-center gap-1 truncate text-sm">
           <ProxyGroupNow
             :name="name"
-            force-full-route
           />
         </div>
         <div class="min-w-12 shrink-0 text-right text-xs">

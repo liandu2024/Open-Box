@@ -48,7 +48,6 @@
             <ProxyGroupNow
               :name="proxyGroup.name"
               :mobile="true"
-              force-full-route
             />
           </div>
           <LatencyTag
