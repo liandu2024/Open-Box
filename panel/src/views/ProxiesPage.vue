@@ -65,7 +65,7 @@
           :subscription="sub"
           :refreshing="refreshingSubId === sub.id"
           @refresh="handleSubscriptionRefresh(sub.id)"
-          @edit="goToSubscriptionSettings"
+          @edit="requestEdit(sub)"
         />
       </div>
       <div
@@ -81,6 +81,16 @@
       </div>
     </div>
     <ProxyGroupRulePenetrationDialog />
+
+    <!-- 订阅卡片上的「修改」就在这一页弹窗改,和订阅设置页用同一个弹窗组件;保存后留在这一页。
+         v-if 保证每次打开都是全新实例(弹窗里重命名规则的初始值只在挂载时读一次),
+         关掉就把 editing 清掉,下次打开才会重建 -->
+    <AddSubscriptionDialog
+      v-if="editing"
+      v-model="showEditDialog"
+      :subscription="editing"
+      @saved="handleEdited"
+    />
   </div>
 </template>
 
@@ -91,10 +101,11 @@ import ProxyGroupRulePenetrationDialog from '@/components/proxies/ProxyGroupRule
 import ProxyGroupForMobile from '@/components/proxies/ProxyGroupForMobile.vue'
 import ProxyProvider from '@/components/proxies/ProxyProvider.vue'
 import ProxiesCtrl from '@/components/sidebar/ProxiesCtrl.tsx'
-import { fetchServiceStatus } from '@/api/openbox'
+import { fetchServiceStatus, type OpenboxSubscription } from '@/api/openbox'
 import { CpuChipIcon } from '@heroicons/vue/24/outline'
 import { RouterLink } from 'vue-router'
 import { isEmpty } from 'lodash'
+import AddSubscriptionDialog from '@/components/subscription/AddSubscriptionDialog.vue'
 import SubscriptionCard from '@/components/subscription/SubscriptionCard.vue'
 import { usePaddingForViews } from '@/composables/paddingViews'
 import {
@@ -111,7 +122,6 @@ import {
   notifySubscriptionSaved,
   openboxSubscriptions,
 } from '@/store/openboxSubscriptions'
-import { useRouter } from 'vue-router'
 import { isMiddleScreen } from '@/helper/utils'
 import {
   proxyMap,
@@ -128,7 +138,6 @@ const { padding } = usePaddingForViews({
   offsetTop: 0,
   offsetBottom: 0,
 })
-const router = useRouter()
 
 // 订阅标签用的是 Open-Box 自己的订阅列表(不是 Clash provider),进页面就拉一次。
 onMounted(async () => {
@@ -170,11 +179,20 @@ const handleSubscriptionRefresh = async (id: string) => {
   }
 }
 
-// 编辑/删除都是有后果的操作,留在订阅设置页统一做——这里只把人带过去,
-// 避免同一个操作在两处各有一套确认流程。
-const goToSubscriptionSettings = () => {
-  router.push({ name: ROUTE_NAME.settings, query: { tab: SETTINGS_TAB.subscriptions } })
+// 「修改」就在这一页弹窗改(弹窗自己负责保存和提示),保存后重新拉一遍订阅列表;
+// 删除仍留在订阅设置页做
+const showEditDialog = ref(false)
+const editing = ref<OpenboxSubscription | null>(null)
+const requestEdit = (sub: OpenboxSubscription) => {
+  editing.value = sub
+  showEditDialog.value = true
 }
+const handleEdited = () => {
+  void loadOpenboxSubscriptions()
+}
+watch(showEditDialog, (open) => {
+  if (!open) editing.value = null
+})
 
 const proxiesRef = ref()
 const documentVisible = useDocumentVisibility()
