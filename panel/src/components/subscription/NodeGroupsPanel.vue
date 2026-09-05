@@ -107,13 +107,13 @@
     <DialogWrapper
       v-model="showBuiltinEditor"
       :title="$t('groupEditTitle')"
-      box-class="w-full max-w-xl"
+      box-class="w-full max-w-2xl"
     >
       <div
         v-if="builtinDraft"
         class="flex flex-col gap-4"
       >
-        <div class="flex flex-wrap items-end gap-2">
+        <div class="flex items-end gap-2">
           <div class="flex flex-col gap-1">
             <label class="text-xs font-medium">{{ $t('groupIconLabel') }}</label>
             <div class="w-56">
@@ -130,8 +130,7 @@
             <label class="text-xs font-medium">{{ $t('iconScaleLabel') }}</label>
             <IconScaleInput v-model="builtinDraft.iconScale" />
           </div>
-          <!-- 名称列至少留 12rem;放不下时整列换到下一行,不把名字挤成一根竖条 -->
-          <div class="flex min-w-[12rem] flex-1 flex-col gap-1">
+          <div class="flex min-w-0 flex-1 flex-col gap-1">
             <label class="text-xs font-medium">{{ $t('groupNameLabel') }}</label>
             <input
               v-model="builtinDraft.name"
@@ -174,7 +173,7 @@
         v-if="draft"
         class="flex flex-col gap-4"
       >
-        <div class="flex flex-wrap items-end gap-2">
+        <div class="flex items-end gap-2">
           <!-- 图标:和地区关键词那边同一个国旗选择器。节点组多半就是按国家/地区分的
                (香港-自动、台湾-自动),给它配一面旗,列表里一眼就找得到。 -->
           <div class="flex flex-col gap-1">
@@ -194,8 +193,7 @@
             <label class="text-xs font-medium">{{ $t('iconScaleLabel') }}</label>
             <IconScaleInput v-model="draft.iconScale" />
           </div>
-          <!-- 名称列至少留 12rem;放不下时整列换到下一行,不把名字挤成一根竖条 -->
-          <div class="flex min-w-[12rem] flex-1 flex-col gap-1">
+          <div class="flex min-w-0 flex-1 flex-col gap-1">
             <label class="text-xs font-medium">{{ $t('groupNameLabel') }}</label>
             <input
               v-model="draft.name"

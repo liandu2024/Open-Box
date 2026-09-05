@@ -140,13 +140,13 @@
     <DialogWrapper
       v-model="showFallbackEditor"
       :title="$t('routingFallbackEditTitle')"
-      box-class="w-full max-w-xl"
+      box-class="w-full max-w-2xl"
     >
       <div
         v-if="fallbackDraft"
         class="flex flex-col gap-4"
       >
-        <div class="flex flex-wrap items-end gap-2">
+        <div class="flex items-end gap-2">
           <div class="flex flex-col gap-1">
             <label class="text-xs font-medium">{{ $t('groupIconLabel') }}</label>
             <div class="w-56">
@@ -163,8 +163,7 @@
             <label class="text-xs font-medium">{{ $t('iconScaleLabel') }}</label>
             <IconScaleInput v-model="fallbackDraft.iconScale" />
           </div>
-          <!-- 名称列至少留 12rem;放不下时整列换到下一行,不把名字挤成一根竖条 -->
-          <div class="flex min-w-[12rem] flex-1 flex-col gap-1">
+          <div class="flex min-w-0 flex-1 flex-col gap-1">
             <label class="text-xs font-medium">{{ $t('routingPolicyNameLabel') }}</label>
             <input
               v-model="fallbackDraft.name"
@@ -234,13 +233,13 @@
     <DialogWrapper
       v-model="showEditor"
       :title="$t(editing ? 'routingPolicyEditTitle' : 'routingPolicyAddTitle')"
-      box-class="w-full max-w-xl"
+      box-class="w-full max-w-2xl"
     >
       <div
         v-if="draft"
         class="flex flex-col gap-4"
       >
-        <div class="flex flex-wrap items-end gap-2">
+        <div class="flex items-end gap-2">
           <div class="flex flex-col gap-1">
             <label class="text-xs font-medium">{{ $t('groupIconLabel') }}</label>
             <div class="w-56">
@@ -257,8 +256,7 @@
             <label class="text-xs font-medium">{{ $t('iconScaleLabel') }}</label>
             <IconScaleInput v-model="draft.iconScale" />
           </div>
-          <!-- 名称列至少留 12rem;放不下时整列换到下一行,不把名字挤成一根竖条 -->
-          <div class="flex min-w-[12rem] flex-1 flex-col gap-1">
+          <div class="flex min-w-0 flex-1 flex-col gap-1">
             <label class="text-xs font-medium">{{ $t('routingPolicyNameLabel') }}</label>
             <input
               v-model="draft.name"
