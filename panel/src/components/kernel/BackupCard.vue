@@ -5,18 +5,21 @@
        在子元素之间来回触发,用计数器判断是不是真的离开了卡片 -->
   <div
     class="card bg-base-100 border-base-300/60 relative border transition-colors"
-    :class="dragging && 'border-primary bg-primary/5 border-dashed'"
+    :class="dragging && 'border-primary'"
     @dragenter.prevent="onDragEnter"
     @dragover.prevent
     @dragleave="onDragLeave"
     @drop.prevent="onDrop"
   >
+    <!-- 盖一层不透明底把卡片内容遮掉,提示才看得清;虚线框画在这一层里,和卡片圆角对齐 -->
     <div
       v-if="dragging"
-      class="text-primary pointer-events-none absolute inset-0 z-10 flex items-center justify-center gap-2 text-sm font-medium"
+      class="bg-base-100 pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-[inherit] p-2"
     >
-      <ArrowUpTrayIcon class="h-5 w-5" />
-      {{ $t('backupDropHint') }}
+      <div class="border-primary bg-primary/10 text-primary flex h-full w-full items-center justify-center gap-2 rounded-[inherit] border-2 border-dashed text-base font-semibold">
+        <ArrowUpTrayIcon class="h-6 w-6" />
+        {{ $t('backupDropHint') }}
+      </div>
     </div>
     <div class="card-body gap-3 p-4">
       <div>
