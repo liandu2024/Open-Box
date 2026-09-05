@@ -5,8 +5,8 @@
     <div class="card p-2">
       <StatisticsStats type="ctrl" />
     </div>
-    <!-- 左:内核运行时长;右:启动/停止/重启,右对齐。和上面卡片的内容边对齐 -->
-    <div class="flex items-center justify-between gap-2 px-2">
+    <!-- 左:内核运行时长,贴着卡片左边;右:启动/停止/重启,贴着卡片右边——和卡片的外边对齐,不是内容边 -->
+    <div class="flex items-center justify-between gap-2">
       <div class="flex min-w-0 flex-col leading-tight">
         <span class="text-base-content/60 text-xs">{{ $t('kernelUptimeLabel') }}</span>
         <span class="truncate text-sm font-medium tabular-nums">{{ uptimeText }}</span>
