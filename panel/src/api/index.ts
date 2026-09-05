@@ -42,8 +42,11 @@ axios.interceptors.response.use(
       return Promise.reject(error)
     }
 
-    // 内核停着的时候,所有 clash API 请求都会失败——已经知道它停着了,一条条弹出来只是噪音
-    if (serviceStatus.value && !serviceStatus.value.core.running) {
+    // 内核停着的时候,所有 clash API 请求都会失败,一条条弹出来只是噪音。两个信号任一命中就不弹:
+    // 1. 面板转发 clash API 连不上内核时回 502(server/index.mjs 的 proxyControllerRequest)——
+    //    页面一加载就发的那批请求,这时服务状态还没拉回来,靠这个判断;
+    // 2. 共享的服务状态已经说内核停了。
+    if (responseStatus === 502 || (serviceStatus.value && !serviceStatus.value.core.running)) {
       return Promise.reject(error)
     }
 
