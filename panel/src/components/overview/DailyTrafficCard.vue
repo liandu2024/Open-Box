@@ -169,16 +169,38 @@
       >
         <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm font-semibold">
           <span>{{ selectedDay }}</span>
+          <span
+            v-if="selectedHour !== null"
+            class="tabular-nums"
+          >{{ hourLabel(selectedHour) }}</span>
           <span class="text-base-content/40">·</span>
           <span>{{ $t('trafficTotal') }} {{ fmt(detailTotal) }}</span>
           <span class="text-base-content/60 font-normal">{{ $t('trafficConns', { n: detail.total.conns }) }}</span>
+          <!-- 只看某个小时的时候,右上角给一个回整天的键 -->
+          <button
+            v-if="selectedHour !== null"
+            type="button"
+            class="btn btn-primary btn-soft btn-xs ml-auto"
+            @click="backToDay"
+          >
+            {{ $t('trafficBackToDay') }}
+          </button>
         </div>
         <!-- 这天的 24 小时曲线,跟在这天的总数后面;今天只画到路由器此刻的小时(服务端给的,
-             浏览器和路由器可能不在一个时区;老服务端没给才退回浏览器的钟) -->
+             浏览器和路由器可能不在一个时区;老服务端没给才退回浏览器的钟)。
+             点某个小时,下面的明细就只看那个小时 -->
         <HourlyTrafficChart
           :hours="detail.hours || []"
           :up-to-hour="detail.day === detail.today ? (detail.nowHour ?? currentHour) : 23"
+          :selected-hour="selectedHour"
+          @select="selectHour"
         />
+        <p
+          v-if="hourDetailMissing"
+          class="text-warning text-xs"
+        >
+          {{ $t('trafficHourNoDetail', { days: detail.hourDetailKeepDays ?? 7 }) }}
+        </p>
         <div class="flex flex-wrap items-center gap-2">
           <div
             role="tablist"
@@ -240,6 +262,7 @@
                   :share="share(e.row)"
                   :expanded="expandedKey === e.row.key"
                   :day="selectedDay || ''"
+                  :hour="selectedHour"
                   :kind="KIND_OF[tab]"
                   :dims="DRILL_DIMS[tab]"
                   @toggle="toggleRow(e.row.key)"
@@ -398,6 +421,9 @@ const month = ref('')
 const today = ref('')
 const selectedDay = ref<string | null>(null)
 const detail = ref<OpenboxTrafficDay | null>(null)
+// 点了曲线上的某个小时:下面的明细只看那个小时(服务端按「天@小时」那份取),null 是整天
+const selectedHour = ref<number | null>(null)
+const hourLabel = (h: number) => `${pad2(h)}:00–${pad2(h)}:59`
 // 今天的曲线只画到这个小时(明细一刷新就跟着刷新,不用另起定时器)
 const currentHour = computed(() => (detail.value ? new Date().getHours() : 23))
 const tab = ref<Tab>('clients')
@@ -493,9 +519,10 @@ const loadDay = async (day: string | null) => {
     detail.value = null
     return
   }
+  const hour = selectedHour.value
   try {
-    const data = await fetchTrafficDay(day)
-    if (seq !== daySeq || selectedDay.value !== day) return
+    const data = await fetchTrafficDay(day, 500, hour)
+    if (seq !== daySeq || selectedDay.value !== day || selectedHour.value !== hour) return
     detail.value = data
   } catch (e) {
     if (seq !== daySeq) return
@@ -536,13 +563,24 @@ const shiftMonth = (delta: number) => {
   if (!month.value) return
   if (delta > 0 && !canGoNext.value) return
   selectedDay.value = null
+  selectedHour.value = null
   void loadMonth(addMonths(month.value, delta))
 }
 
 const pick = (d: DayBar) => {
   if (d.future) return
   selectedDay.value = d.day
+  selectedHour.value = null
   void loadDay(d.day)
+}
+const selectHour = (h: number) => {
+  if (selectedHour.value === h) return
+  selectedHour.value = h
+  void loadDay(selectedDay.value)
+}
+const backToDay = () => {
+  selectedHour.value = null
+  void loadDay(selectedDay.value)
 }
 
 const rows = computed(() => {
@@ -554,7 +592,7 @@ const rows = computed(() => {
 })
 const restExpanded = ref(false)
 // 换页签、换日期、改搜索词都收回去
-watch([tab, selectedDay, filter], () => {
+watch([tab, selectedDay, selectedHour, filter], () => {
   restExpanded.value = false
   expandedKey.value = null
 })
@@ -589,6 +627,11 @@ const hiddenRows = computed(() => {
 })
 const detailTotal = computed(() => (detail.value ? detail.value.total.up + detail.value.total.down : 0))
 const otherTotal = computed(() => (detail.value ? detail.value.other.up + detail.value.other.down : 0))
+// 选了小时但一条明细都没有(小时明细从升级后才开始记、只留最近几天):说一声,别让人以为坏了
+const hourDetailMissing = computed(() => {
+  const d = detail.value
+  return Boolean(d && selectedHour.value !== null && detailTotal.value > 0 && !d.nodes.length && !d.clientsCount && !d.hostsCount)
+})
 const share = (r: { up: number; down: number }) =>
   detailTotal.value > 0 ? Math.round(((r.up + r.down) / detailTotal.value) * 100) : 0
 

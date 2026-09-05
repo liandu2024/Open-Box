@@ -31,6 +31,11 @@ export const normalizeKeepMonths = (v) => {
 // 都按面板进程的本地时间算天:路由器上 TZ 跟 OpenWrt 系统一致,前端拿服务端给的 today 做高亮,
 // 不自己算,免得浏览器和路由器时区不一样。
 export const localDay = (d = new Date()) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
+// 小时明细:同一份增量除了按天记一份,还按「天@小时」再记一份(day 列写成 2026-09-05@17),
+// 按天的查询、下钻、清理全部照用;只有 total 不写这种行——月视图按 kind='total' 扫日期范围,
+// 不能混进来,小时的总量在 kind='hour' 那一行。这种行占空间(一天几万行),只保留最近几天。
+export const HOUR_DETAIL_KEEP_DAYS = 7
+export const hourDayKey = (day, hour) => `${day}@${pad2(hour)}`
 
 // sing-box 的 chains 是 [末端节点, ..., 顶层策略](和 clash 一样,tracker 里 Reverse 过)
 export const leafOf = (chains) => (Array.isArray(chains) && chains.length ? String(chains[0] ?? '') : '')
@@ -137,8 +142,10 @@ export const createTrafficStore = (db) => {
     WHERE day = ?2 AND kind = ?3 AND substr(key, -length(?1) - 1) = char(9) || ?1
   `)
   // 24 小时曲线:kind='hour',key 是两位小时,值是内核计数器在那个小时里的增量(和 total 同源)
-  const selectHours = db.prepare(`SELECT key AS hour, up, down FROM traffic_daily WHERE day = ? AND kind = 'hour' ORDER BY key`)
+  const selectHours = db.prepare(`SELECT key AS hour, up, down, conns FROM traffic_daily WHERE day = ? AND kind = 'hour' ORDER BY key`)
   const deleteBefore = db.prepare(`DELETE FROM traffic_daily WHERE day < ?`)
+  // 某一天的小时明细行(day 是「那天@HH」)在主键上紧挨在那天后面:> '那天' 且 < '那天~'
+  const deleteHourDetailOfDay = db.prepare(`DELETE FROM traffic_daily WHERE day > ?1 AND day < ?1 || '~'`)
   const usageStat = db.prepare(`
     SELECT COUNT(*) AS rows, COUNT(DISTINCT day) AS days, MIN(day) AS oldestDay, MAX(day) AS newestDay,
            COALESCE(SUM(LENGTH(key) + LENGTH(kind)), 0) AS keyBytes
@@ -169,7 +176,7 @@ export const createTrafficStore = (db) => {
       const byHour = new Map(selectHours.all(day).map((r) => [Number(r.hour), r]))
       return Array.from({ length: 24 }, (_, hour) => {
         const r = byHour.get(hour)
-        return { hour, up: r ? Number(r.up) || 0 : 0, down: r ? Number(r.down) || 0 : 0 }
+        return { hour, up: r ? Number(r.up) || 0 : 0, down: r ? Number(r.down) || 0 : 0, conns: r ? Number(r.conns) || 0 : 0 }
       })
     },
     day(day, kind, limit) {
@@ -195,6 +202,10 @@ export const createTrafficStore = (db) => {
     },
     prune(beforeDay) {
       deleteBefore.run(beforeDay)
+    },
+    // 删掉某一天的小时明细(按天的那份不动)
+    pruneHourDetail(day) {
+      deleteHourDetailOfDay.run(day)
     },
     // 「分析数据保留时长」那张卡片要显示的东西:存了多少天、多少行、大概占多大。
     // 字节数是估的:键本身的长度 + 每行 40 字节(日期、三个整数、页内开销)。和把某一天
@@ -285,6 +296,8 @@ export const createTrafficCollector = ({
     // 内核的 uploadTotal/downloadTotal 把它算在内,所以总量也要把采样到的这部分减掉。
     let loopUp = 0
     let loopDown = 0
+    const hh = pad2(at.getHours())
+    const hday = hourDayKey(day, at.getHours())
 
     const alive = new Set()
     for (const c of list) {
@@ -313,19 +326,23 @@ export const createTrafficCollector = ({
       const host = hostOf(c.metadata)
       const client = clientOf(c.metadata)
       bump(day, 'total', '', 0, 0, conns)
-      bump(day, 'node', node, du, dd, conns)
-      bump(day, 'host', host, du, dd, conns)
-      bump(day, 'client', client, du, dd, conns)
-      bump(day, 'client_host', client + PAIR_SEP + host, du, dd, conns)
-      bump(day, 'client_node', client + PAIR_SEP + node, du, dd, conns)
-      bump(day, 'node_host', node + PAIR_SEP + host, du, dd, conns)
+      bump(day, 'hour', hh, 0, 0, conns)
+      // 同一份增量记两遍:按天一份,按「天@小时」一份(小时明细,见 hourDayKey 的说明)
+      for (const d of [day, hday]) {
+        bump(d, 'node', node, du, dd, conns)
+        bump(d, 'host', host, du, dd, conns)
+        bump(d, 'client', client, du, dd, conns)
+        bump(d, 'client_host', client + PAIR_SEP + host, du, dd, conns)
+        bump(d, 'client_node', client + PAIR_SEP + node, du, dd, conns)
+        bump(d, 'node_host', node + PAIR_SEP + host, du, dd, conns)
+      }
     }
     // 总量减掉回环那部分。只能减"采样到的"——活不满一个采样周期的回环查询仍留在内核
     // 计数器里,和其它短连接一样进不了明细,这是采样精度的固有取舍(见文件开头)。
     // 连接数不用另外扣:回环的连接在上面 continue 掉了,本来就没进 total 的计数
     bump(day, 'total', '', Math.max(0, totalUp - loopUp), Math.max(0, totalDown - loopDown), 0)
     // 同一份增量再按采样时刻落进小时桶,给概览的 24 小时曲线用;一天只多 24 行
-    bump(day, 'hour', pad2(at.getHours()), Math.max(0, totalUp - loopUp), Math.max(0, totalDown - loopDown), 0)
+    bump(day, 'hour', hh, Math.max(0, totalUp - loopUp), Math.max(0, totalDown - loopDown), 0)
 
     for (const id of seen.keys()) {
       if (!alive.has(id)) seen.delete(id)
@@ -353,11 +370,23 @@ export const createTrafficCollector = ({
     return rows.length
   }
 
+  let hourPruneWide = true
   const prune = () => {
     try {
       const d = now()
       d.setMonth(d.getMonth() - normalizeKeepMonths(getKeepMonths()))
       store.prune(localDay(d))
+      // 小时明细只留最近 HOUR_DETAIL_KEEP_DAYS 天:按天做主键范围删,平时只看期限附近几天;
+      // 第一次跑扫宽一点,补上停机期间没删掉的
+      if (store.pruneHourDetail) {
+        const span = hourPruneWide ? 60 : 3
+        hourPruneWide = false
+        for (let i = 0; i < span; i++) {
+          const c = now()
+          c.setDate(c.getDate() - HOUR_DETAIL_KEEP_DAYS - i)
+          store.pruneHourDetail(localDay(c))
+        }
+      }
     } catch (err) {
       log(`[traffic] 清理旧记录失败:${err instanceof Error ? err.message : err}`)
     }

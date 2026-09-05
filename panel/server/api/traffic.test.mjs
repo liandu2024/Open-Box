@@ -20,6 +20,8 @@ const fakeCollector = () => {
       host: [{ key: 'a.com', up: 70, down: 600, conns: 6 }],
       client: [{ key: '10.0.0.209', up: 60, down: 500, conns: 5 }, { key: '10.0.0.7', up: 10, down: 100, conns: 1 }],
     },
+    // 小时明细(day 写成「天@小时」)
+    '2026-09-03@13': { total: { up: 7, down: 60, conns: 1 }, node: [{ key: 'A', up: 7, down: 60, conns: 1 }], host: [], client: [] },
   }
   let flushed = 0
   const drills = []
@@ -31,7 +33,9 @@ const fakeCollector = () => {
         return Object.entries(data).filter(([d]) => d.startsWith(month)).map(([day, v]) => ({ day, ...v.total }))
       },
       dayTotal(day) { return data[day]?.total || null },
-      hours() { return [] },
+      hours(day) {
+        return Array.from({ length: 24 }, (_, hour) => ({ hour, ...(data[`${day}@${String(hour).padStart(2, '0')}`]?.total || { up: 0, down: 0, conns: 0 }) }))
+      },
       day(day, kind, limit) { return (data[day]?.[kind] || []).slice(0, limit) },
       daySum(day, kind) {
         const rows = data[day]?.[kind] || []
@@ -169,4 +173,26 @@ test('readLocalAddresses:问 netifd 哪个逻辑接口占着这个设备,eth0 �
   ])
   const noUbus = createMockContext({ execResults: { 'ip -4 -o addr': { code: 0, stdout: '5: pppoe-wan0    inet 10.65.3.225 peer 10.65.0.1/32 scope global pppoe-wan0\n' } } })
   assert.deepEqual(await readLocalAddresses(noUbus), [{ iface: 'pppoe-wan0', address: '10.65.3.225', kind: 'wan' }])
+})
+
+test('GET /traffic/day?hour=13:明细换成那个小时的,总量取小时桶;drill 也按小时;hour 非法 400', async () => {
+  const collector = fakeCollector()
+  const { base, close } = await startApp(collector, () => new Date(2026, 8, 3, 10))
+  try {
+    const body = await (await fetch(`${base}/api/openbox/traffic/day?day=2026-09-03&hour=13`)).json()
+    assert.equal(body.hour, 13)
+    assert.deepEqual(body.total, { up: 7, down: 60, conns: 1 })
+    assert.deepEqual(body.nodes, [{ key: 'A', up: 7, down: 60, conns: 1 }])
+    assert.equal(body.hostsCount, 0)
+    assert.equal(body.hours.length, 24)
+    assert.equal(body.hourDetailKeepDays, 7)
+    const whole = await (await fetch(`${base}/api/openbox/traffic/day?day=2026-09-03`)).json()
+    assert.equal(whole.hour, null)
+    assert.equal(whole.nodes.length, 2)
+    assert.equal((await fetch(`${base}/api/openbox/traffic/day?day=2026-09-03&hour=24`)).status, 400)
+    await fetch(`${base}/api/openbox/traffic/drill?day=2026-09-03&kind=host&key=a.com&by=client&hour=13`)
+    assert.equal(collector.drills.at(-1).day, '2026-09-03@13')
+  } finally {
+    await close()
+  }
 })

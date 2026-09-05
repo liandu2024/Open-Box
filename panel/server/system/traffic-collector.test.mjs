@@ -8,6 +8,8 @@ import {
   localDay,
   normalizeKeepMonths,
   pairKindFor,
+  hourDayKey,
+  HOUR_DETAIL_KEEP_DAYS,
 } from './traffic-collector.mjs'
 
 const fakeStore = () => ({
@@ -205,7 +207,9 @@ test('dnsmasq 回环出站不算流量:不进任何维度,总量也把它减掉'
   assert.ok(!rows.some((r) => String(r.key).includes('dnsmasq')), '回环不进节点 / 交叉表')
   assert.ok(!rows.some((r) => r.kind === 'client_host' && r.key.includes('127.0.0.1')), '回环不进交叉表')
   assert.equal(rows.find((r) => r.kind === 'node' && r.key === '节点A').up, 300)
-  assert.equal(rows.filter((r) => r.kind === 'client' && r.key === '10.0.0.9').length, 1, '终端只剩真实连接那一条')
+  // 按天一条、按「天@小时」一条,都只来自那条真实连接
+  assert.equal(rows.filter((r) => r.kind === 'client' && r.key === '10.0.0.9' && r.day === '2026-09-03').length, 1, '终端只剩真实连接那一条')
+  assert.ok(!rows.some((r) => r.day.includes('@') && String(r.key).includes('127.0.0.1')), '回环也不进小时明细')
   assert.equal(rows.find((r) => r.kind === 'client' && r.key === '10.0.0.9').up, 300)
 })
 
@@ -242,8 +246,51 @@ test('小时桶:内核计数器的增量按采样时刻落到 kind=hour,store.ho
   ])
   const hours = store.hours('2026-09-05')
   assert.equal(hours.length, 24)
-  assert.deepEqual(hours[13], { hour: 13, up: 15, down: 150 })
-  assert.deepEqual(hours[21], { hour: 21, up: 1, down: 2 })
-  assert.deepEqual(hours[0], { hour: 0, up: 0, down: 0 })
-  assert.deepEqual(store.hours('2026-09-06')[13], { hour: 13, up: 0, down: 0 })
+  assert.deepEqual(hours[13], { hour: 13, up: 15, down: 150, conns: 0 })
+  assert.deepEqual(hours[21], { hour: 21, up: 1, down: 2, conns: 0 })
+  assert.deepEqual(hours[0], { hour: 0, up: 0, down: 0, conns: 0 })
+  assert.deepEqual(store.hours('2026-09-06')[13], { hour: 13, up: 0, down: 0, conns: 0 })
+})
+
+test('小时明细:每条连接的增量同时落到「天@小时」,total 不写这种行;小时桶记连接数', () => {
+  const store = fakeStore()
+  const c = createTrafficCollector({ store, now: () => at })
+  c.applySnapshot({ uploadTotal: 1000, downloadTotal: 5000, connections: [conn('a', 100, 400)] }, at)
+  c.applySnapshot({
+    uploadTotal: 1300,
+    downloadTotal: 6000,
+    connections: [conn('a', 150, 900), conn('b', 20, 30, ['直连'], { host: '', destinationIP: '10.0.0.8', sourceIP: '10.0.0.9' })],
+  }, at)
+  const p = pendingOf(c)
+  assert.equal(hourDayKey('2026-09-03', 12), '2026-09-03@12')
+  assert.deepEqual(p['2026-09-03@12|node|节点A'], { up: 50, down: 500, conns: 0 })
+  assert.deepEqual(p['2026-09-03@12|client_host|10.0.0.9\texample.com'], { up: 50, down: 500, conns: 0 })
+  assert.deepEqual(p['2026-09-03@12|node|直连'], { up: 20, down: 30, conns: 1 })
+  assert.equal(p['2026-09-03@12|total|'], undefined)
+  assert.deepEqual(p['2026-09-03|hour|12'], { up: 300, down: 1000, conns: 1 })
+  // 按天那份不受影响
+  assert.deepEqual(p['2026-09-03|node|节点A'], { up: 50, down: 500, conns: 0 })
+})
+
+test('sqlite store:小时明细按「天@小时」查和下钻,hours 带连接数;pruneHourDetail 只删那一天的小时行', { skip: !sqlite && '本机 Node 没有 node:sqlite' }, () => {
+  const db = new sqlite.DatabaseSync(':memory:')
+  const store = createTrafficStore(db)
+  store.add([
+    { day: '2026-09-05', kind: 'total', key: '', up: 10, down: 100, conns: 3 },
+    { day: '2026-09-05', kind: 'hour', key: '13', up: 10, down: 100, conns: 3 },
+    { day: '2026-09-05', kind: 'node', key: 'A', up: 10, down: 100, conns: 3 },
+    { day: '2026-09-05@13', kind: 'node', key: 'A', up: 10, down: 100, conns: 3 },
+    { day: '2026-09-05@13', kind: 'client_host', key: 'c\th', up: 10, down: 100, conns: 3 },
+    { day: '2026-09-06@01', kind: 'node', key: 'A', up: 1, down: 1, conns: 1 },
+  ])
+  assert.deepEqual(store.hours('2026-09-05')[13], { hour: 13, up: 10, down: 100, conns: 3 })
+  assert.deepEqual(store.day('2026-09-05@13', 'node', 10), [{ key: 'A', up: 10, down: 100, conns: 3 }])
+  assert.deepEqual(store.drill('2026-09-05@13', 'client', 'c', 'host', 10).rows, [{ key: 'h', up: 10, down: 100, conns: 3 }])
+  // 月视图只看 kind=total 的按天行,小时行不会混进来
+  assert.deepEqual(store.month('2026-09'), [{ day: '2026-09-05', up: 10, down: 100, conns: 3 }])
+  store.pruneHourDetail('2026-09-05')
+  assert.deepEqual(store.day('2026-09-05@13', 'node', 10), [])
+  assert.deepEqual(store.day('2026-09-05', 'node', 10), [{ key: 'A', up: 10, down: 100, conns: 3 }])
+  assert.deepEqual(store.day('2026-09-06@01', 'node', 10), [{ key: 'A', up: 1, down: 1, conns: 1 }])
+  assert.equal(HOUR_DETAIL_KEEP_DAYS, 7)
 })

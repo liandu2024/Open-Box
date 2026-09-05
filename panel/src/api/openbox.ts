@@ -815,11 +815,15 @@ export interface OpenboxTrafficDay {
   hours: OpenboxTrafficHour[]
   // 路由器此刻的本地小时(小时桶按它算),今天的曲线画到这里;老服务端没有这个字段
   nowHour?: number
+  // 只看某个小时时是那个小时(0~23),整天是 null;小时明细只保留最近这么多天
+  hour?: number | null
+  hourDetailKeepDays?: number
 }
 export interface OpenboxTrafficHour {
   hour: number
   up: number
   down: number
+  conns?: number
 }
 // 「分析数据保留时长」卡片:库里存了多少、大概占多大、每天涨多少
 export interface OpenboxTrafficUsage {
@@ -835,12 +839,16 @@ export const fetchTrafficUsage = () =>
 
 export const fetchTrafficMonth = (month?: string) =>
   requestJson<OpenboxTrafficMonth>(`/api/openbox/traffic/month${month ? `?month=${encodeURIComponent(month)}` : ''}`)
-export const fetchTrafficDay = (day: string, limit = 500) =>
-  requestJson<OpenboxTrafficDay>(`/api/openbox/traffic/day?day=${encodeURIComponent(day)}&limit=${limit}`)
+// hour 给了就只看那个小时的明细(0~23),不给是整天
+export const fetchTrafficDay = (day: string, limit = 500, hour?: number | null) =>
+  requestJson<OpenboxTrafficDay>(
+    `/api/openbox/traffic/day?day=${encodeURIComponent(day)}&limit=${limit}${hour === null || hour === undefined ? '' : `&hour=${hour}`}`,
+  )
 // 一条记录的构成:kind/key 定位点开的那条(终端 IP / 节点名 / 域名),by 是拆成哪一维
 export type OpenboxTrafficDim = 'client' | 'node' | 'host'
 export interface OpenboxTrafficDrill {
   day: string
+  hour?: number | null
   kind: OpenboxTrafficDim
   key: string
   by: OpenboxTrafficDim
@@ -849,9 +857,16 @@ export interface OpenboxTrafficDrill {
   sum?: { up: number; down: number }
   rows: OpenboxTrafficRow[]
 }
-export const fetchTrafficDrill = (day: string, kind: OpenboxTrafficDim, key: string, by: OpenboxTrafficDim, limit = 200) =>
+export const fetchTrafficDrill = (
+  day: string,
+  kind: OpenboxTrafficDim,
+  key: string,
+  by: OpenboxTrafficDim,
+  limit = 200,
+  hour?: number | null,
+) =>
   requestJson<OpenboxTrafficDrill>(
-    `/api/openbox/traffic/drill?day=${encodeURIComponent(day)}&kind=${kind}&key=${encodeURIComponent(key)}&by=${by}&limit=${limit}`,
+    `/api/openbox/traffic/drill?day=${encodeURIComponent(day)}&kind=${kind}&key=${encodeURIComponent(key)}&by=${by}&limit=${limit}${hour === null || hour === undefined ? '' : `&hour=${hour}`}`,
   )
 
 // 共享网络 · 保存前的端口检测(server/api/servers.mjs)

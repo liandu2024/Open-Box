@@ -181,6 +181,8 @@ const TOP_N = 10
 
 const props = defineProps<{
   day: string
+  // 只看某个小时时是那个小时,整天是 null
+  hour?: number | null
   kind: OpenboxTrafficDim
   itemKey: string
   // 可以拆成哪几维,第一个是默认页签
@@ -241,7 +243,7 @@ const load = async () => {
   loadingBy.value = { ...loadingBy.value, [dim]: true }
   errorBy.value = { ...errorBy.value, [dim]: '' }
   try {
-    cache.value[dim] = await fetchTrafficDrill(props.day, props.kind, props.itemKey, dim)
+    cache.value[dim] = await fetchTrafficDrill(props.day, props.kind, props.itemKey, dim, 200, props.hour ?? null)
   } catch (e) {
     errorBy.value = { ...errorBy.value, [dim]: e instanceof Error ? e.message : String(e) }
   } finally {

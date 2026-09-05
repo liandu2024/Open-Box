@@ -3,11 +3,17 @@
 // 数据来自 system/traffic-collector.mjs 常驻采集写进 cache.db 的 traffic_daily 表。
 import express from 'express'
 import { readLocalAddresses } from '../system/local-subnets.mjs'
-import { localDay } from '../system/traffic-collector.mjs'
+import { HOUR_DETAIL_KEEP_DAYS, hourDayKey, localDay } from '../system/traffic-collector.mjs'
 
 const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/
 const DAY_RE = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/
 const pad2 = (n) => String(n).padStart(2, '0')
+// 可选的小时参数:没给就是整天;给了必须是 0~23 的整数
+const parseHour = (v) => {
+  if (v === undefined || v === '') return null
+  const n = Number(v)
+  return Number.isInteger(n) && n >= 0 && n <= 23 ? n : NaN
+}
 
 export const daysInMonth = (month) => {
   const [y, m] = month.split('-').map(Number)
@@ -107,34 +113,44 @@ export const registerTrafficRoutes = (app, { collector, ctx, paths, now = () => 
       return
     }
     const limit = Math.min(2000, Math.max(1, Number(req.query.limit) || 500))
+    const hour = parseHour(req.query.hour)
+    if (Number.isNaN(hour)) {
+      res.status(400).json({ error: 'hour 应为 0~23' })
+      return
+    }
     collector.flush()
     const store = collector.store
-    const t = store.dayTotal(day)
+    const hours = store.hours(day)
+    // 选了小时:明细从「天@小时」那份取,总量取小时桶(见 traffic-collector 的 hourDayKey)
+    const scope = hour === null ? day : hourDayKey(day, hour)
+    const t = hour === null ? store.dayTotal(day) : hours[hour]
     const total = {
       up: t ? Number(t.up) || 0 : 0,
       down: t ? Number(t.down) || 0 : 0,
       conns: t ? Number(t.conns) || 0 : 0,
     }
-    const nodes = store.day(day, 'node', limit)
-    const hosts = store.day(day, 'host', limit)
+    const nodes = store.day(scope, 'node', limit)
+    const hosts = store.day(scope, 'host', limit)
     const [names, self] = await Promise.all([readLeaseNames(ctx, paths && paths.dhcpLeases), readSelfAddresses(ctx)])
-    const clients = withClientLabels(store.day(day, 'client', limit), names, self)
-    const hostSum = store.daySum(day, 'host')
-    const clientSum = store.daySum(day, 'client')
-    const nodeSum = store.daySum(day, 'node')
+    const clients = withClientLabels(store.day(scope, 'client', limit), names, self)
+    const hostSum = store.daySum(scope, 'host')
+    const clientSum = store.daySum(scope, 'client')
+    const nodeSum = store.daySum(scope, 'node')
     // 总量是内核精确计数,分量是采样的;差额就是没采到的短连接(见 traffic-collector 顶部说明)
     const other = {
       up: Math.max(0, total.up - (Number(nodeSum.up) || 0)),
       down: Math.max(0, total.down - (Number(nodeSum.down) || 0)),
     }
     res.json({
-      day, today: localDay(now()), total, nodes, hosts, clients,
+      day, hour, today: localDay(now()), total, nodes, hosts, clients,
       hostsCount: Number(hostSum.n) || 0, clientsCount: Number(clientSum.n) || 0, other,
       // 24 小时曲线;nowHour 是路由器此刻的本地小时,今天的曲线画到这里为止。
       // 不能让页面拿浏览器的钟来截:浏览器和路由器可能不在一个时区(人在国外远程看),
       // 曾经就把 20 点的路由器按浏览器的 0 点截成只剩一格。
-      hours: store.hours(day),
+      hours,
       nowHour: now().getHours(),
+      // 小时明细只留这么多天,页面据此提示
+      hourDetailKeepDays: HOUR_DETAIL_KEEP_DAYS,
     })
   })
 
@@ -154,14 +170,19 @@ export const registerTrafficRoutes = (app, { collector, ctx, paths, now = () => 
       return
     }
     const limit = Math.min(1000, Math.max(1, Number(req.query.limit) || 200))
+    const hour = parseHour(req.query.hour)
+    if (Number.isNaN(hour)) {
+      res.status(400).json({ error: 'hour 应为 0~23' })
+      return
+    }
     collector.flush()
-    const { rows, count, sum } = collector.store.drill(day, kind, key, by, limit)
+    const { rows, count, sum } = collector.store.drill(hour === null ? day : hourDayKey(day, hour), kind, key, by, limit)
     let labeled = rows
     if (by === 'client') {
       const [names, self] = await Promise.all([readLeaseNames(ctx, paths && paths.dhcpLeases), readSelfAddresses(ctx)])
       labeled = withClientLabels(rows, names, self)
     }
-    res.json({ day, kind, key, by, count, sum: sum || { up: 0, down: 0 }, rows: labeled })
+    res.json({ day, hour, kind, key, by, count, sum: sum || { up: 0, down: 0 }, rows: labeled })
   })
 
   router.get('/clients', async (_req, res) => {

@@ -4,12 +4,13 @@
        横轴永远是 0 点到 23 点 24 格,0 点在最左边;今天只画到此刻这个小时,后面的格子空着,
        走过一个小时多画一格。
        图下面那行图例常驻写着某个小时的进站 / 出站——默认是峰值那个小时,鼠标(或手指)在图上移到
-       哪个小时就换成哪个小时,离开又回到峰值;悬停时还在光标旁弹「时段 + 进站 / 出站」的浮层。 -->
+       哪个小时就换成哪个小时,离开又回到峰值;悬停时还在光标旁弹「时段 + 进站 / 出站」的浮层。
+       点某个小时会告诉父组件(select),下面的明细就只看那个小时;选中的小时画一根虚线。 -->
   <div class="flex flex-col gap-2">
     <div class="relative h-44 w-full">
       <div
         ref="chartEl"
-        class="h-full w-full"
+        class="h-full w-full cursor-pointer"
       />
       <!-- 颜色探针:进站用 primary、出站用 secondary,和柱子一致;浮层底色和概览其他图表一样是
            base-100/70;字体跟着面板 -->
@@ -21,10 +22,10 @@
     <div class="text-base-content/70 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs tabular-nums">
       <span>
         <span
-          v-if="hoverIndex === null && shown.total > 0"
+          v-if="shownPrefix"
           class="text-base-content/50"
         >
-          {{ $t('trafficPeakHour') }}
+          {{ shownPrefix }}
         </span>
         {{ shown.label }}
       </span>
@@ -46,19 +47,23 @@ import { cssColorToRgb, prettyBytesHelper } from '@/helper/utils'
 import { font, theme } from '@/store/settings'
 import { useElementSize } from '@vueuse/core'
 import { LineChart } from 'echarts/charts'
-import { GridComponent, TooltipComponent } from 'echarts/components'
+import { GridComponent, MarkLineComponent, TooltipComponent } from 'echarts/components'
 import * as echarts from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-echarts.use([LineChart, GridComponent, TooltipComponent, CanvasRenderer])
+// 选中小时那根虚线是 markLine,按需引入时要单独注册 MarkLineComponent,不然静默不画
+echarts.use([LineChart, GridComponent, MarkLineComponent, TooltipComponent, CanvasRenderer])
 
 const props = defineProps<{
   hours: OpenboxTrafficHour[]
   // 今天只画到当前这个小时,后面的还没发生,画成一条贴地的 0 只会误导
   upToHour?: number
+  // 父组件当前只看的那个小时(null 是整天):图上画根虚线,图例那行默认写它
+  selectedHour?: number | null
 }>()
+const emit = defineEmits<{ select: [hour: number] }>()
 
 const { t } = useI18n()
 const chartEl = ref<HTMLElement>()
@@ -92,13 +97,27 @@ const peakIndex = computed(() => {
 })
 // 鼠标(手指)当前停在哪个小时上;不在图上就是 null
 const hoverIndex = ref<number | null>(null)
+const selectedIndex = computed(() =>
+  props.selectedHour === null || props.selectedHour === undefined ? -1 : drawn.value.findIndex((h) => h.hour === props.selectedHour),
+)
+// 图例那行写谁:悬停的 > 选中的 > 峰值
 const shown = computed(() => {
   const list = drawn.value
-  const i = hoverIndex.value !== null && hoverIndex.value < list.length ? hoverIndex.value : peakIndex.value
+  const i =
+    hoverIndex.value !== null && hoverIndex.value < list.length
+      ? hoverIndex.value
+      : selectedIndex.value >= 0
+        ? selectedIndex.value
+        : peakIndex.value
   const h = list[i]
   if (!h) return { label: '', up: 0, down: 0, total: 0 }
   const hh = String(h.hour).padStart(2, '0')
   return { label: `${hh}:00–${hh}:59`, up: h.up, down: h.down, total: h.up + h.down }
+})
+const shownPrefix = computed(() => {
+  if (hoverIndex.value !== null) return ''
+  if (selectedIndex.value >= 0) return t('trafficHourSelected')
+  return shown.value.total > 0 ? t('trafficPeakHour') : ''
 })
 
 // 颜色要先折算成 rgb(见 cssColorToRgb 的说明),不然一悬停曲线就没了
@@ -134,6 +153,18 @@ const render = (force = false) => {
     itemStyle: { color },
     areaStyle: { color, opacity: 0.18 },
   })
+  // 选中的小时:一根竖虚线(没选就把上次的清掉)
+  const markLine =
+    selectedIndex.value >= 0
+      ? {
+          silent: true,
+          symbol: ['none', 'none'],
+          animation: false,
+          lineStyle: { color: c.text, type: 'dashed', width: 1, opacity: 0.5 },
+          label: { show: false },
+          data: [{ xAxis: selectedIndex.value }],
+        }
+      : { data: [] }
   // 不用 notMerge:整图重建会把曲线从头再长一遍,看着像图闪没了又出来;合并更新只是平滑地挪一下
   chart.setOption({
     animationDuration: 300,
@@ -171,7 +202,7 @@ const render = (force = false) => {
       axisLabel: { color: c.text, fontFamily: c.fontFamily, formatter: (v: number) => prettyBytesHelper(v) },
       splitLine: { lineStyle: { color: c.text, opacity: 0.08 } },
     },
-    series: [series(t('trafficIn'), 'down', c.inbound), series(t('trafficOut'), 'up', c.outbound)],
+    series: [{ ...series(t('trafficIn'), 'down', c.inbound), markLine }, series(t('trafficOut'), 'up', c.outbound)],
   })
   // 正悬停着刷新的话,把竖线放回原来那个小时
   if (hoverIndex.value !== null) {
@@ -191,6 +222,13 @@ onMounted(() => {
   chart.on('globalout', () => {
     hoverIndex.value = null
   })
+  // 点图上某个小时(空白处也算,不用正好点在线上):按横坐标折算成第几格
+  chart.getZr().on('click', (e: { offsetX: number; offsetY: number }) => {
+    if (!chart || !chart.containPixel('grid', [e.offsetX, e.offsetY])) return
+    const [x] = chart.convertFromPixel({ seriesIndex: 0 }, [e.offsetX, e.offsetY])
+    const i = Math.round(x)
+    if (i >= 0 && i < drawn.value.length) emit('select', drawn.value[i].hour)
+  })
   render()
 })
 onUnmounted(() => {
@@ -198,6 +236,7 @@ onUnmounted(() => {
   chart = undefined
 })
 watch(drawn, () => render())
+watch(() => props.selectedHour, () => render(true))
 // 换主题 / 字体后颜色要重新取
 watch([theme, font], () => render(true))
 watch(width, () => chart?.resize())

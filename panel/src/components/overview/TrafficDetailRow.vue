@@ -41,6 +41,7 @@
     >
       <TrafficDrillPanel
         :day="day"
+        :hour="hour"
         :kind="kind"
         :item-key="row.key"
         :dims="dims"
@@ -64,6 +65,8 @@ const props = defineProps<{
   share: number
   expanded: boolean
   day: string
+  // 只看某个小时时是那个小时,整天是 null
+  hour?: number | null
   kind: OpenboxTrafficDim
   dims: OpenboxTrafficDim[]
 }>()
