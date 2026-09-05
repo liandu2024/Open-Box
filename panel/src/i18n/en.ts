@@ -22,6 +22,7 @@ const en = {
   chains: 'Chains',
   outbound: 'Outbound',
   sortBy: 'Sort by',
+  proxyNodeSortBy: 'Node sort order',
   rule: 'Rule',
   sourceIP: 'Source IP',
   activeConnections: 'Active',

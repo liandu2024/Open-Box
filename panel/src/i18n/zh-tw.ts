@@ -24,6 +24,7 @@ const zhTW: LANG_MESSAGE = {
   chains: '代理鏈',
   outbound: '出站節點',
   sortBy: '排序方式',
+  proxyNodeSortBy: '節點排序方式',
   rule: '規則',
   sourceIP: '源IP',
   activeConnections: '活躍',

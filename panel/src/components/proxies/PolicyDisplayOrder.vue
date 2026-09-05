@@ -41,8 +41,8 @@
         >
           <span class="text-base-content/40 w-4 shrink-0 text-center text-xs">{{ index + 1 }}</span>
           <ProxyIcon
-            v-if="siteSetIcons.get(name)"
-            :icon="siteSetIcons.get(name)!"
+            v-if="iconOf(name)"
+            :icon="iconOf(name)"
             :size="16"
             :margin="0"
           />
@@ -56,14 +56,21 @@
 
 <script setup lang="ts">
 import ProxyIcon from '@/components/proxies/ProxyIcon.vue'
+import { iconUrlFor } from '@/helper/iconUrl'
 import { showNotification } from '@/helper/notification'
 import { effectiveSiteSetOrder, saveSiteSetDisplayOrder, siteSetIcons, siteSetOrder } from '@/store/openboxSiteSets'
 import { Bars3Icon } from '@heroicons/vue/24/outline'
 import { computed, ref, watch } from 'vue'
 import Draggable from 'vuedraggable'
 
+// 档案里存的是图标代码(国家码 / globe:xxx),要先换成能画的地址;解析不出来的退回彩色地球,
+// 和策略卡片标题上那个大图标同一套换法(store/proxies.ts)
+const iconOf = (name: string) => {
+  const code = siteSetIcons.value.get(name)
+  return (code && iconUrlFor(code)) || iconUrlFor('globe:earth-meridians') || ''
+}
 type Row = { name: string; icon: string }
-const toRows = (names: string[]): Row[] => names.map((name) => ({ name, icon: siteSetIcons.value.get(name) || '' }))
+const toRows = (names: string[]): Row[] => names.map((name) => ({ name, icon: iconOf(name) }))
 
 // 拖拽要求 v-model 绑一个 ref(vuedraggable 会整个替换数组),所以在本地存一份;
 // 档案重新拉过来(比如别处新建了站点集)时跟着刷新,顺序没变就不动它

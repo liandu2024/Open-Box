@@ -24,6 +24,7 @@ const zh: LANG_MESSAGE = {
   chains: '代理链',
   outbound: '出站节点',
   sortBy: '排序方式',
+  proxyNodeSortBy: '节点排序方式',
   rule: '规则',
   sourceIP: '源IP',
   activeConnections: '活跃',

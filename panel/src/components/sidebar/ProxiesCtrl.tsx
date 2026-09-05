@@ -270,7 +270,7 @@ export default defineComponent({
           >
             <div class="flex flex-col gap-4 p-2 text-sm">
               <div class="flex items-center gap-2">
-                {t('sortBy')}
+                {t('proxyNodeSortBy')}
                 {sort}
               </div>
               {hasSmartGroup.value && (
