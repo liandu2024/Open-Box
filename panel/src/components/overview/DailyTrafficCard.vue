@@ -135,13 +135,26 @@
         v-if="days.length"
         class="text-base-content/70 flex flex-wrap items-center gap-4 text-xs"
       >
+        <!-- 图例顺手写上选中那天的进站 / 出站,不用点开明细就能看到 -->
         <span class="inline-flex items-center gap-1.5">
           <i class="bg-primary inline-block h-2.5 w-2.5 rounded-sm" />
           {{ $t('trafficIn') }}
+          <span
+            v-if="selectedBar"
+            class="text-base-content font-medium tabular-nums"
+          >
+            {{ fmt(selectedBar.down) }}
+          </span>
         </span>
         <span class="inline-flex items-center gap-1.5">
           <i class="bg-secondary inline-block h-2.5 w-2.5 rounded-sm" />
           {{ $t('trafficOut') }}
+          <span
+            v-if="selectedBar"
+            class="text-base-content font-medium tabular-nums"
+          >
+            {{ fmt(selectedBar.up) }}
+          </span>
         </span>
         <InformationCircleIcon
           v-tip="$t('trafficDirectionHint')"
@@ -157,8 +170,6 @@
         <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm font-semibold">
           <span>{{ selectedDay }}</span>
           <span class="text-base-content/40">·</span>
-          <span>{{ $t('trafficIn') }} {{ fmt(detail.total.down) }}</span>
-          <span>{{ $t('trafficOut') }} {{ fmt(detail.total.up) }}</span>
           <span>{{ $t('trafficTotal') }} {{ fmt(detailTotal) }}</span>
           <span class="text-base-content/60 font-normal">{{ $t('trafficConns', { n: detail.total.conns }) }}</span>
         </div>
@@ -447,6 +458,9 @@ const days = computed<DayBar[]>(() =>
   }),
 )
 const avgTotal = computed(() => (monthData.value ? monthData.value.avg.up + monthData.value.avg.down : 0))
+
+// 选中那根柱子(图例里的进站 / 出站数值取它,月数据一到就有,不用等明细)
+const selectedBar = computed(() => days.value.find((d) => d.day === selectedDay.value) ?? null)
 
 const barClass = (d: DayBar) =>
   d.day === selectedDay.value ? 'opacity-100' : 'opacity-40 group-hover:opacity-70'
