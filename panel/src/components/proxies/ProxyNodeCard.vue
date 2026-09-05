@@ -20,6 +20,7 @@
         v-if="node?.icon"
         class="-mt-[2px] shrink-0 align-middle"
         :icon="node.icon"
+        :size="16 + (node.iconScale || 0)"
         :fill="active ? 'fill-primary-content' : 'fill-base-content'"
       /><span
         v-if="active"

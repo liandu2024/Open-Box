@@ -32,6 +32,8 @@ export const saveSiteSetDisplayOrder = async (order: string[]) => {
 // 站点集各自挑的图标(名字 → 图标代码):代理页策略卡片标题左边那个大图标就从这来。
 // 兜底「其他」固定彩色地球,和「分流与策略」里钉在最下面那条一致。
 export const siteSetIcons = ref<Map<string, string>>(new Map())
+// 各站点集的图标缩放(名字 → 像素偏移),在「修改站点集」里拨的;画图标时加到尺寸上
+export const siteSetIconScales = ref<Map<string, number>>(new Map())
 
 // 兜底站点集的名字,和服务端 engine/routing-model.mjs 的 FALLBACK_TAG 同一个值
 const FALLBACK_NAME = '其他'
@@ -73,6 +75,9 @@ export const loadOpenboxSiteSets = async () => {
     const icons = new Map<string, string>(policies.filter((p) => p.icon).map((p) => [p.name, p.icon as string]))
     icons.set(fallbackName, profile.routing.fallbackIcon?.trim() || 'globe:earth-meridians')
     siteSetIcons.value = icons
+    const scales = new Map<string, number>(policies.map((p) => [p.name, Number(p.iconScale) || 0]))
+    scales.set(fallbackName, Number(profile.routing.fallbackIconScale) || 0)
+    siteSetIconScales.value = scales
   } catch {
     // 拉不到就保持原样(空集 → 退回猜法),不让代理页因此打不开
   }

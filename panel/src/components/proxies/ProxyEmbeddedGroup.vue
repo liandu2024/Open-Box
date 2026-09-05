@@ -17,7 +17,7 @@
         >
           <ProxyIcon
             :icon="proxyGroup.icon"
-            :size="titleIconSize"
+            :size="titleIconSize + (proxyGroup.iconScale || 0)"
             :margin="0"
           />
         </div>

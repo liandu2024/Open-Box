@@ -18,6 +18,8 @@ export interface OpenboxRoutingPolicy {
   id: string
   name: string
   icon?: string
+  // 图标缩放:整数像素偏移,0 = 不缩放(见 components/common/IconScaleInput.vue)
+  iconScale?: number
   // selector 的默认选中项(direct / 某个节点组 / block)
   default?: string
   // 停用 = 留在列表里,不进内核配置
@@ -45,6 +47,7 @@ export interface OpenboxProfileRouting {
   // 兜底站点集的名字(默认「其他」,就是内核里的出站 tag)和图标
   fallbackName?: string
   fallbackIcon?: string
+  fallbackIconScale?: number
   // 代理页「策略」页签的显示顺序(站点集名字),在「策略设置」里拖出来的;和命中顺序分开
   displayOrder?: string[]
   // 改版前的地区层;服务端读出来时会翻译成站点集,并把结果写回档案
@@ -409,6 +412,8 @@ export interface OpenboxUserGroup {
   enabled?: boolean
   // 国家代码(ISO 3166-1 alpha-2),空 = 不显示图标。纯界面用,不进 sing-box 配置。
   icon?: string
+  // 图标缩放:整数像素偏移,0 = 不缩放
+  iconScale?: number
   // dynamic 用:命中任一关键词的节点即成员;为空 = 全部节点
   keywords?: string[]
   // static 用:手工挑出来的节点名/组名

@@ -16,6 +16,7 @@ import {
   managedOutbounds,
   nodeProviders,
   siteSetIcons,
+  siteSetIconScales,
 } from '@/store/openboxSiteSets'
 import {
   GLOBAL,
@@ -335,6 +336,7 @@ export const fetchProxies = async () => {
     if (!entry) continue
     const url = iconUrlFor(code) || iconUrlFor('globe:earth-meridians')
     if (url) entry.icon = url
+    entry.iconScale = siteSetIconScales.value.get(name) || 0
   }
 
   for (const item of managedOutbounds.value) {
@@ -352,6 +354,7 @@ export const fetchProxies = async () => {
       const url = iconUrlFor(item.icon)
       if (url) proxyMap.value[item.name].icon = url
     }
+    proxyMap.value[item.name].iconScale = item.iconScale || 0
   }
 
   // 节点标上来自哪条订阅:「节点根据提供商分组」按 provider-name 分段,内核不给,这里补

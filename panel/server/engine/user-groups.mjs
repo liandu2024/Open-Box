@@ -97,6 +97,15 @@ const normalizeIcon = (raw) => {
   return /^[A-Za-z]{2}$/.test(v) ? v.toUpperCase() : v
 }
 
+// 图标缩放:整数像素偏移,0 = 不缩放,+1 大 1px,-1 小 1px。不同来源的图标视觉大小不一
+// (国旗满框、品牌标带留白),让用户自己拨一下。限在 ±8 之内,再大就不是"微调"了。
+export const ICON_SCALE_LIMIT = 8
+export const normalizeIconScale = (v) => {
+  const n = Number(v)
+  if (!Number.isFinite(n)) return 0
+  return Math.max(-ICON_SCALE_LIMIT, Math.min(ICON_SCALE_LIMIT, Math.round(n)))
+}
+
 // 把外部传进来的一条组定义收敛成内部形状;不合法的字段回落默认值而不是抛错——
 // 这个函数同时用于读取历史数据,老记录缺字段是正常的。
 export const normalizeGroup = (raw, index = 0) => {
@@ -115,6 +124,7 @@ export const normalizeGroup = (raw, index = 0) => {
     // ——那边没有这个字段,写进去内核直接报未知字段。
     // 国家代码统一成大写(hk -> HK);地球图标是 globe:xxx 这种,原样留着不能动
     icon: normalizeIcon(raw?.icon),
+    iconScale: normalizeIconScale(raw?.iconScale),
     keywords: Array.isArray(raw?.keywords) ? raw.keywords.filter(isNonEmptyString).map((k) => k.trim()) : [],
     members: Array.isArray(raw?.members) ? raw.members.filter(isNonEmptyString).map((m) => m.trim()) : [],
   }

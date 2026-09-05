@@ -21,7 +21,7 @@
             <ProxyIcon
               v-if="element.icon"
               :icon="element.icon"
-              :size="16"
+              :size="16 + scaleOf(element.name)"
               :margin="0"
             />
             <span class="truncate text-sm">{{ element.name }}</span>
@@ -43,7 +43,7 @@
           <ProxyIcon
             v-if="iconOf(name)"
             :icon="iconOf(name)"
-            :size="16"
+            :size="16 + scaleOf(name)"
             :margin="0"
           />
           <span class="truncate text-sm">{{ name }}</span>
@@ -58,7 +58,7 @@
 import ProxyIcon from '@/components/proxies/ProxyIcon.vue'
 import { iconUrlFor } from '@/helper/iconUrl'
 import { showNotification } from '@/helper/notification'
-import { effectiveSiteSetOrder, saveSiteSetDisplayOrder, siteSetIcons, siteSetOrder } from '@/store/openboxSiteSets'
+import { effectiveSiteSetOrder, saveSiteSetDisplayOrder, siteSetIconScales, siteSetIcons, siteSetOrder } from '@/store/openboxSiteSets'
 import { Bars3Icon } from '@heroicons/vue/24/outline'
 import { computed, ref, watch } from 'vue'
 import Draggable from 'vuedraggable'
@@ -69,6 +69,7 @@ const iconOf = (name: string) => {
   const code = siteSetIcons.value.get(name)
   return (code && iconUrlFor(code)) || iconUrlFor('globe:earth-meridians') || ''
 }
+const scaleOf = (name: string) => siteSetIconScales.value.get(name) || 0
 type Row = { name: string; icon: string }
 const toRows = (names: string[]): Row[] => names.map((name) => ({ name, icon: iconOf(name) }))
 

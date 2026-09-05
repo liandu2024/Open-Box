@@ -38,6 +38,8 @@ export type Proxy = {
   now: string
   fixed?: string
   icon: string
+  // Open-Box:站点集 / 节点组自己设的图标缩放(像素偏移),画图标时加到尺寸上
+  iconScale?: number
   hidden?: boolean
   testUrl?: string
   'dialer-proxy'?: string

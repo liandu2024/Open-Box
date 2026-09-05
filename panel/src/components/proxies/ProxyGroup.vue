@@ -15,7 +15,7 @@
         >
           <ProxyIcon
             :icon="proxyGroup.icon"
-            :size="titleIconSize"
+            :size="titleIconSize + (proxyGroup.iconScale || 0)"
             :margin="0"
           />
         </div>
@@ -85,7 +85,7 @@
             <ProxyIcon
               v-if="proxyGroup.icon"
               :icon="proxyGroup.icon"
-              :size="proxyGroupIconSize"
+              :size="proxyGroupIconSize + (proxyGroup.iconScale || 0)"
               :margin="proxyGroupIconMargin"
             />
             <span class="">

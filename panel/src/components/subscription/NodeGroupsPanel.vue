@@ -31,7 +31,7 @@
         <CountryFlag
           v-if="group.icon"
           :code="group.icon"
-          :size="18"
+          :size="18 + (group.iconScale || 0)"
           :title="group.icon"
         />
         <div class="min-w-0 flex-1">
@@ -125,6 +125,10 @@
               />
             </div>
           </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-xs font-medium">{{ $t('iconScaleLabel') }}</label>
+            <IconScaleInput v-model="builtinDraft.iconScale" />
+          </div>
           <div class="flex min-w-0 flex-1 flex-col gap-1">
             <label class="text-xs font-medium">{{ $t('groupNameLabel') }}</label>
             <input
@@ -183,6 +187,10 @@
                 :placeholder="$t('groupIconNone')"
               />
             </div>
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-xs font-medium">{{ $t('iconScaleLabel') }}</label>
+            <IconScaleInput v-model="draft.iconScale" />
           </div>
           <div class="flex min-w-0 flex-1 flex-col gap-1">
             <label class="text-xs font-medium">{{ $t('groupNameLabel') }}</label>
@@ -633,6 +641,7 @@ import { fetchNodeGroups, saveNodeGroups } from '@/api/openbox'
 import BulkPick from '@/components/subscription/BulkPick.vue'
 import CountryFlag from '@/components/common/CountryFlag.vue'
 import CountrySelect from '@/components/common/CountrySelect.vue'
+import IconScaleInput from '@/components/common/IconScaleInput.vue'
 import { AUTO_GROUP_DEFAULT_COUNTRIES, COUNTRIES, countryName, findCountry } from '@/constant/countries'
 import { keywordMatches, normalizeForMatch } from '@/helper/keywordMatch'
 import { showNotification } from '@/helper/notification'

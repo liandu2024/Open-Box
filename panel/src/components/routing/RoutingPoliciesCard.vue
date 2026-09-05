@@ -35,7 +35,7 @@
           <CountryFlag
             v-if="policy.icon"
             :code="policy.icon"
-            :size="18"
+            :size="18 + (policy.iconScale || 0)"
           />
           <div class="min-w-0 flex-1">
             <div class="flex items-center gap-2">
@@ -93,7 +93,7 @@
       <span class="w-4 shrink-0" />
       <CountryFlag
         :code="fallbackIcon"
-        :size="18"
+        :size="18 + fallbackIconScale"
       />
       <div class="min-w-0 flex-1">
         <div class="flex items-center gap-2">
@@ -156,6 +156,10 @@
                 :placeholder="$t('groupIconNone')"
               />
             </div>
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-xs font-medium">{{ $t('iconScaleLabel') }}</label>
+            <IconScaleInput v-model="fallbackDraft.iconScale" />
           </div>
           <div class="flex min-w-0 flex-1 flex-col gap-1">
             <label class="text-xs font-medium">{{ $t('routingPolicyNameLabel') }}</label>
@@ -245,6 +249,10 @@
                 :placeholder="$t('groupIconNone')"
               />
             </div>
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-xs font-medium">{{ $t('iconScaleLabel') }}</label>
+            <IconScaleInput v-model="draft.iconScale" />
           </div>
           <div class="flex min-w-0 flex-1 flex-col gap-1">
             <label class="text-xs font-medium">{{ $t('routingPolicyNameLabel') }}</label>
@@ -362,6 +370,7 @@ import type { OpenboxProfile, OpenboxRoutingPolicy } from '@/api/openbox'
 import { RULESET_TAG_PATTERN } from '@/api/openbox'
 import CountryFlag from '@/components/common/CountryFlag.vue'
 import CountrySelect from '@/components/common/CountrySelect.vue'
+import IconScaleInput from '@/components/common/IconScaleInput.vue'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import GeoRuleValue from '@/components/routing/GeoRuleValue.vue'
 import RuleUrlValue from '@/components/routing/RuleUrlValue.vue'
@@ -383,11 +392,12 @@ const DEFAULT_FALLBACK_NAME = '其他'
 const DEFAULT_FALLBACK_ICON = 'globe:earth-meridians'
 const fallbackName = computed(() => props.profile.routing.fallbackName?.trim() || DEFAULT_FALLBACK_NAME)
 const fallbackIcon = computed(() => props.profile.routing.fallbackIcon?.trim() || DEFAULT_FALLBACK_ICON)
+const fallbackIconScale = computed(() => Number(props.profile.routing.fallbackIconScale) || 0)
 
 const showFallbackEditor = ref(false)
-const fallbackDraft = ref<{ name: string; icon: string } | null>(null)
+const fallbackDraft = ref<{ name: string; icon: string; iconScale: number } | null>(null)
 const openFallbackEditor = () => {
-  fallbackDraft.value = { name: fallbackName.value, icon: fallbackIcon.value }
+  fallbackDraft.value = { name: fallbackName.value, icon: fallbackIcon.value, iconScale: fallbackIconScale.value }
   showFallbackEditor.value = true
 }
 const saveFallback = async () => {
@@ -405,7 +415,7 @@ const saveFallback = async () => {
   }
   saving.value = true
   try {
-    await props.patchProfile({ routing: { fallbackName: name, fallbackIcon: d.icon || '' } })
+    await props.patchProfile({ routing: { fallbackName: name, fallbackIcon: d.icon || '', fallbackIconScale: d.iconScale || 0 } })
     showNotification({ content: 'routingPolicySaved', type: 'alert-success' })
     showFallbackEditor.value = false
   } catch (err) {
@@ -591,7 +601,7 @@ const rulesetToRow = (tag: string): RuleRow => {
 
 const openEditor = (policy: OpenboxRoutingPolicy | null) => {
   editing.value = policy
-  draft.value = policy ? JSON.parse(JSON.stringify(policy)) : { id: '', name: '', icon: '' }
+  draft.value = policy ? JSON.parse(JSON.stringify(policy)) : { id: '', name: '', icon: '', iconScale: 0 }
   rules.value = []
   if (policy) {
     for (const url of policy.ruleUrls || []) rules.value.push({ key: ++ruleKeySeed, type: 'ruleUrl', value: url })
