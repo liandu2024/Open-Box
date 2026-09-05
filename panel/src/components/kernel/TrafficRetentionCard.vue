@@ -39,7 +39,7 @@ import { onMounted, ref, watch } from 'vue'
 
 const MIN_MONTHS = 1
 const MAX_MONTHS = 36
-const DEFAULT_MONTHS = 6
+const DEFAULT_MONTHS = 3
 
 const props = defineProps<{
   profile: OpenboxProfile

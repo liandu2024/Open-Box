@@ -218,15 +218,15 @@ test('保留时长按月算,1~36 之外夹回来;到期的按天删,单维和交
   assert.equal(normalizeKeepMonths(0), 1)
   assert.equal(normalizeKeepMonths(99), 36)
   assert.equal(normalizeKeepMonths('12'), 12)
-  assert.equal(normalizeKeepMonths(undefined), 6)
+  assert.equal(normalizeKeepMonths(undefined), 3)
   assert.equal(normalizeKeepMonths(2.7), 2)
 
   const pruned = []
   const store = { ...fakeStore(), rows: [], prune: (d) => pruned.push(d) }
-  let months = 6
+  let months = 3
   const c = createTrafficCollector({ store, now: () => new Date(2026, 8, 4), getKeepMonths: () => months })
   c.prune()
-  assert.deepEqual(pruned, ['2026-03-04'], '默认半年')
+  assert.deepEqual(pruned, ['2026-06-04'], '默认 3 个月')
   months = 1
   c.prune()
   assert.deepEqual(pruned.at(-1), '2026-08-04')
@@ -293,4 +293,26 @@ test('sqlite store:小时明细按「天@小时」查和下钻,hours 带连接�
   assert.deepEqual(store.day('2026-09-05', 'node', 10), [{ key: 'A', up: 10, down: 100, conns: 3 }])
   assert.deepEqual(store.day('2026-09-06@01', 'node', 10), [{ key: 'A', up: 1, down: 1, conns: 1 }])
   assert.equal(HOUR_DETAIL_KEEP_DAYS, 7)
+})
+
+test('清理一天跑一次:启动时一次,之后跨天才再跑;改了保留时长下一分钟就按新期限清', () => {
+  const pruned = []
+  let day = new Date(2026, 8, 4, 10)
+  let months = 3
+  const store = { ...fakeStore(), rows: [], prune: (d) => pruned.push(d) }
+  const c = createTrafficCollector({ store, now: () => day, getKeepMonths: () => months, fetchImpl: async () => { throw new Error('no kernel') } })
+  c.start()
+  assert.deepEqual(pruned, ['2026-06-04'])
+  c.tick()
+  c.tick()
+  assert.equal(pruned.length, 1, '同一天不再清理')
+  day = new Date(2026, 8, 5, 0, 1)
+  c.tick()
+  assert.deepEqual(pruned, ['2026-06-04', '2026-06-05'], '跨天再清一次')
+  c.tick()
+  assert.equal(pruned.length, 2)
+  months = 1
+  c.tick()
+  assert.deepEqual(pruned.at(-1), '2026-08-05', '改了时长,下一次 tick 就按新期限清')
+  c.stop()
 })

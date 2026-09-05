@@ -19,7 +19,7 @@ import { DNSMASQ_OUTBOUND_TAG } from '../engine/config.mjs'
 const pad2 = (n) => String(n).padStart(2, '0')
 
 // 分析数据保留时长(月):默认半年,允许 1~36
-export const DEFAULT_KEEP_MONTHS = 6
+export const DEFAULT_KEEP_MONTHS = 3
 export const MIN_KEEP_MONTHS = 1
 export const MAX_KEEP_MONTHS = 36
 export const normalizeKeepMonths = (v) => {
@@ -371,10 +371,17 @@ export const createTrafficCollector = ({
   }
 
   let hourPruneWide = true
+  // 上次清理是哪一天、按几个月清的:清理一天跑一次就够,但用户改了保留时长要马上按新期限来
+  let lastPruneDay = ''
+  let lastKeepMonths = null
   const prune = () => {
     try {
-      const d = now()
-      d.setMonth(d.getMonth() - normalizeKeepMonths(getKeepMonths()))
+      const months = normalizeKeepMonths(getKeepMonths())
+      // 拷一份再算:别就地改 now() 给的对象
+      const d = new Date(now())
+      d.setMonth(d.getMonth() - months)
+      lastPruneDay = localDay(now())
+      lastKeepMonths = months
       store.prune(localDay(d))
       // 小时明细只留最近 HOUR_DETAIL_KEEP_DAYS 天:按天做主键范围删,平时只看期限附近几天;
       // 第一次跑扫宽一点,补上停机期间没删掉的
@@ -382,7 +389,7 @@ export const createTrafficCollector = ({
         const span = hourPruneWide ? 60 : 3
         hourPruneWide = false
         for (let i = 0; i < span; i++) {
-          const c = now()
+          const c = new Date(now())
           c.setDate(c.getDate() - HOUR_DETAIL_KEEP_DAYS - i)
           store.pruneHourDetail(localDay(c))
         }
@@ -390,6 +397,14 @@ export const createTrafficCollector = ({
     } catch (err) {
       log(`[traffic] 清理旧记录失败:${err instanceof Error ? err.message : err}`)
     }
+  }
+  // 每分钟跟着 flush 看一眼:跨天了、或者保留时长改了,才真的去删
+  const maybePrune = () => {
+    if (localDay(now()) !== lastPruneDay || normalizeKeepMonths(getKeepMonths()) !== lastKeepMonths) prune()
+  }
+  const tick = () => {
+    flush()
+    maybePrune()
   }
 
   const poll = async () => {
@@ -424,12 +439,8 @@ export const createTrafficCollector = ({
     stopped = false
     prune()
     schedule()
-    // 清理跟着 flush 一起跑:用户在设置里把保留时长调小,一分钟内就生效,不用等到明天。
-    // 删的是 day < 期限 的主键范围,没有过期数据时几乎不花时间。
-    flushTimer = setInterval(() => {
-      flush()
-      prune()
-    }, flushMs)
+    // 每分钟写一次库;清理只在跨天或改了保留时长时才做(见 maybePrune)
+    flushTimer = setInterval(tick, flushMs)
     flushTimer.unref?.()
   }
 
@@ -441,5 +452,5 @@ export const createTrafficCollector = ({
     flush()
   }
 
-  return { store, start, stop, flush, prune, applySnapshot, poll, get pendingSize() { return pending.size } }
+  return { store, start, stop, flush, prune, tick, applySnapshot, poll, get pendingSize() { return pending.size } }
 }

@@ -52,9 +52,9 @@ const en = {
   testUrlDescription: 'Used by url-test groups and the latency test on the Proxies page; each url-test group can also set its own under Outbound nodes.',
   trafficRetentionTitle: 'Analytics retention',
   trafficRetentionDescription:
-    'How long the daily traffic charts, rankings and drill-down details are kept on the router. Expired records are cleaned up every minute.',
+    'How long the daily traffic curves, rankings and drill-down breakdowns are kept on the router. Expired records are cleaned up once a day; a changed limit is applied within a minute. Hourly breakdowns are kept for the last 7 days only.',
   trafficRetentionUnit: 'months',
-  trafficRetentionRange: '1 to 36, default 6',
+  trafficRetentionRange: '1 to 36, default 3',
   trafficRetentionUsage: '{days} days stored, about {size}; roughly {perDay} per day.',
   trafficRetentionForecast: 'At this rate, a full retention window is about {size}.',
   trafficRetentionNoData: 'No data yet — collection starts once the kernel is running.',
