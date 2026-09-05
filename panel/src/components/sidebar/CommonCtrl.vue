@@ -1,8 +1,12 @@
 <template>
-  <div class="flex flex-col gap-2 p-2 text-sm">
-    <StatisticsStats type="ctrl" />
-    <!-- 左:内核运行时长;右:启动/停止/重启,右对齐 -->
-    <div class="flex items-center justify-between gap-2">
+  <!-- 只有一张卡片:连接 / 内存 / 上下行那几个数。运行时长和启动 / 停止 / 重启不进卡片,
+       直接摆在侧边栏这一层——以前是卡片套卡片,看着像两层壳。 -->
+  <div class="flex flex-col gap-2 text-sm">
+    <div class="card p-2">
+      <StatisticsStats type="ctrl" />
+    </div>
+    <!-- 左:内核运行时长;右:启动/停止/重启,右对齐。和上面卡片的内容边对齐 -->
+    <div class="flex items-center justify-between gap-2 px-2">
       <div class="flex min-w-0 flex-col leading-tight">
         <span class="text-base-content/60 text-xs">{{ $t('kernelUptimeLabel') }}</span>
         <span class="truncate text-sm font-medium tabular-nums">{{ uptimeText }}</span>

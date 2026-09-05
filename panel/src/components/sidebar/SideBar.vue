@@ -44,9 +44,7 @@
       </template>
       <template v-else>
         <OverviewCarousel v-if="route.name !== ROUTE_NAME.overview" />
-        <div class="card">
-          <CommonSidebar />
-        </div>
+        <CommonSidebar />
       </template>
     </div>
   </div>
