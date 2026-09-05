@@ -789,6 +789,7 @@ const zhTW: LANG_MESSAGE = {
   trafficIn: '進站',
   trafficOut: '出站',
   trafficTotal: '總流量',
+  trafficPeakHour: '峰值',
   trafficConns: '{n} 個連線',
   trafficDirectionHint: '進站 = 從外網收到的位元組(下載),出站 = 發到外網的位元組(上傳)',
   trafficByNode: '出站節點',

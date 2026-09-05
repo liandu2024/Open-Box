@@ -33,7 +33,7 @@
 </template>
 
 <script setup lang="ts">
-import { isMiddleScreen } from '@/helper/utils'
+import { cssColorToRgb, isMiddleScreen } from '@/helper/utils'
 import { isWindowResizing } from '@/helper/windowResizeState'
 import { rules } from '@/store/rules'
 import { font, theme } from '@/store/settings'
@@ -73,15 +73,15 @@ let fontFamily = ''
 const updateColorSet = () => {
   const colorStyle = getComputedStyle(colorRef.value)
 
-  colorSet.baseContent = colorStyle.getPropertyValue('--color-base-content').trim()
-  colorSet.base70 = colorStyle.backgroundColor
-  colorSet.baseContent10 = colorStyle.color
+  colorSet.baseContent = cssColorToRgb(colorStyle.getPropertyValue('--color-base-content'))
+  colorSet.base70 = cssColorToRgb(colorStyle.backgroundColor)
+  colorSet.baseContent10 = cssColorToRgb(colorStyle.color)
   if (props.type === 'hit') {
-    colorSet.primary30 = colorStyle.borderTopColor
-    colorSet.primary60 = colorStyle.borderBottomColor
+    colorSet.primary30 = cssColorToRgb(colorStyle.borderTopColor)
+    colorSet.primary60 = cssColorToRgb(colorStyle.borderBottomColor)
   } else {
-    colorSet.info30 = colorStyle.borderTopColor
-    colorSet.info60 = colorStyle.borderBottomColor
+    colorSet.info30 = cssColorToRgb(colorStyle.borderTopColor)
+    colorSet.info60 = cssColorToRgb(colorStyle.borderBottomColor)
   }
 }
 

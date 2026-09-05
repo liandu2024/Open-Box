@@ -794,6 +794,7 @@ const en = {
   trafficIn: 'Inbound',
   trafficOut: 'Outbound',
   trafficTotal: 'Total',
+  trafficPeakHour: 'Peak',
   trafficConns: '{n} connections',
   trafficDirectionHint: 'Inbound = bytes received from the internet (download); outbound = bytes sent out (upload)',
   trafficByNode: 'By outbound node',

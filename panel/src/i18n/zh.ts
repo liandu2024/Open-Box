@@ -789,6 +789,7 @@ const zh: LANG_MESSAGE = {
   trafficIn: '进站',
   trafficOut: '出站',
   trafficTotal: '总流量',
+  trafficPeakHour: '峰值',
   trafficConns: '{n} 个连接',
   trafficDirectionHint: '进站 = 从外网收到的字节(下载),出站 = 发到外网的字节(上传)',
   trafficByNode: '出站节点',
