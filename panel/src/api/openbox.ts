@@ -870,6 +870,30 @@ export const fetchTrafficDrill = (
     `/api/openbox/traffic/drill?day=${encodeURIComponent(day)}&kind=${kind}&key=${encodeURIComponent(key)}&by=${by}&limit=${limit}${hour === null || hour === undefined ? '' : `&hour=${hour}`}`,
   )
 
+// 导出 / 导入(server/api/backup.mjs):档案 + 节点组,可选订阅和节点
+export interface OpenboxBackup {
+  format: string
+  version: number
+  exportedAt: string
+  openboxVersion?: string
+  profile: OpenboxProfile
+  groups: unknown[]
+  subscriptions?: unknown[]
+  nodes?: unknown[]
+}
+export type OpenboxBackupSubscriptionsMode = 'replace' | 'append'
+export interface OpenboxBackupImportResult {
+  ok: boolean
+  imported: { profile: boolean; groups: number; subscriptions: number; nodes: number; subscriptionsMode: OpenboxBackupSubscriptionsMode | null }
+}
+export const fetchBackup = (includeSubscriptions: boolean) =>
+  requestJson<OpenboxBackup>(`/api/openbox/backup?subscriptions=${includeSubscriptions ? 1 : 0}`)
+export const importBackup = (data: OpenboxBackup, subscriptionsMode: OpenboxBackupSubscriptionsMode = 'replace') =>
+  requestJson<OpenboxBackupImportResult>(`/api/openbox/backup/import?subscriptions=${subscriptionsMode}`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+
 // 共享网络 · 保存前的端口检测(server/api/servers.mjs)
 export interface OpenboxPortCheck {
   ok: boolean

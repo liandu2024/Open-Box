@@ -17,6 +17,8 @@ import { registerUpdateRoutes } from './api/updates.mjs'
 import { registerRouteTestRoutes } from './api/route-test.mjs'
 import { registerTrafficRoutes } from './api/traffic.mjs'
 import { registerServerRoutes } from './api/servers.mjs'
+import { registerBackupRoutes } from './api/backup.mjs'
+import { readMeta } from './system/updater.mjs'
 import { seedDefaultStorage } from './system/seed-defaults.mjs'
 import { runDeploy, fetchSelections, resolveSelections, dnsClassesFlipped } from './api/deploy-runner.mjs'
 import { startScheduler } from './system/scheduler.mjs'
@@ -1043,6 +1045,8 @@ const trafficCollector = createTrafficCollector({
 })
 registerTrafficRoutes(app, { collector: trafficCollector, ctx: obCtx, paths: obPaths })
 registerServerRoutes(app, { store, ctx: obCtx })
+// 导出 / 导入(后端设置那张卡片):档案 + 节点组,可选订阅和节点
+registerBackupRoutes(app, { store, readVersion: async () => (await readMeta(obCtx, obPaths)).version || '' })
 // 自动更新计划:每分钟看一眼档案里的计划,到点就做(见 system/scheduler.mjs)
 startScheduler({ store, ctx: obCtx, paths: obPaths, fetchImpl: globalThis.fetch, subscriptionFetchImpl: subscriptionFetch, runDeploy, log: (m) => console.log(m) })
 

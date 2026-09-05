@@ -41,6 +41,8 @@
             :profile="profile"
             :patch-profile="patchProfile"
           />
+          <!-- 导出 / 导入:导入后档案换了,重新拉一遍状态和档案 -->
+          <BackupCard @imported="onImported" />
         </template>
 
         <!-- Open-Box 自身更新 / Geo 规则集更新(各带自动更新计划) -->
@@ -68,6 +70,7 @@ import GeoUpdateCard from '@/components/kernel/GeoUpdateCard.vue'
 import KernelServiceCard from '@/components/kernel/KernelServiceCard.vue'
 import NodeDirectCard from '@/components/kernel/NodeDirectCard.vue'
 import OpenboxUpdateCard from '@/components/kernel/OpenboxUpdateCard.vue'
+import BackupCard from '@/components/kernel/BackupCard.vue'
 import TrafficRetentionCard from '@/components/kernel/TrafficRetentionCard.vue'
 import Ipv6Card from '@/components/routing/Ipv6Card.vue'
 import TestUrlCard from '@/components/routing/TestUrlCard.vue'
@@ -119,6 +122,8 @@ const patchProfile = async (patch: Record<string, unknown>): Promise<OpenboxProf
   profile.value = updated
   return updated
 }
+
+const onImported = () => Promise.all([loadStatus(), loadProfile()])
 
 onMounted(async () => {
   loading.value = true
