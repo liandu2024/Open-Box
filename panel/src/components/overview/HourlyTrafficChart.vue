@@ -70,8 +70,9 @@ const render = () => {
   chart.setOption(
     {
       animationDuration: 300,
+      // 横轴刻度一行、图例一行,别挤在一起
       legend: { bottom: 0, textStyle: { color: c.text, fontFamily: c.fontFamily } },
-      grid: { left: 56, right: 12, top: 12, bottom: 28 },
+      grid: { left: 56, right: 12, top: 12, bottom: 50 },
       tooltip: {
         trigger: 'axis',
         confine: true,
