@@ -290,7 +290,7 @@
               class="select select-sm w-36 shrink-0"
             >
               <option
-                v-for="opt in RULE_TYPES"
+                v-for="opt in ruleTypeOptions(rule.type)"
                 :key="opt.type"
                 :value="opt.type"
               >
@@ -510,6 +510,12 @@ const RULE_TYPES: { type: RuleType; labelKey: string; placeholderKey: string }[]
 ]
 const placeholderKey = (type: RuleType) =>
   RULE_TYPES.find((r) => r.type === type)?.placeholderKey || 'routingPolicyRuleDomainPlaceholder'
+
+// 「规则集」那一档不进新增的下拉:官方规则集全是 geosite- / geoip- 两个前缀,上面两档
+// 已经全覆盖,而且带搜索、带说明、能先看「详情」。它只剩兼容作用——老档案里存过别的
+// 前缀的名字,打开时才让它出现在自己那一行,换成别的类型之后就再也选不回来。
+const ruleTypeOptions = (current: RuleType) =>
+  RULE_TYPES.filter((r) => r.type !== 'ruleset' || current === 'ruleset')
 
 interface RuleRow {
   // 列表渲染要一个稳定的 key:类型和值都会被改,不能拿它们当 key

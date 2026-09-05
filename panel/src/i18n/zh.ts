@@ -632,7 +632,7 @@ const zh: LANG_MESSAGE = {
   routingPolicyNameRequired: '请填写站点集名称。',
   routingPolicyNameDuplicate: '已有同名站点集;这个名字会直接用作内核里的出站名称,不能重复。',
   routingPolicyRulesets: '规则集',
-  routingPolicyRulesetsPlaceholder: 'geosite-google,geoip-google',
+  routingPolicyRulesetsPlaceholder: 'geosite-google(一行一个)',
   routingPolicyDomain: '域名',
   routingPolicyDomainPlaceholder: 'example.com',
   routingPolicyDomainSuffix: '域名后缀',
