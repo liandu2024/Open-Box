@@ -170,7 +170,7 @@ test('GET /rulesets/preview:按网址拉回来解析,形状和 /rulesets/entries
   const fetchImpl = async (url) => {
     hits += 1
     if (url.includes('bad')) return { ok: false, status: 502 }
-    return { ok: true, status: 200, text: async () => 'DOMAIN-SUFFIX,a.com\nb.com\nIP-CIDR,1.2.3.0/24,no-resolve\nMATCH,DIRECT\n' }
+    return { ok: true, status: 200, arrayBuffer: async () => Buffer.from('DOMAIN-SUFFIX,a.com\nb.com\nIP-CIDR,1.2.3.0/24,no-resolve\nMATCH,DIRECT\n') }
   }
   const app = express()
   registerRulesetRoutes(app, { ctx, paths, fetchImpl })

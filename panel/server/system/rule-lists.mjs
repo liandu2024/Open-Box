@@ -1,21 +1,29 @@
 // 规则集链接:把站点集里引用的那些网址下回来,编成内核能用的 .srs。
 //
 // 和 system/rulesets.mjs 的分工:那边是 geosite / geoip,名字固定、上游固定、已经是编好的
-// .srs,只管缺了就下;这边是用户自己填的任意网址,拿到的是一份文本名单(Clash 的
-// DOMAIN-SUFFIX,xxx 那种,或者一行一个域名),要先解析成条件、写成源格式、再调
-// `sing-box rule-set compile` 编成二进制。解析在 engine/rule-list.mjs,那部分是纯函数。
+// .srs,只管缺了就下;这边是用户自己填的任意网址,要先解析成条件、写成源格式、再调
+// `sing-box rule-set compile` 编成二进制。两种来源都收:
+//   · 文本名单 —— Clash 的 DOMAIN-SUFFIX,xxx 那种,或者一行一个域名(engine/rule-list.mjs)
+//   · mihomo 的 .mrs —— 整份 zstd,里面是二进制的域名树 / IP 区间(engine/mrs.mjs)。
+//     内核自己不认这个格式(`sing-box rule-set convert` 只会转 adguard),所以在这里解开。
+// 两条路解析出来的形状一样,后面编译、引用、部署完全共用。
 //
 // 失败的处理分两种:
 //   · 本地已经有编好的那份 —— 拉不动就用旧的,记一条日志。名单在别人服务器上,不该
 //     因为对方今天抽风就让整次部署失败(用户可能只是改了个节点)。
 //   · 本地没有 —— 那这个站点集的规则在内核里就是空的,必须让部署停下来说清楚,
 //     否则内核会在校验阶段报 "open .../list-xxxxxxxx.srs: no such file or directory"。
+import { zstdDecompressSync } from 'node:zlib'
 import { collectRuleListUrls } from '../engine/routing-model.mjs'
+import { decodeMrs, looksLikeZstd } from '../engine/mrs.mjs'
 import { parseRuleList, ruleListIsEmpty, ruleListToSource } from '../engine/rule-list.mjs'
 
 const FETCH_TIMEOUT_MS = 30000
 // 一份名单撑死几百 KB;给 8MB 挡住"拿到一个几百 MB 的东西把路由器内存吃光"
 const MAX_BYTES = 8 * 1024 * 1024
+// .mrs 是压缩的,解压后还要再挡一道:8MB 的 zstd 能炸出几个 G,路由器只有 1GB 内存。
+// geosite 里最大的 cn 也就解出 900KB,32MB 已经很宽松了。
+const MAX_DECOMPRESSED = 32 * 1024 * 1024
 // 多久重下一次。名单是别人维护的,会变;但也不该每次部署都去拉一遍——
 // 部署是个本来纯本地的操作,不该动不动依赖外网。
 const REFRESH_MS = 24 * 60 * 60 * 1000
@@ -41,15 +49,29 @@ export const fetchRuleList = async (fetchImpl, url) => {
     clearTimeout(timer)
   }
   if (!res || !res.ok) throw new Error(`HTTP ${res ? res.status : '无响应'}`)
-  const text = await res.text()
-  if (text.length > MAX_BYTES) throw new Error(`名单太大(${Math.round(text.length / 1024)}KB)`)
-  return text
+  const buf = Buffer.from(await res.arrayBuffer())
+  if (buf.length > MAX_BYTES) throw new Error(`名单太大(${Math.round(buf.length / 1024)}KB)`)
+  return buf
 }
+
+// 下回来的东西 → 结构化条件。两种:
+//   · 文本名单(Clash 规则行 / 一行一个域名),交给 engine/rule-list.mjs
+//   · mihomo 的 .mrs(整份 zstd,里面是二进制),先解压再交给 engine/mrs.mjs
+// 认的是内容开头的魔数不是网址后缀:网址可能带一堆查询参数,也可能经过代理改名。
+export const parseRuleListBody = (buf) => {
+  if (!looksLikeZstd(buf)) return parseRuleList(buf.toString('utf8'))
+  if (typeof zstdDecompressSync !== 'function') {
+    throw new Error('当前 Node 不支持 zstd,解不开 .mrs 规则集')
+  }
+  const payload = zstdDecompressSync(buf, { maxOutputLength: MAX_DECOMPRESSED })
+  return decodeMrs(payload).parsed
+}
+
+export const loadRuleList = async (fetchImpl, url) => parseRuleListBody(await fetchRuleList(fetchImpl, url))
 
 // 一个链接 → 一份 .srs。写临时源文件、编译、删临时文件。
 const compileOne = async (ctx, paths, { url, tag }, fetchImpl) => {
-  const text = await fetchRuleList(fetchImpl, url)
-  const parsed = parseRuleList(text)
+  const parsed = await loadRuleList(fetchImpl, url)
   if (ruleListIsEmpty(parsed)) throw new Error('这份名单里没有解析出任何域名或 IP')
   const counts = Object.fromEntries(Object.entries(parsed).filter(([, v]) => v.length).map(([k, v]) => [k, v.length]))
 

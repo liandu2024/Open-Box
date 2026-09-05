@@ -639,7 +639,7 @@ const en = {
   routingPolicyRuleUrl: 'Rule list URL',
   ruleUrlFetchFailed: 'Could not fetch this URL, or it contained no domains / IPs. Deploy will retry after saving.',
   ruleUrlFetchFailedShort: 'fetch failed',
-  routingPolicyRuleUrlPlaceholder: 'https://example/list/Check.list',
+  routingPolicyRuleUrlPlaceholder: 'https://example/list/Check.list or cn.mrs',
   routingPolicyRulesets: 'Rule sets',
   routingPolicyRulesetsPlaceholder: 'geosite-google (one per row)',
   routingPolicyDomain: 'Domain',

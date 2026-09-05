@@ -1,6 +1,5 @@
 import express from 'express'
-import { fetchRuleList } from '../system/rule-lists.mjs'
-import { parseRuleList } from '../engine/rule-list.mjs'
+import { loadRuleList } from '../system/rule-lists.mjs'
 import { normalizeRouting } from '../engine/routing-model.mjs'
 import { downloadRuleset, isSafeRulesetTag } from '../system/rulesets.mjs'
 
@@ -155,7 +154,7 @@ export const registerRulesetRoutes = (app, { ctx, paths, store, fetchImpl = glob
       if (hit && Date.now() - hit.at < CACHE_TTL_MS) {
         entries = hit.entries
       } else {
-        const parsed = parseRuleList(await fetchRuleList(fetchImpl, url))
+        const parsed = await loadRuleList(fetchImpl, url)
         entries = []
         for (const [type, values] of Object.entries(parsed)) for (const value of values) entries.push({ type, value })
         cache.set(key, { entries, at: Date.now() })

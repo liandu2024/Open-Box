@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { readFileSync } from 'node:fs'
 import { createMockContext } from './context.mjs'
 import { createPaths } from './paths.mjs'
 import { ensureRuleLists, listStatePath } from './rule-lists.mjs'
@@ -9,7 +10,11 @@ const paths = createPaths('/opt/open-box')
 const URL_A = 'https://example.com/list/Check.list'
 const TAG_A = listTagForUrl(URL_A)
 const routing = (urls) => ({ policies: [{ id: 'p1', name: '测试', ruleUrls: urls, default: 'direct' }] })
-const okFetch = (body) => async () => ({ ok: true, status: 200, text: async () => body })
+const okFetch = (body) => async () => ({
+  ok: true,
+  status: 200,
+  arrayBuffer: async () => (typeof body === 'string' ? Buffer.from(body) : body),
+})
 
 test('第一次部署:拉回来、编成 .srs、记下时间', async () => {
   const ctx = createMockContext({ files: { [paths.singbox]: 'x' } })
@@ -36,7 +41,7 @@ test('没到重下时间、文件还在:不再拉', async () => {
   })
   let fetched = 0
   const r = await ensureRuleLists(ctx, paths, routing([URL_A]), {
-    fetchImpl: async () => { fetched += 1; return { ok: true, status: 200, text: async () => 'a.com' } },
+    fetchImpl: async () => { fetched += 1; return okFetch('a.com')() },
     now: () => 1000 + 3600_000,
   })
   assert.equal(r.ok, true)
@@ -69,4 +74,16 @@ test('没有引用任何链接时什么都不做', async () => {
   const ctx = createMockContext({})
   const r = await ensureRuleLists(ctx, paths, routing([]), { fetchImpl: async () => { throw new Error('不该被调用') } })
   assert.deepEqual(r, { ok: true, updated: [], failed: [] })
+})
+
+test('链接指向 .mrs:自己解开 zstd,编出来的和文本名单走同一条路', async () => {
+  const mrs = readFileSync(new URL('../engine/fixtures/geosite-tesla.mrs', import.meta.url))
+  const ctx = createMockContext({ files: { [paths.singbox]: 'x' } })
+  const r = await ensureRuleLists(ctx, paths, routing([URL_A]), { fetchImpl: okFetch(mrs), now: () => 1000 })
+  assert.equal(r.ok, true)
+  const src = JSON.parse(ctx.writes.find((w) => w.path.endsWith(`${TAG_A}.json`)).content)
+  assert.equal(src.rules[0].domain_suffix.length, 11)
+  assert.ok(src.rules[0].domain_suffix.includes('tesla.com'))
+  // 还是那一句 rule-set compile,内核那边完全不知道来源是 .mrs
+  assert.ok(ctx.calls.find((c) => c.args?.includes('compile')))
 })

@@ -634,7 +634,7 @@ const zh: LANG_MESSAGE = {
   routingPolicyRuleUrl: '规则集链接',
   ruleUrlFetchFailed: '这个网址拉不下来,或者里面一条域名 / IP 都没解析出来。保存后部署时会再试一次。',
   ruleUrlFetchFailedShort: '读取失败',
-  routingPolicyRuleUrlPlaceholder: 'https://例子/list/Check.list',
+  routingPolicyRuleUrlPlaceholder: 'https://例子/list/Check.list 或 cn.mrs',
   routingPolicyRulesets: '规则集',
   routingPolicyRulesetsPlaceholder: 'geosite-google(一行一个)',
   routingPolicyDomain: '域名',
