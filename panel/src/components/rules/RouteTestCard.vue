@@ -29,37 +29,38 @@
         v-if="result && !loading"
         :nodes="flowNodes"
       >
-        <!-- 出口 -->
+        <!-- 出站:先写从哪个节点出去的,再写结果。访问失败也要知道是哪条线路失败的——
+             服务端趁请求挂着的时候就从连接表里认出这条连接,失败了链路也在 -->
         <template #exit>
-          <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <template v-if="result.exit.error">
-              <span class="text-error text-xs">{{ $t('routeTestRequestFailed', { message: errorText(result.exit.error) }) }}</span>
+          <div
+            v-if="result.exit.chains?.length"
+            class="flex flex-wrap items-center gap-x-2 gap-y-1"
+          >
+            <template
+              v-for="(hop, i) in result.exit.chains"
+              :key="`${hop}-${i}`"
+            >
+              <ArrowRightCircleIcon
+                v-if="i > 0"
+                class="text-base-content/40 h-4 w-4"
+              />
+              <ProxyName :name="hop" />
             </template>
-            <template v-else-if="result.exit.chains?.length">
-              <template
-                v-for="(hop, i) in result.exit.chains"
-                :key="`${hop}-${i}`"
-              >
-                <ArrowRightCircleIcon
-                  v-if="i > 0"
-                  class="text-base-content/40 h-4 w-4"
-                />
-                <ProxyName :name="hop" />
-              </template>
-            </template>
-            <span
-              v-else-if="result.exit.notSeen"
-              class="text-warning text-xs"
-            >{{ $t('routeTestNotSeen') }}<template v-if="result.exit.debug">(连接表 {{ result.exit.debug.connections }} 条:{{ result.exit.debug.sample.join(', ') }})</template></span>
-            <span
-              v-else-if="result.exit.connectionsError"
-              class="text-warning text-xs"
-            >{{ result.exit.connectionsError }}</span>
           </div>
           <div
-            v-if="!result.exit.error"
-            class="text-base-content/60 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs"
+            v-if="result.exit.error || exitNote"
+            class="flex flex-wrap items-center gap-x-2 gap-y-1"
           >
+            <span
+              v-if="result.exit.error"
+              class="text-error text-xs"
+            >{{ $t('routeTestRequestFailed', { message: errorText(result.exit.error) }) }}</span>
+            <span
+              v-if="exitNote"
+              class="text-warning text-xs"
+            >{{ exitNote }}</span>
+          </div>
+          <div class="text-base-content/60 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
             <span class="font-mono">{{ result.exit.url }}</span>
             <span v-if="result.exit.destinationIP">{{ $t('routeTestDestination') }}: <span class="font-mono">{{ result.exit.destinationIP }}</span></span>
             <span v-if="result.exit.status !== undefined">HTTP {{ result.exit.status }} · {{ statusText(result.exit.status) }}</span>
@@ -187,9 +188,20 @@ const errorText = (raw: string) => {
   if (/timeout/i.test(raw)) return t('routeTestErrTimeout')
   if (/^inbound:/i.test(raw)) return t('routeTestErrInbound')
   if (/^CONNECT:/i.test(raw)) return t('routeTestErrConnect', { detail: raw.replace(/^CONNECT:\s*/i, '') })
-  if (/connection closed/i.test(raw)) return t('routeTestErrClosed')
+  if (/connection closed|ECONNRESET/i.test(raw)) return t('routeTestErrClosed')
   return raw
 }
+
+// 连接表里没认出这条连接时的提示:访问成功和失败两种说法不一样;链路找到了就不用提
+const exitNote = computed(() => {
+  const e = result.value?.exit
+  if (!e || e.chains?.length) return ''
+  if (e.notSeen) {
+    const base = t(e.error ? 'routeTestNotSeenFailed' : 'routeTestNotSeen')
+    return e.debug ? `${base}(连接表 ${e.debug.connections} 条:${e.debug.sample.join(', ')})` : base
+  }
+  return e.connectionsError || ''
+})
 
 // 目标是 IP 时没有解析这一步,DNS 节点整个不画(画出来只能写"不用解析",是噪音)
 const dnsSkipped = computed(() => Boolean(result.value && result.value.dns && 'skipped' in result.value.dns))

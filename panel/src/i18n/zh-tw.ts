@@ -750,6 +750,7 @@ const zhTW: LANG_MESSAGE = {
   routeTestExit: '出站',
   routeTestRequestFailed: '訪問失敗:{message}',
   routeTestNotSeen: '訪問完成,但在核心連線表裡沒找到這條連線(可能沒經過核心)',
+  routeTestNotSeenFailed: '沒能從核心連線表裡認出這條連線,不知道是從哪個節點出去的',
   routeTestRule: '命中規則',
   routeTestDestination: '目標 IP',
   routeTestElapsed: '耗時',

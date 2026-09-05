@@ -1,7 +1,7 @@
 import express from 'express'
 import net from 'node:net'
 import tls from 'node:tls'
-import { PANEL_INBOUND_PORT } from '../engine/config.mjs'
+import { PANEL_INBOUND_PORT, PANEL_INBOUND_TAG } from '../engine/config.mjs'
 import { CLASH_API_BASE, matchLocalConditions, matchRuleSetList } from './penetration.mjs'
 import { fetchSelections } from './deploy-runner.mjs'
 import { builtinTags } from '../engine/user-groups.mjs'
@@ -65,8 +65,12 @@ export const probeViaKernel = (host, { port = 443, secure = port !== 80, proxyPo
     const finish = (r) => { if (!done) { done = true; resolve({ ...r, ms: Date.now() - t0 }) } }
     const socket = net.connect({ host: '127.0.0.1', port: proxyPort })
     const timer = setTimeout(() => { finish({ ok: false, error: 'timeout' }); socket.destroy() }, timeoutMs)
-    socket.once('error', (err) => { clearTimeout(timer); finish({ ok: false, error: `inbound: ${err.message}` }) })
+    // 只有连回环入站本身失败才是「入站没开」;连上之后再出错(比如内核拨号失败把连接 RST 掉)
+    // 是这条线路的问题,不能扣到入站头上
+    let connected = false
+    socket.once('error', (err) => { clearTimeout(timer); finish({ ok: false, error: connected ? err.message : `inbound: ${err.message}` }) })
     socket.once('connect', () => {
+      connected = true
       socket.write(`CONNECT ${host}:${port} HTTP/1.1\r\nHost: ${host}:${port}\r\n\r\n`)
     })
     let buf = ''
@@ -181,52 +185,67 @@ export const registerRouteTestRoutes = (app, { store, ctx, paths, fetchImpl = gl
       }
     }
 
-    // 3. 经内核的回环入站真实访问一次 + 从连接表里找这条连接
+    // 3. 经内核的回环入站真实访问一次,同时在连接表里找这条连接
     // 端口:调用方给了就用(格式化查询会把 URL 里的端口带过来),没给按 域名 443 / IP 80。
     // 80 以外一律按 TLS 处理(4433、8443 这类都是 https)。
     const bodyPort = Number((req.body || {}).port)
     const port = Number.isInteger(bodyPort) && bodyPort >= 1 && bodyPort <= 65535 ? bodyPort : isIp(target) ? 80 : 443
     const secure = port !== 80
     let exit = { url: `${secure ? 'https' : 'http'}://${target}${(secure && port === 443) || (!secure && port === 80) ? '' : `:${port}`}/` }
-    const r = await probe(target, { port, secure })
-    exit = { ...exit, ok: r.ok, status: r.status, ms: r.ms }
-    if (!r.ok) exit.error = r.error
-    try {
-      const resolvedIps = new Set(((out.resolve && out.resolve.answers) || []).map(String))
-      let hit = null
+    // 查连接表和访问并行,而不是访问完再查:访问失败(对端关连接、超时)的那一刻这条连接就从内核
+    // 连接表里消失了,事后什么都查不到;趁请求还挂着的时候找到它,失败了也知道是从哪个节点出去的。
+    // 探测连接认得很准:入站是面板的回环 mixed(metadata.type = mixed/panel-in)、目标端口对得上、
+    // 主机名或 IP 对得上。连接表里没有入站信息的老内核,等访问结束后退一步只按主机名 / IP 对;
+    // 有入站信息但不是面板入站的(别的终端到同一目标的连接)一律不算,免得把别人的线路当成自己的。
+    let settled = false
+    const probing = probe(target, { port, secure }).then((r) => { settled = true; return r })
+    const resolvedIps = new Set(((out.resolve && out.resolve.answers) || []).map(String))
+    const sameTarget = (m) => String(m.host || '').toLowerCase() === target ||
+      m.destinationIP === target ||
+      (resolvedIps.size > 0 && resolvedIps.has(String(m.destinationIP || '')))
+    const viaPanelInbound = (m) => String(m.type || '').endsWith(`/${PANEL_INBOUND_TAG}`) && String(m.destinationPort || '') === String(port)
+    const newestFirst = (a, b) => String(b.start || '').localeCompare(String(a.start || ''))
+    const lookup = async () => {
+      const delays = [100, 200, 300, 500, 800, 1000]
       let total = 0
       let sample = []
-      for (let attempt = 0; attempt < 4 && !hit; attempt++) {
-        if (attempt) await new Promise((resolve) => setTimeout(resolve, 200))
+      let after = 0
+      for (let i = 0; ; i++) {
         const c = await fetchWithTimeout(fetchImpl, `${CLASH_API_BASE}/connections`, { headers: clashHeaders(secret) }, 5000)
         const body = await c.json()
-        const list = (body && body.connections) || []
+        const list = ((body && body.connections) || []).filter((x) => x && x.metadata)
         total = list.length
-        sample = list.slice(-5).map((x) => (x && x.metadata ? `${x.metadata.host || ''}|${x.metadata.destinationIP || ''}` : '?'))
-        const mine = list
-          .filter((x) => x && x.metadata && (
-            String(x.metadata.host || '').toLowerCase() === target ||
-            x.metadata.destinationIP === target ||
-            // 对端不带域名(或内核没记 host)时,退一步按解析到的 IP 对
-            (resolvedIps.size > 0 && resolvedIps.has(String(x.metadata.destinationIP || '')))
-          ))
-          .sort((a, b) => String(b.start || '').localeCompare(String(a.start || '')))
-        hit = mine[0] || null
+        sample = list.slice(-5).map((x) => `${x.metadata.host || ''}|${x.metadata.destinationIP || ''}`)
+        const mine = list.filter((x) => sameTarget(x.metadata)).sort(newestFirst)
+        const exact = mine.find((x) => viaPanelInbound(x.metadata))
+        if (exact) return { hit: exact, total, sample }
+        if (settled) {
+          const loose = mine.find((x) => !x.metadata.type)
+          if (loose) return { hit: loose, total, sample }
+          if (++after >= 3) return { hit: null, total, sample }
+        }
+        await new Promise((resolve) => setTimeout(resolve, delays[Math.min(i, delays.length - 1)]))
       }
-      if (hit) {
-        exit.chains = Array.isArray(hit.chains) ? hit.chains.slice().reverse() : []
-        exit.rule = hit.rule || ''
-        exit.rulePayload = hit.rulePayload || ''
-        exit.destinationIP = hit.metadata.destinationIP || ''
-      } else if (r.ok) {
-        exit.notSeen = true
-        exit.debug = { connections: total, sample }
-      }
-    } catch (err) {
-      exit.connectionsError = errorMessage(err)
-    } finally {
-      if (typeof r.close === 'function') r.close()
     }
+    let found = { hit: null, total: 0, sample: [] }
+    let connectionsError = ''
+    const looking = lookup().then((f) => { found = f }, (err) => { connectionsError = errorMessage(err) })
+    const r = await probing
+    await looking
+    exit = { ...exit, ok: r.ok, status: r.status, ms: r.ms }
+    if (!r.ok) exit.error = r.error
+    if (found.hit) {
+      exit.chains = Array.isArray(found.hit.chains) ? found.hit.chains.slice().reverse() : []
+      exit.rule = found.hit.rule || ''
+      exit.rulePayload = found.hit.rulePayload || ''
+      exit.destinationIP = found.hit.metadata.destinationIP || ''
+    } else if (connectionsError) {
+      exit.connectionsError = connectionsError
+    } else {
+      exit.notSeen = true
+      exit.debug = { connections: found.total, sample: found.sample }
+    }
+    if (typeof r.close === 'function') r.close()
     out.exit = exit
     res.json(out)
   })

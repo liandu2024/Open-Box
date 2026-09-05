@@ -66,6 +66,48 @@ test('POST /route-test:内核解析 + 真实访问 + 在连接表里找到这条
   }
 })
 
+// 访问失败(对端关连接、超时)的那一刻这条连接就从内核连接表里消失了,所以要趁请求还挂着的时候
+// 就去找;认的是面板回环入站(mixed/panel-in)+ 目标端口 + 目标,别的终端到同一目标的连接不算
+test('POST /route-test:访问失败也报出站链路——请求挂着的时候就从连接表里认出探测连接', async () => {
+  const ctx = createMockContext({ files: { [paths.configPath]: JSON.stringify(config), [paths.singbox]: 'x' } })
+  const run = async ({ withProbeConn }) => {
+    let probeDone = false
+    const fetchImpl = async (url) => {
+      if (url.includes('/connections')) return { ok: true, status: 200, json: async () => ({ connections: [
+        // 别的终端到同一目标的连接,更新、走直连——不能被当成探测连接
+        { metadata: { type: 'tun/tun-in', host: '', destinationIP: '8.8.8.8', destinationPort: '53', sourceIP: '192.168.3.10' }, chains: ['直连', '国内'], rule: 'x', start: '2026-09-05T00:00:01Z' },
+        // 面板探测的那条:访问失败前在表里,失败后立刻消失
+        ...(withProbeConn && !probeDone ? [{ metadata: { type: 'mixed/panel-in', host: '', destinationIP: '8.8.8.8', destinationPort: '80', sourceIP: '127.0.0.1' }, chains: ['VW | 香港-OS-01', '香港-自动', '国外'], rule: 'rule_set=[geoip-google] => route(国外)', start: '2026-09-05T00:00:00Z' }] : []),
+      ] }) }
+      throw new Error('unexpected fetch ' + url)
+    }
+    const probe = () => new Promise((resolve) => setTimeout(() => { probeDone = true; resolve({ ok: false, error: 'connection closed', ms: 5041 }) }, 250))
+    const app = express()
+    registerRouteTestRoutes(app, { store: { getClashSecret: () => 's' }, ctx, paths, fetchImpl, probe })
+    const server = app.listen(0)
+    await new Promise((r) => server.once('listening', r))
+    try {
+      const res = await fetch(`http://127.0.0.1:${server.address().port}/api/openbox/route-test`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ target: '8.8.8.8' }) })
+      assert.equal(res.status, 200)
+      return (await res.json()).exit
+    } finally {
+      await new Promise((r) => server.close(r))
+    }
+  }
+  const failed = await run({ withProbeConn: true })
+  assert.equal(failed.ok, false)
+  assert.equal(failed.error, 'connection closed')
+  assert.equal(failed.ms, 5041)
+  assert.deepEqual(failed.chains, ['国外', '香港-自动', 'VW | 香港-OS-01'])
+  assert.equal(failed.destinationIP, '8.8.8.8')
+  assert.equal(failed.notSeen, undefined)
+  // 连接表里始终没有探测连接:失败照报,另标"没认出这条连接";别的终端那条不能顶上
+  const unseen = await run({ withProbeConn: false })
+  assert.equal(unseen.error, 'connection closed')
+  assert.equal(unseen.chains, undefined)
+  assert.equal(unseen.notSeen, true)
+})
+
 // 配置里的 DNS 决策是生成那一刻定死的:站点集在直连 / 代理之间翻面之后,这条决策就过期了。
 // 正常情况下面板会在后台重新生成(见 server/index.mjs),这里标出来的是那几秒窗口。
 test('DNS 规则过期:内核里的选择和配置里定死的判断对不上就标出来,只换代理线路不标', async () => {

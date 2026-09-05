@@ -11,6 +11,8 @@ import { subtractCidrs } from '../system/local-subnets.mjs'
 
 // 面板专用回环入站的端口(见下方 inbounds 注释)
 export const PANEL_INBOUND_PORT = 7891
+// 面板自己的回环 mixed 入站标签;连接表里这类连接的 metadata.type 是 `mixed/<标签>`(route-test 靠它认出探测连接)
+export const PANEL_INBOUND_TAG = 'panel-in'
 
 const TUN_V4 = '172.19.0.1/30'
 const TUN_V6 = 'fdfe:dcba:9876::1/126'
@@ -154,7 +156,7 @@ export const buildConfig = ({ nodes, profile, userGroups, systemDns, localSubnet
 
   // 面板「真实路由」测试用的回环入站:面板进程经它发请求,请求才会真的走内核的分流
   // (路由器自身发出的流量不一定进 tun)。只听 127.0.0.1,外面碰不到。
-  const inbounds = [tunInbound, { type: 'mixed', tag: 'panel-in', listen: '127.0.0.1', listen_port: PANEL_INBOUND_PORT }]
+  const inbounds = [tunInbound, { type: 'mixed', tag: PANEL_INBOUND_TAG, listen: '127.0.0.1', listen_port: PANEL_INBOUND_PORT }]
   // 内核 DNS 入站 :7853,三种模式都开、监听所有地址(防火墙只放行 LAN,见 system/firewall.mjs):
   // dnsmasq 模式下 dnsmasq 的上游指向它;局域网里的 AdGuard Home / Pi-hole 也可以把上游指向
   // <路由器 IP>:7853 用内核的分流解析——尤其是「禁用」模式,不劫持任何 DNS,但把入口留着。

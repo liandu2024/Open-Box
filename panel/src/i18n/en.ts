@@ -755,6 +755,7 @@ const en = {
   routeTestExit: 'Exit',
   routeTestRequestFailed: 'Request failed: {message}',
   routeTestNotSeen: 'Request finished but no matching connection in the kernel (may have bypassed it)',
+  routeTestNotSeenFailed: 'Could not find this connection in the kernel connection table, so the exit node is unknown',
   routeTestRule: 'Rule',
   routeTestDestination: 'Destination IP',
   routeTestElapsed: 'Elapsed',

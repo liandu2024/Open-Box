@@ -750,6 +750,7 @@ const zh: LANG_MESSAGE = {
   routeTestExit: '出站',
   routeTestRequestFailed: '访问失败:{message}',
   routeTestNotSeen: '访问完成,但在内核连接表里没找到这条连接(可能没经过内核)',
+  routeTestNotSeenFailed: '没能从内核连接表里认出这条连接,不知道是从哪个节点出去的',
   routeTestRule: '命中规则',
   routeTestDestination: '目标 IP',
   routeTestElapsed: '耗时',
