@@ -14,11 +14,13 @@
           @mouseenter="(e) => mouseenterHandler(e, r)"
         >
           <!-- 行高写死 h-9(36px):折叠时只有 20px 的图标,展开时多一行文字,靠内边距
-               撑高的话两种状态每一项差一两像素,一路累加下来整列图标就对不齐了 -->
+               撑高的话两种状态每一项差一两像素,一路累加下来整列图标就对不齐了。
+               折叠时宽也写死 w-9 居中:和底部启动 / 停止 / 重启那几个按钮一样大、同一条中线、
+               同样的左右边距——不然选中项那块底色横跨整列,比下面的圆按钮宽一截。 -->
           <a
             :class="[
               r === route.name ? 'menu-active' : '',
-              isSidebarCollapsed && 'justify-center',
+              isSidebarCollapsed && 'mx-auto w-9 justify-center px-0',
               'flex h-9 items-center py-0',
             ]"
             @click.passive="() => router.push({ name: r })"
