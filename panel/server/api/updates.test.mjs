@@ -6,6 +6,7 @@ import { createMockContext } from '../system/context.mjs'
 import { createPaths } from '../system/paths.mjs'
 import { compareVersions, fetchLatestVersion, parseKeyValues } from '../system/updater.mjs'
 import { runScheduledTasks } from '../system/scheduler.mjs'
+import { createStore } from '../store/openbox-store.mjs'
 
 const paths = createPaths('/opt/open-box')
 
@@ -260,4 +261,35 @@ test('探不到上游提交(api.github.com 不通)→ 当作有新版,让用户�
   } finally {
     await close()
   }
+})
+
+test('定时器:订阅到点自动重拉;同一天不重复、没到 N 天不拉;节点变了且内核在跑才重启一次', async () => {
+  const m = new Map()
+  const store = createStore({ get: (k) => (m.has(k) ? m.get(k) : null), set: (k, v) => m.set(k, v), del: (k) => m.delete(k) })
+  store.setProfile({ updates: { geo: { auto: false }, openbox: { auto: false } } })
+  store.setSubscriptions([{ id: 's1', name: 'A', url: 'http://a', urls: ['http://a'], format: 'sharelink', nodeCount: 0, renameOptions: {}, autoUpdate: { enabled: true, days: 3, hour: 4 }, createdAt: 1, updatedAt: 1 }])
+  store.setNodes([])
+  const ctx = createMockContext({ execResults: { '/etc/init.d/openbox status': { code: 0, stdout: 'running' } } })
+  let fetched = 0
+  const subscriptionFetchImpl = async () => { fetched += 1; return { ok: true, status: 200, text: async () => 'ss://YWVzLTI1Ni1nY206c2VjcmV0cHc=@example.com:8388#HK-01' } }
+  const deploys = []
+  const runDeploy = async () => { deploys.push(1); return { ok: true, stage: 'running' } }
+  const lookup = async () => [{ address: '8.8.8.8', family: 4 }]
+  const base = { store, ctx, paths, fetchImpl: async () => { throw new Error('不该用系统 fetch 拉订阅') }, subscriptionFetchImpl, runDeploy, lookup }
+
+  await runScheduledTasks({ ...base, now: new Date(2026, 8, 5, 3, 30) })
+  assert.equal(fetched, 0, '没到点')
+  await runScheduledTasks({ ...base, now: new Date(2026, 8, 5, 4, 2) })
+  assert.equal(fetched, 1)
+  assert.equal(store.getSubscriptions()[0].nodeCount, 1)
+  assert.equal(deploys.length, 1, '节点从 0 变 1,重启一次')
+  await runScheduledTasks({ ...base, now: new Date(2026, 8, 5, 4, 40) })
+  assert.equal(fetched, 1, '同一天不重复')
+  await runScheduledTasks({ ...base, now: new Date(2026, 8, 6, 4, 1) })
+  assert.equal(fetched, 1, '每 3 天一次,第二天不拉')
+  await runScheduledTasks({ ...base, now: new Date(2026, 8, 8, 4, 1) })
+  assert.equal(fetched, 2, '第 3 天到点再拉')
+  assert.equal(deploys.length, 1, '节点没变就不重启')
+  const state = JSON.parse(await ctx.readFile(paths.scheduleStatePath))
+  assert.ok(state.subscriptions.s1.lastAt)
 })

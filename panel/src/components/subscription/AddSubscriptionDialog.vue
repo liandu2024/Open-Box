@@ -109,6 +109,43 @@
             </button>
           </div>
           <p class="text-base-content/50 text-xs">{{ $t('subscriptionUrlHint') }}</p>
+
+          <!-- 定期更新:每隔几天、几点自动重新拉取。控件和后端设置里 Geo / 自身升级的计划一样 -->
+          <div class="flex flex-wrap items-center gap-x-3 gap-y-2 pt-1">
+            <span class="text-xs font-medium">{{ $t('subscriptionAutoUpdate') }}</span>
+            <input
+              v-model="autoUpdate.enabled"
+              type="checkbox"
+              class="toggle toggle-sm"
+            />
+            <template v-if="autoUpdate.enabled">
+              <span class="text-base-content/70 text-sm">{{ $t('geoUpdateEvery') }}</span>
+              <select
+                v-model.number="autoUpdate.days"
+                class="select select-sm w-24"
+              >
+                <option
+                  v-for="d in [1, 2, 3, 7, 14, 30]"
+                  :key="d"
+                  :value="d"
+                >{{ $t('geoUpdateDays', { days: d }) }}</option>
+              </select>
+              <select
+                v-model.number="autoUpdate.hour"
+                class="select select-sm w-24"
+              >
+                <option
+                  v-for="h in 24"
+                  :key="h - 1"
+                  :value="h - 1"
+                >{{ String(h - 1).padStart(2, '0') }}:00</option>
+              </select>
+            </template>
+          </div>
+          <p
+            v-if="autoUpdate.enabled"
+            class="text-base-content/50 text-xs"
+          >{{ $t('subscriptionAutoUpdateHint') }}</p>
         </div>
 
         <div
@@ -183,7 +220,7 @@
 </template>
 
 <script setup lang="ts">
-import type { OpenboxRenameOptions, OpenboxSubscription, OpenboxSubscriptionPreview } from '@/api/openbox'
+import type { OpenboxRenameOptions, OpenboxSubscription, OpenboxSubscriptionAutoUpdate, OpenboxSubscriptionPreview } from '@/api/openbox'
 import { createSubscription, previewSubscription, updateSubscription } from '@/api/openbox'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import { PlusIcon, TrashIcon } from '@heroicons/vue/24/outline'
@@ -238,6 +275,13 @@ const initialUrls = () => {
 }
 const urls = ref<string[]>(initialUrls())
 const content = ref(props.subscription?.content ?? '')
+// 定期更新计划;默认关着,打开时默认每天 04:00
+const initialAutoUpdate = (): OpenboxSubscriptionAutoUpdate => ({
+  enabled: props.subscription?.autoUpdate?.enabled === true,
+  days: props.subscription?.autoUpdate?.days || 1,
+  hour: props.subscription?.autoUpdate?.hour ?? 4,
+})
+const autoUpdate = ref<OpenboxSubscriptionAutoUpdate>(initialAutoUpdate())
 
 const renameOptions = ref<OpenboxRenameOptions>({})
 const handleRenameOptionsChange = (value: OpenboxRenameOptions) => {
@@ -353,6 +397,7 @@ const resetForm = () => {
   // 编辑模式下用现存值预填;新建时清空
   name.value = props.subscription?.name ?? ''
   urls.value = initialUrls()
+  autoUpdate.value = initialAutoUpdate()
   content.value = props.subscription?.content ?? ''
   overrides.value = { ...(props.subscription?.renameOptions?.overrides || {}) }
   disabledTags.value = [...(props.subscription?.renameOptions?.disabled || [])]
@@ -382,6 +427,8 @@ const handleSave = async () => {
       ...(effectiveSource.value || {}),
       name: effectiveName.value,
       renameOptions: effectiveRenameOptions.value,
+      // 粘贴来的订阅没有地址可回源,计划一律关
+      autoUpdate: sourceMode.value === 'url' ? autoUpdate.value : { enabled: false, days: 1, hour: 4 },
     }
     const res = props.subscription
       ? await updateSubscription(props.subscription.id, payload)

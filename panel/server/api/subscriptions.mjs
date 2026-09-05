@@ -174,6 +174,15 @@ const describeEmptyResult = ({ format, skipped }) => {
   return `订阅解析成功(${format} 格式),但里面一个节点都没有。`
 }
 
+// 定期更新:{ enabled, days(1~30), hour(0~23) }——每隔几天、几点重新拉一次(system/scheduler.mjs
+// 到点来做)。关掉或不合法就是 null。小时粒度和后端设置里 Geo / 自身升级的计划一致。
+export const normalizeAutoUpdate = (raw) => {
+  if (!raw || typeof raw !== 'object' || raw.enabled !== true) return null
+  const days = Math.min(30, Math.max(1, Math.round(Number(raw.days)) || 1))
+  const hour = Math.min(23, Math.max(0, Math.round(Number(raw.hour)) || 0))
+  return { enabled: true, days, hour }
+}
+
 // 订阅地址可以填多个(镜像、备用、几个机场合成一条):数组 urls 优先,老字段 url 只在没给
 // 数组时算一条。去空白、去重、顺序保留——第一条兼作老字段 url,给还只认单个地址的地方用。
 export const normalizeUrls = (urls, url) => {
@@ -316,6 +325,29 @@ const rebuildNodePool = (existingNodes, subscriptionsInOrder, subscriptionId, ne
 
 const nodeSummary = (n) => ({ tag: n.tag, originalTag: n.originalTag, type: n.type, server: n.server, regionCode: n.regionCode || '' })
 
+// 粘贴来源的订阅没有可回源的地址,刷新就是拿已存内容重新解析一遍(不走网络)。
+const existingSource = (sub) => {
+  const urls = subscriptionUrls(sub)
+  return urls.length ? { urls } : { content: sub.content || '' }
+}
+
+// 重新拉取一条订阅、只替换它的节点。刷新按钮和定时任务(system/scheduler.mjs)共用。
+// 拉取 / 解析失败在 store 写入之前抛出,已存的记录与节点原样不变。
+export const refreshSubscriptionById = async (store, id, { fetchImpl = subscriptionFetch, lookup = dns.lookup, renameOptions } = {}) => {
+  const existing = store.getSubscriptions().find((s) => s.id === id)
+  if (!existing) throw new Error('subscription not found')
+  const resolved = await resolveNodes({ ...existingSource(existing), name: existing.name }, fetchImpl, renameOptions || existing.renameOptions || {}, lookup)
+  const { renamed, skipped, format } = resolved
+  const updated = { ...existing, format, nodeCount: renamed.length, renameOptions: resolved.renameOptions || {}, updatedAt: Date.now() }
+  const newNodesForSub = renamed.map((n) => ({ ...n, subscriptionId: id }))
+  // 拉取可能花几十秒,期间用户可能删了别的订阅或新建了订阅:按此刻的列表写回,不用拉取前的快照
+  const nowSubs = store.getSubscriptions()
+  if (!nowSubs.some((s) => s.id === id)) throw new Error('subscription was deleted while refreshing')
+  store.setNodes(rebuildNodePool(store.getNodes(), nowSubs, id, newNodesForSub))
+  store.setSubscriptions(nowSubs.map((s) => (s.id === id ? { ...s, ...updated } : s)))
+  return { id, name: updated.name, nodeCount: renamed.length, skipped }
+}
+
 export const registerSubscriptionRoutes = (app, { store, fetchImpl = subscriptionFetch, lookup = dns.lookup } = {}) => {
   const router = express.Router({ caseSensitive: true })
   router.use(express.json({ limit: '10mb' }))
@@ -354,7 +386,7 @@ export const registerSubscriptionRoutes = (app, { store, fetchImpl = subscriptio
   router.post('/', async (req, res) => {
     const before = snapshot()
     try {
-      const { url, urls, content, name, renameOptions } = req.body || {}
+      const { url, urls, content, name, renameOptions, autoUpdate } = req.body || {}
       const source = normalizeSource({ url, urls, content })
       if (typeof name !== 'string' || !name.trim()) throw new Error('name is required')
 
@@ -375,6 +407,8 @@ export const registerSubscriptionRoutes = (app, { store, fetchImpl = subscriptio
         format,
         nodeCount: renamed.length,
         renameOptions: resolved.renameOptions || {},
+        // 定期更新计划;粘贴来的订阅没有地址可回源,不给计划
+        autoUpdate: source.urls ? normalizeAutoUpdate(autoUpdate) : null,
         createdAt: now,
         updatedAt: now,
       }
@@ -444,6 +478,8 @@ export const registerSubscriptionRoutes = (app, { store, fetchImpl = subscriptio
 
       const name = body.name === undefined ? existing.name : body.name
       if (typeof name !== 'string' || !name.trim()) throw new Error('name is required')
+      // 定期更新计划只是记录,改它不用重拉
+      const autoUpdate = body.autoUpdate === undefined ? existing.autoUpdate || null : normalizeAutoUpdate(body.autoUpdate)
 
       // url(s) / content 两者都没传时沿用已存的来源;创建时就保证了至少有一个非空。
       const urls = body.urls === undefined && body.url === undefined
@@ -467,7 +503,7 @@ export const registerSubscriptionRoutes = (app, { store, fetchImpl = subscriptio
         JSON.stringify(renameOptions || {}) !== JSON.stringify(existing.renameOptions || {})
 
       if (!needsRefetch) {
-        const updated = { ...existing, name, updatedAt: Date.now() }
+        const updated = { ...existing, name, autoUpdate, updatedAt: Date.now() }
         store.setSubscriptions(subs.map((s, i) => (i === idx ? updated : s)))
         res.json({ id, name, nodeCount: existing.nodeCount, skipped: [], changed: false })
         return
@@ -479,6 +515,7 @@ export const registerSubscriptionRoutes = (app, { store, fetchImpl = subscriptio
       const updated = {
         ...existing,
         name,
+        autoUpdate,
         url: source.url || '',
         urls: source.urls || undefined,
         content: source.content || undefined,
@@ -502,40 +539,18 @@ export const registerSubscriptionRoutes = (app, { store, fetchImpl = subscriptio
     }
   })
 
-  // 粘贴来源的订阅没有可回源的地址,刷新就是拿已存内容重新解析一遍(不走网络)。
-  const existingSource = (sub) => {
-    const urls = subscriptionUrls(sub)
-    return urls.length ? { urls } : { content: sub.content || '' }
-  }
-
-  // 刷新:重新拉取解析,只替换该订阅的节点。拉取/解析失败时在 store 写入之前就已抛出,
-  // 已存的订阅记录与节点保持原样不变。
+  // 刷新:重新拉取解析,只替换该订阅的节点(逻辑在 refreshSubscriptionById,定时任务也用它)。
+  // 拉取/解析失败时在 store 写入之前就已抛出,已存的订阅记录与节点保持原样不变。
   router.post('/:id/refresh', async (req, res) => {
     const { id } = req.params
     const before = snapshot()
-    const subs = store.getSubscriptions()
-    const idx = subs.findIndex((s) => s.id === id)
-    if (idx === -1) {
+    if (!store.getSubscriptions().some((s) => s.id === id)) {
       res.status(404).json({ error: 'subscription not found' })
       return
     }
     try {
-      const existing = subs[idx]
-      const requestedRenameOptions = (req.body && req.body.renameOptions) || existing.renameOptions || {}
-      const resolved = await resolveNodes({ ...existingSource(existing), name: existing.name }, fetchImpl, requestedRenameOptions, lookup)
-      const { renamed, skipped, format } = resolved
-      const renameOptions = resolved.renameOptions || {}
-
-      const updated = { ...existing, format, nodeCount: renamed.length, renameOptions, updatedAt: Date.now() }
-      const newNodesForSub = renamed.map((n) => ({ ...n, subscriptionId: id }))
-
-      // 同 PATCH:按此刻的订阅列表写回,不用拉取前的快照
-      const nowSubs = store.getSubscriptions()
-      if (!nowSubs.some((s) => s.id === id)) throw new Error('subscription was deleted while refreshing')
-      store.setNodes(rebuildNodePool(store.getNodes(), nowSubs, id, newNodesForSub))
-      store.setSubscriptions(nowSubs.map((s) => (s.id === id ? { ...s, ...updated } : s)))
-
-      res.json({ id, name: updated.name, nodeCount: renamed.length, skipped, changed: changedSince(before) })
+      const r = await refreshSubscriptionById(store, id, { fetchImpl, lookup, renameOptions: req.body && req.body.renameOptions })
+      res.json({ ...r, changed: changedSince(before) })
     } catch (err) {
       res.status(400).json({ error: errorMessage(err) })
     }

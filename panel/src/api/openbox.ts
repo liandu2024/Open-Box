@@ -170,10 +170,18 @@ export interface OpenboxRenameOptions {
   seqPad?: number
 }
 
+// 订阅的定期更新计划:每隔 days 天、hour 点重新拉一次(服务端定时任务来做)
+export interface OpenboxSubscriptionAutoUpdate {
+  enabled: boolean
+  days: number
+  hour: number
+}
+
 export interface OpenboxSubscription {
   id: string
   name: string
   url: string
+  autoUpdate?: OpenboxSubscriptionAutoUpdate | null
   // 全部订阅地址(可以有多个,节点合在一起);url 是其中第一条,老记录只有 url
   urls?: string[]
   // 「节点」模式(粘贴保存)的订阅没有 url,内容存在这里
@@ -347,6 +355,7 @@ export const createSubscription = async (payload: {
   content?: string
   name: string
   renameOptions?: OpenboxRenameOptions
+  autoUpdate?: OpenboxSubscriptionAutoUpdate
 }): Promise<OpenboxSubscriptionSaveResult> => {
   return requestJson('/api/openbox/subscriptions', {
     method: 'POST',
@@ -359,7 +368,7 @@ export const createSubscription = async (payload: {
 // so a plain rename works even while the provider is unreachable (see subscriptions.mjs PATCH).
 export const updateSubscription = async (
   id: string,
-  payload: { name?: string; url?: string; urls?: string[]; content?: string; renameOptions?: OpenboxRenameOptions },
+  payload: { name?: string; url?: string; urls?: string[]; content?: string; renameOptions?: OpenboxRenameOptions; autoUpdate?: OpenboxSubscriptionAutoUpdate },
 ): Promise<OpenboxSubscriptionSaveResult> => {
   return requestJson(`/api/openbox/subscriptions/${encodeURIComponent(id)}`, {
     method: 'PATCH',

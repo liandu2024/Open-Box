@@ -5,10 +5,11 @@
 import { fetchSelections, resolveSelections } from '../api/deploy-runner.mjs'
 import { readJsonFile, writeJsonFile, readMeta, fetchLatestVersion, compareVersions, startUpdate, refreshRulesets, readUpdateStatus, checkGeoUpdate } from './updater.mjs'
 import { serviceStatus } from './service.mjs'
+import { refreshSubscriptionById } from '../api/subscriptions.mjs'
 
 const dayKey = (d = new Date()) => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
 
-export const runScheduledTasks = async ({ store, ctx, paths, fetchImpl = globalThis.fetch, runDeploy, now = new Date(), log = () => {} }) => {
+export const runScheduledTasks = async ({ store, ctx, paths, fetchImpl = globalThis.fetch, subscriptionFetchImpl, lookup, runDeploy, now = new Date(), log = () => {} }) => {
   // 内核跑着就把各 selector 当前的选择存成快照,给内核停着时的部署用(见 store)
   try {
     if (typeof store.getClashSecret === 'function') {
@@ -83,6 +84,45 @@ export const runScheduledTasks = async ({ store, ctx, paths, fetchImpl = globalT
       } catch (err) {
         log(`[schedule] open-box update check failed: ${err instanceof Error ? err.message : err}`)
       }
+    }
+  }
+
+  // 订阅定期更新:每条订阅自己的「每隔几天、几点」(api/subscriptions.mjs 的 autoUpdate)。
+  // 和上面两件事同一套算法:到点、今天没做过、离上次够了 N 天才拉。半夜无人值守,拉完节点
+  // 真变了就把内核重启一次——不重启的话更新了也进不了内核;内核没在跑就算了。
+  if (typeof store.getSubscriptions === 'function' && typeof store.getNodes === 'function') {
+    const subs = store.getSubscriptions()
+    const subState = state.subscriptions || {}
+    // 删掉的订阅不留记录
+    for (const id of Object.keys(subState)) if (!subs.some((s) => s.id === id)) { delete subState[id]; changed = true }
+    let poolChanged = false
+    for (const sub of subs) {
+      const plan = sub.autoUpdate
+      if (!plan || plan.enabled !== true || Number(plan.hour) !== hour) continue
+      const st = subState[sub.id] || {}
+      if (st.day === today) continue
+      const days = Math.max(1, Number(plan.days) || 1)
+      const last = st.lastAt ? new Date(st.lastAt) : null
+      const due = !last || now - last >= (days - 0.5) * 24 * 3600 * 1000
+      subState[sub.id] = { ...st, day: today }
+      changed = true
+      if (!due) continue
+      const before = JSON.stringify(store.getNodes())
+      try {
+        const r = await refreshSubscriptionById(store, sub.id, { fetchImpl: subscriptionFetchImpl || fetchImpl, ...(lookup ? { lookup } : {}) })
+        const nodesChanged = JSON.stringify(store.getNodes()) !== before
+        if (nodesChanged) poolChanged = true
+        subState[sub.id] = { day: today, lastAt: now.toISOString(), result: `ok:${r.nodeCount}` }
+        log(`[schedule] subscription ${sub.name}: ${r.nodeCount} nodes, ${nodesChanged ? 'changed' : 'unchanged'}`)
+      } catch (err) {
+        subState[sub.id] = { day: today, lastAt: st.lastAt, result: `error:${err instanceof Error ? err.message : err}` }
+        log(`[schedule] subscription ${sub.name} failed: ${err instanceof Error ? err.message : err}`)
+      }
+    }
+    state.subscriptions = subState
+    if (poolChanged && runDeploy && (await serviceStatus(ctx, paths.initd.core)).running) {
+      const r = await runDeploy({ store, ctx, paths })
+      log(`[schedule] subscriptions changed, core ${r.ok ? 'restarted' : `restart failed: ${r.message}`}`)
     }
   }
 

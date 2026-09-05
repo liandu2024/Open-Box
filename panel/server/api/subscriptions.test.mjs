@@ -1078,3 +1078,30 @@ test('每个动作都如实报 changed:上游没动的刷新、只改名字是 f
     await close()
   }
 })
+
+// -------- 定期更新计划 --------
+
+test('autoUpdate:新建时存下(归一化到 1~30 天、0~23 点),改它不重拉,关掉就是 null;粘贴来的订阅没有计划', async () => {
+  let fetched = 0
+  const fetchImpl = async () => { fetched += 1; return { ok: true, status: 200, text: async () => HK_LINE } }
+  const { baseUrl, store, close } = await startApp(fetchImpl)
+  const patch = (id, data) => fetch(`${baseUrl}/api/openbox/subscriptions/${id}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(data) }).then((r) => r.json())
+  try {
+    const created = await (await postJson(baseUrl, '/api/openbox/subscriptions', { url: 'http://a', name: 'A', autoUpdate: { enabled: true, days: 99, hour: 30 } })).json()
+    assert.deepEqual(store.getSubscriptions()[0].autoUpdate, { enabled: true, days: 30, hour: 23 })
+    assert.equal(fetched, 1)
+
+    const r = await patch(created.id, { autoUpdate: { enabled: true, days: 3, hour: 4 } })
+    assert.equal(r.changed, false)
+    assert.equal(fetched, 1, '改计划不重拉')
+    assert.deepEqual(store.getSubscriptions()[0].autoUpdate, { enabled: true, days: 3, hour: 4 })
+
+    await patch(created.id, { autoUpdate: { enabled: false } })
+    assert.equal(store.getSubscriptions()[0].autoUpdate, null)
+
+    await postJson(baseUrl, '/api/openbox/subscriptions', { content: HK_LINE, name: 'P', autoUpdate: { enabled: true, days: 1, hour: 4 } })
+    assert.equal(store.getSubscriptions()[1].autoUpdate, null, '粘贴来的没有地址,不给计划')
+  } finally {
+    await close()
+  }
+})

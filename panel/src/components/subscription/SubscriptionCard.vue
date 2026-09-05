@@ -24,7 +24,9 @@
             {{ $t('updated') }} {{ updatedAtText }}
           </div>
         </div>
-        <div class="flex shrink-0 gap-2">
+        <!-- 右边:一排按钮,下面一行是定期更新的计划(有的话) -->
+        <div class="flex shrink-0 flex-col items-end gap-1">
+        <div class="flex gap-2">
           <button
             type="button"
             class="btn btn-circle btn-sm z-30"
@@ -73,6 +75,13 @@
             <TrashIcon class="h-4 w-4" />
           </button>
         </div>
+        <div
+          v-if="scheduleText"
+          class="text-base-content/60 text-xs"
+        >
+          {{ scheduleText }}
+        </div>
+        </div>
       </div>
     </template>
     <template v-slot:preview>
@@ -119,6 +128,7 @@ import { proxyMap, proxyNodesLatencyTest } from '@/store/proxies'
 import { ArrowPathIcon, Bars3Icon, BoltIcon, PencilSquareIcon, TrashIcon } from '@heroicons/vue/24/outline'
 import dayjs from 'dayjs'
 import { computed, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{
   subscription: OpenboxSubscription
@@ -152,6 +162,17 @@ const countText = computed(() =>
       : String(props.subscription.nodeCount),
 )
 const updatedAtText = computed(() => dayjs(props.subscription.updatedAt).fromNow())
+
+// 定期更新的计划,写成一句:每天 04:00 自动更新 / 每 3 天 04:00 自动更新
+const { t } = useI18n()
+const scheduleText = computed(() => {
+  const plan = props.subscription.autoUpdate
+  if (!plan || !plan.enabled) return ''
+  const time = `${String(plan.hour).padStart(2, '0')}:00`
+  return plan.days > 1
+    ? t('subscriptionAutoUpdateEvery', { days: plan.days, time })
+    : t('subscriptionAutoUpdateDaily', { time })
+})
 
 const isLatencyTesting = ref(false)
 const handleLatencyTest = async () => {
