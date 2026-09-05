@@ -160,6 +160,12 @@ export const validateProfilePatch = (patch, { reservedNames = [] } = {}) => {
       return 'routing.fallbackIcon must be a string'
     }
 
+    // 代理页「策略」页签的显示顺序(站点集名字的数组),和命中顺序(policies 的顺序)分开存。
+    // 只校验形状;名单里对不上的名字,前端读的时候会忽略
+    if ('displayOrder' in routing && !isStringArray(routing.displayOrder)) {
+      return 'routing.displayOrder must be an array of strings'
+    }
+
     if ('policies' in routing) {
       const error = validatePolicies(routing.policies, isString(routing.fallbackName) ? routing.fallbackName.trim() : '', reservedNames)
       if (error) return error

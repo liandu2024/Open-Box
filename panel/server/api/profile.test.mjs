@@ -497,3 +497,9 @@ test('站点集不能和节点组 / 内置直连拒绝 / dnsmasq 回送出站同
   assert.match(String(dup), /duplicated/)
   assert.equal(validateProfilePatch({ routing: { policies: [{ name: 'Hulu', domainSuffix: ['hulu.com'] }] } }, { reservedNames: reserved }), null)
 })
+
+test('validateProfilePatch routing.displayOrder 必须是字符串数组', () => {
+  assert.equal(validateProfilePatch({ routing: { displayOrder: ['Speed', 'AI', '其他'] } }), null)
+  assert.ok(validateProfilePatch({ routing: { displayOrder: ['Speed', 1] } }))
+  assert.ok(validateProfilePatch({ routing: { displayOrder: 'Speed' } }))
+})

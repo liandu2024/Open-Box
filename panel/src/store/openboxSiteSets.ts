@@ -1,7 +1,7 @@
 import type { OpenboxUserGroup } from '@/api/openbox'
-import { fetchNodeGroups, fetchProfile } from '@/api/openbox'
+import { fetchNodeGroups, fetchProfile, saveProfile } from '@/api/openbox'
 import { directTestUrl, speedtestUrl } from '@/store/settings'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 
 // 代理页「策略 / 节点」两个页签怎么分:zashboard 原来是猜的——一个组的成员如果全是
 // 已知的叶子节点就算节点组,否则算策略组。这套猜法在 sing-box 上会翻车:clash_api 的
@@ -15,6 +15,20 @@ export const siteSetNames = ref<Set<string>>(new Set())
 // 而不是按内核 GLOBAL 列表的顺序——内核把 route.final 指向的那个排在最前面,兜底就跑到
 // 顶上去了,和「分流与策略」页里钉在最下面的样子对不上。
 export const siteSetOrder = ref<string[]>([])
+// 代理页「策略」页签的显示顺序,在「策略设置」里拖出来的。它和上面的命中顺序分开:匹配是
+// 先到先得、顺序有意义;显示只是看着顺手,两者不必一样。存在档案的 routing.displayOrder 里,
+// 手机和电脑看到的顺序一致。新建的站点集不在这张表里,按命中顺序补在后面;已删掉的忽略。
+export const siteSetDisplayOrder = ref<string[]>([])
+export const effectiveSiteSetOrder = computed(() => {
+  const known = siteSetOrder.value
+  const picked = siteSetDisplayOrder.value.filter((name) => known.includes(name))
+  return [...picked, ...known.filter((name) => !picked.includes(name))]
+})
+export const saveSiteSetDisplayOrder = async (order: string[]) => {
+  // 先改本地再落档案:拖完立刻按新顺序排,不等网络
+  siteSetDisplayOrder.value = [...order]
+  await saveProfile({ routing: { displayOrder: order } })
+}
 // 站点集各自挑的图标(名字 → 图标代码):代理页策略卡片标题左边那个大图标就从这来。
 // 兜底「其他」固定彩色地球,和「分流与策略」里钉在最下面那条一致。
 export const siteSetIcons = ref<Map<string, string>>(new Map())
@@ -53,6 +67,9 @@ export const loadOpenboxSiteSets = async () => {
     const fallbackName = profile.routing.fallbackName?.trim() || FALLBACK_NAME
     siteSetNames.value = new Set([...names, fallbackName])
     siteSetOrder.value = [...names, fallbackName]
+    siteSetDisplayOrder.value = Array.isArray(profile.routing.displayOrder)
+      ? profile.routing.displayOrder.filter((name) => typeof name === 'string')
+      : []
     const icons = new Map<string, string>(policies.filter((p) => p.icon).map((p) => [p.name, p.icon as string]))
     icons.set(fallbackName, profile.routing.fallbackIcon?.trim() || 'globe:earth-meridians')
     siteSetIcons.value = icons

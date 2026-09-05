@@ -37,6 +37,7 @@ import { computed, defineComponent, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import DialogWrapper from '../common/DialogWrapper.vue'
 import TextInput from '../common/TextInput.vue'
+import PolicyDisplayOrder from '../proxies/PolicyDisplayOrder.vue'
 
 export default defineComponent({
   name: 'ProxiesCtrl',
@@ -265,6 +266,7 @@ export default defineComponent({
           <DialogWrapper
             v-model={settingsModel.value}
             title={t('proxySettings')}
+            boxClass="w-full max-w-2xl"
           >
             <div class="flex flex-col gap-4 p-2 text-sm">
               <div class="flex items-center gap-2">
@@ -313,6 +315,14 @@ export default defineComponent({
                   </button>
                 </div>
               </div>
+              {/* 策略的显示顺序(可拖)与命中顺序(只看)并排;弹窗开着时才渲染,免得每次
+                  刷代理页都跟着重算 */}
+              {settingsModel.value && (
+                <>
+                  <div class="divider my-0" />
+                  <PolicyDisplayOrder />
+                </>
+              )}
             </div>
           </DialogWrapper>
         </>

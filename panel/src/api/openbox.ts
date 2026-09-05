@@ -45,6 +45,8 @@ export interface OpenboxProfileRouting {
   // 兜底站点集的名字(默认「其他」,就是内核里的出站 tag)和图标
   fallbackName?: string
   fallbackIcon?: string
+  // 代理页「策略」页签的显示顺序(站点集名字),在「策略设置」里拖出来的;和命中顺序分开
+  displayOrder?: string[]
   // 改版前的地区层;服务端读出来时会翻译成站点集,并把结果写回档案
   regions?: unknown[]
   regionId?: string

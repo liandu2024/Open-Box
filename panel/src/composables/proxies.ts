@@ -2,7 +2,7 @@ import { isSingBox } from '@/api'
 import { GLOBAL, PROXY_TAB_TYPE } from '@/constant'
 import { isHiddenGroup, isProxyGroup } from '@/helper'
 import { configs } from '@/store/config'
-import { managedOutbounds, siteSetNames, siteSetOrder } from '@/store/openboxSiteSets'
+import { effectiveSiteSetOrder, managedOutbounds, siteSetNames } from '@/store/openboxSiteSets'
 import { openboxSubscriptions } from '@/store/openboxSubscriptions'
 import { proxiesTabShow, proxyGroupList, proxyMap } from '@/store/proxies'
 import { customGlobalNode, displayGlobalByMode, manageHiddenGroup } from '@/store/settings'
@@ -98,10 +98,10 @@ const nodeGroupNames = computed(() => {
   return new Set(getCurrentProxyGroups().filter((name) => isSemanticNodeGroup(name)))
 })
 
-// 策略页签按「分流与策略」里的顺序排,兜底「其他」最后;名单里没有的(退回猜法时)
-// 保持内核给的顺序放在后面。
+// 策略页签按「策略设置」里拖出来的显示顺序排(没拖过就是「目标分流」里的命中顺序,兜底
+// 「其他」最后);名单里没有的(退回猜法时)保持内核给的顺序放在后面。
 const sortByPolicyOrder = (names: string[]) => {
-  const order = siteSetOrder.value
+  const order = effectiveSiteSetOrder.value
   if (!order.length) return names
   const index = (name: string) => {
     const i = order.indexOf(name)
