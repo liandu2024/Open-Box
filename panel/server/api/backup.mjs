@@ -3,21 +3,27 @@ import { reservedPolicyNames, validateProfilePatch } from './profile.mjs'
 import { normalizeGroups } from '../engine/user-groups.mjs'
 
 // 导出 / 导入:把这台路由器上「用户配出来的东西」打成一个 JSON——档案(目标分流、站点集、
-// 终端分流、共享网络、DNS、更新计划……)、节点组,可选带上订阅和节点。新设备导入就能用,
+// DNS、更新计划……)、节点组,可选带上 订阅和节点 / 终端分流 / 共享网络。新设备导入就能用,
 // 不用重新配。不带面板密码、会话、clash 密钥、部署状态这些和机器绑定的东西;
 // rulesetDir 是本机路径,导出时带着(看得见),导入时不写。
+// 不勾的部分直接不出现在文件里(终端分流 / 共享网络是档案里的两个键,删掉即可);
+// 导入时档案是合并写入,文件里没有的键不动现有的——所以「没导出」等于「导入时不碰」。
 export const BACKUP_FORMAT = 'open-box-backup'
 export const BACKUP_VERSION = 1
 
 const isPlainObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v)
 
-export const buildBackup = (store, { subscriptions = true, now = () => new Date(), openboxVersion = '' } = {}) => {
+export const buildBackup = (store, { subscriptions = true, clientRoutes = true, servers = true, now = () => new Date(), openboxVersion = '' } = {}) => {
+  const profile = store.getProfile()
+  if (!clientRoutes) delete profile.clientRoutes
+  if (!servers) delete profile.servers
   const out = {
     format: BACKUP_FORMAT,
     version: BACKUP_VERSION,
     exportedAt: now().toISOString(),
     openboxVersion,
-    profile: store.getProfile(),
+    includes: { subscriptions, clientRoutes, servers },
+    profile,
     groups: store.getGroups(),
   }
   if (subscriptions) {
@@ -93,12 +99,17 @@ export const registerBackupRoutes = (app, { store, readVersion = async () => '' 
   // 几百个节点的订阅一份就有几百 KB,给足
   router.use(express.json({ limit: '8mb' }))
 
-  // GET /api/openbox/backup?subscriptions=1|0
-  router.get('/backup', async (_req, res) => {
-    const withSubscriptions = String(_req.query.subscriptions ?? '1') !== '0'
+  // GET /api/openbox/backup?subscriptions=1|0&clientRoutes=1|0&servers=1|0(都默认 1)
+  router.get('/backup', async (req, res) => {
+    const flag = (name) => String(req.query[name] ?? '1') !== '0'
     let openboxVersion = ''
     try { openboxVersion = (await readVersion()) || '' } catch { /* 拿不到就空着 */ }
-    res.json(buildBackup(store, { subscriptions: withSubscriptions, openboxVersion }))
+    res.json(buildBackup(store, {
+      subscriptions: flag('subscriptions'),
+      clientRoutes: flag('clientRoutes'),
+      servers: flag('servers'),
+      openboxVersion,
+    }))
   })
 
   // POST /api/openbox/backup/import?subscriptions=replace|append  body = 导出的那份 JSON。

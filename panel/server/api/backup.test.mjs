@@ -39,6 +39,31 @@ test('buildBackup:带档案和节点组,订阅 / 节点可选;不带密码、cla
   assert.equal(slim.subscriptions, undefined)
   assert.equal(slim.nodes, undefined)
   assert.equal(slim.profile.dns.mode, 'hijack')
+  assert.deepEqual(full.includes, { subscriptions: true, clientRoutes: true, servers: true })
+  assert.deepEqual(slim.includes, { subscriptions: false, clientRoutes: true, servers: true })
+})
+
+test('终端分流 / 共享网络可选:不勾就从档案里去掉;导入这种文件不动现有的终端分流 / 共享网络', () => {
+  const src = memStore()
+  seed(src)
+  src.setProfile({ clientRoutes: [{ id: 'c1', sources: ['10.0.0.9'], outbound: 'AI' }], servers: [{ id: 'sv1', name: '家里', protocol: 'shadowsocks', port: 8388 }] })
+  const full = buildBackup(src)
+  assert.equal(full.profile.clientRoutes.length, 1)
+  assert.equal(full.profile.servers.length, 1)
+  const partial = buildBackup(src, { clientRoutes: false, servers: false })
+  assert.equal(partial.profile.clientRoutes, undefined)
+  assert.equal(partial.profile.servers, undefined)
+  assert.deepEqual(partial.includes, { subscriptions: true, clientRoutes: false, servers: false })
+  // 导出时删的是拷贝,库里的没动
+  assert.equal(src.getProfile().clientRoutes.length, 1)
+
+  const dst = memStore()
+  dst.setProfile({ clientRoutes: [{ id: 'keep', sources: ['10.0.0.1'], outbound: '直连' }], servers: [{ id: 'keepsv', name: '留着', protocol: 'vless', port: 443 }] })
+  const r = applyBackup(dst, JSON.parse(JSON.stringify(partial)))
+  assert.equal(r.error, undefined)
+  assert.equal(dst.getProfile().clientRoutes[0].id, 'keep', '文件里没有终端分流,现有的不动')
+  assert.equal(dst.getProfile().servers[0].id, 'keepsv', '文件里没有共享网络,现有的不动')
+  assert.equal(dst.getProfile().dns.mode, 'hijack', '档案其他部分照样覆盖')
 })
 
 test('applyBackup:导进一个空库,档案 / 组 / 订阅 / 节点都在;rulesetDir 不导入;挂在不存在订阅上的节点丢掉', () => {
@@ -113,8 +138,10 @@ test('HTTP:GET /backup 按 subscriptions 参数决定带不带订阅;POST /backu
     const full = await (await fetch(`${base}/api/openbox/backup`)).json()
     assert.equal(full.openboxVersion, 'v0.1.108')
     assert.equal(full.nodes.length, 2)
-    const slim = await (await fetch(`${base}/api/openbox/backup?subscriptions=0`)).json()
+    const slim = await (await fetch(`${base}/api/openbox/backup?subscriptions=0&servers=0`)).json()
     assert.equal(slim.nodes, undefined)
+    assert.equal(slim.profile.servers, undefined)
+    assert.ok(Array.isArray(slim.profile.clientRoutes))
 
     const dst = memStore()
     const app2 = express()

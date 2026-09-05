@@ -24,7 +24,7 @@
         <p class="text-base-content/60 text-xs">{{ $t('backupDescription') }}</p>
       </div>
 
-      <!-- 导出:[导出] [包含订阅和节点]。按钮放最前面,和下面的「导入」左对齐 -->
+      <!-- 导出:[导出] [包含订阅和节点] [包含终端分流] [包含共享网络]。按钮放最前面,和下面的「导入」左对齐 -->
       <div class="flex flex-wrap items-center gap-3">
         <button
           type="button"
@@ -42,13 +42,17 @@
           />
           {{ $t('backupExport') }}
         </button>
-        <label class="flex cursor-pointer items-center gap-2 text-sm">
+        <label
+          v-for="opt in EXPORT_OPTIONS"
+          :key="opt.key"
+          class="flex cursor-pointer items-center gap-2 text-sm"
+        >
           <input
-            v-model="withSubscriptions"
+            v-model="include[opt.key]"
             type="checkbox"
             class="checkbox checkbox-sm"
           />
-          {{ $t('backupIncludeSubscriptions') }}
+          {{ $t(opt.label) }}
         </label>
         <span class="text-base-content/50 text-xs">{{ $t('backupExportHint') }}</span>
       </div>
@@ -143,18 +147,30 @@
 </template>
 
 <script setup lang="ts">
-import { fetchBackup, importBackup, type OpenboxBackup, type OpenboxBackupSubscriptionsMode } from '@/api/openbox'
+import {
+  fetchBackup,
+  importBackup,
+  type OpenboxBackup,
+  type OpenboxBackupOptions,
+  type OpenboxBackupSubscriptionsMode,
+} from '@/api/openbox'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import { showNotification } from '@/helper/notification'
 import { ArrowDownTrayIcon, ArrowUpTrayIcon } from '@heroicons/vue/24/outline'
 import dayjs from 'dayjs'
-import { computed, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 const emit = defineEmits<{ imported: [] }>()
 const { t } = useI18n()
 
-const withSubscriptions = ref(true)
+// 导出时可勾可不勾的三块,默认都带
+const EXPORT_OPTIONS: { key: keyof OpenboxBackupOptions; label: string }[] = [
+  { key: 'subscriptions', label: 'backupIncludeSubscriptions' },
+  { key: 'clientRoutes', label: 'backupIncludeClientRoutes' },
+  { key: 'servers', label: 'backupIncludeServers' },
+]
+const include = reactive<OpenboxBackupOptions>({ subscriptions: true, clientRoutes: true, servers: true })
 const exporting = ref(false)
 const importing = ref(false)
 const inputRef = ref<HTMLInputElement>()
@@ -189,7 +205,7 @@ const onDrop = (e: DragEvent) => {
 const doExport = async () => {
   exporting.value = true
   try {
-    const data = await fetchBackup(withSubscriptions.value)
+    const data = await fetchBackup({ ...include })
     const d = new Date()
     const name = `open-box-backup-${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}-${pad2(d.getHours())}${pad2(d.getMinutes())}.json`
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
@@ -217,13 +233,19 @@ const pendingExportedAt = computed(() => {
   const at = pending.value?.exportedAt
   return at && dayjs(at).isValid() ? dayjs(at).format('YYYY-MM-DD HH:mm') : '—'
 })
+// 确认框里写清文件带了什么:档案和节点组一定有;订阅 / 终端分流 / 共享网络看文件里有没有
 const pendingParts = computed(() => {
   const p = pending.value
   if (!p) return ''
-  const subs = Array.isArray(p.subscriptions)
-    ? t('backupPartsSubscriptions', { subs: p.subscriptions.length, nodes: Array.isArray(p.nodes) ? p.nodes.length : 0 })
-    : ''
-  return t('backupPartsBase') + subs
+  let s = t('backupPartsBase')
+  if (Array.isArray(p.subscriptions)) {
+    s += t('backupPartsSubscriptions', { subs: p.subscriptions.length, nodes: Array.isArray(p.nodes) ? p.nodes.length : 0 })
+  }
+  const routes = p.profile?.clientRoutes
+  if (Array.isArray(routes)) s += t('backupPartsClientRoutes', { n: routes.length })
+  const servers = p.profile?.servers
+  if (Array.isArray(servers)) s += t('backupPartsServers', { n: servers.length })
+  return s
 })
 
 // 选了文件(点按钮选的、或拖进来的):先读出来看格式对不对,对了再弹确认

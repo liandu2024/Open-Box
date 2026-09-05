@@ -876,18 +876,27 @@ export interface OpenboxBackup {
   version: number
   exportedAt: string
   openboxVersion?: string
+  // 导出时勾了哪些可选部分(老文件没有这个字段)
+  includes?: { subscriptions: boolean; clientRoutes: boolean; servers: boolean }
   profile: OpenboxProfile
   groups: unknown[]
   subscriptions?: unknown[]
   nodes?: unknown[]
+}
+export interface OpenboxBackupOptions {
+  subscriptions: boolean
+  clientRoutes: boolean
+  servers: boolean
 }
 export type OpenboxBackupSubscriptionsMode = 'replace' | 'append'
 export interface OpenboxBackupImportResult {
   ok: boolean
   imported: { profile: boolean; groups: number; subscriptions: number; nodes: number; subscriptionsMode: OpenboxBackupSubscriptionsMode | null }
 }
-export const fetchBackup = (includeSubscriptions: boolean) =>
-  requestJson<OpenboxBackup>(`/api/openbox/backup?subscriptions=${includeSubscriptions ? 1 : 0}`)
+export const fetchBackup = (opts: OpenboxBackupOptions) =>
+  requestJson<OpenboxBackup>(
+    `/api/openbox/backup?subscriptions=${opts.subscriptions ? 1 : 0}&clientRoutes=${opts.clientRoutes ? 1 : 0}&servers=${opts.servers ? 1 : 0}`,
+  )
 export const importBackup = (data: OpenboxBackup, subscriptionsMode: OpenboxBackupSubscriptionsMode = 'replace') =>
   requestJson<OpenboxBackupImportResult>(`/api/openbox/backup/import?subscriptions=${subscriptionsMode}`, {
     method: 'POST',
