@@ -4,7 +4,11 @@
   <!-- 竖排(折叠)和横排(展开)同一个尺寸 36px、同一个底色 base-100:折叠时按钮直接摆在 base-200 的
        侧边栏上,默认 btn 的底色也是 base-200,看着发暗;写死亮底,两种状态一个样。圆角和菜单项同一个变量(--app-radius-nav,见 main.css 的 .kernel-action-btn;.btn 的圆角是 !important,
        工具类压不过,只能同样用 !important 的规则)-->
-  <div :class="vertical ? 'flex flex-col items-center gap-2' : 'flex items-center gap-1'">
+  <!-- 三个键之间横排竖排都是 8px(gap-2),和侧边栏其他地方的间距一致 -->
+  <div
+    class="flex items-center gap-2"
+    :class="vertical ? 'flex-col' : ''"
+  >
     <button
       type="button"
       class="btn btn-square btn-sm bg-base-100 h-9 w-9 kernel-action-btn"
