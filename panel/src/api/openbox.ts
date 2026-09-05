@@ -811,6 +811,13 @@ export interface OpenboxTrafficDay {
   clientsCount: number
   // 总量减去各节点之和:没采样到的短连接
   other: { up: number; down: number }
+  // 24 小时曲线:每小时的进站 / 出站字节数(和总量同源)
+  hours: OpenboxTrafficHour[]
+}
+export interface OpenboxTrafficHour {
+  hour: number
+  up: number
+  down: number
 }
 // 「分析数据保留时长」卡片:库里存了多少、大概占多大、每天涨多少
 export interface OpenboxTrafficUsage {

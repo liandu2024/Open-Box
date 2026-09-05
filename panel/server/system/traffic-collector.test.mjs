@@ -99,14 +99,17 @@ test('增量记到快照发生的那一天;flush 失败时增量放回去不丢'
   c.applySnapshot({ uploadTotal: 0, downloadTotal: 0, connections: [] }, at)
   c.applySnapshot({ uploadTotal: 10, downloadTotal: 10, connections: [] }, new Date(2026, 8, 4, 0, 0, 1))
   c.applySnapshot({ uploadTotal: 15, downloadTotal: 12, connections: [] }, new Date(2026, 8, 4, 1, 0, 0))
-  assert.equal(c.pendingSize, 1)
+  // 当天总量一行 + 两个小时桶(00 点、01 点)
+  assert.equal(c.pendingSize, 3)
 
   store.add = () => { throw new Error('disk full') }
   assert.equal(c.flush(), 0)
-  assert.equal(c.pendingSize, 1)
+  assert.equal(c.pendingSize, 3)
   store.add = function (rows) { this.rows.push(...rows) }
-  assert.equal(c.flush(), 1)
+  assert.equal(c.flush(), 3)
   assert.deepEqual(store.rows[0], { day: '2026-09-04', kind: 'total', key: '', up: 15, down: 12, conns: 0 })
+  assert.deepEqual(store.rows.find((r) => r.kind === 'hour' && r.key === '00'), { day: '2026-09-04', kind: 'hour', key: '00', up: 10, down: 10, conns: 0 })
+  assert.deepEqual(store.rows.find((r) => r.kind === 'hour' && r.key === '01'), { day: '2026-09-04', kind: 'hour', key: '01', up: 5, down: 2, conns: 0 })
 })
 
 test('poll:读不到内核只在第一次记日志,恢复后继续', async () => {
@@ -226,4 +229,21 @@ test('保留时长按月算,1~36 之外夹回来;到期的按天删,单维和交
   months = 36
   c.prune()
   assert.deepEqual(pruned.at(-1), '2023-09-04')
+})
+
+test('小时桶:内核计数器的增量按采样时刻落到 kind=hour,store.hours 给出 24 格,没记录的补 0', async () => {
+  const { DatabaseSync } = await import('node:sqlite')
+  const db = new DatabaseSync(':memory:')
+  const store = createTrafficStore(db)
+  store.add([
+    { day: '2026-09-05', kind: 'hour', key: '13', up: 10, down: 100, conns: 0 },
+    { day: '2026-09-05', kind: 'hour', key: '13', up: 5, down: 50, conns: 0 },
+    { day: '2026-09-05', kind: 'hour', key: '21', up: 1, down: 2, conns: 0 },
+  ])
+  const hours = store.hours('2026-09-05')
+  assert.equal(hours.length, 24)
+  assert.deepEqual(hours[13], { hour: 13, up: 15, down: 150 })
+  assert.deepEqual(hours[21], { hour: 21, up: 1, down: 2 })
+  assert.deepEqual(hours[0], { hour: 0, up: 0, down: 0 })
+  assert.deepEqual(store.hours('2026-09-06')[13], { hour: 13, up: 0, down: 0 })
 })

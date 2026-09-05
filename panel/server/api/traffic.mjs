@@ -130,6 +130,8 @@ export const registerTrafficRoutes = (app, { collector, ctx, paths, now = () => 
     res.json({
       day, today: localDay(now()), total, nodes, hosts, clients,
       hostsCount: Number(hostSum.n) || 0, clientsCount: Number(clientSum.n) || 0, other,
+      // 24 小时曲线
+      hours: store.hours(day),
     })
   })
 

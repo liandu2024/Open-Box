@@ -149,6 +149,13 @@
         />
       </div>
 
+      <!-- 选中那天的 24 小时曲线:今天只画到当前小时 -->
+      <HourlyTrafficChart
+        v-if="selectedDay && detail"
+        :hours="detail.hours || []"
+        :up-to-hour="detail.day === detail.today ? currentHour : 23"
+      />
+
       <!-- 选中那天的明细 -->
       <div
         v-if="selectedDay && detail"
@@ -332,6 +339,7 @@ import {
 } from '@/api/openbox'
 import TextInput from '@/components/common/TextInput.vue'
 import TrafficDetailRow from '@/components/overview/TrafficDetailRow.vue'
+import HourlyTrafficChart from '@/components/overview/HourlyTrafficChart.vue'
 import { prettyBytesHelper } from '@/helper/utils'
 import {
   ChevronDownIcon,
@@ -380,6 +388,8 @@ const month = ref('')
 const today = ref('')
 const selectedDay = ref<string | null>(null)
 const detail = ref<OpenboxTrafficDay | null>(null)
+// 今天的曲线只画到这个小时(明细一刷新就跟着刷新,不用另起定时器)
+const currentHour = computed(() => (detail.value ? new Date().getHours() : 23))
 const tab = ref<Tab>('clients')
 const filter = ref('')
 // 当前点开看构成的那一行(同一时间只开一行)

@@ -31,6 +31,7 @@ const fakeCollector = () => {
         return Object.entries(data).filter(([d]) => d.startsWith(month)).map(([day, v]) => ({ day, ...v.total }))
       },
       dayTotal(day) { return data[day]?.total || null },
+      hours() { return [] },
       day(day, kind, limit) { return (data[day]?.[kind] || []).slice(0, limit) },
       daySum(day, kind) {
         const rows = data[day]?.[kind] || []

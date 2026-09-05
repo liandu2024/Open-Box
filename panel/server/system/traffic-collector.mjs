@@ -136,6 +136,8 @@ export const createTrafficStore = (db) => {
     SELECT COALESCE(SUM(up), 0) AS up, COALESCE(SUM(down), 0) AS down FROM traffic_daily
     WHERE day = ?2 AND kind = ?3 AND substr(key, -length(?1) - 1) = char(9) || ?1
   `)
+  // 24 小时曲线:kind='hour',key 是两位小时,值是内核计数器在那个小时里的增量(和 total 同源)
+  const selectHours = db.prepare(`SELECT key AS hour, up, down FROM traffic_daily WHERE day = ? AND kind = 'hour' ORDER BY key`)
   const deleteBefore = db.prepare(`DELETE FROM traffic_daily WHERE day < ?`)
   const usageStat = db.prepare(`
     SELECT COUNT(*) AS rows, COUNT(DISTINCT day) AS days, MIN(day) AS oldestDay, MAX(day) AS newestDay,
@@ -161,6 +163,14 @@ export const createTrafficStore = (db) => {
     dayTotal(day) {
       const r = selectTotal.get(day)
       return r ? plain(r) : null
+    },
+    // 一天 24 个小时桶,没记录的小时补 0
+    hours(day) {
+      const byHour = new Map(selectHours.all(day).map((r) => [Number(r.hour), r]))
+      return Array.from({ length: 24 }, (_, hour) => {
+        const r = byHour.get(hour)
+        return { hour, up: r ? Number(r.up) || 0 : 0, down: r ? Number(r.down) || 0 : 0 }
+      })
     },
     day(day, kind, limit) {
       return selectKind.all(day, kind, limit).map(plain)
@@ -314,6 +324,8 @@ export const createTrafficCollector = ({
     // 计数器里,和其它短连接一样进不了明细,这是采样精度的固有取舍(见文件开头)。
     // 连接数不用另外扣:回环的连接在上面 continue 掉了,本来就没进 total 的计数
     bump(day, 'total', '', Math.max(0, totalUp - loopUp), Math.max(0, totalDown - loopDown), 0)
+    // 同一份增量再按采样时刻落进小时桶,给概览的 24 小时曲线用;一天只多 24 行
+    bump(day, 'hour', pad2(at.getHours()), Math.max(0, totalUp - loopUp), Math.max(0, totalDown - loopDown), 0)
 
     for (const id of seen.keys()) {
       if (!alive.has(id)) seen.delete(id)
