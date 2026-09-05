@@ -17,7 +17,8 @@ const seed = (store) => {
   store.setProfile({ dns: { mode: 'hijack' }, routing: { policies: [{ name: 'AI', enabled: true, rulesets: ['geosite-openai'] }] }, traffic: { keepMonths: 12 } })
   store.setGroups([{ name: '香港-自动', type: 'urltest', members: [] }])
   store.setSubscriptions([{ id: 's1', name: '机场', url: 'https://x/sub' }, { id: 's2', name: '手动', kind: 'paste' }])
-  store.setNodes([{ id: 'n1', subscriptionId: 's1', name: 'HK-01' }, { id: 'n2', subscriptionId: 's2', name: 'US-01' }])
+  // 节点记录的真实形状:没有 id,靠 tag 认
+  store.setNodes([{ tag: 'HK-01', type: 'shadowsocks', server: '1.1.1.1', subscriptionId: 's1' }, { tag: 'US-01', type: 'tuic', server: '2.2.2.2', subscriptionId: 's2' }])
 }
 
 test('buildBackup:带档案和节点组,订阅 / 节点可选;不带密码、clash 密钥这类和机器绑定的东西', () => {
@@ -71,8 +72,9 @@ test('applyBackup:导进一个空库,档案 / 组 / 订阅 / 节点都在;rulese
   seed(src)
   const file = JSON.parse(JSON.stringify(buildBackup(src)))
   file.profile.rulesetDir = '/somewhere/else'
-  file.nodes.push({ id: 'n3', subscriptionId: 'missing', name: '孤儿' })
+  file.nodes.push({ tag: '孤儿', type: 'vless', subscriptionId: 'missing' })
   file.nodes.push('not an object')
+  file.nodes.push({ subscriptionId: 's1' })
 
   const dst = memStore()
   const r = applyBackup(dst, file)
@@ -84,7 +86,7 @@ test('applyBackup:导进一个空库,档案 / 组 / 订阅 / 节点都在;rulese
   assert.equal(dst.getProfile().rulesetDir, '/opt/open-box/data/rulesets', '本机路径不跟着文件走')
   assert.ok(dst.getGroups().some((g) => g.name === '香港-自动'))
   assert.deepEqual(dst.getSubscriptions().map((s) => s.id), ['s1', 's2'])
-  assert.deepEqual(dst.getNodes().map((n) => n.id), ['n1', 'n2'])
+  assert.deepEqual(dst.getNodes().map((n) => n.tag), ['HK-01', 'US-01'], '没 tag 的、挂在不存在订阅上的都丢掉')
 })
 
 test('applyBackup 追加模式:现有订阅留着,文件里的加到后面;同一条订阅(id 相同)以文件里的为准、节点跟着换;档案照样覆盖', () => {
@@ -94,14 +96,14 @@ test('applyBackup 追加模式:现有订阅留着,文件里的加到后面;同�
   // 文件里 s1 改了名、节点换了一批;s2 没变;另外多一条新订阅 s3
   file.profile.dns.mode = 'off'
   file.subscriptions[0].name = '机场(新)'
-  file.nodes = [{ id: 'n1b', subscriptionId: 's1', name: 'HK-02' }, { id: 'n2', subscriptionId: 's2', name: 'US-01' }, { id: 'n9', subscriptionId: 's3', name: 'JP-01' }]
+  file.nodes = [{ tag: 'HK-02', type: 'shadowsocks', subscriptionId: 's1' }, { tag: 'US-01', type: 'tuic', subscriptionId: 's2' }, { tag: 'JP-01', type: 'vless', subscriptionId: 's3' }]
   file.subscriptions.push({ id: 's3', name: '第三家' })
   const r = applyBackup(store, file, { subscriptionsMode: 'append' })
   assert.equal(r.error, undefined)
   assert.equal(r.imported.subscriptionsMode, 'append')
   assert.equal(store.getProfile().dns.mode, 'off', '档案不分模式,一律覆盖')
   assert.deepEqual(store.getSubscriptions().map((s) => `${s.id}:${s.name}`), ['s1:机场(新)', 's2:手动', 's3:第三家'])
-  assert.deepEqual(store.getNodes().map((n) => n.id).sort(), ['n1b', 'n2', 'n9'], 's1 的旧节点 n1 换成了 n1b,没有重复')
+  assert.deepEqual(store.getNodes().map((n) => n.tag).sort(), ['HK-02', 'JP-01', 'US-01'], 's1 的旧节点 HK-01 换成了 HK-02,没有重复')
   assert.match(applyBackup(store, file, { subscriptionsMode: 'merge' }).error || '', /replace \/ append/)
 })
 
@@ -156,11 +158,11 @@ test('HTTP:GET /backup 按 subscriptions 参数决定带不带订阅;POST /backu
       assert.equal(dst.getNodes().length, 2)
       // 追加导入:现有的留着,文件里的加到后面;模式写错 400
       dst.setSubscriptions([{ id: 'old', name: '老订阅' }])
-      dst.setNodes([{ id: 'o1', subscriptionId: 'old', name: 'OLD-01' }])
+      dst.setNodes([{ tag: 'OLD-01', type: 'vless', subscriptionId: 'old' }])
       const app_ = await fetch(`${base2}/api/openbox/backup/import?subscriptions=append`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(full) })
       assert.equal(app_.status, 200)
       assert.deepEqual(dst.getSubscriptions().map((s) => s.id), ['old', 's1', 's2'])
-      assert.deepEqual(dst.getNodes().map((n) => n.id), ['o1', 'n1', 'n2'])
+      assert.deepEqual(dst.getNodes().map((n) => n.tag), ['OLD-01', 'HK-01', 'US-01'])
       const badMode = await fetch(`${base2}/api/openbox/backup/import?subscriptions=merge`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(full) })
       assert.equal(badMode.status, 400)
       const bad = await fetch(`${base2}/api/openbox/backup/import`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ format: 'x' }) })

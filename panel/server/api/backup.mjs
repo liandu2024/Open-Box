@@ -49,7 +49,9 @@ export const buildBackup = (store, {
 
 // 校验并落库。返回 { error } 或 { imported: { profile, groups, subscriptions, nodes } }。
 // 档案走和 PUT /profile 同一套校验;组名和站点集名不能撞(和 PUT /groups 同一条规则);
-// 订阅 / 节点只做结构检查:都得是带 id 的对象,节点要挂在文件里存在的订阅上。
+// 订阅 / 节点只做结构检查:订阅得是带 id 的对象;节点记录没有 id,靠 tag 认(见
+// subscriptions.mjs 的 resolveNodes:tag / type / server / subscriptionId……),要挂在文件里
+// 存在的订阅上。以前按「必须有 id」过滤,把所有节点都丢了——导入后重启内核也没有节点。
 // 档案和组一律覆盖;订阅 / 节点按 subscriptionsMode:
 //   replace(默认)整份换成文件里的;append 加到现有订阅后面,同一条订阅(id 相同)
 //   以文件里的为准、它的节点也跟着换——同一份文件导两次不会出现两份。
@@ -87,7 +89,7 @@ export const applyBackup = (store, data, { subscriptionsMode = 'replace', panelS
     if (!Array.isArray(data.subscriptions) || !Array.isArray(data.nodes)) return { error: 'subscriptions / nodes 应为数组' }
     subscriptions = data.subscriptions.filter((s) => isPlainObject(s) && typeof s.id === 'string' && s.id)
     const ids = new Set(subscriptions.map((s) => s.id))
-    nodes = data.nodes.filter((n) => isPlainObject(n) && typeof n.id === 'string' && n.id && ids.has(n.subscriptionId))
+    nodes = data.nodes.filter((n) => isPlainObject(n) && typeof n.tag === 'string' && n.tag && ids.has(n.subscriptionId))
   }
 
   // 组先于档案落库:档案里的站点集名不能和组名撞,顺序反了校验就是拿旧组名比的

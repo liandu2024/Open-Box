@@ -78,6 +78,9 @@ const en = {
   backupExported: 'Exported {file}',
   backupExportFailed: 'Export failed: {message}',
   backupImportedNeedRestart: 'Imported. Restart the core to apply.',
+  backupRefreshingSubscriptions: 'Refreshing imported subscriptions {done}/{total}…',
+  backupImportedRefreshed: 'Imported and refreshed {n} subscriptions. Restart the core to apply.',
+  backupImportedRefreshFailed: 'Imported; {n} subscriptions refreshed, {failed} failed (retry from the subscription card). Restart the core to apply.',
   backupImportFailed: 'Import failed: {message}',
   backupBadFile: '"{file}" is not an Open-Box export',
   trafficRetentionDescription:

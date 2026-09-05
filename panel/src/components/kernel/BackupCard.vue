@@ -126,6 +126,13 @@
           </label>
           <p class="text-base-content/60 text-xs">{{ $t('backupModeOthersHint') }}</p>
         </div>
+        <!-- 导入完带链接的订阅会逐条刷新一遍拿最新节点,这里报进度 -->
+        <p
+          v-if="refreshProgress"
+          class="text-base-content/70 text-xs"
+        >
+          {{ $t('backupRefreshingSubscriptions', { done: refreshProgress.done, total: refreshProgress.total }) }}
+        </p>
         <div class="flex justify-end gap-2">
           <button
             type="button"
@@ -156,10 +163,12 @@
 import {
   fetchBackup,
   importBackup,
+  refreshSubscription,
   type OpenboxBackup,
   type OpenboxBackupOptions,
   type OpenboxBackupSubscriptionsMode,
   type OpenboxProfile,
+  type OpenboxSubscription,
 } from '@/api/openbox'
 import { applyManagedStorageSnapshot } from '@/helper/persistentStorage'
 import { loadOpenboxSubscriptions, openboxSubscriptions } from '@/store/openboxSubscriptions'
@@ -194,14 +203,23 @@ watch(
   },
   { immediate: true },
 )
-// 导入带面板设置的文件后会刷新页面让设置生效;刷新前留个记号,回来再把「重启内核生效」提示补上
+// 导入带面板设置的文件后会刷新页面让设置生效;刷新前把要弹的提示(文案 key + 参数)存进
+// sessionStorage,回来再弹
 const IMPORTED_FLAG = 'openbox/backup-imported'
+type DoneToast = { content: string; params: Record<string, string> }
+const refreshProgress = ref<{ done: number; total: number } | null>(null)
 onMounted(() => {
   void loadOpenboxSubscriptions()
   try {
-    if (sessionStorage.getItem(IMPORTED_FLAG)) {
+    const raw = sessionStorage.getItem(IMPORTED_FLAG)
+    if (raw) {
       sessionStorage.removeItem(IMPORTED_FLAG)
-      showNotification({ content: 'backupImportedNeedRestart', type: 'alert-success', timeout: 6000 })
+      let toast: DoneToast = { content: 'backupImportedNeedRestart', params: {} }
+      try {
+        const parsed = JSON.parse(raw) as Partial<DoneToast>
+        if (parsed && typeof parsed.content === 'string') toast = { content: parsed.content, params: parsed.params || {} }
+      } catch { /* 老记号只是 '1' */ }
+      showNotification({ ...toast, type: 'alert-success', timeout: 6000 })
     }
   } catch { /* 拿不到 sessionStorage 就不提示 */ }
 })
@@ -315,6 +333,32 @@ const confirmImport = async () => {
   try {
     const file = pending.value
     const r = await importBackup(file, pendingHasSubscriptions.value ? subscriptionsMode.value : 'replace')
+    // 导进来的订阅里有链接的,逐条刷新一遍拿最新节点(文件里的节点可能是几小时前的);
+    // 粘贴保存的没链接,跳过。刷完再提示。节点进内核仍要重启内核——和订阅的规矩一样,不自动重启
+    let refreshed = 0
+    let failed = 0
+    const toRefresh =
+      r.imported.subscriptions > 0 && Array.isArray(file.subscriptions)
+        ? (file.subscriptions as Partial<OpenboxSubscription>[]).filter((s) => s && typeof s.id === 'string' && ((Array.isArray(s.urls) && s.urls.length > 0) || Boolean(s.url)))
+        : []
+    if (toRefresh.length) {
+      refreshProgress.value = { done: 0, total: toRefresh.length }
+      for (const s of toRefresh) {
+        try {
+          await refreshSubscription(s.id as string)
+          refreshed += 1
+        } catch {
+          failed += 1
+        }
+        refreshProgress.value = { done: refreshed + failed, total: toRefresh.length }
+      }
+      refreshProgress.value = null
+    }
+    const done: DoneToast = failed
+      ? { content: 'backupImportedRefreshFailed', params: { n: String(refreshed), failed: String(failed) } }
+      : refreshed
+        ? { content: 'backupImportedRefreshed', params: { n: String(refreshed) } }
+        : { content: 'backupImportedNeedRestart', params: {} }
     showConfirm.value = false
     pending.value = null
     void loadOpenboxSubscriptions()
@@ -322,15 +366,11 @@ const confirmImport = async () => {
     // (useStorage 的值是启动时读的,不刷新不会变);提示留到刷新回来再弹
     if (r.imported.panelSettings || r.imported.backgroundImage) {
       if (file.panelSettings) applyManagedStorageSnapshot(file.panelSettings)
-      try { sessionStorage.setItem(IMPORTED_FLAG, '1') } catch { /* ignore */ }
+      try { sessionStorage.setItem(IMPORTED_FLAG, JSON.stringify(done)) } catch { /* ignore */ }
       window.setTimeout(() => window.location.reload(), 300)
       return
     }
-    showNotification({
-      content: 'backupImportedNeedRestart',
-      type: 'alert-success',
-      timeout: 6000,
-    })
+    showNotification({ ...done, type: 'alert-success', timeout: 6000 })
     emit('imported')
   } catch (err) {
     showNotification({
