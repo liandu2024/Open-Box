@@ -169,6 +169,8 @@ export interface OpenboxSubscription {
   id: string
   name: string
   url: string
+  // 全部订阅地址(可以有多个,节点合在一起);url 是其中第一条,老记录只有 url
+  urls?: string[]
   // 「节点」模式(粘贴保存)的订阅没有 url,内容存在这里
   content?: string
   format: string
@@ -317,6 +319,7 @@ export const fetchSubscriptions = async (): Promise<OpenboxSubscription[]> => {
 // server/api/subscriptions.mjs's resolveNodes).
 export const previewSubscription = async (payload: {
   url?: string
+  urls?: string[]
   content?: string
   // 只在 renameOptions.usePrefix 打开时有意义:服务端拿它当节点名前缀。
   name?: string
@@ -333,6 +336,7 @@ export const previewSubscription = async (payload: {
 // 服务端会把内容一并存下来,以便日后改重命名规则时重新解析。
 export const createSubscription = async (payload: {
   url?: string
+  urls?: string[]
   content?: string
   name: string
   renameOptions?: OpenboxRenameOptions
@@ -348,7 +352,7 @@ export const createSubscription = async (payload: {
 // so a plain rename works even while the provider is unreachable (see subscriptions.mjs PATCH).
 export const updateSubscription = async (
   id: string,
-  payload: { name?: string; url?: string; content?: string; renameOptions?: OpenboxRenameOptions },
+  payload: { name?: string; url?: string; urls?: string[]; content?: string; renameOptions?: OpenboxRenameOptions },
 ): Promise<OpenboxSubscriptionSaveResult> => {
   return requestJson(`/api/openbox/subscriptions/${encodeURIComponent(id)}`, {
     method: 'PATCH',
@@ -367,6 +371,7 @@ export interface OpenboxLatencyResult {
 // 传 url/content 让服务端自己重新解析,而不是把含密码的节点配置送到浏览器再送回来。
 export const testNodeLatency = async (payload: {
   url?: string
+  urls?: string[]
   content?: string
   name?: string
   renameOptions?: OpenboxRenameOptions

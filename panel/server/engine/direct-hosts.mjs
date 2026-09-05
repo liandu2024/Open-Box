@@ -16,9 +16,13 @@ export const collectDirectHosts = (nodes = [], subscriptions = []) => {
   }
   for (const n of nodes) add(n && n.server)
   for (const s of subscriptions) {
-    const url = s && typeof s.url === 'string' ? s.url.trim() : ''
-    if (!url) continue
-    try { add(new URL(url).hostname) } catch { /* 不是合法 URL 就跳过 */ }
+    // 一条订阅可以有多个地址(urls);老记录只有 url
+    const urls = s && Array.isArray(s.urls) && s.urls.length ? s.urls : [s && s.url]
+    for (const raw of urls) {
+      const url = typeof raw === 'string' ? raw.trim() : ''
+      if (!url) continue
+      try { add(new URL(url).hostname) } catch { /* 不是合法 URL 就跳过 */ }
+    }
   }
   return { domains: [...domains], cidrs: [...cidrs] }
 }

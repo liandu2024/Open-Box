@@ -961,3 +961,85 @@ test('刷新订阅期间删掉了另一条订阅 → 刷新完成后它不会复
     await app.close()
   }
 })
+
+// -------- 一条订阅多个地址 --------
+
+const multiFetch = (byUrl) => async (url) => ({ ok: true, status: 200, text: async () => byUrl[url] ?? '' })
+
+test('多个地址:逐个拉取、节点按地址顺序合在一起、完全相同的节点只留一份;记录里存 urls,url 是第一条', async () => {
+  const fetchImpl = multiFetch({ 'http://a': [HK_LINE, VMESS_US].join('\n'), 'http://b': [HK_LINE, JP_LINE].join('\n') })
+  const { baseUrl, store, close } = await startApp(fetchImpl)
+  try {
+    const res = await postJson(baseUrl, '/api/openbox/subscriptions', { urls: ['http://a', 'http://b'], name: 'Sub' })
+    assert.equal(res.status, 200)
+    const body = await res.json()
+    assert.equal(body.nodeCount, 3, 'HK 在两个地址里都出现,只算一次')
+    const [sub] = store.getSubscriptions()
+    assert.deepEqual(sub.urls, ['http://a', 'http://b'])
+    assert.equal(sub.url, 'http://a')
+    assert.equal(store.getNodes().length, 3)
+    assert.equal(new Set(store.getNodes().map((n) => n.originalTag)).size, 3)
+  } finally {
+    await close()
+  }
+})
+
+test('多个地址里有一个拉不动:整次失败、报错点名那个地址,什么都不落库', async () => {
+  const fetchImpl = async (url) => (url === 'http://bad'
+    ? { ok: false, status: 502, text: async () => '' }
+    : { ok: true, status: 200, text: async () => HK_LINE })
+  const { baseUrl, store, close } = await startApp(fetchImpl)
+  try {
+    const res = await postJson(baseUrl, '/api/openbox/subscriptions', { urls: ['http://a', 'http://bad'], name: 'Sub' })
+    assert.equal(res.status, 400)
+    assert.match((await res.json()).error, /http:\/\/bad/)
+    assert.deepEqual(store.getSubscriptions(), [])
+    assert.deepEqual(store.getNodes(), [])
+  } finally {
+    await close()
+  }
+})
+
+test('刷新和改地址都按 urls 逐个重拉;只改名字不拉', async () => {
+  const calls = []
+  const fetchImpl = async (url) => { calls.push(url); return { ok: true, status: 200, text: async () => (url === 'http://a' ? HK_LINE : JP_LINE) } }
+  const { baseUrl, store, close } = await startApp(fetchImpl)
+  try {
+    const created = await (await postJson(baseUrl, '/api/openbox/subscriptions', { urls: ['http://a', 'http://b'], name: 'Sub' })).json()
+    assert.deepEqual(calls, ['http://a', 'http://b'])
+
+    calls.length = 0
+    const refresh = await postJson(baseUrl, `/api/openbox/subscriptions/${created.id}/refresh`, {})
+    assert.equal(refresh.status, 200)
+    assert.deepEqual(calls, ['http://a', 'http://b'])
+
+    calls.length = 0
+    const rename = await fetch(`${baseUrl}/api/openbox/subscriptions/${created.id}`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'Renamed' }),
+    })
+    assert.equal(rename.status, 200)
+    assert.deepEqual(calls, [], '只改名字不该去拉')
+
+    const shrink = await fetch(`${baseUrl}/api/openbox/subscriptions/${created.id}`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ urls: ['http://b'] }),
+    })
+    assert.equal(shrink.status, 200)
+    assert.deepEqual(calls, ['http://b'])
+    const [sub] = store.getSubscriptions()
+    assert.deepEqual(sub.urls, ['http://b'])
+    assert.equal(sub.url, 'http://b')
+    assert.equal(sub.nodeCount, 1)
+  } finally {
+    await close()
+  }
+})
+
+test('老字段 url 照旧能用:只传 url 时记录里 urls 就是它一条', async () => {
+  const { baseUrl, store, close } = await startApp(multiFetch({ 'http://a': HK_LINE }))
+  try {
+    await postJson(baseUrl, '/api/openbox/subscriptions', { url: 'http://a', name: 'Sub' })
+    assert.deepEqual(store.getSubscriptions()[0].urls, ['http://a'])
+  } finally {
+    await close()
+  }
+})

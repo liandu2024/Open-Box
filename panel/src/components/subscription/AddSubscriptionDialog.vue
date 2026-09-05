@@ -69,16 +69,45 @@
 
         <div
           v-if="sourceMode === 'url'"
-          class="flex flex-col gap-1"
+          class="flex flex-col gap-2"
         >
-          <label class="text-xs font-medium">{{ $t('subscriptionUrlLabel') }}</label>
-          <input
-            v-model="url"
-            type="text"
-            class="input input-sm w-full"
-            placeholder="https://"
-            autocomplete="off"
-          />
+          <div class="flex items-center justify-between gap-2">
+            <label class="text-xs font-medium">{{ $t('subscriptionUrlLabel') }}</label>
+            <button
+              type="button"
+              class="btn btn-ghost btn-xs"
+              @click="urls.push('')"
+            >
+              <PlusIcon class="h-3.5 w-3.5" />
+              {{ $t('subscriptionUrlAdd') }}
+            </button>
+          </div>
+          <!-- 一行一个地址:镜像、备用、几个机场合成一条都行,节点合在一起。行内的删除按钮
+               和目标分流的规则行是同一套写法。只剩一行时不能删——至少要留一个输入框。 -->
+          <div
+            v-for="index in urls.keys()"
+            :key="index"
+            class="flex items-center gap-2"
+          >
+            <input
+              v-model="urls[index]"
+              type="text"
+              class="input input-sm min-w-0 flex-1"
+              placeholder="https://"
+              autocomplete="off"
+            />
+            <button
+              type="button"
+              class="btn btn-ghost btn-square btn-sm"
+              :class="urls.length === 1 ? 'text-base-content/30 cursor-not-allowed' : 'hover:text-error'"
+              :disabled="urls.length === 1"
+              v-tip="$t('delete')"
+              :aria-label="$t('delete')"
+              @click="urls.splice(index, 1)"
+            >
+              <TrashIcon class="h-4 w-4" />
+            </button>
+          </div>
           <p class="text-base-content/50 text-xs">{{ $t('subscriptionUrlHint') }}</p>
         </div>
 
@@ -157,6 +186,7 @@
 import type { OpenboxRenameOptions, OpenboxSubscription, OpenboxSubscriptionPreview } from '@/api/openbox'
 import { createSubscription, previewSubscription, updateSubscription } from '@/api/openbox'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
+import { PlusIcon, TrashIcon } from '@heroicons/vue/24/outline'
 import { debounce } from 'lodash'
 import { showNotification } from '@/helper/notification'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
@@ -184,7 +214,8 @@ const sourceModes: { key: SourceMode; label: string }[] = [
   { key: 'paste', label: 'subscriptionTabNodes' },
 ]
 // 编辑已有订阅时,按它到底是"有链接"还是"粘贴来的"决定初始模式
-const sourceMode = ref<SourceMode>(props.subscription && !props.subscription.url ? 'paste' : 'url')
+const hasUrlSource = (s?: OpenboxSubscription | null) => Boolean(s?.url || s?.urls?.length)
+const sourceMode = ref<SourceMode>(props.subscription && !hasUrlSource(props.subscription) ? 'paste' : 'url')
 const isEditing = computed(() => Boolean(props.subscription))
 
 const tabs: { key: DialogTab; label: string }[] = [
@@ -198,7 +229,13 @@ const activeTab = ref<DialogTab>('source')
 // isOpen 已经是 true,而 watch(isOpen) 不是 immediate —— 它一次都不会触发,字段
 // 会停在空字符串上(实测:打开「修改订阅」名称和链接都是空的)。
 const name = ref(props.subscription?.name ?? '')
-const url = ref(props.subscription?.url ?? '')
+// 地址可以有多个;老记录只有 url。新建时给一个空输入框
+const initialUrls = () => {
+  const s = props.subscription
+  const list = s?.urls?.length ? s.urls : s?.url ? [s.url] : []
+  return list.length ? [...list] : ['']
+}
+const urls = ref<string[]>(initialUrls())
 const content = ref(props.subscription?.content ?? '')
 
 const renameOptions = ref<OpenboxRenameOptions>({})
@@ -245,15 +282,16 @@ const saving = ref(false)
 // 预览里的前缀和保存后的不一样。
 const effectiveName = computed(() => name.value.trim() || t('subscriptionDefaultName'))
 
-const effectiveSource = computed<{ url?: string; content?: string; name?: string } | null>(() => {
+const effectiveSource = computed<{ urls?: string[]; content?: string; name?: string } | null>(() => {
   // 只有开了前缀,名字才影响解析结果;否则不带上,免得改个名字就重新拉一次订阅。
   const withName = renameOptions.value.usePrefix ? { name: effectiveName.value } : {}
   if (sourceMode.value === 'paste') {
     const trimmedContent = content.value.trim()
     return trimmedContent ? { content: trimmedContent, ...withName } : null
   }
-  const trimmedUrl = url.value.trim()
-  return trimmedUrl ? { url: trimmedUrl, ...withName } : null
+  // 空行和重复的地址不算;顺序保留,服务端拿第一条当老字段 url
+  const list = [...new Set(urls.value.map((u) => u.trim()).filter(Boolean))]
+  return list.length ? { urls: list, ...withName } : null
 })
 const hasSource = computed(() => effectiveSource.value !== null)
 
@@ -313,11 +351,11 @@ const resetForm = () => {
   activeTab.value = 'source'
   // 编辑模式下用现存值预填;新建时清空
   name.value = props.subscription?.name ?? ''
-  url.value = props.subscription?.url ?? ''
+  urls.value = initialUrls()
   content.value = props.subscription?.content ?? ''
   overrides.value = { ...(props.subscription?.renameOptions?.overrides || {}) }
   disabledTags.value = [...(props.subscription?.renameOptions?.disabled || [])]
-  sourceMode.value = props.subscription && !props.subscription.url ? 'paste' : 'url'
+  sourceMode.value = props.subscription && !hasUrlSource(props.subscription) ? 'paste' : 'url'
   preview.value = null
   previewing.value = false
   previewErrorMessage.value = ''

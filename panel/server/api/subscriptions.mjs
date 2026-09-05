@@ -174,9 +174,20 @@ const describeEmptyResult = ({ format, skipped }) => {
   return `订阅解析成功(${format} 格式),但里面一个节点都没有。`
 }
 
-// url / content 二选一,统一成 resolveNodes 认的形状。粘贴保存是「节点」模式的正路,
+// 订阅地址可以填多个(镜像、备用、几个机场合成一条):数组 urls 优先,老字段 url 只在没给
+// 数组时算一条。去空白、去重、顺序保留——第一条兼作老字段 url,给还只认单个地址的地方用。
+export const normalizeUrls = (urls, url) => {
+  const list = Array.isArray(urls) && urls.length ? urls : (typeof url === 'string' ? [url] : [])
+  return [...new Set(list.filter((u) => typeof u === 'string').map((u) => u.trim()).filter(Boolean))]
+}
+
+// 一条订阅记录的全部地址:新记录存 urls,老记录只有 url
+export const subscriptionUrls = (sub) =>
+  (sub && Array.isArray(sub.urls) && sub.urls.length ? sub.urls : (sub && sub.url ? [sub.url] : []))
+
+// url(s) / content 二选一,统一成 resolveNodes 认的形状。粘贴保存是「节点」模式的正路,
 // 不再是"只能预览":用户手上只有一堆分享链接、没有订阅地址的情况很常见。
-export const normalizeSource = ({ url, content }) => {
+export const normalizeSource = ({ url, urls, content }) => {
   const trimmedContent = typeof content === 'string' ? content.trim() : ''
   if (trimmedContent) {
     if (Buffer.byteLength(trimmedContent, 'utf8') > MAX_PASTED_CONTENT_BYTES) {
@@ -184,7 +195,8 @@ export const normalizeSource = ({ url, content }) => {
     }
     return { content: trimmedContent }
   }
-  if (typeof url === 'string' && url.trim()) return { url: url.trim() }
+  const list = normalizeUrls(urls, url)
+  if (list.length) return { url: list[0], urls: list }
   throw new Error('url or content is required')
 }
 
@@ -193,7 +205,7 @@ export const normalizeSource = ({ url, content }) => {
 // 调用方在 store 写入之前捕获,天然保证"失败不破坏已存状态"。
 // name:订阅名称。renameOptions.usePrefix 打开时用它做节点名前缀(「破晓 | 香港-01」)。
 // 存的是开关而不是前缀文本本身——存文本的话,用户改了订阅名,前缀还留着旧名字。
-export const resolveNodes = async ({ url, content, name }, fetchImpl, renameOptions, lookup) => {
+export const resolveNodes = async ({ url, urls, content, name }, fetchImpl, renameOptions, lookup) => {
   // renameNodes/groupNodesByRegion 的默认参数只兜底 undefined;显式传 null(合法 JSON 值)
   // 会在其内部触发 "options.xxx of null" —— 这里统一归一化,避免因此误判 400。
   const raw = renameOptions && typeof renameOptions === 'object' ? renameOptions : undefined
@@ -227,20 +239,46 @@ export const resolveNodes = async ({ url, content, name }, fetchImpl, renameOpti
     return finish(parsed)
   }
 
-  if (typeof url !== 'string' || !url.trim()) {
-    throw new Error('url or content is required')
-  }
+  const list = normalizeUrls(urls, url)
+  if (!list.length) throw new Error('url or content is required')
 
   // 逐个 UA 试,第一份能解析出节点的就采用。多发的请求只在失败路径上产生:
   // 首选 UA 就拿到节点时(绝大多数情况)只有一次请求。
-  let firstParsed = null
-  for (const userAgent of SUBSCRIPTION_USER_AGENTS) {
-    const text = await fetchSubscriptionText(url, fetchImpl, lookup, userAgent)
-    const parsed = parseSubscription(text)
-    if (parsed.nodes.length) return finish(parsed)
-    if (!firstParsed) firstParsed = parsed
+  const fetchOne = async (oneUrl) => {
+    let firstParsed = null
+    for (const userAgent of SUBSCRIPTION_USER_AGENTS) {
+      const text = await fetchSubscriptionText(oneUrl, fetchImpl, lookup, userAgent)
+      const parsed = parseSubscription(text)
+      if (parsed.nodes.length) return parsed
+      if (!firstParsed) firstParsed = parsed
+    }
+    throw new Error(describeEmptyResult(firstParsed))
   }
-  throw new Error(describeEmptyResult(firstParsed))
+
+  // 多个地址:逐个拉,任何一个失败整次失败——刷新时不能因为一个地址暂时不通就把它那份
+  // 节点静默丢掉,失败了原有的订阅记录和节点原样保留。各家的节点按地址顺序接起来;
+  // 同一个节点在两个地址里都出现(镜像地址)只留一份,不然会被 dedupeNodeTags 编成 xx-2。
+  const parts = []
+  for (const oneUrl of list) {
+    try {
+      parts.push(await fetchOne(oneUrl))
+    } catch (err) {
+      throw list.length > 1 ? new Error(`${oneUrl}:${errorMessage(err)}`) : err
+    }
+  }
+  if (parts.length === 1) return finish(parts[0])
+  const seen = new Set()
+  const nodes = []
+  for (const part of parts) {
+    for (const node of part.nodes) {
+      const key = JSON.stringify(node)
+      if (seen.has(key)) continue
+      seen.add(key)
+      nodes.push(node)
+    }
+  }
+  const formats = [...new Set(parts.map((p) => p.format))]
+  return finish({ nodes, skipped: parts.flatMap((p) => p.skipped), format: formats.join('+') })
 }
 
 // 把某订阅的新节点并入全局节点池:其它订阅的节点原样保留,按 subscriptions 记录的顺序
@@ -285,8 +323,8 @@ export const registerSubscriptionRoutes = (app, { store, fetchImpl = subscriptio
   // 预览:纯解析/改名/分组,不落库。
   router.post('/preview', async (req, res) => {
     try {
-      const { url, content, renameOptions } = req.body || {}
-      const resolved = await resolveNodes({ url, content, name: req.body?.name }, fetchImpl, renameOptions, lookup)
+      const { url, urls, content, renameOptions } = req.body || {}
+      const resolved = await resolveNodes({ url, urls, content, name: req.body?.name }, fetchImpl, renameOptions, lookup)
       const { renamed, skipped, excluded, disabled, format, preview } = resolved
       const { groups } = groupNodesByRegion(renamed, resolved.renameOptions)
       res.json({
@@ -308,8 +346,8 @@ export const registerSubscriptionRoutes = (app, { store, fetchImpl = subscriptio
   // 创建:拉取解析后保存订阅记录 + 合并节点(全局去重)。
   router.post('/', async (req, res) => {
     try {
-      const { url, content, name, renameOptions } = req.body || {}
-      const source = normalizeSource({ url, content })
+      const { url, urls, content, name, renameOptions } = req.body || {}
+      const source = normalizeSource({ url, urls, content })
       if (typeof name !== 'string' || !name.trim()) throw new Error('name is required')
 
       const resolved = await resolveNodes({ ...source, name }, fetchImpl, renameOptions, lookup)
@@ -321,6 +359,8 @@ export const registerSubscriptionRoutes = (app, { store, fetchImpl = subscriptio
         id,
         name,
         url: source.url || '',
+        // 全部地址存在 urls;url 留着第一条,给老版本面板和只认单个地址的地方用
+        ...(source.urls ? { urls: source.urls } : {}),
         // 粘贴来的订阅没有可回源的地址,内容必须存下来:改重命名规则时要拿它重新解析,
         // 否则一改规则节点就全没了。
         ...(source.content ? { content: source.content } : {}),
@@ -393,10 +433,12 @@ export const registerSubscriptionRoutes = (app, { store, fetchImpl = subscriptio
       const name = body.name === undefined ? existing.name : body.name
       if (typeof name !== 'string' || !name.trim()) throw new Error('name is required')
 
-      // url / content 两者都没传时沿用已存的来源;创建时就保证了至少有一个非空。
-      const url = body.url === undefined ? existing.url || '' : body.url
+      // url(s) / content 两者都没传时沿用已存的来源;创建时就保证了至少有一个非空。
+      const urls = body.urls === undefined && body.url === undefined
+        ? subscriptionUrls(existing)
+        : normalizeUrls(body.urls, body.url)
       const content = body.content === undefined ? existing.content || '' : body.content
-      const source = normalizeSource({ url, content })
+      const source = normalizeSource({ urls, content })
 
       const renameOptions =
         body.renameOptions === undefined ? existing.renameOptions || {} : body.renameOptions
@@ -407,7 +449,7 @@ export const registerSubscriptionRoutes = (app, { store, fetchImpl = subscriptio
         renameOptions && renameOptions.usePrefix === true && name !== existing.name
 
       const needsRefetch =
-        (source.url || '') !== (existing.url || '') ||
+        JSON.stringify(source.urls || []) !== JSON.stringify(subscriptionUrls(existing)) ||
         (source.content || '') !== (existing.content || '') ||
         renamedWithPrefix ||
         JSON.stringify(renameOptions || {}) !== JSON.stringify(existing.renameOptions || {})
@@ -426,6 +468,7 @@ export const registerSubscriptionRoutes = (app, { store, fetchImpl = subscriptio
         ...existing,
         name,
         url: source.url || '',
+        urls: source.urls || undefined,
         content: source.content || undefined,
         format,
         nodeCount: renamed.length,
@@ -448,7 +491,10 @@ export const registerSubscriptionRoutes = (app, { store, fetchImpl = subscriptio
   })
 
   // 粘贴来源的订阅没有可回源的地址,刷新就是拿已存内容重新解析一遍(不走网络)。
-  const existingSource = (sub) => (sub.url ? { url: sub.url } : { content: sub.content || '' })
+  const existingSource = (sub) => {
+    const urls = subscriptionUrls(sub)
+    return urls.length ? { urls } : { content: sub.content || '' }
+  }
 
   // 刷新:重新拉取解析,只替换该订阅的节点。拉取/解析失败时在 store 写入之前就已抛出,
   // 已存的订阅记录与节点保持原样不变。

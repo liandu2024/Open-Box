@@ -201,6 +201,15 @@ test('directForNodes 默认开:节点服务器和订阅主机名生成直连规�
   assert.deepEqual(hosts, { domains: ['node.example.com', 'sub.example.com'], cidrs: ['5.6.7.8/32'] })
 })
 
+test('订阅有多个地址时每个地址的主机名都直连;老记录只有 url 也照旧', async () => {
+  const { collectDirectHosts } = await import('./direct-hosts.mjs')
+  const hosts = collectDirectHosts([], [
+    { url: 'https://a.example.com/x', urls: ['https://a.example.com/x', 'https://b.example.com/y'] },
+    { url: 'https://old.example.com/z' },
+  ])
+  assert.deepEqual(hosts.domains, ['a.example.com', 'b.example.com', 'old.example.com'])
+})
+
 test('directHostCidrs:部署时解析出来的节点 IP 并进直连规则的 ip_cidr(去重),关掉直连开关就不生成', () => {
   const c = buildConfig({ nodes, regionGroups, profile, directHostCidrs: ['38.47.107.167/32', '38.47.107.167/32', '2001:db8::5/128'] })
   const rule = c.route.rules.find((r) => r.outbound === '直连' && Array.isArray(r.domain))
