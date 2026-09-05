@@ -813,6 +813,8 @@ export interface OpenboxTrafficDay {
   other: { up: number; down: number }
   // 24 小时曲线:每小时的进站 / 出站字节数(和总量同源)
   hours: OpenboxTrafficHour[]
+  // 路由器此刻的本地小时(小时桶按它算),今天的曲线画到这里;老服务端没有这个字段
+  nowHour?: number
 }
 export interface OpenboxTrafficHour {
   hour: number

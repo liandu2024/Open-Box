@@ -173,10 +173,11 @@
           <span>{{ $t('trafficTotal') }} {{ fmt(detailTotal) }}</span>
           <span class="text-base-content/60 font-normal">{{ $t('trafficConns', { n: detail.total.conns }) }}</span>
         </div>
-        <!-- 这天的 24 小时曲线,跟在这天的总数后面;今天只画到当前小时 -->
+        <!-- 这天的 24 小时曲线,跟在这天的总数后面;今天只画到路由器此刻的小时(服务端给的,
+             浏览器和路由器可能不在一个时区;老服务端没给才退回浏览器的钟) -->
         <HourlyTrafficChart
           :hours="detail.hours || []"
-          :up-to-hour="detail.day === detail.today ? currentHour : 23"
+          :up-to-hour="detail.day === detail.today ? (detail.nowHour ?? currentHour) : 23"
         />
         <div class="flex flex-wrap items-center gap-2">
           <div

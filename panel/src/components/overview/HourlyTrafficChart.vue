@@ -1,6 +1,8 @@
 <template>
   <!-- 选中那天的 24 小时曲线:进站 / 出站两条平滑面积线。数据是内核计数器按采样时刻落到小时桶里的
        (traffic-collector 的 kind='hour'),和上面的柱子同源、同一对颜色。
+       横轴永远是 0 点到 23 点 24 格,0 点在最左边;今天只画到此刻这个小时,后面的格子空着,
+       走过一个小时多画一格。
        图下面那行图例常驻写着某个小时的进站 / 出站——默认是峰值那个小时,鼠标(或手指)在图上移到
        哪个小时就换成哪个小时,离开又回到峰值;悬停时还在光标旁弹「时段 + 进站 / 出站」的浮层。 -->
   <div class="flex flex-col gap-2">
@@ -67,6 +69,8 @@ let chart: echarts.ECharts | undefined
 let drawnSig = ''
 
 const fmt = (n: number) => prettyBytesHelper(Math.max(0, Math.round(n || 0)), { maximumFractionDigits: 1 })
+// 横轴固定 24 格
+const HOUR_LABELS = Array.from({ length: 24 }, (_, h) => `${String(h).padStart(2, '0')}:00`)
 
 // 真正画出来的那些小时(今天截到当前小时)
 const drawn = computed(() => {
@@ -116,12 +120,15 @@ const render = (force = false) => {
   if (!force && sig === drawnSig) return
   drawnSig = sig
   const c = colors()
-  const labels = hours.map((h) => `${String(h.hour).padStart(2, '0')}:00`)
+  const peak = Math.max(0, ...hours.map((h) => Math.max(h.up, h.down)))
   const series = (name: string, key: 'down' | 'up', color: string) => ({
     name,
     type: 'line',
     smooth: true,
-    showSymbol: false,
+    // 刚过 0 点只有一个点,连不成线,画成一个圆点让人看得见
+    showSymbol: hours.length < 2,
+    symbolSize: 6,
+    // 数据只给到此刻的小时,横轴后面的格子就空着
     data: hours.map((h) => h[key]),
     lineStyle: { color, width: 2 },
     itemStyle: { color },
@@ -141,14 +148,16 @@ const render = (force = false) => {
       textStyle: { color: c.text, fontFamily: c.fontFamily },
       axisPointer: { type: 'line', lineStyle: { color: c.text, opacity: 0.35 } },
       formatter: (params: { axisValue: string; seriesName: string; value: number; marker: string }[]) => {
-        const p = Array.isArray(params) ? params : [params]
+        const p = (Array.isArray(params) ? params : [params]).filter((x) => x && x.value !== null && x.value !== undefined)
+        // 还没到的小时没有数据,不弹浮层
+        if (!p.length) return ''
         const title = p[0] ? `${p[0].axisValue}–${p[0].axisValue.slice(0, 2)}:59` : ''
         return [title, ...p.map((x) => `${x.marker}${x.seriesName} ${fmt(x.value)}`)].join('<br/>')
       },
     },
     xAxis: {
       type: 'category',
-      data: labels,
+      data: HOUR_LABELS,
       boundaryGap: false,
       axisLine: { show: false },
       axisTick: { show: false },
@@ -157,6 +166,8 @@ const render = (force = false) => {
     yAxis: {
       type: 'value',
       min: 0,
+      // 一个字节都还没有时别按 0~1 B 分刻度,先撑到 1 MB
+      max: peak > 0 ? null : 1048576,
       axisLabel: { color: c.text, fontFamily: c.fontFamily, formatter: (v: number) => prettyBytesHelper(v) },
       splitLine: { lineStyle: { color: c.text, opacity: 0.08 } },
     },
@@ -174,7 +185,8 @@ onMounted(() => {
   chart.on('updateAxisPointer', (e: unknown) => {
     const ev = e as { dataIndex?: number; axesInfo?: { value: number }[] }
     const v = ev.axesInfo?.length ? ev.axesInfo[0].value : ev.dataIndex
-    hoverIndex.value = typeof v === 'number' && v >= 0 ? v : null
+    // 还没到的小时(横轴上空着的格子)不算悬停
+    hoverIndex.value = typeof v === 'number' && v >= 0 && v < drawn.value.length ? v : null
   })
   chart.on('globalout', () => {
     hoverIndex.value = null

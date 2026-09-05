@@ -130,8 +130,11 @@ export const registerTrafficRoutes = (app, { collector, ctx, paths, now = () => 
     res.json({
       day, today: localDay(now()), total, nodes, hosts, clients,
       hostsCount: Number(hostSum.n) || 0, clientsCount: Number(clientSum.n) || 0, other,
-      // 24 小时曲线
+      // 24 小时曲线;nowHour 是路由器此刻的本地小时,今天的曲线画到这里为止。
+      // 不能让页面拿浏览器的钟来截:浏览器和路由器可能不在一个时区(人在国外远程看),
+      // 曾经就把 20 点的路由器按浏览器的 0 点截成只剩一格。
       hours: store.hours(day),
+      nowHour: now().getHours(),
     })
   })
 

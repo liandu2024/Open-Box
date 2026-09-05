@@ -85,6 +85,7 @@ test('GET /traffic/day:节点/域名明细 + 未采样差额;非法日期 400', 
   try {
     const r = await fetch(`${base}/api/openbox/traffic/day?day=2026-09-03`)
     const body = await r.json()
+    assert.equal(typeof body.nowHour, 'number')
     assert.equal(body.nodes.length, 2)
     assert.equal(body.hostsCount, 1)
     assert.deepEqual(body.other, { up: 30, down: 300 })
