@@ -306,6 +306,12 @@
               :placeholder="$t(placeholderKey(rule.type))"
               :exclude="pickedElsewhere(index)"
             />
+            <!-- 规则集链接:填完网址自动拉回来解析,后面跟「详情(N)」,和上面同一个弹窗 -->
+            <RuleUrlValue
+              v-else-if="rule.type === 'ruleUrl'"
+              v-model="rule.value"
+              :placeholder="$t(placeholderKey(rule.type))"
+            />
             <input
               v-else
               v-model="rule.value"
@@ -358,6 +364,7 @@ import CountryFlag from '@/components/common/CountryFlag.vue'
 import CountrySelect from '@/components/common/CountrySelect.vue'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import GeoRuleValue from '@/components/routing/GeoRuleValue.vue'
+import RuleUrlValue from '@/components/routing/RuleUrlValue.vue'
 import { showNotification } from '@/helper/notification'
 import StatusBadge from '@/components/common/StatusBadge.vue'
 import { Bars3Icon, PencilSquareIcon, PlusIcon, PowerIcon, TrashIcon } from '@heroicons/vue/24/outline'

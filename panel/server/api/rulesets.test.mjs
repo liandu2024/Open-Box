@@ -161,3 +161,36 @@ test('GET /policies/entries:站点集的规则集展开 + 手写条件,分档计
     await new Promise((resolve) => server.close(resolve))
   }
 })
+
+test('GET /rulesets/preview:按网址拉回来解析,形状和 /rulesets/entries 一致;非 http(s) 直接 400;拉不动 503', async () => {
+  clearRulesetEntriesCache()
+  const ctx = createMockContext({})
+  const paths = createPaths('/opt/open-box')
+  let hits = 0
+  const fetchImpl = async (url) => {
+    hits += 1
+    if (url.includes('bad')) return { ok: false, status: 502 }
+    return { ok: true, status: 200, text: async () => 'DOMAIN-SUFFIX,a.com\nb.com\nIP-CIDR,1.2.3.0/24,no-resolve\nMATCH,DIRECT\n' }
+  }
+  const app = express()
+  registerRulesetRoutes(app, { ctx, paths, fetchImpl })
+  const server = app.listen(0)
+  await new Promise((r) => server.once('listening', r))
+  const base = `http://127.0.0.1:${server.address().port}/api/openbox/rulesets/preview`
+  try {
+    const ok = await (await fetch(`${base}?url=${encodeURIComponent('https://x.test/Check.list')}&limit=2`)).json()
+    assert.equal(ok.total, 3)
+    assert.equal(ok.matched, 3)
+    assert.deepEqual(ok.entries, [{ type: 'domain_suffix', value: 'a.com' }, { type: 'domain_suffix', value: 'b.com' }])
+    // 搜索走同一份缓存,不再拉第二次
+    const q = await (await fetch(`${base}?url=${encodeURIComponent('https://x.test/Check.list')}&q=1.2`)).json()
+    assert.equal(q.matched, 1)
+    assert.equal(hits, 1)
+    const bad = await fetch(`${base}?url=${encodeURIComponent('ftp://x.test/a')}`)
+    assert.equal(bad.status, 400)
+    const down = await fetch(`${base}?url=${encodeURIComponent('https://bad.test/a')}`)
+    assert.equal(down.status, 503)
+  } finally {
+    await new Promise((r) => server.close(r))
+  }
+})

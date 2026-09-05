@@ -1,4 +1,6 @@
 import express from 'express'
+import { fetchRuleList } from '../system/rule-lists.mjs'
+import { parseRuleList } from '../engine/rule-list.mjs'
 import { normalizeRouting } from '../engine/routing-model.mjs'
 import { downloadRuleset, isSafeRulesetTag } from '../system/rulesets.mjs'
 
@@ -130,6 +132,37 @@ export const registerRulesetRoutes = (app, { ctx, paths, store, fetchImpl = glob
         entries: list.slice(offset, offset + limit),
         missing,
       })
+    } catch (error) {
+      res.status(503).json({ message: error instanceof Error ? error.message : String(error) })
+    }
+  })
+
+  // GET /api/openbox/rulesets/preview?url=https://…/Check.list&q=&offset=0&limit=50
+  // 「规则集链接」还没保存、没部署时就要能看:直接把网址拉回来解析,不经过编译那一步。
+  // 形状和 /rulesets/entries 一样,前端同一个弹窗两边都能用。
+  router.get('/rulesets/preview', async (req, res) => {
+    const url = String(req.query.url || '').trim()
+    if (!/^https?:\/\/[^\s]+$/i.test(url) || url.length > 2048) {
+      return res.status(400).json({ message: '规则集链接必须是 http(s) 网址' })
+    }
+    const q = String(req.query.q || '').trim().toLowerCase()
+    const offset = intParam(req.query.offset, 0)
+    const limit = intParam(req.query.limit, 50, MAX_LIMIT) || 50
+    try {
+      const key = `url:${url}`
+      const hit = cache.get(key)
+      let entries
+      if (hit && Date.now() - hit.at < CACHE_TTL_MS) {
+        entries = hit.entries
+      } else {
+        const parsed = parseRuleList(await fetchRuleList(fetchImpl, url))
+        entries = []
+        for (const [type, values] of Object.entries(parsed)) for (const value of values) entries.push({ type, value })
+        cache.set(key, { entries, at: Date.now() })
+        while (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value)
+      }
+      const matched = q ? entries.filter((e) => e.value.toLowerCase().includes(q)) : entries
+      res.json({ url, total: entries.length, matched: matched.length, offset, limit, entries: matched.slice(offset, offset + limit) })
     } catch (error) {
       res.status(503).json({ message: error instanceof Error ? error.message : String(error) })
     }

@@ -637,6 +637,8 @@ const en = {
   routingPolicyNameRequired: 'Give the site set a name.',
   routingPolicyNameDuplicate: 'A site set with that name already exists — the name becomes the outbound tag in the kernel, so it has to be unique.',
   routingPolicyRuleUrl: 'Rule list URL',
+  ruleUrlFetchFailed: 'Could not fetch this URL, or it contained no domains / IPs. Deploy will retry after saving.',
+  ruleUrlFetchFailedShort: 'fetch failed',
   routingPolicyRuleUrlPlaceholder: 'https://example/list/Check.list',
   routingPolicyRulesets: 'Rule sets',
   routingPolicyRulesetsPlaceholder: 'geosite-google (one per row)',

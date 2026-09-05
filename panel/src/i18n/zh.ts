@@ -632,6 +632,8 @@ const zh: LANG_MESSAGE = {
   routingPolicyNameRequired: '请填写站点集名称。',
   routingPolicyNameDuplicate: '已有同名站点集;这个名字会直接用作内核里的出站名称,不能重复。',
   routingPolicyRuleUrl: '规则集链接',
+  ruleUrlFetchFailed: '这个网址拉不下来,或者里面一条域名 / IP 都没解析出来。保存后部署时会再试一次。',
+  ruleUrlFetchFailedShort: '读取失败',
   routingPolicyRuleUrlPlaceholder: 'https://例子/list/Check.list',
   routingPolicyRulesets: '规则集',
   routingPolicyRulesetsPlaceholder: 'geosite-google(一行一个)',

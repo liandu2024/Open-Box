@@ -1,7 +1,7 @@
 <template>
   <DialogWrapper
     v-model="open"
-    :title="tag"
+    :title="tag || url || ''"
     box-class="w-full max-w-2xl"
   >
     <div class="flex flex-col gap-3">
@@ -68,7 +68,7 @@
 
 <script setup lang="ts">
 import { showNotification } from '@/helper/notification'
-import { fetchRulesetEntries } from '@/api/openbox'
+import { fetchRuleListPreview, fetchRulesetEntries } from '@/api/openbox'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import TextInput from '@/components/common/TextInput.vue'
 import { ruleTypeLabelKey } from '@/helper/ruleType'
@@ -76,14 +76,15 @@ import { geoTagNote } from '@/helper/geoCatalog'
 import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-const props = defineProps<{ tag: string }>()
+// tag:geosite / geoip 的规则集名;url:「规则集链接」。两者给一个。
+const props = defineProps<{ tag?: string; url?: string }>()
 const open = defineModel<boolean>({ required: true })
 const { locale, t } = useI18n()
 
 // 分类说明按 tag 从目录里找,语言切换时跟着变
 const note = ref('')
 watch([() => props.tag, locale], async ([tag]) => {
-  note.value = await geoTagNote(tag, locale.value, t)
+  note.value = tag ? await geoTagNote(tag, locale.value, t) : ''
 }, { immediate: true })
 
 
@@ -103,7 +104,8 @@ const load = async (offset: number) => {
   const mine = ++seq
   loading.value = true
   try {
-    const res = await fetchRulesetEntries(props.tag, { q: keyword.value.trim(), offset, limit: PAGE })
+    const opts = { q: keyword.value.trim(), offset, limit: PAGE }
+    const res = props.url ? await fetchRuleListPreview(props.url, opts) : await fetchRulesetEntries(props.tag || '', opts)
     if (mine !== seq) return
     // 字段缺失时给默认值:响应形状不对(代理配错、被别的服务接管)时,
     // 界面该显示"没有条目",而不是渲染中途抛异常整块白掉

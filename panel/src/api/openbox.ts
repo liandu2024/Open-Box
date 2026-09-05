@@ -429,12 +429,24 @@ export const fetchNodeGroups = async (): Promise<OpenboxGroupsPayload> =>
 // 服务端把 .srs 交给内核自己解码(sing-box rule-set decompile),所以看到的就是
 // 内核会匹配的那份;本地没有的分类会现下一份。
 export interface OpenboxRulesetEntries {
-  tag: string
+  // 按规则集名查的带 tag,按「规则集链接」预览的带 url
+  tag?: string
+  url?: string
   total: number
   matched: number
   offset: number
   limit: number
   entries: { type: string; value: string }[]
+}
+
+// 「规则集链接」的预览:网址还没保存、没部署时就把它拉回来解析给用户看(server/api/rulesets.mjs)
+export const fetchRuleListPreview = async (
+  url: string,
+  { q = '', offset = 0, limit = 50 }: { q?: string; offset?: number; limit?: number } = {},
+): Promise<OpenboxRulesetEntries> => {
+  const params = new URLSearchParams({ url, offset: String(offset), limit: String(limit) })
+  if (q) params.set('q', q)
+  return requestJson<OpenboxRulesetEntries>(`/api/openbox/rulesets/preview?${params.toString()}`)
 }
 
 export const fetchRulesetEntries = async (
