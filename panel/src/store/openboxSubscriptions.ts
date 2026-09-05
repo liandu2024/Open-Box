@@ -6,7 +6,12 @@ import { ref } from 'vue'
 // 订阅变动后服务端会把节点应用到内核(见 server/api/subscriptions.mjs):成了说一声,
 // 失败把原因摆出来——订阅本身已经存好,只是内核那一步没过。内核没在跑时不吭声。
 export const notifySubscriptionApplied = (applied?: OpenboxApplyResult) => {
-  if (!applied || !('ok' in applied)) return
+  if (!applied) return
+  if (!('ok' in applied)) {
+    // 节点没变就不重启内核,说一声免得以为刷新没生效;内核没在跑 / 先记账的情况不吭声
+    if (applied.skipped === 'nothing-changed') showNotification({ content: 'subscriptionNodesUnchanged', type: 'alert-info' })
+    return
+  }
   if (applied.ok) {
     showNotification({ content: 'subscriptionAppliedToCore', type: 'alert-success' })
   } else {

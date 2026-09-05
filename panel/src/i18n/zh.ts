@@ -540,6 +540,7 @@ const zh: LANG_MESSAGE = {
   subscriptionContentPlaceholder: '\u7c98\u8d34 ss:// / trojan:// / hysteria2:// \u7b49\u94fe\u63a5,\u6216 Clash/sing-box \u914d\u7f6e\u2026',
   subscriptionSave: '\u4fdd\u5b58',
   subscriptionPreviewFailed: '\u6ca1\u9884\u89c8\u6210\u529f:{message}',
+  subscriptionNodesUnchanged: '节点没有变化,内核不用重启',
   subscriptionAppliedToCore: '节点已更新,内核已重新加载',
   subscriptionApplyFailed: '订阅已保存,但应用到内核没成功:{message}',
   subscriptionSaveFailed: '\u6ca1\u4fdd\u5b58\u6210\u529f:{message}',

@@ -540,6 +540,7 @@ const zhTW: LANG_MESSAGE = {
   subscriptionContentPlaceholder: '\u8cbc\u4e0a ss:// / trojan:// / hysteria2:// \u7b49\u9023\u7d50,\u6216 Clash/sing-box \u8a2d\u5b9a\u2026',
   subscriptionSave: '\u5132\u5b58',
   subscriptionPreviewFailed: '\u6c92\u9810\u89bd\u6210\u529f:{message}',
+  subscriptionNodesUnchanged: '節點沒有變化,核心不用重啟',
   subscriptionAppliedToCore: '節點已更新,核心已重新載入',
   subscriptionApplyFailed: '訂閱已儲存,但套用到核心沒成功:{message}',
   subscriptionSaveFailed: '\u6c92\u5132\u5b58\u6210\u529f:{message}',
