@@ -838,6 +838,14 @@ div::-webkit-scrollbar-thumb:hover {
 /* 侧边栏的产品标识:图片本身是给浅色底做的(深藏青墨迹 + 绿橙点缀)。深色主题(forest)
    下整体反相再转 180 度色相——这是给深色模式翻图的老办法:深墨迹变浅,绿橙两个点缀色
    转一圈基本回到原样(实测 #EC6837 → #EA6635)。 */
+/* 暗色主题下把自定义背景图压暗:面板本身已经是深色半透明,亮堂堂的图片垫在下面
+   会把整页衬得刺眼、文字也不好读。用 multiply 和一层半透明黑混合,图片整体暗下去,
+   不动内联的 background-image,亮色主题不受影响。 */
+[data-theme='forest'] .custom-background {
+  background-color: rgb(0 0 0 / 0.55);
+  background-blend-mode: multiply;
+}
+
 [data-theme='forest'] .app-logo {
   filter: invert(1) hue-rotate(180deg);
 }
