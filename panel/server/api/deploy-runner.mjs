@@ -221,6 +221,7 @@ export const runDeploy = (args) => {
 
 const runDeployInner = async ({ store, ctx, paths, fetchImpl = globalThis.fetch, lookup }) => {
   let result
+  const startedAt = Date.now()
   try {
     const [systemDns, localSubnets] = await Promise.all([readSystemDns(ctx), readLocalSubnets(ctx)])
     const directHostCidrs = await resolveDirectHostCidrs(store, systemDns, lookup)
@@ -244,6 +245,8 @@ const runDeployInner = async ({ store, ctx, paths, fetchImpl = globalThis.fetch,
       at: Date.now(),
       badTags: result.badTags || [],
     })
+    // 部署多久,日志里直接能看到——用户反馈「重启要一分钟」时不用猜
+    console.log(`[deploy] ${result.ok ? '完成' : `失败(${result.stage})`},耗时 ${((Date.now() - startedAt) / 1000).toFixed(1)}s`)
   } catch (error) {
     // deployConfig 只在"落盘"之后的步骤自行 try/catch;冲突检测(detectConflicts)、
     // mkdirp、validateConfigObject 这些落盘之前的步骤抛出的异常会冒泡到这里。不兜底的话

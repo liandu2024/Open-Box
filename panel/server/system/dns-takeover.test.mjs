@@ -147,3 +147,26 @@ test('uci commit 失败(闪存写满)必须抛错,不能报部署成功', async 
   } })
   await assert.rejects(() => applyDnsTakeover(ctx, paths, { mode: 'dnsmasq' }), /uci commit dhcp 失败/)
 })
+
+test('dnsmasq 模式:上游已经指向内核、noresolv 也对——不 commit、不重启 dnsmasq,只刷新状态文件', async () => {
+  const ctx = createMockContext({
+    files: { '/opt/open-box/data/dnsmasq-backup.txt': 'ORIGINAL' },
+    execResults: {
+      'uci -q get dhcp.@dnsmasq[0].server': { code: 0, stdout: '127.0.0.1#7853\n' },
+      'uci -q get dhcp.@dnsmasq[0].noresolv': { code: 0, stdout: '1\n' },
+    },
+  })
+  const r = await applyDnsTakeover(ctx, paths, { mode: 'dnsmasq' })
+  assert.deepEqual(r, { changed: false, actions: ['unchanged'] })
+  assert.ok(!ctx.calls.some((c) => c.cmd === '/etc/init.d/dnsmasq'), '不该重启 dnsmasq')
+  assert.ok(!ctx.calls.some((c) => c.cmd === 'uci' && c.args[0] === 'commit'), '不该 commit')
+  assert.ok(ctx.writes.some((w) => w.path.endsWith('dnsmasq-takeover.txt')), '状态文件照样写')
+
+  // 按域名转发的形态:条目一样也跳过;差一个域名就得写
+  const ctx2 = createMockContext({
+    files: { '/opt/open-box/data/dnsmasq-backup.txt': 'ORIGINAL' },
+    execResults: { 'uci -q get dhcp.@dnsmasq[0].server': { code: 0, stdout: '/a.com/127.0.0.1#7853 /b.com/127.0.0.1#7853 223.5.5.5\n' } },
+  })
+  assert.equal((await applyDnsTakeover(ctx2, paths, { mode: 'dnsmasq', forwardDomains: ['b.com', 'a.com'] })).changed, false)
+  assert.equal((await applyDnsTakeover(ctx2, paths, { mode: 'dnsmasq', forwardDomains: ['a.com', 'c.com'] })).changed, true)
+})

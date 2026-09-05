@@ -53,6 +53,10 @@ openbox_watch_start() {
 	(
 		# 脱离调用方的会话:从 ssh 手动 restart 时会话一结束 SIGHUP 会把它带走
 		trap '' HUP INT TERM
+		# 放开 rc.common 的锁:procd_lock 是 `exec 1000>锁文件; flock 1000`,这个子 shell 会把
+		# fd 1000 一起继承过来,锁就跟着它活到退出(约 12 秒)。期间任何 /etc/init.d/openbox
+		# status 都得干等——面板每次部署重启内核后看一眼状态,就白白卡这 12 秒(实测)。
+		exec 1000>&- 2>/dev/null
 		_ob_up=0
 		_ob_i=0
 		_ob_last=""

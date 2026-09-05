@@ -71,6 +71,18 @@ export const applyDnsTakeover = async (ctx, paths, { mode, forwardDomains = [] }
   const servers = perDomain
     ? safeDomains.map((domain) => `/${domain}/${SINGBOX_DNS_UPSTREAM}`)
     : [SINGBOX_DNS_UPSTREAM]
+  const stateText = [...servers.map((s) => `server=${s}`), ...(perDomain ? [] : ['noresolv=1'])].join('\n') + '\n'
+
+  // 已经是目标状态就一个字不动:每次部署都 commit + 重启 dnsmasq,是一次全 LAN 解析瞬断外加
+  // 三秒多的等待(实测),而绝大多数部署 DNS 这块根本没变。和 init 脚本里的幂等判断一样,
+  // 只看我们自己写的条目和 noresolv。
+  const ours = await listOurEntries(ctx)
+  const currentNoresolv = String((await ctx.exec('uci', ['-q', 'get', 'dhcp.@dnsmasq[0].noresolv'])).stdout || '').trim() === '1'
+  const sameServers = ours.length === servers.length && [...ours].sort().join('\n') === [...servers].sort().join('\n')
+  if (sameServers && currentNoresolv === !perDomain) {
+    await ctx.writeFile(dnsTakeoverStatePath(paths), stateText)
+    return { changed: false, actions: ['unchanged'] }
+  }
   if (perDomain) {
     // 只摘掉我们自己上一次写的条目,用户的上游(AdGuard / 223.5.5.5 …)原样保留——
     // "其余域名交回路由器自己的上游"说的就是它们。也不设 noresolv,反而要把可能残留的
@@ -91,10 +103,7 @@ export const applyDnsTakeover = async (ctx, paths, { mode, forwardDomains = [] }
   }
   await ctx.exec('/etc/init.d/dnsmasq', ['restart'])
   // 先写状态再重启 dnsmasq 也无妨,但放在 commit 之后能保证"状态文件存在 ⇒ uci 已经写过"
-  await ctx.writeFile(
-    dnsTakeoverStatePath(paths),
-    [...servers.map((s) => `server=${s}`), ...(perDomain ? [] : ['noresolv=1'])].join('\n') + '\n',
-  )
+  await ctx.writeFile(dnsTakeoverStatePath(paths), stateText)
   return {
     changed: true,
     actions: ['backup', perDomain ? 'set-per-domain' : badDomain ? 'set-upstream:bad-domain' : 'set-upstream', 'restart-dnsmasq'],
