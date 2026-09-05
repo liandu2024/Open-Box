@@ -133,6 +133,11 @@ html.apple-mobile-ui {
   border-radius: var(--app-radius-nav, 0.875rem) !important;
 }
 
+/* 侧边栏底部的启动 / 停止 / 重启:圆角和上面的菜单项一个变量,折叠时一列看着才是一套 */
+#app-content .kernel-action-btn {
+  border-radius: var(--app-radius-nav, 0.875rem) !important;
+}
+
 #app-content .tabs-box {
   border-radius: var(--app-radius-field, 0.5rem) !important;
 }
