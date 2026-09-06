@@ -4,7 +4,7 @@ import express from 'express'
 import { parseSubscription } from '../engine/subscription.mjs'
 import { renameNodes, previewRename, excludeNodes } from '../engine/rename.mjs'
 import { groupNodesByRegion } from '../engine/groups.mjs'
-import { assertPublicUrl } from './net-guard.mjs'
+import { assertPublicUrl, pinnedLookup } from './net-guard.mjs'
 import { subscriptionFetch } from '../system/insecure-fetch.mjs'
 
 // 面板本身跑在网关上,订阅拉取又是"服务端发起、URL 客户端可控"的经典 SSRF 面——
@@ -113,7 +113,10 @@ const fetchSubscriptionResponse = async (initialUrl, fetchImpl, lookup, userAgen
   let redirectsFollowed = 0
 
   for (;;) {
-    await assertPublicUrl(currentUrl, { lookup })
+    // 校验和建连必须是同一次解析:把校验过的地址交给 fetch 实现按它去连(insecure-fetch 会
+    // 接到 node:http 的 lookup 上),Host / SNI 仍是域名。否则同一个域名校验时答公网、建连时
+    // 答回环,就绕过了这道闸(DNS rebinding)。每一跳重定向都重新校验、重新绑定。
+    const checked = await assertPublicUrl(currentUrl, { lookup })
 
     let res
     try {
@@ -121,6 +124,7 @@ const fetchSubscriptionResponse = async (initialUrl, fetchImpl, lookup, userAgen
         redirect: 'manual',
         headers: { 'User-Agent': userAgent },
         signal: AbortSignal.timeout(SUBSCRIPTION_FETCH_TIMEOUT_MS),
+        lookup: pinnedLookup(checked.validatedRecords),
       })
     } catch (err) {
       throw new Error(`failed to fetch subscription: ${describeFetchError(err)}`)

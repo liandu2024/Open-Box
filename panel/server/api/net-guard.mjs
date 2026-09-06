@@ -153,6 +153,22 @@ export const assertPublicHost = async (hostname, { lookup = dns.lookup } = {}) =
   return records
 }
 
+// 把刚校验过的地址做成 node:http / node:https 的 lookup:实际建连时就连这些地址,不再
+// 解析一次。校验和建连各自解析是 DNS rebinding 的窗口——同一个域名第一次答公网、第二次答
+// 回环,校验过了、连的却是本机服务。Host 头和 TLS 的 SNI 仍然是原来的域名(由调用方保证)。
+export const pinnedLookup = (records) => {
+  const list = (Array.isArray(records) ? records : [])
+    .map((r) => ({ address: String(r && r.address || ''), family: Number(r && r.family) || 4 }))
+    .filter((r) => r.address)
+  return (hostname, options, callback) => {
+    const cb = typeof options === 'function' ? options : callback
+    const opts = typeof options === 'object' && options ? options : {}
+    if (!list.length) { cb(new Error(`no validated address for ${hostname}`)); return }
+    if (opts.all) { cb(null, list.map((r) => ({ address: r.address, family: r.family }))); return }
+    cb(null, list[0].address, list[0].family)
+  }
+}
+
 // 协议限定 http/https + 解析并校验 hostname 的每一个地址。校验通过时返回解析出的 URL
 // 对象,方便调用方复用(不用重新 new URL 一次)。
 export const assertPublicUrl = async (urlString, options = {}) => {
@@ -167,7 +183,9 @@ export const assertPublicUrl = async (urlString, options = {}) => {
     throw new Error('only http and https urls are supported')
   }
 
-  await assertPublicHost(parsed.hostname, options)
+  const records = await assertPublicHost(parsed.hostname, options)
+  // 调用方需要"校验过什么就连什么"时,从这里拿刚校验过的地址
+  parsed.validatedRecords = records
 
   return parsed
 }

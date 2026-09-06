@@ -1159,3 +1159,28 @@ test('refresh 期间改了名字或来源 → 这次结果作废(报错、节点
     await close()
   }
 })
+
+// -------- 审查第 5 项:校验过的地址要绑定到建连上,不给 DNS rebinding 留窗口 --------
+test('拉订阅时把校验过的地址交给 fetch 实现(init.lookup),每一跳重定向都重新校验重新绑定', async () => {
+  const seen = []
+  const fetchImpl = async (url, init) => {
+    // 记下这一跳绑定的地址:调用 init.lookup 看它给谁
+    const pinned = await new Promise((resolve, reject) => init.lookup('whatever', {}, (err, address, family) => (err ? reject(err) : resolve({ address, family }))))
+    seen.push({ url: String(url), ...pinned })
+    if (String(url) === 'http://first.example/sub') return { ok: false, status: 302, headers: new Headers({ location: 'http://second.example/sub' }) }
+    return { ok: true, status: 200, text: async () => HK_LINE }
+  }
+  // 第一个域名校验时答 93.184.216.34,第二个答 8.8.8.8;若建连再解析一次就可能拿到别的地址
+  const lookup = async (hostname) => [{ address: hostname === 'first.example' ? '93.184.216.34' : '8.8.8.8', family: 4 }]
+  const { baseUrl, close } = await startApp(fetchImpl, lookup)
+  try {
+    const res = await postJson(baseUrl, '/api/openbox/subscriptions/preview', { url: 'http://first.example/sub' })
+    assert.equal(res.status, 200)
+    assert.deepEqual(seen, [
+      { url: 'http://first.example/sub', address: '93.184.216.34', family: 4 },
+      { url: 'http://second.example/sub', address: '8.8.8.8', family: 4 },
+    ])
+  } finally {
+    await close()
+  }
+})

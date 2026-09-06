@@ -40,6 +40,8 @@ export const insecureFetch = (url, init = {}) => new Promise((resolve, reject) =
     signal: init.signal,
     rejectUnauthorized: false,
   }
+  // 调用方校验过地址就按校验过的连(见 api/net-guard.mjs 的 pinnedLookup),不再解析一次
+  if (typeof init.lookup === 'function') options.lookup = init.lookup
   // IP 直连的 https 不能发 SNI(Node 会警告且部分服务端拒绝),域名才带
   if (target.protocol === 'https:' && !net.isIP(target.hostname)) options.servername = target.hostname
   const req = mod.request(target, options, (res) => {

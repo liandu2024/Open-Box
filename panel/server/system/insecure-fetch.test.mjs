@@ -72,3 +72,22 @@ test('subscriptionFetch:3xx 不自动跟随,原样返回给调用方逐跳校验
     await close(server)
   }
 })
+
+// 审查第 5 项:init.lookup 接到 node:http 的 lookup 上,连的是校验过的地址,Host 仍是域名
+test('insecureFetch:带 init.lookup 时按它给的地址建连,不再解析域名;Host 头仍是原域名', async () => {
+  const seen = []
+  const server = http.createServer((req, res) => { seen.push(req.headers.host); res.end('pinned-ok') })
+  await new Promise((r) => server.listen(0, '127.0.0.1', r))
+  const port = server.address().port
+  try {
+    // 用 net-guard 真正的 pinnedLookup:node:net 在新版本里带 { all: true } 调 lookup、要的是数组,手写桩容易漏这一点
+    const { pinnedLookup } = await import('../api/net-guard.mjs')
+    const lookup = pinnedLookup([{ address: '127.0.0.1', family: 4 }])
+    const res = await subscriptionFetch(`http://never-resolves.invalid:${port}/sub`, { lookup })
+    assert.equal(res.status, 200)
+    assert.equal(await res.text(), 'pinned-ok')
+    assert.deepEqual(seen, [`never-resolves.invalid:${port}`])
+  } finally {
+    await new Promise((r) => server.close(r))
+  }
+})
