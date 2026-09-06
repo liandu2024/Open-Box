@@ -59,6 +59,7 @@
 
 <script setup lang="ts">
 import { findBrand } from '@/constant/brands'
+import { iconScaleFactor } from '@/helper/iconScale'
 import { isGlobeIcon } from '@/constant/countries'
 import { isMiscIcon } from '@/constant/misc-icons'
 import {
@@ -82,7 +83,8 @@ const props = withDefaults(
 )
 
 const scaleStyle = computed(() => {
-  const factor = props.size > 0 ? (props.size + (props.scale || 0)) / props.size : 1
+  // 比例按代理页大图标算(见 helper/iconScale.ts),小国旗等比缩放
+  const factor = iconScaleFactor(props.scale)
   return factor === 1 ? undefined : { transform: `scale(${factor})`, transformOrigin: 'center' }
 })
 

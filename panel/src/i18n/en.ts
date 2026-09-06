@@ -521,7 +521,7 @@ const en = {
   globeIcon_americas: 'Globe (Americas)',
   groupIconLabel: 'Icon',
   iconScaleLabel: 'Scale',
-  iconScaleHint: '0 = no scaling; +1 enlarges by 1px, -1 shrinks by 1px',
+  iconScaleHint: '0 = no scaling; measured on the large icon on the Proxies page: +1 enlarges it by 1px, -1 shrinks it by 1px; smaller icons elsewhere scale by the same ratio',
   iconScaleDown: 'Shrink 1px',
   iconScaleUp: 'Enlarge 1px',
   groupIconNone: 'None',

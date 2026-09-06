@@ -516,7 +516,7 @@ const zhTW: LANG_MESSAGE = {
   globeIcon_americas: '地球(美洲)',
   groupIconLabel: '圖示',
   iconScaleLabel: '縮放',
-  iconScaleHint: '預設 0 不縮放;+1 加大 1px,-1 縮小 1px',
+  iconScaleHint: '預設 0 不縮放;按代理頁的大圖示算,+1 加大 1px,-1 縮小 1px;其他地方的小圖示按同一比例等比縮放',
   iconScaleDown: '縮小 1px',
   iconScaleUp: '加大 1px',
   groupIconNone: '無',

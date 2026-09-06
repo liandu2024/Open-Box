@@ -22,6 +22,7 @@
 
 <script setup lang="ts">
 import DOMPurify from 'dompurify'
+import { iconScaleFactor } from '@/helper/iconScale'
 import { computed } from 'vue'
 
 const props = withDefaults(
@@ -46,7 +47,8 @@ const boxStyle = computed(() => ({
   marginRight: `${props.margin}px`,
 }))
 const glyphStyle = computed(() => {
-  const factor = props.size > 0 ? (props.size + (props.scale || 0)) / props.size : 1
+  // 比例按代理页大图标算(见 helper/iconScale.ts),小图标等比缩放,不按自己的尺寸加像素
+  const factor = iconScaleFactor(props.scale)
   return {
     width: `${props.size}px`,
     height: `${props.size}px`,
