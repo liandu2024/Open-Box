@@ -69,8 +69,9 @@
                fake-ip 的情况由上面「DNS · 节点」那一环说明,这里不重复 -->
           <div
             v-if="exitNodeNote"
-            class="text-base-content/60 text-xs"
-          >{{ exitNodeNote }}</div>
+            class="text-xs"
+            :class="exitNodeNote.warn ? 'text-warning' : 'text-base-content/60'"
+          >{{ exitNodeNote.text }}</div>
         </template>
 
         <!-- DNS · 节点:节点那头再解析一次。内核交给节点的是 IP,节点本来不用解析;但那个 IP
@@ -267,12 +268,16 @@ const flowNodes = computed(() => [
   ...(fakeIpHop.value ? [{ key: 'dnsNode', label: 'DNS', sub: t('routeTestDnsNodeSub') }] : []),
   ...(dnsSkipped.value ? [] : [{ key: 'dns', label: 'DNS', sub: result.value?.resolve ? `${result.value.resolve.ms}ms` : '—' }]),
 ])
-// 走节点、拿到的是真实 IP:写明节点按它直接连,不再解析。拿到 fake-ip 的由「DNS · 节点」那环说明
+// 走节点、拿到的是真实 IP:写明节点按它直接连。这个地址是不是节点位置就近的 CDN,看上面那次解析
+// 是经节点问的(代理 DNS,答案就是节点那边看到的)还是直连问的(直连 DNS 却走了节点——DNS 规则
+// 过期或按 IP 命中的站点集会这样,拿到的是国内视角的地址,要标出来)。拿到 fake-ip 的由「DNS · 节点」那环说明
 const exitNodeNote = computed(() => {
   const e = result.value?.exit
-  if (!e?.viaProxy || fakeIpHop.value) return ''
+  if (!e?.viaProxy || fakeIpHop.value) return null
   const ip = e.destinationIP || e.connectTo
-  return ip ? t('routeTestExitByIp', { ip }) : ''
+  if (!ip) return null
+  const viaProxyDns = Boolean(dnsDecision.value?.viaProxy)
+  return { text: t(viaProxyDns ? 'routeTestExitByIp' : 'routeTestExitByIpDirectDns', { ip }), warn: !viaProxyDns }
 })
 
 // 配置里那台服务器的地址(local 没有地址就用 tag)
