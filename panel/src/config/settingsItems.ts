@@ -107,10 +107,6 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
         key: `${SETTINGS_MENU_KEY.overview}.autoConnectionCheckWhenStart`,
         label: 'autoConnectionCheckWhenStart',
       },
-      {
-        key: `${SETTINGS_MENU_KEY.overview}.numberOfChartsInSidebar`,
-        label: 'numberOfChartsInSidebar',
-      },
     ],
   },
   {
