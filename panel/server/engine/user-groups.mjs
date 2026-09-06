@@ -17,6 +17,7 @@
 // 也就是说"生成的配置能过 check"并不足以保证这几点,只能在生成时自己挡。
 
 import { keywordMatches, normalizeForMatch } from './rename.mjs'
+import { parseDuration } from './duration.mjs'
 
 export const GROUP_TYPES = Object.freeze(['urltest', 'selector'])
 
@@ -53,6 +54,15 @@ export const DEFAULT_TOLERANCE = 100
 // 12 小时:一天之内用过一次的组就一直保持每 3 分钟一检。代价是这些组的成员会持续被测速,
 // 但同一个节点的延迟记录是全局共享的,3 分钟内只会被测一次,不会因为组多就成倍增加。
 export const DEFAULT_IDLE_TIMEOUT = '12h'
+// sing-box 要求 interval ≤ idle_timeout,否则启动时 FATAL("interval must be less or equal than
+// idle_timeout"),而 `sing-box check` 查不出这一条。用户把间隔设成一天时,idle_timeout 跟着抬到和
+// interval 一样长;没设或设得比 interval 长的照用。
+export const idleTimeoutFor = (idleTimeout, interval) => {
+  const idle = idleTimeout || DEFAULT_IDLE_TIMEOUT
+  const idleMs = parseDuration(idle)
+  const intervalMs = parseDuration(interval)
+  return intervalMs > 0 && idleMs > 0 && intervalMs > idleMs ? interval : idle
+}
 
 // 两个开箱即用的组:一份自动择优、一份手动指定,成员都是"当前所有有效节点"。
 // allNodes 是动态的——订阅刷新后节点变了,组的成员跟着变,不需要用户回来重新勾一遍。
@@ -285,7 +295,7 @@ export const emitUserGroups = (groups, nodes, options = {}) => {
         url: g.testUrl || testUrl,
         interval: g.interval || DEFAULT_INTERVAL,
         tolerance: g.tolerance ?? DEFAULT_TOLERANCE,
-        idle_timeout: g.idleTimeout || DEFAULT_IDLE_TIMEOUT,
+        idle_timeout: idleTimeoutFor(g.idleTimeout, g.interval || DEFAULT_INTERVAL),
       })
     } else {
       outbounds.push({ type: 'selector', tag: g.name, outbounds: members })

@@ -284,3 +284,17 @@ test('图标缩放:整数、限在 ±20,缺省 0', async () => {
   assert.equal(normalizeGroup({ name: 'x', iconScale: -3 }).iconScale, -3)
   assert.equal(normalizeGroup({ name: 'x' }).iconScale, 0)
 })
+
+test('interval 比 idle_timeout 长时 idle_timeout 抬到和 interval 一样(sing-box 要求 interval ≤ idle_timeout,check 查不出、启动才炸)', async () => {
+  const { emitUserGroups, idleTimeoutFor } = await import('./user-groups.mjs')
+  assert.equal(idleTimeoutFor('12h', '5m'), '12h')
+  assert.equal(idleTimeoutFor('12h', '1440m'), '1440m')
+  assert.equal(idleTimeoutFor('12h', '12h'), '12h')
+  assert.equal(idleTimeoutFor('2h', '3h'), '3h')
+  assert.equal(idleTimeoutFor(undefined, '30m'), '12h')
+  const nodes = [{ tag: 'A' }]
+  const { outbounds } = emitUserGroups([{ id: 'g', name: '自动', type: 'urltest', mode: 'static', members: ['A'], interval: '1440m' }], nodes)
+  const group = outbounds.find((o) => o.tag === '自动')
+  assert.equal(group.interval, '1440m')
+  assert.equal(group.idle_timeout, '1440m')
+})
