@@ -201,18 +201,47 @@ openbox_cleanup() {
 	# noresolv(AdGuard Home / Pi-hole 之类会自行设置)、或者仅因用户自己配置了
 	# server 列表就触发一次无谓的 uci commit + dnsmasq 重启。
 	if [ -f "$DNSMASQ_BACKUP" ]; then
-		# 两种形态都要摘:整体接管写的是 `127.0.0.1#7853`,按域名转发写的是
-		# `/example.com/127.0.0.1#7853`(一个域名一条)。只删前者的话,停掉内核后
-		# 那些域名会继续被转给一个已经死掉的解析器,单独解析不了——比全断更难查。
-		for _ob_server in $(uci -q get dhcp.@dnsmasq[0].server); do
-			case "$_ob_server" in
-				*"$OPENBOX_DNS_UPSTREAM") uci -q del_list dhcp.@dnsmasq[0].server="$_ob_server" ;;
-			esac
-		done
+		# 按备份把 dnsmasq 还原到接管前:整段清空后重建 server 列表和 noresolv——和面板的
+		# restoreDnsTakeover 同一语义。以前只摘掉我们自己写的条目、删掉 noresolv:接管前用户若配置了
+		# 显式上游(server=9.9.9.9 + noresolv=1),停止之后上游列表就是空的,原值只留在备份里——
+		# 没有 WAN 自动 DNS 的设备(禁用 peerdns、静态组网)从此没有解析,有 WAN DNS 的也被改了路径。
+		# 备份是 `uci -q show dhcp.@dnsmasq[0]` 的原样输出:list 值形如 .server='1.1.1.1' '8.8.8.8',
+		# 每个值单独加引号、空格分隔;noresolv 形如 .noresolv='1'。
+		uci -q delete dhcp.@dnsmasq[0].server
 		uci -q delete dhcp.@dnsmasq[0].noresolv
+		_ob_noresolv=""
+		while IFS= read -r _ob_line || [ -n "$_ob_line" ]; do
+			case "$_ob_line" in
+				*.server=*)
+					_ob_rhs="${_ob_line#*.server=}"
+					while [ -n "$_ob_rhs" ]; do
+						case "$_ob_rhs" in
+							"'"*) _ob_rhs="${_ob_rhs#\'}"; _ob_val="${_ob_rhs%%\'*}"; _ob_rhs="${_ob_rhs#*\'}"; _ob_rhs="${_ob_rhs# }" ;;
+							*) _ob_val="$_ob_rhs"; _ob_rhs="" ;;
+						esac
+						[ -n "$_ob_val" ] && uci -q add_list dhcp.@dnsmasq[0].server="$_ob_val"
+					done
+					;;
+				*.noresolv=*)
+					_ob_noresolv="${_ob_line#*.noresolv=}"
+					_ob_noresolv="${_ob_noresolv#\'}"
+					_ob_noresolv="${_ob_noresolv%\'}"
+					;;
+			esac
+		done < "$DNSMASQ_BACKUP"
+		[ -n "$_ob_noresolv" ] && uci -q set dhcp.@dnsmasq[0].noresolv="$_ob_noresolv"
 		if [ -n "$(uci -q changes dhcp)" ]; then
-			uci -q commit dhcp
-			/etc/init.d/dnsmasq restart >/dev/null 2>&1
+			# commit 成功(dnsmasq 真的回到接管前)才删备份;闪存写满 commit 失败就把暂存的改动
+			# 撤掉、备份留着,下次 stop 或面板还原还能重来
+			if uci -q commit dhcp; then
+				/etc/init.d/dnsmasq restart >/dev/null 2>&1
+				rm -f "$DNSMASQ_BACKUP"
+			else
+				uci -q revert dhcp
+				echo "openbox: uci commit dhcp failed; keeping $DNSMASQ_BACKUP for retry" >&2
+			fi
+		else
+			rm -f "$DNSMASQ_BACKUP"
 		fi
 	fi
 

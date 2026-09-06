@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
@@ -52,9 +54,95 @@ test('内核停止清理:dnsmasq 清理仅在接管标记(备份文件)存在时
   assert.match(core, /^DNSMASQ_BACKUP="\$DATA\/dnsmasq-backup\.txt"$/m, 'init 脚本备份路径与 dns-takeover.mjs 不一致')
   assert.match(
     core,
-    /openbox_cleanup\(\)\s*\{[^}]*if \[ -f "\$DNSMASQ_BACKUP" \];\s*then[^]*?del_list dhcp\.@dnsmasq\[0\]\.server[^]*?delete dhcp\.@dnsmasq\[0\]\.noresolv[^]*?\bfi\b/,
-    'openbox_cleanup 必须把 dnsmasq 清理整体置于备份文件存在性判断之内',
+    /openbox_cleanup\(\)\s*\{[^}]*if \[ -f "\$DNSMASQ_BACKUP" \];\s*then[^]*?delete dhcp\.@dnsmasq\[0\]\.server[^]*?delete dhcp\.@dnsmasq\[0\]\.noresolv[^]*?add_list dhcp\.@dnsmasq\[0\]\.server=[^]*?done < "\$DNSMASQ_BACKUP"/,
+    'openbox_cleanup 必须把 dnsmasq 清理整体置于备份文件存在性判断之内,且按备份重建上游',
   )
+})
+
+// 审查第 3 项:停止时要按备份把 dnsmasq 还原到接管前,而不是只摘掉自己写的条目。
+// 把脚本里的 openbox_cleanup 原样抽出来,uci / dnsmasq / firewall 换成记录状态的桩,真的跑一遍。
+const runCleanup = ({ backup, servers, noresolv, commitFails = false }) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'openbox-initd-'))
+  const fn = core.match(/^openbox_cleanup\(\) \{[^]*?^\}/m)
+  assert.ok(fn, '抽不出 openbox_cleanup')
+  const body = fn[0]
+    .replace(/\/etc\/init\.d\/dnsmasq restart/g, 'stub_dnsmasq restart')
+    .replace(/\/etc\/init\.d\/firewall reload/g, 'stub_firewall reload')
+  if (backup !== null) fs.writeFileSync(path.join(dir, 'dnsmasq-backup.txt'), backup)
+  fs.writeFileSync(path.join(dir, 'servers'), servers.map((s) => `${s}\n`).join(''))
+  if (noresolv !== null) fs.writeFileSync(path.join(dir, 'noresolv'), `${noresolv}\n`)
+  const harness = `
+set -u
+D='${dir}'
+DATA="$D"; DNSMASQ_BACKUP="$D/dnsmasq-backup.txt"; NFT_TABLE="inet openbox"; OPENBOX_DNS_UPSTREAM='127.0.0.1#7853'
+SV="$D/servers"; NR="$D/noresolv"; CH="$D/changes"; LOG="$D/log"
+uci() {
+  [ "$1" = "-q" ] && shift
+  cmd=$1; shift
+  case "$cmd" in
+    get) case "$1" in *.server) tr '\\n' ' ' < "$SV" 2>/dev/null ;; *.noresolv) cat "$NR" 2>/dev/null ;; esac ;;
+    delete) case "$1" in *.server) : > "$SV"; echo x >> "$CH" ;; *.noresolv) rm -f "$NR"; echo x >> "$CH" ;; firewall.*) : ;; esac ;;
+    del_list) v="\${1#*=}"; grep -vxF -- "$v" "$SV" > "$SV.n" 2>/dev/null; mv "$SV.n" "$SV"; echo x >> "$CH" ;;
+    add_list) echo "\${1#*=}" >> "$SV"; echo x >> "$CH" ;;
+    set) case "$1" in *.noresolv=*) echo "\${1#*=}" > "$NR"; echo x >> "$CH" ;; esac ;;
+    changes) [ "$1" = dhcp ] && cat "$CH" 2>/dev/null; return 0 ;;
+    commit) ${commitFails ? 'echo commit-failed >> "$LOG"; return 1' : ': > "$CH"; echo committed >> "$LOG"'} ;;
+    revert) : > "$CH"; echo reverted >> "$LOG" ;;
+  esac
+  return 0
+}
+stub_dnsmasq() { echo "dnsmasq-$1" >> "$LOG"; }
+stub_firewall() { echo "firewall-$1" >> "$LOG"; }
+${body}
+openbox_cleanup
+echo "servers=$(tr '\\n' ',' < "$SV")"
+echo "noresolv=$(cat "$NR" 2>/dev/null)"
+echo "backup=$([ -f "$DNSMASQ_BACKUP" ] && echo yes || echo no)"
+echo "log=$(tr '\\n' ',' < "$LOG" 2>/dev/null)"
+`
+  const out = execFileSync('sh', ['-c', harness], { encoding: 'utf8' })
+  fs.rmSync(dir, { recursive: true, force: true })
+  const result = {}
+  for (const line of out.trim().split('\n')) { const i = line.indexOf('='); result[line.slice(0, i)] = line.slice(i + 1) }
+  return result
+}
+
+test('内核停止清理:按备份把上游和 noresolv 还原到接管前(显式上游 + noresolv=1 的设备停止后不再没有 DNS)', () => {
+  const r = runCleanup({
+    backup: "dhcp.cfg01411c=dnsmasq\ndhcp.cfg01411c.server='9.9.9.9'\ndhcp.cfg01411c.noresolv='1'\n",
+    servers: ['127.0.0.1#7853'], noresolv: '1',
+  })
+  assert.equal(r.servers, '9.9.9.9,')
+  assert.equal(r.noresolv, '1')
+  assert.equal(r.backup, 'no')
+  assert.match(r.log, /committed,dnsmasq-restart/)
+})
+
+test('内核停止清理:多上游(同一行多个引号值)全部恢复;备份里没有 noresolv 就删掉接管时设的 noresolv=1', () => {
+  const r = runCleanup({
+    backup: "dhcp.cfg01411c.server='1.1.1.1' '8.8.8.8'\n",
+    servers: ['/example.com/127.0.0.1#7853', '127.0.0.1#7853'], noresolv: '1',
+  })
+  assert.equal(r.servers, '1.1.1.1,8.8.8.8,')
+  assert.equal(r.noresolv, '')
+  assert.equal(r.backup, 'no')
+})
+
+test('内核停止清理:没有备份(hijack 模式,从未接管)一个字不动、不 commit;停两次第二次也是空操作', () => {
+  const r = runCleanup({ backup: null, servers: ['223.5.5.5'], noresolv: null })
+  assert.equal(r.servers, '223.5.5.5,')
+  assert.equal(r.backup, 'no')
+  assert.ok(!/committed/.test(r.log))
+})
+
+test('内核停止清理:uci commit 失败(闪存写满)→ revert 暂存改动、备份保留,下次还能重来', () => {
+  const r = runCleanup({
+    backup: "dhcp.cfg01411c.server='9.9.9.9'\n",
+    servers: ['127.0.0.1#7853'], noresolv: '1', commitFails: true,
+  })
+  assert.equal(r.backup, 'yes')
+  assert.match(r.log, /commit-failed,reverted/)
+  assert.ok(!/dnsmasq-restart/.test(r.log))
 })
 
 test('内核启动:dnsmasq 模式先把 dnsmasq 上游重新指向内核,再拉起 sing-box(干净重启后不再打环)', async () => {
