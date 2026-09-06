@@ -503,9 +503,9 @@ body:has(.sortable-chosen) * {
 
 .tippy-box {
   @apply bg-neutral text-neutral-content z-[9999] whitespace-pre-line shadow-none;
-  /* 圆角跟全局圆角设置走(和按钮 / 输入框同一档),不用 tippy 自带的 4px。tippy 自己的样式表
-     不分层、加载顺序也不一定在前,所以和上面那些圆角规则一样加 !important */
-  border-radius: var(--app-radius-field, 0.5rem) !important;
+  /* 圆角跟全局圆角设置走,用和卡片同一档(--app-radius-box,全局圆角 × 0.85),不用 tippy 自带
+     的 4px。tippy 自己的样式表不分层、加载顺序也不一定在前,所以和上面那些圆角规则一样加 !important */
+  border-radius: var(--app-radius-box, 0.85rem) !important;
 }
 .tippy-box[data-placement^='top'] > .tippy-arrow:before {
   @apply border-t-neutral;
