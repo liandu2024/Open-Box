@@ -43,19 +43,59 @@ const readState = async (ctx, paths) => {
   }
 }
 
-export const fetchRuleList = async (fetchImpl, url) => {
+// 超时和大小上限都要管到响应体读完为止:以前拿到响应头就清掉计时器、再 arrayBuffer() 一次性
+// 读完整个响应才比大小——几百 MB 的东西照样先进内存,一直慢慢吐内容的对端也不受 30 秒约束,
+// 还会一直占着部署队列。现在流式累计,越限立即断开;计时器到读完才清。
+const tooLarge = (bytes) => new Error(`名单太大(超过 ${Math.round(MAX_BYTES / 1024 / 1024)}MB${bytes ? `,已到 ${Math.round(bytes / 1024)}KB` : ''})`)
+export const fetchRuleList = async (fetchImpl, url, { timeoutMs = FETCH_TIMEOUT_MS } = {}) => {
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
-  let res
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  // 计时器到点时不管 fetch 实现有没有把 signal 接到响应体上,这边都要能停下来
+  const timedOut = new Promise((_, reject) => {
+    controller.signal.addEventListener('abort', () => reject(new Error(`下载超时(${Math.round(timeoutMs / 1000)} 秒)`)), { once: true })
+  })
+  timedOut.catch(() => {})
   try {
-    res = await fetchImpl(url, { signal: controller.signal, redirect: 'follow' })
+    let res
+    try {
+      res = await Promise.race([fetchImpl(url, { signal: controller.signal, redirect: 'follow' }), timedOut])
+    } catch (err) {
+      if (controller.signal.aborted) throw new Error(`下载超时(${Math.round(timeoutMs / 1000)} 秒)`)
+      throw err
+    }
+    if (!res || !res.ok) throw new Error(`HTTP ${res ? res.status : '无响应'}`)
+    const declared = Number(res.headers && typeof res.headers.get === 'function' ? res.headers.get('content-length') : NaN)
+    if (Number.isFinite(declared) && declared > MAX_BYTES) {
+      controller.abort()
+      throw tooLarge(declared)
+    }
+    if (res.body && typeof res.body.getReader === 'function') {
+      const reader = res.body.getReader()
+      const chunks = []
+      let total = 0
+      try {
+        for (;;) {
+          const { done, value } = await Promise.race([reader.read(), timedOut])
+          if (done) break
+          total += value.byteLength
+          if (total > MAX_BYTES) throw tooLarge(total)
+          chunks.push(Buffer.from(value))
+        }
+      } catch (err) {
+        // 越限 / 超时:把连接断掉,别让对端继续往这边灌
+        await reader.cancel().catch(() => {})
+        controller.abort()
+        throw err
+      }
+      return Buffer.concat(chunks, total)
+    }
+    // 没有流的响应(测试桩、老运行时):退回一次性读,再比大小
+    const buf = Buffer.from(await Promise.race([res.arrayBuffer(), timedOut]))
+    if (buf.length > MAX_BYTES) throw tooLarge(buf.length)
+    return buf
   } finally {
     clearTimeout(timer)
   }
-  if (!res || !res.ok) throw new Error(`HTTP ${res ? res.status : '无响应'}`)
-  const buf = Buffer.from(await res.arrayBuffer())
-  if (buf.length > MAX_BYTES) throw new Error(`名单太大(${Math.round(buf.length / 1024)}KB)`)
-  return buf
 }
 
 // 下回来的东西 → 结构化条件。两种:

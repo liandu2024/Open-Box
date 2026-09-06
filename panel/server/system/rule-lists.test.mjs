@@ -3,7 +3,7 @@ import test from 'node:test'
 import { readFileSync } from 'node:fs'
 import { createMockContext } from './context.mjs'
 import { createPaths } from './paths.mjs'
-import { ensureRuleLists, listStatePath } from './rule-lists.mjs'
+import { ensureRuleLists, fetchRuleList, listStatePath } from './rule-lists.mjs'
 import { listTagForUrl } from '../engine/rule-list.mjs'
 
 const paths = createPaths('/opt/open-box')
@@ -148,4 +148,57 @@ test('链接指向 .mrs:自己解开 zstd,编出来的和文本名单走同一�
   // 还是那一句 rule-set compile,内核那边完全不知道来源是 .mrs;纯域名的 .mrs 不出 IP 那份
   assert.deepEqual(ctx.calls.filter((c) => c.args?.includes('compile')).map((c) => c.args[3]), [`${paths.rulesetDir}/${TAG_A}.srs`])
   assert.deepEqual(r.lists, { [TAG_A]: { domain: true, ip: false } })
+})
+
+// 审查第 4 项:超时和 8MB 上限要管到响应体读完为止
+const streamOf = ({ chunk, count, hang = false }) => new ReadableStream({
+  sent: 0,
+  pull(controller) {
+    if (this.sent >= count) {
+      if (hang) return new Promise(() => {})   // 头回了、正文一直不结束
+      controller.close()
+      return undefined
+    }
+    this.sent++
+    controller.enqueue(new Uint8Array(chunk))
+    return undefined
+  },
+})
+
+test('fetchRuleList:响应体流式累计,超过上限立刻断开,不把整份读进内存', async () => {
+  let pulled = 0
+  const body = new ReadableStream({
+    pull(controller) {
+      pulled++
+      if (pulled > 12) { controller.close(); return }
+      controller.enqueue(new Uint8Array(1024 * 1024))   // 每块 1MB,共 12MB
+    },
+  })
+  const fetchImpl = async () => new Response(body, { status: 200 })
+  await assert.rejects(() => fetchRuleList(fetchImpl, 'https://example.com/list.txt'), /名单太大/)
+  assert.ok(pulled <= 10, `越限后不该继续读,实际读了 ${pulled} 块`)
+})
+
+test('fetchRuleList:Content-Length 声明超限直接拒,一个字节都不读', async () => {
+  let pulled = 0
+  const body = new ReadableStream({ pull(controller) { pulled++; controller.enqueue(new Uint8Array(16)); controller.close() } })
+  const fetchImpl = async () => new Response(body, { status: 200, headers: { 'content-length': String(9 * 1024 * 1024) } })
+  await assert.rejects(() => fetchRuleList(fetchImpl, 'https://example.com/list.txt'), /名单太大/)
+  // ReadableStream 自己会预拉一块填队列(highWaterMark 1),那不是我们读的;再多就是真去读了
+  assert.ok(pulled <= 1, `声明超限就不该读正文,实际拉了 ${pulled} 块`)
+})
+
+test('fetchRuleList:响应头到了但正文一直不结束 → 总超时照样生效,不再无限等', async () => {
+  const fetchImpl = async () => new Response(streamOf({ chunk: 8, count: 2, hang: true }), { status: 200 })
+  const t0 = Date.now()
+  await assert.rejects(() => fetchRuleList(fetchImpl, 'https://example.com/list.txt', { timeoutMs: 120 }), /下载超时/)
+  assert.ok(Date.now() - t0 < 2000)
+})
+
+test('fetchRuleList:正常大小的流式响应照常读完;没有流的响应(旧桩)走一次性读', async () => {
+  const fetchImpl = async () => new Response(streamOf({ chunk: 3, count: 4 }), { status: 200 })
+  const buf = await fetchRuleList(fetchImpl, 'https://example.com/list.txt')
+  assert.equal(buf.length, 12)
+  const plain = await fetchRuleList(async () => ({ ok: true, status: 200, arrayBuffer: async () => Buffer.from('DOMAIN-SUFFIX,a.com\n') }), 'https://example.com/list.txt')
+  assert.equal(plain.toString(), 'DOMAIN-SUFFIX,a.com\n')
 })
