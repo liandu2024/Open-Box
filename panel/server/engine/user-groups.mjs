@@ -98,8 +98,9 @@ const normalizeIcon = (raw) => {
 }
 
 // 图标缩放:整数像素偏移,0 = 不缩放,+1 大 1px,-1 小 1px。不同来源的图标视觉大小不一
-// (国旗满框、品牌标带留白),让用户自己拨一下。限在 ±8 之内,再大就不是"微调"了。
-export const ICON_SCALE_LIMIT = 8
+// (国旗满框、品牌标带留白),让用户自己拨一下。限在 ±20 之内:偏移按代理页 46px 的大图标算,
+// -20 还剩一半多,+20 是 1.4 倍,再大就不是调图标了。前端 IconScaleInput.vue 的 LIMIT 同一个数。
+export const ICON_SCALE_LIMIT = 20
 export const normalizeIconScale = (v) => {
   const n = Number(v)
   if (!Number.isFinite(n)) return 0

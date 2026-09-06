@@ -2,7 +2,7 @@ import express from 'express'
 import { RESERVED_PORTS, SERVER_PROTOCOLS, SS_METHODS } from '../engine/servers.mjs'
 import { isIpOrCidr } from '../engine/client-routes.mjs'
 import { FALLBACK_TAG, normalizeRouting } from '../engine/routing-model.mjs'
-import { builtinTags, normalizeGroups } from '../engine/user-groups.mjs'
+import { ICON_SCALE_LIMIT, builtinTags, normalizeGroups } from '../engine/user-groups.mjs'
 import { DNSMASQ_OUTBOUND_TAG } from '../engine/config.mjs'
 
 // 站点集不能叫的名字:节点组名、内置直连/拒绝现在的名字、dnsmasq 回送出站——都是同一个出站命名空间
@@ -40,8 +40,8 @@ const isValidRulesetDir = (v) => isString(v) && v.startsWith('/') && !containsPa
 // 校验通过返回 null;失败返回一条可直接塞进 400 响应体的错误说明。
 // reservedNames:站点集不能用的名字——节点组的名字、内置直连/拒绝现在叫什么、dnsmasq 回送出站。
 // 站点集名就是内核里的出站 tag,和这些撞上会生成两个同名出站(内核 FATAL)。
-// 图标缩放:整数像素偏移,和 engine/user-groups.mjs 的 normalizeIconScale 同一个范围
-const isIconScale = (v) => Number.isInteger(v) && Math.abs(v) <= 8
+// 图标缩放:整数像素偏移,范围直接用 engine/user-groups.mjs 的 ICON_SCALE_LIMIT,两边不会各改各的
+const isIconScale = (v) => Number.isInteger(v) && Math.abs(v) <= ICON_SCALE_LIMIT
 
 export const validateProfilePatch = (patch, { reservedNames = [] } = {}) => {
   if (!isPlainObject(patch)) return 'patch must be an object'
@@ -165,7 +165,7 @@ export const validateProfilePatch = (patch, { reservedNames = [] } = {}) => {
       return 'routing.fallbackIcon must be a string'
     }
     if ('fallbackIconScale' in routing && !isIconScale(routing.fallbackIconScale)) {
-      return 'routing.fallbackIconScale must be an integer within ±8'
+      return `routing.fallbackIconScale must be an integer within ±${ICON_SCALE_LIMIT}`
     }
 
     // 代理页「策略」页签的显示顺序(站点集名字的数组),和命中顺序(policies 的顺序)分开存。
@@ -268,7 +268,7 @@ const validatePolicies = (policies, fallbackName = '', reservedNames = []) => {
     if ('enabled' in p && !isBoolean(p.enabled)) return 'routing.policies[].enabled must be a boolean'
     if ('default' in p && !isString(p.default)) return 'routing.policies[].default must be a string'
     if ('icon' in p && !isString(p.icon)) return 'routing.policies[].icon must be a string'
-    if ('iconScale' in p && !isIconScale(p.iconScale)) return 'routing.policies[].iconScale must be an integer within ±8'
+    if ('iconScale' in p && !isIconScale(p.iconScale)) return `routing.policies[].iconScale must be an integer within ±${ICON_SCALE_LIMIT}`
     if ('rulesets' in p) {
       if (!isStringArray(p.rulesets)) return 'routing.policies[].rulesets must be an array of strings'
       if (!p.rulesets.every(isValidRulesetTag)) {

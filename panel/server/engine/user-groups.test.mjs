@@ -273,12 +273,14 @@ test('自动择优组带 idle_timeout:内核默认 30 分钟不用就停止健�
   assert.equal(custom.idle_timeout, '2h')
 })
 
-test('图标缩放:整数、限在 ±8,缺省 0', async () => {
+test('图标缩放:整数、限在 ±20,缺省 0', async () => {
   const { normalizeGroup, normalizeIconScale } = await import('./user-groups.mjs')
   assert.equal(normalizeIconScale(undefined), 0)
   assert.equal(normalizeIconScale('2'), 2)
   assert.equal(normalizeIconScale(-1.6), -2)
-  assert.equal(normalizeIconScale(99), 8)
+  assert.equal(normalizeIconScale(99), 20)
+  assert.equal(normalizeIconScale(-99), -20)
+  assert.equal(normalizeIconScale(20), 20)
   assert.equal(normalizeGroup({ name: 'x', iconScale: -3 }).iconScale, -3)
   assert.equal(normalizeGroup({ name: 'x' }).iconScale, 0)
 })

@@ -1,6 +1,7 @@
 <template>
   <!-- 图标缩放:- 0 + 重置。所有挑图标的地方都用这一个控件,长相和行为一致。
-       默认 0 不缩放,+1 加大 1px,-1 缩小 1px;限在 ±8,再大就不叫微调了。 -->
+       默认 0 不缩放,+1 加大 1px,-1 缩小 1px;限在 ±20(按代理页 46px 的大图标算,
+       -20 还剩一半多,+20 是 1.4 倍,再大就不是调图标了)。和后端 ICON_SCALE_LIMIT 一个数。 -->
   <div
     class="join"
     v-tip="$t('iconScaleHint')"
@@ -45,7 +46,7 @@
 import { MinusIcon, PlusIcon } from '@heroicons/vue/24/outline'
 import { computed } from 'vue'
 
-const LIMIT = 8
+const LIMIT = 20
 // 老记录没这个字段,当 0
 const model = defineModel<number | undefined>({ default: 0 })
 const value = computed(() => (Number.isFinite(model.value) ? Math.round(model.value as number) : 0))

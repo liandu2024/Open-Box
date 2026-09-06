@@ -504,9 +504,10 @@ test('validateProfilePatch routing.displayOrder 必须是字符串数组', () =>
   assert.ok(validateProfilePatch({ routing: { displayOrder: 'Speed' } }))
 })
 
-test('validateProfilePatch 图标缩放必须是 ±8 以内的整数(站点集与兜底都一样)', () => {
-  assert.equal(validateProfilePatch({ routing: { fallbackIconScale: 2, policies: [{ id: 'p', name: 'A', iconScale: -1 }] } }), null)
+test('validateProfilePatch 图标缩放必须是 ±20 以内的整数(站点集与兜底都一样)', () => {
+  assert.equal(validateProfilePatch({ routing: { fallbackIconScale: 20, policies: [{ id: 'p', name: 'A', iconScale: -20 }] } }), null)
   assert.ok(validateProfilePatch({ routing: { fallbackIconScale: 1.5 } }))
-  assert.ok(validateProfilePatch({ routing: { fallbackIconScale: 9 } }))
+  assert.ok(validateProfilePatch({ routing: { fallbackIconScale: 21 } }))
+  assert.ok(validateProfilePatch({ routing: { policies: [{ id: 'p', name: 'A', iconScale: -21 }] } }))
   assert.ok(validateProfilePatch({ routing: { policies: [{ id: 'p', name: 'A', iconScale: '1' }] } }))
 })
