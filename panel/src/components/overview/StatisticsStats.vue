@@ -33,8 +33,8 @@ const classMap = {
     value: 'text-sm',
   },
   ctrl: {
-    // 侧边栏那张卡片自己就是容器(CommonCtrl.vue),这里不再套一层底色
-    list: 'grid w-full grid-cols-2 gap-2 p-2',
+    // 侧边栏那张卡片自己就是容器(CommonCtrl.vue,card p-2 = 8px 内边距),这里不再套底色也不再加内边距
+    list: 'grid w-full grid-cols-2 gap-2',
     item: 'flex items-start flex-col',
     label: 'text-xs text-base-content/70',
     value: 'text-sm',
