@@ -1105,3 +1105,57 @@ test('autoUpdate:新建时存下(归一化到 1~30 天、0~23 点),改它不重�
     await close()
   }
 })
+
+// -------- 审查第 9 项:刷新期间的修改不能被旧刷新结果覆盖 --------
+const deferredFetch = () => {
+  let release
+  const gate = new Promise((r) => { release = r })
+  const fetchImpl = async () => { await gate; return { ok: true, status: 200, text: async () => [HK_LINE, JP_LINE].join('\n') } }
+  return { fetchImpl, release: () => release() }
+}
+
+test('refresh 期间只改了自动更新开关 → 刷新照常写节点,开关保持新值,不被拉取前的快照改回去', async () => {
+  const { fetchImpl, release } = deferredFetch()
+  const { baseUrl, store, close } = await startApp(fetchImpl)
+  try {
+    release()
+    const created = await (await postJson(baseUrl, '/api/openbox/subscriptions', { url: 'http://a', name: 'old', autoUpdate: { enabled: true, days: 1, hour: 3 } })).json()
+    const slow = deferredFetch()
+    const { refreshSubscriptionById } = await import('./subscriptions.mjs')
+    const refreshing = refreshSubscriptionById(store, created.id, { fetchImpl: slow.fetchImpl, lookup: fakePublicLookup })
+    await new Promise((r) => setTimeout(r, 20))
+    store.setSubscriptions(store.getSubscriptions().map((s) => (s.id === created.id ? { ...s, autoUpdate: { enabled: false, days: 1, hour: 3 } } : s)))
+    slow.release()
+    const r = await refreshing
+    assert.equal(r.nodeCount, 2)
+    const sub = store.getSubscriptions().find((s) => s.id === created.id)
+    assert.equal(sub.autoUpdate.enabled, false)
+    assert.equal(sub.nodeCount, 2)
+    assert.equal(store.getNodes().filter((n) => n.subscriptionId === created.id).length, 2)
+  } finally {
+    await close()
+  }
+})
+
+test('refresh 期间改了名字或来源 → 这次结果作废(报错、节点不动),新名字和新来源保留', async () => {
+  const { fetchImpl, release } = deferredFetch()
+  const { baseUrl, store, close } = await startApp(fetchImpl)
+  try {
+    release()
+    const created = await (await postJson(baseUrl, '/api/openbox/subscriptions', { url: 'http://a', name: 'old' })).json()
+    const { refreshSubscriptionById } = await import('./subscriptions.mjs')
+    const slow = deferredFetch()
+    const refreshing = refreshSubscriptionById(store, created.id, { fetchImpl: slow.fetchImpl, lookup: fakePublicLookup })
+    await new Promise((r) => setTimeout(r, 20))
+    store.setSubscriptions(store.getSubscriptions().map((s) => (s.id === created.id ? { ...s, name: 'new', url: 'http://c' } : s)))
+    slow.release()
+    await assert.rejects(refreshing, /modified while refreshing/)
+    const sub = store.getSubscriptions().find((s) => s.id === created.id)
+    assert.equal(sub.name, 'new')
+    assert.equal(sub.url, 'http://c')
+    // 节点还是创建时那 2 个(旧来源),没被这次刷新写成别的
+    assert.equal(store.getNodes().filter((n) => n.subscriptionId === created.id).length, 2)
+  } finally {
+    await close()
+  }
+})

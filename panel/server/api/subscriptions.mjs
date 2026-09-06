@@ -338,13 +338,25 @@ export const refreshSubscriptionById = async (store, id, { fetchImpl = subscript
   if (!existing) throw new Error('subscription not found')
   const resolved = await resolveNodes({ ...existingSource(existing), name: existing.name }, fetchImpl, renameOptions || existing.renameOptions || {}, lookup)
   const { renamed, skipped, format } = resolved
-  const updated = { ...existing, format, nodeCount: renamed.length, renameOptions: resolved.renameOptions || {}, updatedAt: Date.now() }
-  const newNodesForSub = renamed.map((n) => ({ ...n, subscriptionId: id }))
-  // 拉取可能花几十秒,期间用户可能删了别的订阅或新建了订阅:按此刻的列表写回,不用拉取前的快照
+  // 拉取可能花几十秒,期间用户可能改了这条订阅、删了别的订阅或新建了订阅:一律按此刻的列表办。
+  //   · 这条被删了 → 作废;
+  //   · 来源(地址 / 内容)、名字(节点名前缀跟着它)或改名规则变了 → 这份结果是按旧设置拉的,
+  //     写进去就是新旧混杂,作废,让用户再刷一次;
+  //   · 只改了自动更新之类的设置 → 照常写,但只合并这次拉取派生出来的字段(格式、数量、时间),
+  //     其余以此刻存的为准。以前是拿拉取前的快照整份覆盖,刷新期间保存的新名字、新开关会被
+  //     改回去。
   const nowSubs = store.getSubscriptions()
-  if (!nowSubs.some((s) => s.id === id)) throw new Error('subscription was deleted while refreshing')
+  const current = nowSubs.find((s) => s.id === id)
+  if (!current) throw new Error('subscription was deleted while refreshing')
+  const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
+  const settingsChanged = !same(existingSource(current), existingSource(existing))
+    || current.name !== existing.name
+    || (!renameOptions && !same(current.renameOptions || {}, existing.renameOptions || {}))
+  if (settingsChanged) throw new Error('subscription was modified while refreshing; refresh it again')
+  const updated = { ...current, format, nodeCount: renamed.length, renameOptions: resolved.renameOptions || {}, updatedAt: Date.now() }
+  const newNodesForSub = renamed.map((n) => ({ ...n, subscriptionId: id }))
   store.setNodes(rebuildNodePool(store.getNodes(), nowSubs, id, newNodesForSub))
-  store.setSubscriptions(nowSubs.map((s) => (s.id === id ? { ...s, ...updated } : s)))
+  store.setSubscriptions(nowSubs.map((s) => (s.id === id ? updated : s)))
   return { id, name: updated.name, nodeCount: renamed.length, skipped }
 }
 
