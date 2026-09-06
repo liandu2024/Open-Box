@@ -24,8 +24,8 @@ export const registerLatencyHistoryRoutes = (app, { history, scheduler } = {}) =
     if (!list) return res.status(400).json({ message: 'samples must be an array' })
     if (list.length > 500) return res.status(400).json({ message: 'too many samples' })
     for (const s of list) {
-      if (!s || typeof s !== 'object' || typeof s.name !== 'string' || !s.name || typeof s.time !== 'string' || !Number.isFinite(Date.parse(s.time)) || typeof s.delay !== 'number' || !Number.isFinite(s.delay) || s.delay < 0) {
-        return res.status(400).json({ message: 'samples[] must be { name, time (ISO), delay >= 0 }' })
+      if (!s || typeof s !== 'object' || typeof s.name !== 'string' || !s.name || typeof s.time !== 'string' || !Number.isFinite(Date.parse(s.time)) || typeof s.delay !== 'number' || !Number.isFinite(s.delay) || s.delay < 0 || (s.node !== undefined && typeof s.node !== 'string')) {
+        return res.status(400).json({ message: 'samples[] must be { name, time (ISO), delay >= 0, node? }' })
       }
     }
     history.recordSamples(list)

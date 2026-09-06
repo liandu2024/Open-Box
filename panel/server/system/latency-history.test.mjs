@@ -28,11 +28,11 @@ test('记一笔:同一时间不重复、乱序按时间排、最多 10 条,落�
   assert.equal(h.record('A', { time: at(30), delay: -1 }), false)
 })
 
-test('从 /proxies 记:最新一条变了就记;有结果→没结果 = 内核测速超时,记 0;组不记', () => {
+test('从 /proxies 记:最新一条变了就记;有结果→没结果 = 内核测速超时,记 0;组按当时选中的节点记', () => {
   const h = createLatencyHistory({ store: memStore() })
   h.recordFromProxies({ A: node([{ time: at(0), delay: 120 }]), B: node([{ time: at(0), delay: 80 }]), G: { all: ['A', 'B'], now: 'A', history: [] } }, { kernelStartedAt: T0 - 3_600_000, at: T0 })
   assert.deepEqual(h.get().A.map((s) => s.delay), [120])
-  assert.equal(h.get().G, undefined)
+  assert.deepEqual(h.get().G, [{ time: at(0), delay: 120, node: 'A' }])
   // A 这次没结果了(内核删了),B 有新结果
   h.recordFromProxies({ A: node([]), B: node([{ time: at(5), delay: 85 }]) }, { kernelStartedAt: T0 - 3_600_000, at: T0 + 6 * 60_000 })
   assert.deepEqual(h.get().A.map((s) => s.delay), [120, 0])
@@ -65,4 +65,34 @@ test('同一节点 60 秒内的两笔超时当一笔(不同来源在同一事件
   assert.deepEqual(h.get().A.map((s) => s.delay), [100, 0, 0])
   assert.equal(h.prune(['A']), 1)
   assert.deepEqual(Object.keys(h.get()), ['A'])
+})
+
+test('组按当时选中的节点记:切了节点下一笔是新节点的;切到早就测过的节点用观察时刻;选中节点没结果记超时', () => {
+  const h = createLatencyHistory({ store: memStore() })
+  const K = T0 - 3_600_000
+  const proxies = (now, aHist, bHist) => ({
+    A: node(aHist), B: node(bHist),
+    G: { type: 'URLTest', all: ['A', 'B'], now, history: [] },
+    // 选组的组:一路下钻到节点
+    S: { type: 'Selector', all: ['G'], now: 'G', history: [] },
+  })
+  h.recordFromProxies(proxies('A', [{ time: at(0), delay: 100 }], [{ time: at(0), delay: 200 }]), { kernelStartedAt: K, at: T0 })
+  assert.deepEqual(h.get().G, [{ time: at(0), delay: 100, node: 'A' }])
+  assert.deepEqual(h.get().S, [{ time: at(0), delay: 100, node: 'A' }])
+  // A 又测了一次 → 组多一笔 A
+  h.recordFromProxies(proxies('A', [{ time: at(5), delay: 110 }], [{ time: at(0), delay: 200 }]), { kernelStartedAt: K, at: T0 + 5 * 60_000 })
+  assert.deepEqual(h.get().G.map((s) => [s.delay, s.node]), [[100, 'A'], [110, 'A']])
+  // 同一份数据再来一遍 → 不重复
+  h.recordFromProxies(proxies('A', [{ time: at(5), delay: 110 }], [{ time: at(0), delay: 200 }]), { kernelStartedAt: K, at: T0 + 6 * 60_000 })
+  assert.equal(h.get().G.length, 2)
+  // 切到 B:B 的结果(at 0)比组上一笔(at 5)还旧 → 用观察时刻(at 7),排在最后
+  h.recordFromProxies(proxies('B', [{ time: at(5), delay: 110 }], [{ time: at(0), delay: 200 }]), { kernelStartedAt: K, at: T0 + 7 * 60_000 })
+  assert.deepEqual(h.get().G.map((s) => [s.time, s.delay, s.node]), [[at(0), 100, 'A'], [at(5), 110, 'A'], [at(7), 200, 'B']])
+  // B 没结果了(超时)→ 记一笔 B 的超时;再来一遍不重复
+  h.recordFromProxies(proxies('B', [{ time: at(5), delay: 110 }], []), { kernelStartedAt: K, at: T0 + 12 * 60_000 })
+  h.recordFromProxies(proxies('B', [{ time: at(5), delay: 110 }], []), { kernelStartedAt: K, at: T0 + 13 * 60_000 })
+  assert.deepEqual(h.get().G.slice(-1).map((s) => [s.time, s.delay, s.node]), [[at(12), 0, 'B']])
+  assert.equal(h.get().G.length, 4)
+  // 节点自己的时间线照旧不带 node
+  assert.deepEqual(h.get().A.map((s) => s.node), [undefined, undefined])
 })

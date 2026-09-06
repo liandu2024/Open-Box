@@ -30,8 +30,8 @@ import { NOT_CONNECTED } from '@/constant'
 import { getColorForLatency } from '@/helper'
 import { useTooltip } from '@/helper/tooltip'
 import { isSingBox } from '@/api'
-import { MAX_LATENCY_HISTORY, getRecentLatencyHistory } from '@/store/latencyHistory'
-import { getHistoryByName, getLatencyByName, getNowProxyNodeName } from '@/store/proxies'
+import { MAX_LATENCY_HISTORY, getRecentLatencyHistory, type LatencySample } from '@/store/latencyHistory'
+import { getHistoryByName, getLatencyByName, getNowProxyNodeName, proxyMap } from '@/store/proxies'
 import { independentLatencyTest } from '@/store/settings'
 import { BoltIcon } from '@heroicons/vue/24/outline'
 import { CountUp } from 'countup.js'
@@ -43,15 +43,21 @@ import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
 const { showTip } = useTooltip()
 // 最近 10 次结果,新的在上:mihomo 的独立测试模式内核自己留了多条,照用;sing-box 每个节点只留
-// 最新一次,用面板攒的时间线(store/latencyHistory.ts),一条都没攒到就退回内核那一条
-const recentHistory = () => {
+// 最新一次,用服务端攒的时间线(store/latencyHistory.ts),一条都没攒到就退回内核那一条。
+// 组看组自己的时间线(每笔带当时选中的节点),节点看节点的;标签本身显示的是当前所选节点的延迟
+const timelineTarget = () => {
+  if (props.timelineName) return props.timelineName
   const name = props.name ?? ''
-  if (independentLatencyTest.value && !isSingBox.value) {
-    return [...getHistoryByName(name, props.groupName)].reverse().slice(0, MAX_LATENCY_HISTORY)
-  }
-  const own = getRecentLatencyHistory(getNowProxyNodeName(name))
+  return proxyMap.value[name]?.all?.length ? name : getNowProxyNodeName(name)
+}
+const recentHistory = (): LatencySample[] => {
+  const name = props.name ?? ''
+  const fromKernel = (): LatencySample[] =>
+    [...getHistoryByName(name, props.groupName)].reverse().slice(0, MAX_LATENCY_HISTORY).map((h) => ({ time: h.time, delay: h.delay }))
+  if (independentLatencyTest.value && !isSingBox.value) return fromKernel()
+  const own = getRecentLatencyHistory(timelineTarget())
   if (own.length) return own
-  return [...getHistoryByName(name, props.groupName)].reverse().slice(0, MAX_LATENCY_HISTORY)
+  return fromKernel()
 }
 // 类名要写全,Tailwind 只编它在源码里见过的类;从 text-* 动态拼 bg-* 会被裁掉
 const dotColor = (delay: number) => {
@@ -67,11 +73,13 @@ const handlerHistoryTip = (e: Event) => {
 
   if (!history.length) return
 
-  // 竖着的时间线:左边时间、中间一根线穿过每次的点(顶端箭头,新的在上)、右边延迟按阈值着色
+  // 竖着的时间线:左边时间、中间一根线穿过每次的点(顶端箭头,新的在上)、右边延迟按阈值着色;
+  // 组的样本再加一列:那一笔是当时选中的哪个节点测出来的
+  const withNode = history.some((item) => Boolean(item.node))
   const historyList = document.createElement('div')
   // 顶部留出箭头的位置:箭头探出第一行 0.45rem + 自身 7px,pt-3 的 12px 刚好包住它,再加浮层
   // 自己的内边距,箭头尖离浮层边缘约 10px,不会顶到边
-  historyList.className = 'grid grid-cols-[auto_1rem_auto] items-stretch gap-x-3 pt-3 pb-1'
+  historyList.className = `grid ${withNode ? 'grid-cols-[auto_1rem_auto_auto]' : 'grid-cols-[auto_1rem_auto]'} items-stretch gap-x-3 pt-3 pb-1`
   history.forEach((item, i) => {
     const time = document.createElement('div')
     time.className = 'flex items-center justify-end text-xs tabular-nums'
@@ -101,12 +109,21 @@ const handlerHistoryTip = (e: Event) => {
     latency.textContent = item.delay === NOT_CONNECTED ? t('latencyTimeout') : `${item.delay}ms`
 
     historyList.append(time, cell, latency)
+    if (withNode) {
+      const node = document.createElement('div')
+      node.className = 'flex items-center text-xs opacity-80'
+      node.textContent = item.node || ''
+      historyList.append(node)
+    }
   })
 
+  // interactive:鼠标从标签移进浮层里不关,离开浮层才关
   showTip(e, historyList, {
-    delay: [1000, 0],
+    delay: [1000, 150],
     trigger: 'mouseenter',
     touch: false,
+    interactive: true,
+    interactiveBorder: 8,
   })
 }
 
@@ -114,6 +131,8 @@ const props = defineProps<{
   name?: string
   loading?: boolean
   groupName?: string
+  // 悬停浮层看谁的时间线:组卡片标题的标签 name 是当前所选节点,时间线却要看组自己的
+  timelineName?: string
 }>()
 const latencyRef = ref()
 const latency = computed(() => getLatencyByName(props.name ?? '', props.groupName))

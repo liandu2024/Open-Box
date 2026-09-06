@@ -6,7 +6,7 @@ import { ref } from 'vue'
 // (server/system/latency-history.mjs):自动组按 interval 硬性定时测、结果记进服务端,所有浏览器
 // 共享。这里只是服务端那份的镜像:拉节点数据时顺带拉一次;面板自己手动测完,把超时报上去
 // (内核那边超时只是删记录,面板自己知道是超时),再让服务端立刻读一次内核把成功的记下来。
-export type LatencySample = { time: string; delay: number }
+export type LatencySample = { time: string; delay: number; node?: string }
 export const MAX_LATENCY_HISTORY = 10
 export const latencyHistory = ref<Record<string, LatencySample[]>>({})
 

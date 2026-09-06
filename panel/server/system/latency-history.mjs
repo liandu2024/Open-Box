@@ -14,6 +14,21 @@ const TIMEOUT_DEDUPE_MS = 60_000
 
 const isSample = (s) => s && typeof s === 'object' && typeof s.time === 'string' && Number.isFinite(Date.parse(s.time)) && typeof s.delay === 'number' && Number.isFinite(s.delay) && s.delay >= 0
 
+// 组的当前选择一路下钻到节点(组可以选组);转圈或超过 16 层就放弃
+const leafOf = (proxies, name) => {
+  let cur = name
+  const seen = new Set()
+  for (let i = 0; i < 16; i++) {
+    const p = proxies[cur]
+    if (!p || typeof p !== 'object') return ''
+    if (!(Array.isArray(p.all) && p.all.length)) return cur
+    if (typeof p.now !== 'string' || !p.now || seen.has(cur)) return ''
+    seen.add(cur)
+    cur = p.now
+  }
+  return ''
+}
+
 export const createLatencyHistory = ({ store, now = () => Date.now() }) => {
   const read = () => {
     try {
@@ -34,14 +49,16 @@ export const createLatencyHistory = ({ store, now = () => Date.now() }) => {
     updatedAt = now()
   }
 
-  // 记一笔。和已存的最后一条时间相同就是同一次结果,不重复;乱序到达的按时间插入
+  // 记一笔。和已存的最后一条时间相同就是同一次结果,不重复;乱序到达的按时间插入。
+  // 组的样本多一个 node:那一笔是组当时选中的哪个节点测出来的
   const record = (name, sample) => {
     if (!name || typeof name !== 'string' || !isSample(sample)) return false
     const list = cache[name] || []
     const last = list[list.length - 1]
-    if (last && last.time === sample.time) return false
-    if (sample.delay === TIMED_OUT && last && last.delay === TIMED_OUT && Math.abs(Date.parse(sample.time) - Date.parse(last.time)) < TIMEOUT_DEDUPE_MS) return false
-    const next = [...list, { time: sample.time, delay: Math.round(sample.delay) }].sort((a, b) => Date.parse(a.time) - Date.parse(b.time))
+    const node = typeof sample.node === 'string' && sample.node ? sample.node : undefined
+    if (last && last.time === sample.time && (last.node || undefined) === node) return false
+    if (sample.delay === TIMED_OUT && last && last.delay === TIMED_OUT && (last.node || undefined) === node && Math.abs(Date.parse(sample.time) - Date.parse(last.time)) < TIMEOUT_DEDUPE_MS) return false
+    const next = [...list, { time: sample.time, delay: Math.round(sample.delay), ...(node ? { node } : {}) }].sort((a, b) => Date.parse(a.time) - Date.parse(b.time))
     while (next.length > MAX_SAMPLES) next.shift()
     cache = { ...cache, [name]: next }
     dirty = true
@@ -55,14 +72,41 @@ export const createLatencyHistory = ({ store, now = () => Date.now() }) => {
     return changed
   }
 
-  // 从整份 /proxies 记(见文件头)。组不记:组的 history 是它当前所选节点的,按节点名记、按节点名取
+  // 组:每笔记"当时选中的节点 + 它那次的结果"。组切了节点,下一笔就是新节点的,时间线上看得出
+  // 变化——以前组的时间线直接取当前所选节点的,切换之后整条线都变成新节点的历史。
+  // 时间用节点那次测试的时间;切到一个早就测过的节点(它的结果比组上一笔还旧)就用观察时刻,
+  // 时间线才是按发生顺序排的。选中的节点没结果 = 超时(上一笔已经是同一节点的超时就不重复)。
+  const recordGroup = (proxies, name, proxy, { kernelStartedAt, at }) => {
+    const leaf = leafOf(proxies, name)
+    if (!leaf) return false
+    const list = cache[name]
+    const prev = list && list[list.length - 1]
+    const history = proxies[leaf] && proxies[leaf].history
+    const last = Array.isArray(history) && history.length ? history[history.length - 1] : null
+    if (last) {
+      const t = Date.parse(last.time)
+      const prevT = prev ? Date.parse(prev.time) : 0
+      if (prev && prev.node === leaf && (prev.time === last.time || t <= prevT)) return false
+      const time = !prev || t > prevT ? last.time : new Date(at).toISOString()
+      return record(name, { time, delay: last.delay, node: leaf })
+    }
+    if (!prev) return false
+    if (prev.node === leaf && prev.delay === TIMED_OUT) return false
+    if (kernelStartedAt !== null && kernelStartedAt !== undefined && kernelStartedAt > Date.parse(prev.time)) return false
+    return record(name, { time: new Date(at).toISOString(), delay: TIMED_OUT, node: leaf })
+  }
+
+  // 从整份 /proxies 记(见文件头)。节点按自己的 history 记;组按当时选中的节点记(见 recordGroup)
   const recordFromProxies = (proxies, { kernelStartedAt = null, at = now() } = {}) => {
     let changed = false
     const vanished = []
     let known = 0
     for (const [name, proxy] of Object.entries(proxies || {})) {
       if (!proxy || typeof proxy !== 'object') continue
-      if (Array.isArray(proxy.all) && proxy.all.length) continue
+      if (Array.isArray(proxy.all) && proxy.all.length) {
+        if (recordGroup(proxies, name, proxy, { kernelStartedAt, at })) changed = true
+        continue
+      }
       const history = proxy.history
       if (Array.isArray(history) && history.length) {
         if (record(name, history[history.length - 1])) changed = true

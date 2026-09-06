@@ -59,6 +59,7 @@
             :loading="isLatencyTesting"
             :name="proxyGroup.now"
             :group-name="proxyGroup.name"
+            :timeline-name="proxyGroup.name"
             @click.stop="handlerLatencyTest"
           />
         </div>

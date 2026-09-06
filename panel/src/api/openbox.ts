@@ -792,7 +792,8 @@ export const testRoute = (target: string, port?: number) =>
   requestJson<OpenboxRouteTest>('/api/openbox/route-test', { method: 'POST', body: JSON.stringify({ target, port }) })
 
 // ---- 延迟历史(server/api/latency-history.mjs):每个节点最近 10 次测速结果,服务端记、所有浏览器共享
-export type OpenboxLatencySample = { time: string; delay: number }
+// node:组的样本带当时选中的节点;节点自己的样本没有
+export type OpenboxLatencySample = { time: string; delay: number; node?: string }
 export type OpenboxLatencyHistory = Record<string, OpenboxLatencySample[]>
 export const fetchLatencyHistory = () => requestJson<{ history: OpenboxLatencyHistory; updatedAt: number }>('/api/openbox/latency-history')
 // 只回最近一次写入的时刻:代理页每 15 秒轮询它,变了才拉整份
