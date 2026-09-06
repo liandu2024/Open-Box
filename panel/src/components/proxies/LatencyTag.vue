@@ -67,7 +67,9 @@ const handlerHistoryTip = (e: Event) => {
 
   // 竖着的时间线:左边时间、中间一根线穿过每次的点(顶端箭头,新的在上)、右边延迟按阈值着色
   const historyList = document.createElement('div')
-  historyList.className = 'grid grid-cols-[auto_1rem_auto] items-stretch gap-x-3 py-1'
+  // 顶部留出箭头的位置:箭头探出第一行 0.45rem + 自身 7px,pt-3 的 12px 刚好包住它,再加浮层
+  // 自己的内边距,箭头尖离浮层边缘约 10px,不会顶到边
+  historyList.className = 'grid grid-cols-[auto_1rem_auto] items-stretch gap-x-3 pt-3 pb-1'
   history.forEach((item, i) => {
     const time = document.createElement('div')
     time.className = 'flex items-center justify-end text-xs tabular-nums'
@@ -79,12 +81,12 @@ const handlerHistoryTip = (e: Event) => {
     line.className = 'absolute bottom-0 left-1/2 w-px -translate-x-1/2'
     // 跟着浮层的文字色走(浮层深色底白字),深浅主题都看得清
     line.style.background = 'color-mix(in srgb, currentColor 45%, transparent)'
-    line.style.top = i === 0 ? '-0.35rem' : '0'
+    line.style.top = i === 0 ? '-0.3rem' : '0'
     cell.append(line)
     if (i === 0) {
       const arrow = document.createElement('div')
       arrow.className = 'border-x-transparent absolute left-1/2 -translate-x-1/2 border-x-[4px] border-b-[7px]'
-      arrow.style.top = '-0.55rem'
+      arrow.style.top = '-0.45rem'
       arrow.style.borderBottomColor = 'color-mix(in srgb, currentColor 55%, transparent)'
       cell.append(arrow)
     }
