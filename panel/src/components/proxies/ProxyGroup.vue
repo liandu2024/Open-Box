@@ -74,25 +74,12 @@
                 :name="name"
               />
             </div>
-            <!-- 自动择优组:检测间隔 / 容差;节点管理里的组还给一个「修改」,就地弹窗改,改完仍留在这一页。
-                 和左边当前选中的节点同一行、垂直居中;这一行不到 25rem 宽(两列布局、窄屏)就不显示这段文字,节点名和按钮不让 -->
-            <div
-              v-if="managedGroup"
-              class="flex shrink-0 items-center gap-2"
-            >
-              <span
-                v-if="testMeta"
-                class="text-base-content/60 hidden text-xs whitespace-nowrap tabular-nums @min-[25rem]:inline"
-              >{{ testMeta }}</span>
-              <button
-                v-if="canEditGroup"
-                type="button"
-                class="btn btn-sm bg-base-200 border-base-200 text-base-content/80 hover:text-base-content h-6 min-h-6 shrink-0 cursor-pointer px-2 text-xs font-medium shadow-none"
-                @click.stop="openNodeGroupEditor(managedGroup)"
-              >
-                {{ $t('groupCardEdit') }}
-              </button>
-            </div>
+            <!-- 自动择优组:检测间隔 / 容差,和左边当前选中的节点同一行、垂直居中;
+                 这一行不到 22rem 宽(两列布局、窄屏)就不显示,节点名不让 -->
+            <span
+              v-if="testMeta"
+              class="text-base-content/60 hidden shrink-0 text-xs whitespace-nowrap tabular-nums @min-[22rem]:inline"
+            >{{ testMeta }}</span>
           </div>
         </div>
       </div>
@@ -164,25 +151,12 @@
             :name="name"
           />
         </div>
-        <!-- 自动择优组:检测间隔 / 容差;节点管理里的组还给一个「修改」,就地弹窗改,改完仍留在这一页。
-             和左边当前选中的节点同一行、垂直居中;这一行不到 25rem 宽(两列布局、窄屏)就不显示这段文字,节点名和按钮不让 -->
-        <div
-          v-if="managedGroup"
-          class="flex shrink-0 items-center gap-2"
-        >
-          <span
-            v-if="testMeta"
-            class="text-base-content/60 hidden text-xs whitespace-nowrap tabular-nums @min-[25rem]:inline"
-          >{{ testMeta }}</span>
-          <button
-            v-if="canEditGroup"
-            type="button"
-            class="btn btn-sm bg-base-200 border-base-200 text-base-content/80 hover:text-base-content h-6 min-h-6 shrink-0 cursor-pointer px-2 text-xs font-medium shadow-none"
-            @click.stop="openNodeGroupEditor(managedGroup)"
-          >
-            {{ $t('groupCardEdit') }}
-          </button>
-        </div>
+        <!-- 自动择优组:检测间隔 / 容差,和左边当前选中的节点同一行、垂直居中;
+             这一行不到 22rem 宽(两列布局、窄屏)就不显示,节点名不让 -->
+        <span
+          v-if="testMeta"
+          class="text-base-content/60 hidden shrink-0 text-xs whitespace-nowrap tabular-nums @min-[22rem]:inline"
+        >{{ testMeta }}</span>
       </div>
     </template>
     <template v-slot:preview>
@@ -236,7 +210,6 @@ import {
 } from '@/store/settings'
 import { EyeIcon, EyeSlashIcon } from '@heroicons/vue/24/outline'
 import { managedOutbounds, siteSetNames } from '@/store/openboxSiteSets'
-import { openNodeGroupEditor } from '@/store/nodeGroupEditor'
 import { openPenetrationDialog } from '@/store/proxyGroupRulePenetration'
 import { DARK_THEME, theme } from '@/store/settings'
 import { twMerge } from 'tailwind-merge'
@@ -274,8 +247,6 @@ const handlerLatencyTest = async () => {
 const { t } = useI18n()
 // 节点管理里的这个组(有就是 Open-Box 自己生成的组,没有就是内核配置里别的出站)
 const managedGroup = computed(() => managedOutbounds.value.find((g) => g.name === props.name))
-// 内置的直连/拒绝不在这儿改(它们只有名字和图标可改,入口在节点管理)
-const canEditGroup = computed(() => Boolean(managedGroup.value && !managedGroup.value.kind))
 // 自动择优组显示「检测间隔 5 分钟 · 容差 100 毫秒」;手动组没有这两项
 const testMeta = computed(() => {
   const g = managedGroup.value

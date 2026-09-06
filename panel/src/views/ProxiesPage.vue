@@ -91,11 +91,6 @@
       :subscription="editing"
       @saved="handleEdited"
     />
-    <!-- 节点卡片上的「修改」:和节点管理页同一个弹窗组件,就地改一个组,改完仍留在这一页 -->
-    <NodeGroupEditorDialog
-      ref="groupEditor"
-      @saved="handleGroupEdited"
-    />
   </div>
 </template>
 
@@ -111,7 +106,6 @@ import { CpuChipIcon } from '@heroicons/vue/24/outline'
 import { RouterLink } from 'vue-router'
 import { isEmpty } from 'lodash'
 import AddSubscriptionDialog from '@/components/subscription/AddSubscriptionDialog.vue'
-import NodeGroupEditorDialog from '@/components/subscription/NodeGroupEditorDialog.vue'
 import SubscriptionCard from '@/components/subscription/SubscriptionCard.vue'
 import { usePaddingForViews } from '@/composables/paddingViews'
 import {
@@ -122,8 +116,6 @@ import {
 } from '@/composables/proxies'
 import { refreshSubscription } from '@/api/openbox'
 import { loadOpenboxNodeGroups, loadOpenboxSiteSets, nodeProviders } from '@/store/openboxSiteSets'
-import { nodeGroupEditRequest } from '@/store/nodeGroupEditor'
-import { showNotification } from '@/helper/notification'
 import { PROXY_TAB_TYPE, ROUTE_NAME, SETTINGS_TAB } from '@/constant'
 import {
   loadOpenboxSubscriptions,
@@ -141,7 +133,7 @@ import {
 import { twoColumnProxyGroup } from '@/store/settings'
 import { useDocumentVisibility, useIntervalFn, useSessionStorage } from '@vueuse/core'
 import { pollLatencyHistoryVersion } from '@/store/latencyHistory'
-import { computed, nextTick, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 
 const { padding } = usePaddingForViews({
   offsetTop: 0,
@@ -202,18 +194,6 @@ const handleEdited = () => {
 watch(showEditDialog, (open) => {
   if (!open) editing.value = null
 })
-
-// 节点卡片上的「修改」发来的请求(见 store/nodeGroupEditor.ts)。保存后重新拉一遍节点
-// 管理的数据,卡片上的检测间隔/容差、图标立刻跟着变;内核里的组要重启内核才换。
-const groupEditor = useTemplateRef('groupEditor')
-watch(nodeGroupEditRequest, (req) => {
-  if (req) groupEditor.value?.open(req.group)
-})
-const handleGroupEdited = async () => {
-  showNotification({ content: 'groupSavedNeedRestart', type: 'alert-success' })
-  await loadOpenboxNodeGroups()
-  void fetchProxies()
-}
 
 const proxiesRef = ref()
 const documentVisible = useDocumentVisibility()
