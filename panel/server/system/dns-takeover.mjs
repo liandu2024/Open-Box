@@ -48,6 +48,14 @@ export const dnsmasqSafeDomain = (raw) => {
   return d
 }
 
+// 必须成功的命令:退出码非零就抛,stderr 带出去。uci 的 delete / del_list 不走这里——目标本来
+// 就不存在时它们也返回非零,那是幂等的正常情况,不是故障。
+const must = async (ctx, cmd, args, what) => {
+  const r = await ctx.exec(cmd, args)
+  if (r.code !== 0) throw new Error(`${what} 失败(code ${r.code}):${String(r.stderr || r.stdout || '').trim() || '闪存可能已写满'}`)
+  return r
+}
+
 const listOurEntries = async (ctx) => {
   const { stdout } = await ctx.exec('uci', ['-q', 'get', 'dhcp.@dnsmasq[0].server'])
   return String(stdout || '').split(/\s+/).filter((v) => v && v.endsWith(SINGBOX_DNS_UPSTREAM))
@@ -93,16 +101,14 @@ export const applyDnsTakeover = async (ctx, paths, { mode, forwardDomains = [] }
     await ctx.exec('uci', ['-q', 'delete', 'dhcp.@dnsmasq[0].noresolv'])
   } else {
     await ctx.exec('uci', ['-q', 'delete', 'dhcp.@dnsmasq[0].server'])
-    await ctx.exec('uci', ['set', 'dhcp.@dnsmasq[0].noresolv=1'])
+    await must(ctx, 'uci', ['set', 'dhcp.@dnsmasq[0].noresolv=1'], 'uci set noresolv')
   }
-  for (const s of servers) await ctx.exec('uci', ['add_list', `dhcp.@dnsmasq[0].server=${s}`])
-  const commit = await ctx.exec('uci', ['commit', 'dhcp'])
-  if (commit.code !== 0) {
-    // 闪存写满时 commit 静默失败,dnsmasq 重启后还是旧配置——不能报"部署成功"
-    throw new Error(`uci commit dhcp 失败(code ${commit.code}):${(commit.stderr || commit.stdout || '').trim() || '闪存可能已写满'}`)
-  }
-  await ctx.exec('/etc/init.d/dnsmasq', ['restart'])
-  // 先写状态再重启 dnsmasq 也无妨,但放在 commit 之后能保证"状态文件存在 ⇒ uci 已经写过"
+  for (const s of servers) await must(ctx, 'uci', ['add_list', `dhcp.@dnsmasq[0].server=${s}`], `uci add_list server=${s}`)
+  // 闪存写满时 commit 静默失败,dnsmasq 重启后还是旧配置;dnsmasq 起不来 LAN 就没 DNS——
+  // 两种都不能报"部署成功"
+  await must(ctx, 'uci', ['commit', 'dhcp'], 'uci commit dhcp')
+  await must(ctx, '/etc/init.d/dnsmasq', ['restart'], 'dnsmasq 重启')
+  // 放在 commit 之后能保证"状态文件存在 ⇒ uci 已经写过"
   await ctx.writeFile(dnsTakeoverStatePath(paths), stateText)
   return {
     changed: true,
@@ -115,21 +121,30 @@ export const restoreDnsTakeover = async (ctx, paths) => {
   // 还原 = 这份配置不再需要接管(切到别的模式,或部署失败回滚),开机也不要再照抄
   const sp = dnsTakeoverStatePath(paths)
   if (await ctx.exists(sp)) await ctx.remove(sp)
-  if (await ctx.exists(bp)) {
-    // 有备份 = Open-Box 确实接管过 dnsmasq:整段清空后按备份重建,恢复到接管前状态。
-    await ctx.exec('uci', ['-q', 'delete', 'dhcp.@dnsmasq[0].server'])
-    await ctx.exec('uci', ['-q', 'delete', 'dhcp.@dnsmasq[0].noresolv'])
-    const { servers, noresolv } = parseBackup(await ctx.readFile(bp))
-    for (const s of servers) await ctx.exec('uci', ['add_list', `dhcp.@dnsmasq[0].server=${s}`])
-    if (noresolv !== null) await ctx.exec('uci', ['set', `dhcp.@dnsmasq[0].noresolv=${noresolv}`])
-    await ctx.remove(bp)
-  } else {
-    // 无备份 = 从未接管过(默认 hijack 模式下的失败回滚也会走到这里)。
-    // 绝不能 delete 整个 server 列表——那会连用户自己配置的上游(Pi-hole/223.5.5.5 等)
-    // 一并清空并 commit 进闪存。只精确撤销 Open-Box 可能写入的那一条,幂等无害。
-    await ctx.exec('uci', ['-q', 'del_list', `dhcp.@dnsmasq[0].server=${SINGBOX_DNS_UPSTREAM}`])
+  const hasBackup = await ctx.exists(bp)
+  try {
+    if (hasBackup) {
+      // 有备份 = Open-Box 确实接管过 dnsmasq:整段清空后按备份重建,恢复到接管前状态。
+      await ctx.exec('uci', ['-q', 'delete', 'dhcp.@dnsmasq[0].server'])
+      await ctx.exec('uci', ['-q', 'delete', 'dhcp.@dnsmasq[0].noresolv'])
+      const { servers, noresolv } = parseBackup(await ctx.readFile(bp))
+      for (const s of servers) await must(ctx, 'uci', ['add_list', `dhcp.@dnsmasq[0].server=${s}`], `uci add_list server=${s}`)
+      if (noresolv !== null) await must(ctx, 'uci', ['set', `dhcp.@dnsmasq[0].noresolv=${noresolv}`], 'uci set noresolv')
+    } else {
+      // 无备份 = 从未接管过(默认 hijack 模式下的失败回滚也会走到这里)。
+      // 绝不能 delete 整个 server 列表——那会连用户自己配置的上游(Pi-hole/223.5.5.5 等)
+      // 一并清空并 commit 进闪存。只精确撤销 Open-Box 可能写入的那一条,幂等无害。
+      await ctx.exec('uci', ['-q', 'del_list', `dhcp.@dnsmasq[0].server=${SINGBOX_DNS_UPSTREAM}`])
+    }
+    await must(ctx, 'uci', ['commit', 'dhcp'], 'uci commit dhcp')
+    await must(ctx, '/etc/init.d/dnsmasq', ['restart'], 'dnsmasq 重启')
+  } catch (error) {
+    // 没提交成功的改动不能留在 uci 暂存区——下一个不相干的 commit dhcp 会把半截改动一起带进闪存
+    await ctx.exec('uci', ['-q', 'revert', 'dhcp'])
+    throw error
   }
-  await ctx.exec('uci', ['commit', 'dhcp'])
-  await ctx.exec('/etc/init.d/dnsmasq', ['restart'])
+  // 备份只在重建、commit、dnsmasq 重启都成功之后才删:任何一步失败,备份留着下次还能重来。
+  // 以前是重建完就删,commit 失败时原上游只剩在被删掉的备份里,再也恢复不了。
+  if (hasBackup) await ctx.remove(bp)
   return { restored: true }
 }

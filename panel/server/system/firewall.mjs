@@ -11,9 +11,13 @@ const SERVER_RULE_PREFIX = 'openbox_srv_'
 // 部署 reload 四遍就是十几秒),而绝大多数部署防火墙这块根本没变。所以下面每条规则都按
 // "目标状态"写:先读现在的样子,一样就一个字不动;真变了才 commit + reload。部署流程里
 // 各条规则传 commit:false,最后由 deploy.mjs 看有没有任何一条变了,只 reload 一次。
+// commit 和 reload 都要看退出码:闪存写满 commit 会静默失败,fw4 reload 失败规则就没生效——
+// 以前两个都不看,部署照样报成功
 export const commitFirewall = async (ctx) => {
-  await ctx.exec('uci', ['commit', 'firewall'])
-  await ctx.exec('/etc/init.d/firewall', ['reload'])
+  const commit = await ctx.exec('uci', ['commit', 'firewall'])
+  if (commit.code !== 0) throw new Error(`uci commit firewall 失败(code ${commit.code}):${String(commit.stderr || commit.stdout || '').trim() || '闪存可能已写满'}`)
+  const reload = await ctx.exec('/etc/init.d/firewall', ['reload'])
+  if (reload.code !== 0) throw new Error(`firewall reload 失败(code ${reload.code}):${String(reload.stderr || reload.stdout || '').trim() || '规则没有生效'}`)
 }
 const commitReload = commitFirewall
 

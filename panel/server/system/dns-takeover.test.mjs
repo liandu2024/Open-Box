@@ -170,3 +170,52 @@ test('dnsmasq 模式:上游已经指向内核、noresolv 也对——不 commit�
   assert.equal((await applyDnsTakeover(ctx2, paths, { mode: 'dnsmasq', forwardDomains: ['b.com', 'a.com'] })).changed, false)
   assert.equal((await applyDnsTakeover(ctx2, paths, { mode: 'dnsmasq', forwardDomains: ['a.com', 'c.com'] })).changed, true)
 })
+
+test('dnsmasq 模式:dnsmasq 重启失败必须抛错,不能报部署成功', async () => {
+  const ctx = createMockContext({ execResults: {
+    'uci show dhcp.@dnsmasq[0]': { code: 0, stdout: '' },
+    '/etc/init.d/dnsmasq restart': { code: 1, stderr: 'dnsmasq: bad option' },
+  } })
+  await assert.rejects(() => applyDnsTakeover(ctx, paths, { mode: 'dnsmasq' }), /dnsmasq 重启 失败.*bad option/)
+})
+
+test('还原:uci commit 失败要抛错,备份文件必须还在(下次还能重来),暂存的半截改动要 revert', async () => {
+  const ctx = createMockContext({
+    files: { '/opt/open-box/data/dnsmasq-backup.txt': "dhcp.cfg01411c.server='9.9.9.9'\ndhcp.cfg01411c.noresolv='1'\n" },
+    execResults: { 'uci commit dhcp': { code: 1, stderr: 'uci: I/O error' } },
+  })
+  await assert.rejects(() => restoreDnsTakeover(ctx, paths), /uci commit dhcp 失败.*I\/O error/)
+  assert.equal(await ctx.exists('/opt/open-box/data/dnsmasq-backup.txt'), true)
+  const c = cmds(ctx)
+  assert.ok(c.includes('uci -q revert dhcp'))
+  assert.ok(!c.includes('/etc/init.d/dnsmasq restart'))
+})
+
+test('还原:dnsmasq 重启失败同样抛错并保留备份', async () => {
+  const ctx = createMockContext({
+    files: { '/opt/open-box/data/dnsmasq-backup.txt': "dhcp.cfg01411c.server='9.9.9.9'\n" },
+    execResults: { '/etc/init.d/dnsmasq restart': { code: 1, stderr: 'failed' } },
+  })
+  await assert.rejects(() => restoreDnsTakeover(ctx, paths), /dnsmasq 重启 失败/)
+  assert.equal(await ctx.exists('/opt/open-box/data/dnsmasq-backup.txt'), true)
+})
+
+test('还原:重建原上游的 add_list 失败也抛错、留备份;delete / del_list 返回非零不算失败(目标不存在是常态)', async () => {
+  const ctx = createMockContext({
+    files: { '/opt/open-box/data/dnsmasq-backup.txt': "dhcp.cfg01411c.server='9.9.9.9'\n" },
+    execResults: {
+      'uci -q delete dhcp.@dnsmasq[0].server': { code: 1 },
+      'uci -q delete dhcp.@dnsmasq[0].noresolv': { code: 1 },
+      'uci add_list dhcp.@dnsmasq[0].server=9.9.9.9': { code: 1, stderr: 'uci: Invalid argument' },
+    },
+  })
+  await assert.rejects(() => restoreDnsTakeover(ctx, paths), /add_list server=9\.9\.9\.9 失败/)
+  assert.equal(await ctx.exists('/opt/open-box/data/dnsmasq-backup.txt'), true)
+  // 只有 delete 返回非零的话是正常的
+  const ok = createMockContext({
+    files: { '/opt/open-box/data/dnsmasq-backup.txt': "dhcp.cfg01411c.server='9.9.9.9'\n" },
+    execResults: { 'uci -q delete dhcp.@dnsmasq[0].server': { code: 1 }, 'uci -q delete dhcp.@dnsmasq[0].noresolv': { code: 1 } },
+  })
+  assert.deepEqual(await restoreDnsTakeover(ok, paths), { restored: true })
+  assert.equal(await ok.exists('/opt/open-box/data/dnsmasq-backup.txt'), false)
+})

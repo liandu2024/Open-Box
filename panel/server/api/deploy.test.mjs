@@ -334,14 +334,16 @@ test('POST /api/openbox/rollback → 恢复直连并 disable 内核开机自启'
   }
 })
 
-test('POST /api/openbox/rollback 即使命令全失败也不抛(尽力而为),仍返回 ok:true', async () => {
-  const ctx = createMockContext({ defaultExec: { code: 1 } })
+test('POST /api/openbox/rollback 命令全失败:不抛、200,但 ok:false 且逐步列出失败(含关自启)', async () => {
+  const ctx = createMockContext({ defaultExec: { code: 1, stderr: 'boom' } })
   const { baseUrl, close } = await startApp(ctx)
   try {
     const res = await fetch(`${baseUrl}/api/openbox/rollback`, { method: 'POST' })
     assert.equal(res.status, 200)
     const body = await res.json()
-    assert.equal(body.ok, true)
+    assert.equal(body.ok, false)
+    assert.deepEqual(body.actions, [])
+    assert.deepEqual(body.failures.map((f) => f.step), ['stop-core', 'restore-dns', 'remove-firewall', 'disable-autostart'])
   } finally {
     await close()
   }

@@ -13,21 +13,40 @@ import { ensureRulesets } from './rulesets.mjs'
 // 与 openwrt/initd/openbox 的 CONF_META 一致
 export const configMetaPath = (paths) => `${paths.etc}/config.meta.json`
 
+// 回滚到直连:停内核、还原 dnsmasq、撤代理侧的防火墙规则。每一步各自尽力(一步失败不拦着
+// 后面的),但失败要如实汇总——以前一律返回 ok:true 且把失败的步骤也记成"已执行",界面显示
+// "已恢复直连",实际 DNS / 防火墙可能还停在接管状态。
 export const rollbackToDirect = async (ctx, paths) => {
   const actions = []
-  try { await stopService(ctx, paths.initd.core); actions.push('stop-core') } catch { /* 尽力而为 */ }
-  try { await restoreDnsTakeover(ctx, paths); actions.push('restore-dns') } catch { /* 尽力而为 */ }
+  const failures = []
+  const step = async (name, fn) => {
+    try {
+      const r = await fn()
+      if (r && r.ok === false) failures.push({ step: name, message: String(r.stderr || r.stdout || '').trim() || `code ${r.code}` })
+      else actions.push(name)
+    } catch (error) {
+      failures.push({ step: name, message: String((error && error.message) || error) })
+    }
+  }
+  await step('stop-core', () => stopService(ctx, paths.initd.core))
+  await step('restore-dns', () => restoreDnsTakeover(ctx, paths))
   // 只撤代理相关规则,不删面板 LAN 放行——否则回滚会把用户返回恢复界面的路都堵死。
-  try { await removeProxyRules(ctx); actions.push('remove-firewall') } catch { /* 尽力而为 */ }
-  return { ok: true, actions }
+  await step('remove-firewall', () => removeProxyRules(ctx))
+  return { ok: failures.length === 0, actions, failures }
 }
+
+// 部署失败时提示的尾巴:回滚成功说"已恢复直连",失败把哪一步、为什么带出来,用户才知道
+// 路由器此刻是不是还卡在半接管状态
+export const rollbackSummary = (rb) => (rb.ok
+  ? '已恢复直连'
+  : `恢复直连未完成(${rb.failures.map((f) => `${f.step}: ${f.message}`).join('; ')})`)
 
 const VERIFY_SETTLE_MS = 3000
 
 // 内核起来又死了的时候,把它最后一句 FATAL 带回界面——"内核启动后未在运行"这句话
 // 本身什么都说明不了,用户还得自己去翻 logread。
-const lastKernelFatal = async (ctx) => {
-  const fallback = '内核启动后未在运行,已恢复直连'
+const lastKernelFatal = async (ctx, rb) => {
+  const fallback = `内核启动后未在运行,${rollbackSummary(rb)}`
   try {
     const { code, stdout } = await ctx.exec('logread', ['-e', 'sing-box'])
     if (code !== 0 || !stdout) return fallback
@@ -35,7 +54,7 @@ const lastKernelFatal = async (ctx) => {
     if (!fatal) return fallback
     // 去掉 syslog 前缀和终端色码,只留 sing-box 自己那句话
     const text = fatal.replace(/\x1b\[[0-9;]*m/g, '').replace(/^.*?sing-box\[\d+\]:\s*/, '')
-    return `内核启动后崩溃,已恢复直连:${text}`
+    return `内核启动后崩溃,${rollbackSummary(rb)}:${text}`
   } catch {
     return fallback
   }
@@ -150,16 +169,16 @@ export const deployConfig = async (ctx, paths, { config, profile, userGroups, fe
     // 脚本自身的 exit code 不可靠。这里主动检查一次,把"内核启动后未在运行"这类笼统错误
     // 收窄成精确的"文件缺失"归因,方便面板显示。
     if (!(await ctx.exists(paths.singbox)) || !(await ctx.exists(paths.configPath))) {
-      await rollbackToDirect(ctx, paths)
-      return { ok: false, stage: 'start', message: 'sing-box 二进制或配置文件缺失,已恢复直连' }
+      const rb = await rollbackToDirect(ctx, paths)
+      return { ok: false, stage: 'start', message: `sing-box 二进制或配置文件缺失,${rollbackSummary(rb)}`, rollback: rb }
     }
 
     // 8. 重启内核
     const restart = await restartService(ctx, paths.initd.core)
     mark('重启')
     if (!restart.ok) {
-      await rollbackToDirect(ctx, paths)
-      return withTimings({ ok: false, stage: 'start', message: restart.stderr || '内核启动失败,已恢复直连' })
+      const rb = await rollbackToDirect(ctx, paths)
+      return withTimings({ ok: false, stage: 'start', message: `${String(restart.stderr || '').trim() || '内核启动失败'},${rollbackSummary(rb)}`, rollback: rb })
     }
 
     // 9. 验证运行。看两眼而不是一眼:有一类错误 `sing-box check` 查不出来、进程起来
@@ -170,8 +189,8 @@ export const deployConfig = async (ctx, paths, { config, profile, userGroups, fe
       if (wait) await ctx.sleep(wait)
       const status = await serviceStatus(ctx, paths.initd.core)
       if (!status.running) {
-        await rollbackToDirect(ctx, paths)
-        return withTimings({ ok: false, stage: 'verify', message: await lastKernelFatal(ctx) })
+        const rb = await rollbackToDirect(ctx, paths)
+        return withTimings({ ok: false, stage: 'verify', message: await lastKernelFatal(ctx, rb), rollback: rb })
       }
     }
     mark('确认在跑')
@@ -180,7 +199,7 @@ export const deployConfig = async (ctx, paths, { config, profile, userGroups, fe
   } catch (error) {
     // 落盘之后任一步骤抛出异常(闪存写满、uci 调用失败等)都不能让部署直接 reject——
     // 必须尽力回滚到直连状态,不留半接管的死配置。
-    await rollbackToDirect(ctx, paths)
-    return { ok: false, stage: 'error', message: String((error && error.message) || error) }
+    const rb = await rollbackToDirect(ctx, paths)
+    return { ok: false, stage: 'error', message: `${String((error && error.message) || error)},${rollbackSummary(rb)}`, rollback: rb }
   }
 }

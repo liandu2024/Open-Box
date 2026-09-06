@@ -28,14 +28,16 @@ export const registerDeployRoutes = (app, { store, ctx, paths } = {}) => {
 
   // 手动回滚到直连:与部署内部触发的回滚一样,也要 disable 开机自启,
   // 否则重启设备后 procd 会重新拉起一个已被撤销接管的内核。
-  // rollbackToDirect 内部每一步都已经是"尽力而为"(各自 try/catch),实际上只有
-  // disableService 还可能抛错——handler 级 try/catch 兜底,避免一次开机自启命令失败
-  // 就让整个请求变成带调用栈的默认 HTML 错误页。
+  // rollbackToDirect 内部每一步都是"尽力而为"(各自 try/catch)并把失败汇总在 failures 里,
+  // 关自启的结果也并进去:任何一步没成,ok 就是 false,界面不能再说"已恢复直连"。
+  // handler 级 try/catch 兜底 disableService 抛错的情况,避免整个请求变成带调用栈的默认 HTML 错误页。
   router.post('/rollback', async (_req, res) => {
     try {
       const result = await rollbackToDirect(ctx, paths)
-      await disableService(ctx, paths.initd.core)
-      res.json({ ok: result.ok, actions: result.actions })
+      const disabled = await disableService(ctx, paths.initd.core)
+      const failures = [...result.failures]
+      if (!disabled.ok) failures.push({ step: 'disable-autostart', message: String(disabled.stderr || disabled.stdout || '').trim() || `code ${disabled.code}` })
+      res.json({ ok: result.ok && disabled.ok, actions: result.actions, failures })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       res.status(500).json({ ok: false, message })

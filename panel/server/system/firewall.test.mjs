@@ -115,3 +115,10 @@ test('规则已经是目标状态:一个字不动、不 commit、不 reload;comm
   assert.ok(cmds(ctx).includes('uci set firewall.openbox_panel.dest_port=2027'))
   assert.ok(!cmds(ctx).includes('/etc/init.d/firewall reload'))
 })
+
+test('commitFirewall:uci commit / firewall reload 失败必须抛错,不能当成规则已生效', async () => {
+  const commitFails = createMockContext({ execResults: { 'uci commit firewall': { code: 1, stderr: 'uci: I/O error' } } })
+  await assert.rejects(() => applyPanelLanRule(commitFails, { port: 2026 }), /uci commit firewall 失败.*I\/O error/)
+  const reloadFails = createMockContext({ execResults: { '/etc/init.d/firewall reload': { code: 1, stderr: 'fw4: syntax error' } } })
+  await assert.rejects(() => removeProxyRules(reloadFails), /firewall reload 失败.*syntax error/)
+})

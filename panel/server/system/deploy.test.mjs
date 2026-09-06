@@ -147,13 +147,48 @@ test('落盘之后阶段抛出异常 → 回滚到直连并返回 stage:error', 
   assert.ok(cmds(ctx).includes('/etc/init.d/openbox stop'))    // 回滚:停服务
 })
 
-test('rollbackToDirect 幂等且尽力而为', async () => {
-  const ctx = createMockContext({ defaultExec: { code: 1 } })   // 全失败也不抛
+test('rollbackToDirect:每一步各自尽力、不抛,但失败要如实汇总,不再一律 ok:true', async () => {
+  const ctx = createMockContext({ defaultExec: { code: 1, stderr: 'boom' } })   // 全失败也不抛
   const r = await rollbackToDirect(ctx, paths)
-  assert.equal(r.ok, true)
-  assert.ok(r.actions.includes('stop-core'))
-  assert.ok(r.actions.includes('restore-dns'))
-  assert.ok(r.actions.includes('remove-firewall'))
+  assert.equal(r.ok, false)
+  assert.deepEqual(r.actions, [])
+  assert.deepEqual(r.failures.map((f) => f.step), ['stop-core', 'restore-dns', 'remove-firewall'])
+  assert.ok(r.failures.every((f) => /boom|失败/.test(f.message)))
+  // 三步都成功才是 ok
+  const fine = await rollbackToDirect(createMockContext(), paths)
+  assert.equal(fine.ok, true)
+  assert.deepEqual(fine.actions, ['stop-core', 'restore-dns', 'remove-firewall'])
+  assert.deepEqual(fine.failures, [])
+})
+
+test('重启失败且回滚也没成 → 提示写明恢复直连未完成、哪一步、为什么;不再笼统说"已恢复直连"', async () => {
+  // firewall reload 部署那次(第 6 步)成功,回滚撤规则那次才失败
+  let reloads = 0
+  const ctx = createMockContext({
+    files: { [paths.singbox]: '#!/bin/sh\n' },
+    execResults: {
+      '/etc/init.d/openbox restart': { code: 1, stderr: 'start failed' },
+      '/etc/init.d/firewall reload': () => (++reloads === 1 ? { code: 0 } : { code: 1, stderr: 'fw4 broken' }),
+    },
+  })
+  const r = await deployConfig(ctx, paths, { config, profile })
+  assert.equal(r.ok, false)
+  assert.equal(r.stage, 'start')
+  assert.match(r.message, /start failed,恢复直连未完成\(remove-firewall: firewall reload 失败.*fw4 broken\)/)
+  assert.equal(r.rollback.ok, false)
+  // 回滚全成功时照旧说"已恢复直连"
+  const fine = await deployConfig(createMockContext({ files: { [paths.singbox]: '#!/bin/sh\n' }, execResults: { '/etc/init.d/openbox restart': { code: 1, stderr: 'start failed' } } }), paths, { config, profile })
+  assert.match(fine.message, /start failed,已恢复直连$/)
+  assert.equal(fine.rollback.ok, true)
+})
+
+test('部署途中 firewall reload 失败 → 不能报成功:stage:error、回滚到直连', async () => {
+  const ctx = okCtx({ '/etc/init.d/firewall reload': { code: 1, stderr: 'fw4: syntax error' } })
+  const r = await deployConfig(ctx, paths, { config, profile })
+  assert.equal(r.ok, false)
+  assert.equal(r.stage, 'error')
+  assert.match(r.message, /firewall reload 失败/)
+  assert.ok(cmds(ctx).includes('/etc/init.d/openbox stop'))
 })
 
 test('rollbackToDirect 不移除面板 LAN 放行规则(否则自断恢复通道)', async () => {
