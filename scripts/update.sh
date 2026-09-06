@@ -1073,16 +1073,60 @@ info "替换 node/ panel/ bin/ openwrt/(保留 data/ 与 etc/)..."
 # 目录一起删掉,安装就成了半新半旧
 trap '' INT TERM
 POST_SWAP=1
-for comp in node panel bin openwrt; do
-  [ -e "$INSTALL_ROOT/$comp.old" ] && safe_rm_rf "$INSTALL_ROOT/$comp.old"
-  if [ -e "$INSTALL_ROOT/$comp" ]; then
-    mv "$INSTALL_ROOT/$comp" "$INSTALL_ROOT/$comp.old" || \
-      die "无法备份旧的 $comp,已停止升级。请检查磁盘空间与权限后重试(现有安装应仍完整,位于 $INSTALL_ROOT)。"
+# ---- swap:begin ----
+# 两阶段替换 + 整体回退:
+#   1) 先把四个旧组件各自挪到 .old(全部挪完之前一个都不删);
+#   2) 再把四个新组件从暂存目录挪进来;
+#   3) init 脚本也铺完、确认都成功后,才统一删 .old(见下方 swap:end)。
+# 中途任何一步失败都整体回退:新的删掉、.old 挪回原位,现有安装回到升级前的样子。
+# 以前是换一个删一个 .old,第三个失败时前两个的旧版本已经没了,装置卡成半新半旧,
+# 只能手工修或重装。
+COMPONENTS="node panel bin openwrt"
+INITD_DIR="${OPENBOX_INITD_DIR:-/etc/init.d}"
+SWAPPED_NEW=""
+rollback_components() {
+  _rb_failed=""
+  for _rb in $COMPONENTS; do
+    # 新的可能已经挪进来、也可能挪到一半:只要它是这次挪进来的,先清掉
+    case " $SWAPPED_NEW " in
+      *" $_rb "*) [ -e "$INSTALL_ROOT/$_rb" ] && safe_rm_rf "$INSTALL_ROOT/$_rb" ;;
+    esac
+    if [ -e "$INSTALL_ROOT/$_rb.old" ]; then
+      mv "$INSTALL_ROOT/$_rb.old" "$INSTALL_ROOT/$_rb" || _rb_failed="$_rb_failed $_rb"
+    fi
+  done
+  # init 脚本铺到一半失败的话,已经铺进去的也要换回旧的;meta.json 同理
+  for _rb in openbox openbox-panel; do
+    if [ -e "$STAGE_DIR/initd-backup/$_rb" ]; then
+      cp "$STAGE_DIR/initd-backup/$_rb" "$INITD_DIR/$_rb" || _rb_failed="$_rb_failed initd:$_rb"
+    fi
+  done
+  if [ -e "$STAGE_DIR/initd-backup/meta.json" ]; then
+    cp "$STAGE_DIR/initd-backup/meta.json" "$INSTALL_ROOT/meta.json" || _rb_failed="$_rb_failed meta.json"
   fi
-  mv "$STAGE_DIR/$comp" "$INSTALL_ROOT/$comp" || \
-    die "替换 $comp 失败(可能是磁盘空间不足)。安装现处于不一致状态:请检查 $INSTALL_ROOT/$comp 与 $INSTALL_ROOT/$comp.old,必要时重新运行 update.sh。"
+  [ -z "$_rb_failed" ]
+}
+swap_failed() {
+  if rollback_components; then
+    die "$1 已把 node/ panel/ bin/ openwrt/ 与 init 脚本整体回退到升级前的版本,现有安装应仍完整($INSTALL_ROOT);请检查磁盘空间与权限后重试。"
+  fi
+  die "$1 回退时也失败了(没能挪回:$_rb_failed),安装现处于不一致状态:请检查 $INSTALL_ROOT 下各组件与对应的 .old 目录,必要时手工把 .old 挪回原名,或重新运行 update.sh。"
+}
+for comp in $COMPONENTS; do
   [ -e "$INSTALL_ROOT/$comp.old" ] && safe_rm_rf "$INSTALL_ROOT/$comp.old"
 done
+for comp in $COMPONENTS; do
+  if [ -e "$INSTALL_ROOT/$comp" ]; then
+    mv "$INSTALL_ROOT/$comp" "$INSTALL_ROOT/$comp.old" || swap_failed "无法备份旧的 $comp。"
+  fi
+done
+for comp in $COMPONENTS; do
+  SWAPPED_NEW="$SWAPPED_NEW $comp"
+  mv "$STAGE_DIR/$comp" "$INSTALL_ROOT/$comp" || swap_failed "替换 $comp 失败(可能是磁盘空间不足)。"
+done
+# meta.json 也留一份:回退后版本号要跟组件一致,不能旧组件挂着新版本号
+mkdir -p "$STAGE_DIR/initd-backup" || swap_failed "无法创建备份目录。"
+[ -e "$INSTALL_ROOT/meta.json" ] && { cp "$INSTALL_ROOT/meta.json" "$STAGE_DIR/initd-backup/meta.json" || swap_failed "无法备份 meta.json。"; }
 mv "$STAGE_DIR/meta.json" "$INSTALL_ROOT/meta.json" || warn "meta.json 替换失败,面板显示的版本号可能不准确,但不影响功能。"
 # uninstall.sh 随产物分发(LuCI 兜底页要调它),升级时一并刷新,免得留着旧版本的
 # 卸载逻辑去清理新版本铺下的东西。
@@ -1103,9 +1147,21 @@ fi
 chown -R 0:0 "$INSTALL_ROOT" || warn "重置 $INSTALL_ROOT 属主为 root 失败,可能不影响使用。"
 
 info "重新铺装 init 脚本与 LuCI 文件..."
-cp "$INSTALL_ROOT/openwrt/initd/openbox" /etc/init.d/openbox || die "无法安装 /etc/init.d/openbox。"
-cp "$INSTALL_ROOT/openwrt/initd/openbox-panel" /etc/init.d/openbox-panel || die "无法安装 /etc/init.d/openbox-panel。"
-chmod +x /etc/init.d/openbox /etc/init.d/openbox-panel
+# 先把现有 init 脚本存一份到暂存目录:铺到一半失败要连组件一起整体回退
+mkdir -p "$STAGE_DIR/initd-backup" || swap_failed "无法创建 init 脚本备份目录。"
+for _initd in openbox openbox-panel; do
+  if [ -e "$INITD_DIR/$_initd" ]; then
+    cp "$INITD_DIR/$_initd" "$STAGE_DIR/initd-backup/$_initd" || swap_failed "无法备份现有的 $INITD_DIR/$_initd。"
+  fi
+done
+cp "$INSTALL_ROOT/openwrt/initd/openbox" "$INITD_DIR/openbox" || swap_failed "无法安装 $INITD_DIR/openbox。"
+cp "$INSTALL_ROOT/openwrt/initd/openbox-panel" "$INITD_DIR/openbox-panel" || swap_failed "无法安装 $INITD_DIR/openbox-panel。"
+chmod +x "$INITD_DIR/openbox" "$INITD_DIR/openbox-panel"
+# 组件和 init 脚本都换好了,这才是删旧版本的时候
+for comp in $COMPONENTS; do
+  [ -e "$INSTALL_ROOT/$comp.old" ] && safe_rm_rf "$INSTALL_ROOT/$comp.old"
+done
+# ---- swap:end ----
 
 mkdir -p /www/luci-static/resources/view/openbox || warn "无法创建 LuCI 视图目录(不影响面板本身,LuCI 页面可能是旧的)。"
 cp "$INSTALL_ROOT/openwrt/luci/htdocs/luci-static/resources/view/openbox/status.js" \
