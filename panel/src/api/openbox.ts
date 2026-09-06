@@ -771,6 +771,10 @@ export interface OpenboxRouteTest {
     rule?: string
     rulePayload?: string
     destinationIP?: string
+    // connectTo:探测像终端一样按解析出来的第一个 IP 去连,这是那个 IP;目标本身是 IP 时没有
+    connectTo?: string
+    // viaProxy:链路末尾是节点(不是内置的直连 / 拒绝)
+    viaProxy?: boolean
     notSeen?: boolean
     connectionsError?: string
     debug?: { connections: number; sample: string[] }

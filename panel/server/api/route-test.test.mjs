@@ -46,7 +46,8 @@ test('POST /route-test:内核解析 + 真实访问 + 在连接表里找到这条
     ] }) }
     throw new Error('unexpected fetch ' + url)
   }
-  const probe = async (host, { port }) => ({ ok: true, status: port === 443 ? 200 : 301, ms: 7 })
+  const probeCalls = []
+  const probe = async (host, opts) => { probeCalls.push({ host, ...opts }); return { ok: true, status: opts.port === 443 ? 200 : 301, ms: 7 } }
   const app = express()
   registerRouteTestRoutes(app, { store: { getClashSecret: () => 's' }, ctx, paths, fetchImpl, probe })
   const server = app.listen(0)
@@ -61,6 +62,10 @@ test('POST /route-test:内核解析 + 真实访问 + 在连接表里找到这条
     assert.equal(body.exit.ms, 7)
     assert.deepEqual(body.exit.chains, ['中国', '直连'])
     assert.equal(body.exit.rule, 'RuleSet(geosite-cn)')
+    // 探测像终端一样按解析出来的 IP 去连,SNI / Host 仍是域名;链路末尾是内置直连,不算走节点
+    assert.deepEqual(probeCalls, [{ host: 'www.baidu.com', port: 443, secure: true, connectTo: '39.156.66.10' }])
+    assert.equal(body.exit.connectTo, '39.156.66.10')
+    assert.equal(body.exit.viaProxy, false)
   } finally {
     await new Promise((r) => server.close(r))
   }
@@ -100,6 +105,8 @@ test('POST /route-test:访问失败也报出站链路——请求挂着的时候
   assert.equal(failed.ms, 5041)
   assert.deepEqual(failed.chains, ['国外', '香港-自动', 'VW | 香港-OS-01'])
   assert.equal(failed.destinationIP, '8.8.8.8')
+  assert.equal(failed.viaProxy, true)
+  assert.equal(failed.connectTo, undefined)
   assert.equal(failed.notSeen, undefined)
   // 连接表里始终没有探测连接:失败照报,另标"没认出这条连接";别的终端那条不能顶上
   const unseen = await run({ withProbeConn: false })

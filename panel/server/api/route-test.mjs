@@ -59,10 +59,14 @@ export const decideDnsServer = async (ctx, paths, config, target) => {
 
 const clashHeaders = (secret) => (secret ? { Authorization: `Bearer ${secret}` } : {})
 
-// 经内核的回环 mixed 入站发一次真实请求:CONNECT host:port → (443 时再套 TLS)→ HEAD /。
+// 经内核的回环 mixed 入站发一次真实请求:CONNECT 目标:port → (443 时再套 TLS)→ HEAD /。
 // 走这条路请求才会像客户端流量一样过内核的分流规则,连接表里也就能找到它。
+// connectTo:终端都是先解析再按 IP 去连的,探测也一样——CONNECT 的目标写解析出来的 IP,
+// TLS 的 SNI / HTTP 的 Host 仍是域名,内核靠嗅探拿到域名去匹配规则(和 tun 里的终端流量一样)。
+// 这一点决定了节点那头拿到的是 IP 还是域名:内核不改写目标(sniff 不带 override_destination),
+// 节点拿到的就是这个 IP,按它直接连,不会再解析一次;拿到域名才会在节点那边再解析。
 // 只读响应首行,拿到状态码就断开。
-export const probeViaKernel = (host, { port = 443, secure = port !== 80, proxyPort = PANEL_INBOUND_PORT, timeoutMs = 10000 } = {}) =>
+export const probeViaKernel = (host, { port = 443, secure = port !== 80, proxyPort = PANEL_INBOUND_PORT, timeoutMs = 10000, connectTo = '' } = {}) =>
   new Promise((resolve) => {
     const t0 = Date.now()
     let done = false
@@ -75,7 +79,8 @@ export const probeViaKernel = (host, { port = 443, secure = port !== 80, proxyPo
     socket.once('error', (err) => { clearTimeout(timer); finish({ ok: false, error: connected ? err.message : `inbound: ${err.message}` }) })
     socket.once('connect', () => {
       connected = true
-      socket.write(`CONNECT ${host}:${port} HTTP/1.1\r\nHost: ${host}:${port}\r\n\r\n`)
+      const dest = connectTo || host
+      socket.write(`CONNECT ${dest}:${port} HTTP/1.1\r\nHost: ${dest}:${port}\r\n\r\n`)
     })
     let buf = ''
     const onConnectData = (chunk) => {
@@ -216,7 +221,10 @@ export const registerRouteTestRoutes = (app, { store, ctx, paths, fetchImpl = gl
     // 主机名或 IP 对得上。连接表里没有入站信息的老内核,等访问结束后退一步只按主机名 / IP 对;
     // 有入站信息但不是面板入站的(别的终端到同一目标的连接)一律不算,免得把别人的线路当成自己的。
     let settled = false
-    const probing = probe(target, { port, secure }).then((r) => { settled = true; return r })
+    // 像终端一样:解析出了地址就按第一个地址去连(fake-ip 也照连——终端拿到的就是它)
+    const connectTo = !isIp(target) && out.resolve && out.resolve.answers.length ? String(out.resolve.answers[0]) : ''
+    if (connectTo) exit.connectTo = connectTo
+    const probing = probe(target, { port, secure, connectTo }).then((r) => { settled = true; return r })
     const resolvedIps = new Set(((out.resolve && out.resolve.answers) || []).map(String))
     const sameTarget = (m) => String(m.host || '').toLowerCase() === target ||
       m.destinationIP === target ||
@@ -257,6 +265,12 @@ export const registerRouteTestRoutes = (app, { store, ctx, paths, fetchImpl = gl
       exit.rule = found.hit.rule || ''
       exit.rulePayload = found.hit.rulePayload || ''
       exit.destinationIP = found.hit.metadata.destinationIP || ''
+      // 链路末尾是节点还是内置的直连 / 拒绝:走节点的,前端要写明节点拿到的是 IP 还是 fake-ip
+      const leaf = exit.chains.at(-1)
+      if (leaf) {
+        const tags = builtinTags(store.getGroups ? store.getGroups() : [])
+        exit.viaProxy = leaf !== tags.direct && leaf !== tags.block
+      }
     } else if (connectionsError) {
       exit.connectionsError = connectionsError
     } else {
