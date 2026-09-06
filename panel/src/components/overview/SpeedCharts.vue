@@ -1,6 +1,7 @@
 <template>
   <BasicCharts
     ref="chartRef"
+    :pausable="pausable"
     :data="chartsData"
     :label-formatter="labelFormatter"
     :tool-tip-formatter="tooltipFormatter"
@@ -16,6 +17,8 @@ import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BasicCharts from './BasicCharts.vue'
 
+// 侧边栏那张小图不放暂停键;概览里的照旧
+withDefaults(defineProps<{ pausable?: boolean }>(), { pausable: true })
 const chartRef = ref()
 const { t } = useI18n()
 const chartsData = computed(() => {

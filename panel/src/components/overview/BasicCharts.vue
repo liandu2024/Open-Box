@@ -8,7 +8,9 @@
       class="border-b-primary/30 border-t-primary/60 border-l-info/30 border-r-info/60 text-base-content/10 bg-base-100/70 hidden"
       ref="colorRef"
     />
+    <!-- 暂停键:概览和规则页的图有,侧边栏那张小图不放(pausable=false) -->
     <button
+      v-if="pausable !== false"
       class="btn btn-ghost btn-xs absolute right-1 bottom-0"
       @click="isPaused = !isPaused"
     >
@@ -35,12 +37,15 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 
 echarts.use([LineChart, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer])
 
-const props = defineProps<{
+// 布尔 prop 不传时 Vue 会当成 false,所以「不传就有暂停键」得靠 withDefaults 写成 true
+const props = withDefaults(defineProps<{
   data: { name: string; color?: number; data: { name: number; value: number }[] }[]
+  // 右下角要不要放暂停键;不传就有
+  pausable?: boolean
   labelFormatter: (value: number) => string
   toolTipFormatter: (value: ToolTipParams[]) => string
   min: number
-}>()
+}>(), { pausable: true })
 
 const colorRef = ref()
 const chart = ref()
@@ -86,7 +91,8 @@ const options = computed(() => {
     },
     grid: {
       left: 60,
-      top: 15,
+      // 绘图区上边距 8px,和卡片内边距一个数;最上面那个刻度标签半个字高在这 8px 里放得下
+      top: 8,
       right: 8,
       bottom: 25,
     },
