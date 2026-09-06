@@ -88,11 +88,27 @@ test('组按当时选中的节点记:切了节点下一笔是新节点的;切到
   // 切到 B:B 的结果(at 0)比组上一笔(at 5)还旧 → 用观察时刻(at 7),排在最后
   h.recordFromProxies(proxies('B', [{ time: at(5), delay: 110 }], [{ time: at(0), delay: 200 }]), { kernelStartedAt: K, at: T0 + 7 * 60_000 })
   assert.deepEqual(h.get().G.map((s) => [s.time, s.delay, s.node]), [[at(0), 100, 'A'], [at(5), 110, 'A'], [at(7), 200, 'B']])
-  // B 没结果了(超时)→ 记一笔 B 的超时;再来一遍不重复
+  // B 没结果了:第一眼不记(可能只是这一轮还没测完、组马上会切走),下一个 tick 组仍停在 B 上才记超时;再来不重复
   h.recordFromProxies(proxies('B', [{ time: at(5), delay: 110 }], []), { kernelStartedAt: K, at: T0 + 12 * 60_000 })
+  assert.equal(h.get().G.length, 3)
   h.recordFromProxies(proxies('B', [{ time: at(5), delay: 110 }], []), { kernelStartedAt: K, at: T0 + 13 * 60_000 })
-  assert.deepEqual(h.get().G.slice(-1).map((s) => [s.time, s.delay, s.node]), [[at(12), 0, 'B']])
+  h.recordFromProxies(proxies('B', [{ time: at(5), delay: 110 }], []), { kernelStartedAt: K, at: T0 + 14 * 60_000 })
+  assert.deepEqual(h.get().G.slice(-1).map((s) => [s.time, s.delay, s.node]), [[at(13), 0, 'B']])
   assert.equal(h.get().G.length, 4)
   // 节点自己的时间线照旧不带 node
   assert.deepEqual(h.get().A.map((s) => s.node), [undefined, undefined])
+})
+
+test('组的过渡状态不记:选中节点刚超时、下一眼组已经切走 → 组的时间线只有切换那笔,没有超时那笔', () => {
+  const h = createLatencyHistory({ store: memStore() })
+  const K = T0 - 3_600_000
+  const proxies = (now, aHist, bHist) => ({ A: node(aHist), B: node(bHist), G: { type: 'URLTest', all: ['A', 'B'], now, history: [] } })
+  h.recordFromProxies(proxies('A', [{ time: at(0), delay: 100 }], [{ time: at(0), delay: 120 }]), { kernelStartedAt: K, at: T0 })
+  // A 的探测超时了,组这一眼还挂在 A 上
+  h.recordFromProxies(proxies('A', [], [{ time: at(0), delay: 120 }]), { kernelStartedAt: K, at: T0 + 5 * 60_000 })
+  // 5 秒后这轮结束,组切到 B
+  h.recordFromProxies(proxies('B', [], [{ time: at(0), delay: 120 }]), { kernelStartedAt: K, at: T0 + 5 * 60_000 + 5000 })
+  assert.deepEqual(h.get().G.map((s) => [s.delay, s.node]), [[100, 'A'], [120, 'B']])
+  // 节点 A 自己的时间线照样记了超时
+  assert.deepEqual(h.get().A.map((s) => s.delay), [100, 0])
 })
