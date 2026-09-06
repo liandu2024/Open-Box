@@ -794,7 +794,9 @@ export const testRoute = (target: string, port?: number) =>
 // ---- 延迟历史(server/api/latency-history.mjs):每个节点最近 10 次测速结果,服务端记、所有浏览器共享
 export type OpenboxLatencySample = { time: string; delay: number }
 export type OpenboxLatencyHistory = Record<string, OpenboxLatencySample[]>
-export const fetchLatencyHistory = () => requestJson<{ history: OpenboxLatencyHistory }>('/api/openbox/latency-history')
+export const fetchLatencyHistory = () => requestJson<{ history: OpenboxLatencyHistory; updatedAt: number }>('/api/openbox/latency-history')
+// 只回最近一次写入的时刻:代理页每 15 秒轮询它,变了才拉整份
+export const fetchLatencyHistoryVersion = () => requestJson<{ updatedAt: number }>('/api/openbox/latency-history/version')
 // 面板手动测出来的超时:内核那边只是删记录,得自己报上去
 export const postLatencySamples = (samples: Array<{ name: string; time: string; delay: number }>) =>
   requestJson<{ ok: boolean; history: OpenboxLatencyHistory }>('/api/openbox/latency-history/samples', { method: 'POST', body: JSON.stringify({ samples }) })

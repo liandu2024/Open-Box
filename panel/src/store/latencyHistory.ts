@@ -1,4 +1,4 @@
-import { fetchLatencyHistory, postLatencySamples, syncLatencyHistory as syncLatencyHistoryAPI } from '@/api/openbox'
+import { fetchLatencyHistory, fetchLatencyHistoryVersion, postLatencySamples, syncLatencyHistory as syncLatencyHistoryAPI } from '@/api/openbox'
 import { NOT_CONNECTED } from '@/constant'
 import { ref } from 'vue'
 
@@ -11,13 +11,30 @@ export const MAX_LATENCY_HISTORY = 10
 export const latencyHistory = ref<Record<string, LatencySample[]>>({})
 
 let loadSeq = 0
+// 服务端那份最近一次写入的时刻;轮询版本号时和它比,变了才拉整份
+let seenUpdatedAt = 0
 export const loadLatencyHistory = async () => {
   const mine = ++loadSeq
   try {
-    const { history } = await fetchLatencyHistory()
-    if (mine === loadSeq && history && typeof history === 'object') latencyHistory.value = history
+    const { history, updatedAt } = await fetchLatencyHistory()
+    if (mine === loadSeq && history && typeof history === 'object') {
+      latencyHistory.value = history
+      seenUpdatedAt = typeof updatedAt === 'number' ? updatedAt : seenUpdatedAt
+    }
   } catch {
     // 服务端拿不到就先用手头这份
+  }
+}
+
+// 代理页可见时每 15 秒调一次:服务端定时测速有了新结果就返回 true,调用方再去刷新节点数据和整份历史
+export const pollLatencyHistoryVersion = async () => {
+  try {
+    const { updatedAt } = await fetchLatencyHistoryVersion()
+    if (typeof updatedAt !== 'number' || updatedAt === seenUpdatedAt) return false
+    seenUpdatedAt = updatedAt
+    return true
+  } catch {
+    return false
   }
 }
 

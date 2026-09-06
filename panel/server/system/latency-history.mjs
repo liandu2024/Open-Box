@@ -25,10 +25,13 @@ export const createLatencyHistory = ({ store, now = () => Date.now() }) => {
   }
   let cache = read()
   let dirty = false
+  // 最近一次真正写入的时刻:前端轮询它,变了才拉整份
+  let updatedAt = 0
   const flush = () => {
     if (!dirty) return
     store.setRaw(LATENCY_HISTORY_KEY, JSON.stringify(cache))
     dirty = false
+    updatedAt = now()
   }
 
   // 记一笔。和已存的最后一条时间相同就是同一次结果,不重复;乱序到达的按时间插入
@@ -95,5 +98,5 @@ export const createLatencyHistory = ({ store, now = () => Date.now() }) => {
     return removed
   }
 
-  return { record, recordSamples, recordFromProxies, prune, get: () => cache, flush }
+  return { record, recordSamples, recordFromProxies, prune, get: () => cache, flush, updatedAt: () => updatedAt }
 }

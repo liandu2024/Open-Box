@@ -11,7 +11,12 @@ export const registerLatencyHistoryRoutes = (app, { history, scheduler } = {}) =
   router.use(express.json({ limit: '256kb' }))
 
   router.get('/latency-history', (_req, res) => {
-    res.json({ history: history.get() })
+    res.json({ history: history.get(), updatedAt: history.updatedAt() })
+  })
+
+  // 只回最近一次写入的时刻:前端每 15 秒轮询它,变了才拉整份
+  router.get('/latency-history/version', (_req, res) => {
+    res.json({ updatedAt: history.updatedAt() })
   })
 
   router.post('/latency-history/samples', (req, res) => {

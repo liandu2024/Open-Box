@@ -131,7 +131,8 @@ import {
   proxiesTabShow,
 } from '@/store/proxies'
 import { twoColumnProxyGroup } from '@/store/settings'
-import { useDocumentVisibility, useSessionStorage } from '@vueuse/core'
+import { useDocumentVisibility, useIntervalFn, useSessionStorage } from '@vueuse/core'
+import { pollLatencyHistoryVersion } from '@/store/latencyHistory'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 
 const { padding } = usePaddingForViews({
@@ -196,6 +197,14 @@ watch(showEditDialog, (open) => {
 
 const proxiesRef = ref()
 const documentVisible = useDocumentVisibility()
+
+// 服务端按 interval 定时测速(latency-scheduler),结果什么时候落下来页面不知道:sing-box 每个节点
+// 只留最新一次,按历史间隔推算下次刷新那套在 sing-box 上根本推不出来。所以页面可见时每 15 秒问
+// 一次服务端历史的版本号(一个很小的 JSON),变了才重新拉节点数据(顺带拉整份历史)。
+useIntervalFn(async () => {
+  if (documentVisible.value !== 'visible') return
+  if (await pollLatencyHistoryVersion()) void fetchProxies()
+}, 15_000)
 const autoRefreshTimer = ref<number>()
 const scrollStatus = useSessionStorage('cache/proxies-scroll-status', {
   [PROXY_TAB_TYPE.POLICY]: 0,

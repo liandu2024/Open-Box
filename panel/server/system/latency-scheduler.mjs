@@ -50,8 +50,10 @@ export const createLatencyScheduler = ({
   store, ctx, paths, history, fetchImpl = globalThis.fetch, now = () => Date.now(),
   tickMs = 30_000, testTimeoutMs = 5000, log = () => {},
 }) => {
-  // 每个组上一轮(我们发起的)的时刻
-  const lastRound = new Map()
+  // 每个成员上一次被我们发起的测试覆盖到的时刻。有结果的成员按内核记录的时间判"到点",
+  // 没结果的(超时的、从没测通的)内核那边没有时间,就按这个表判——否则它们每个 tick 都算到点,
+  // 每 30 秒被测一次,一个死节点一次 5 秒,白白占着并发。
+  const lastTested = new Map()
   const headers = () => {
     const secret = store.getClashSecret ? store.getClashSecret() : ''
     return secret ? { Authorization: `Bearer ${secret}` } : {}
@@ -80,7 +82,26 @@ export const createLatencyScheduler = ({
     return history.recordFromProxies(proxies, { kernelStartedAt: await kernelStart(), at: now() })
   }
 
+  // 组测速请求的等待上限:内核最多 10 个并发、每个成员最多 testTimeout,按这轮真要测的成员数算,
+  // 再留 15 秒余量。不能设成固定 20 秒——内核用这个请求的 ctx 跑批测,请求一断后面的成员就
+  // 不测了(正式路由器「所有-自动」212 个成员,以前每轮只测到一半)。
+  const KERNEL_CONCURRENCY = 10
+  const MAX_ROUND_WAIT_MS = 5 * 60_000
+  const roundWaitMs = (dueCount) => Math.min(MAX_ROUND_WAIT_MS, Math.ceil(dueCount / KERNEL_CONCURRENCY) * testTimeoutMs + 15_000)
+
+  let inFlight = false
   const tick = async () => {
+    // 上一轮还没跑完(大组一轮要一两分钟)就不叠着跑
+    if (inFlight) return { skipped: 'busy' }
+    inFlight = true
+    try {
+      return await runTick()
+    } finally {
+      inFlight = false
+    }
+  }
+
+  const runTick = async () => {
     let proxies
     try { proxies = await fetchProxies() } catch { return { skipped: 'kernel' } }
     const kernelStartedAt = await kernelStart()
@@ -88,42 +109,50 @@ export const createLatencyScheduler = ({
     let groups
     try { groups = await readGroups() } catch { return { skipped: 'config' } }
 
-    const rounds = []
+    const tested = []
+    const timeouts = []
     for (const g of groups) {
       if (!g.url || !g.members.length) continue
-      const kernelLatest = Math.max(0, ...g.members.map((m) => latestTime(proxies[m])))
-      const last = Math.max(lastRound.get(g.tag) || 0, kernelLatest)
+      // 到点按成员算,不按组算:一个组里各成员上次测的时刻不一样(共用的成员可能刚被别的组测过,
+      // 一轮里靠后的成员比靠前的晚一分钟),谁到了 interval 谁就该测。每个组都按此刻最新的
+      // /proxies 判,前一个组刚测过的共用成员这里就不算到点。
+      // 内核的组测速是 force=false 的,没到 interval 的成员它自己会跳过,所以一次请求只测到点的。
       const at = now()
-      if (last && at - last < g.intervalMs) continue
-      // 这轮内核真的会测的成员(force=false:最近 interval 内测过的会被跳过)
-      const due = g.members.filter((m) => { const t = latestTime(proxies[m]); return !t || at - t >= g.intervalMs })
-      lastRound.set(g.tag, at)
+      const due = g.members.filter((m) => {
+        const t = latestTime(proxies[m])
+        const since = t || lastTested.get(m) || 0
+        return !since || at - since >= g.intervalMs
+      })
+      if (!due.length) continue
+      let ok = false
       try {
-        await withTimeout(fetchImpl, `${CLASH_API_BASE}/group/${encodeURIComponent(g.tag)}/delay?url=${encodeURIComponent(g.url)}&timeout=${testTimeoutMs}`, { headers: headers() }, testTimeoutMs + 15_000)
+        const res = await withTimeout(fetchImpl, `${CLASH_API_BASE}/group/${encodeURIComponent(g.tag)}/delay?url=${encodeURIComponent(g.url)}&timeout=${testTimeoutMs}`, { headers: headers() }, roundWaitMs(due.length))
+        ok = Boolean(res && res.ok)
+        if (!ok) log(`[latency] 组 ${g.tag} 定时测速返回 HTTP ${res ? res.status : 'none'}`)
       } catch (err) {
         log(`[latency] 组 ${g.tag} 定时测速请求失败:${err instanceof Error ? err.message : err}`)
       }
-      rounds.push({ tag: g.tag, due, at })
-    }
-    if (!rounds.length) return { tested: [] }
-
-    let after
-    try { after = await fetchProxies() } catch { return { tested: rounds.map((r) => r.tag), recorded: false } }
-    // 成功的:新结果被记进去;这轮该测却仍没有结果的:超时
-    history.recordFromProxies(after, { kernelStartedAt, at: now() })
-    const samples = []
-    for (const r of rounds) {
-      const time = new Date(r.at).toISOString()
-      for (const m of r.due) {
-        const p = after[m]
-        if (!p || typeof p !== 'object') continue
-        if (Array.isArray(p.all) && p.all.length) continue
-        if (!latestTime(p)) samples.push({ name: m, time, delay: 0 })
+      tested.push(g.tag)
+      // 测完马上读一次:新结果立刻进历史,后面的组也按新数据判要不要测
+      try { proxies = await fetchProxies() } catch { break }
+      history.recordFromProxies(proxies, { kernelStartedAt, at: now() })
+      // 这轮该测却仍没有结果的成员就是超时。请求中途断掉的那轮不判:没测到的成员不是超时
+      if (ok) {
+        const time = new Date(at).toISOString()
+        const samples = []
+        for (const m of due) {
+          lastTested.set(m, at)
+          const p = proxies[m]
+          if (!p || typeof p !== 'object') continue
+          if (Array.isArray(p.all) && p.all.length) continue
+          if (!latestTime(p)) samples.push({ name: m, time, delay: 0 })
+        }
+        history.recordSamples(samples)
+        timeouts.push(...samples.map((x) => x.name))
       }
+      log(`[latency] 定时测速 ${g.tag}:测 ${due.length} 个${ok ? '' : '(请求未完成)'}`)
     }
-    history.recordSamples(samples)
-    log(`[latency] 定时测速:${rounds.map((r) => `${r.tag}(${r.due.length})`).join('、')},超时 ${samples.length}`)
-    return { tested: rounds.map((r) => r.tag), timeouts: samples.map((s) => s.name) }
+    return { tested, timeouts }
   }
 
   let timer = null
