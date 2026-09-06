@@ -16,6 +16,10 @@ import { normalizeRouting } from '../engine/routing-model.mjs'
 const TARGET_PATTERN = /^[A-Za-z0-9._:-]+$/
 const isValidTarget = (v) => typeof v === 'string' && v.length > 0 && !v.startsWith('-') && TARGET_PATTERN.test(v)
 const isIp = (v) => /^\d{1,3}(\.\d{1,3}){3}$/.test(v) || v.includes(':')
+// fake-ip 的地址段:sing-box / Clash / OpenClash 默认都在 198.18.0.0/15(RFC 2544 保留段,公网上
+// 不会有),sing-box 的 IPv6 默认 fc00::/18。解析结果落在这里面,只可能是某个做 fake-ip 的
+// 客户端替真正的 DNS 答的:查询是往 1.1.1.1 发的,却在半路(线路对端的透明代理)被截下来。
+export const isFakeIp = (ip) => /^198\.1[89]\.\d{1,3}\.\d{1,3}$/.test(String(ip)) || /^fc[0-3][0-9a-f]:/i.test(String(ip))
 const errorMessage = (err) => (err instanceof Error ? err.message : String(err))
 
 const fetchWithTimeout = async (fetchImpl, url, init = {}, timeoutMs = 8000) => {
@@ -182,6 +186,14 @@ export const registerRouteTestRoutes = (app, { store, ctx, paths, fetchImpl = gl
         out.resolve = { ok: r.ok, status: r.status, answers, ms: Date.now() - t0 }
       } catch (err) {
         out.resolve = { ok: false, answers: [], ms: Date.now() - t0, error: errorMessage(err) }
+      }
+      // 2b. 答案是 fake-ip:配置里写的那台 DNS 根本没收到这条查询,是线路对端截下来答的。
+      //     代理侧解析时对端就是 detour 此刻落到的那个节点(runtimeLeaf;拿不到内核状态就退回
+      //     detour 本身),前端把它画成单独一环;直连解析回 fake-ip 则是上游 DNS 自己在做 fake-ip。
+      if (out.resolve.answers.length && out.resolve.answers.every(isFakeIp)) {
+        out.resolve.fakeIp = true
+        const detour = out.dns && out.dns.server && out.dns.server.detour
+        if (detour) out.resolve.fakeIpFrom = out.dns.runtimeLeaf || detour
       }
     }
 

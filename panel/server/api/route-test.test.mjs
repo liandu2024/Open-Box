@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import express from 'express'
-import { registerRouteTestRoutes, decideDnsServer } from './route-test.mjs'
+import { registerRouteTestRoutes, decideDnsServer, isFakeIp } from './route-test.mjs'
 import { createMockContext } from '../system/context.mjs'
 import { createPaths } from '../system/paths.mjs'
 
@@ -156,4 +156,53 @@ test('DNS 规则过期:内核里的选择和配置里定死的判断对不上就
   // 走直连的站点集切到了节点组:配置里那条规则还写着 dns-direct
   const staleProxy = await run({ 国内: { now: '香港-自动' } }, 'www.baidu.com')
   assert.equal(staleProxy.stale, 'proxy')
+})
+
+test('fake-ip:代理侧解析回 198.18.x.x 就标出是 detour 此刻落到的那个节点答的;直连解析回 fake-ip 不带节点', async () => {
+  assert.equal(isFakeIp('198.18.0.55'), true)
+  assert.equal(isFakeIp('198.19.255.1'), true)
+  assert.equal(isFakeIp('198.17.0.1'), false)
+  assert.equal(isFakeIp('142.250.66.4'), false)
+  assert.equal(isFakeIp('fc00::1'), true)
+  assert.equal(isFakeIp('fd00::1'), false)
+  const config = {
+    dns: {
+      servers: [
+        { type: 'udp', tag: 'dns-direct', server: '192.168.3.5' },
+        { type: 'tcp', tag: 'dns-policy-7', server: '1.1.1.1', detour: 'Google' },
+      ],
+      rules: [{ domain_suffix: ['google.com'], server: 'dns-policy-7' }],
+      final: 'dns-direct',
+    },
+    route: { rule_set: [] },
+  }
+  const ctx = createMockContext({ files: { [paths.configPath]: JSON.stringify(config), [paths.singbox]: 'x' } })
+  const store = { getClashSecret: () => 's', getGroups: () => [], getProfile: () => ({ routing: {} }) }
+  const run = async (target, answer) => {
+    const fetchImpl = async (url) => {
+      if (url.includes('/proxies')) return { ok: true, status: 200, json: async () => ({ proxies: { Google: { now: '香港-自动' }, '香港-自动': { now: 'VW | 香港-HOME-01' } } }) }
+      if (url.includes('/dns/query')) return { ok: true, status: 200, json: async () => ({ Answer: [{ data: answer }] }) }
+      if (url.includes('/connections')) return { ok: true, status: 200, json: async () => ({ connections: [] }) }
+      throw new Error('unexpected fetch ' + url)
+    }
+    const app = express()
+    registerRouteTestRoutes(app, { store, ctx, paths, fetchImpl, probe: async () => ({ ok: true, status: 200, ms: 1 }) })
+    const server = app.listen(0)
+    await new Promise((r) => server.once('listening', r))
+    try {
+      const res = await fetch(`http://127.0.0.1:${server.address().port}/api/openbox/route-test`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ target }) })
+      return (await res.json()).resolve
+    } finally {
+      await new Promise((r) => server.close(r))
+    }
+  }
+  const viaProxy = await run('www.google.com', '198.18.0.55')
+  assert.equal(viaProxy.fakeIp, true)
+  assert.equal(viaProxy.fakeIpFrom, 'VW | 香港-HOME-01')
+  const real = await run('www.google.com', '142.250.66.4')
+  assert.equal(real.fakeIp, undefined)
+  assert.equal(real.fakeIpFrom, undefined)
+  const direct = await run('www.example.org', '198.18.1.2')
+  assert.equal(direct.fakeIp, true)
+  assert.equal(direct.fakeIpFrom, undefined)
 })
