@@ -225,14 +225,15 @@ export const proxyChainDirection = useStorage(
 )
 export const tableSize = useStorage<TABLE_SIZE>('config/connecticon-table-size', TABLE_SIZE.SMALL)
 export const tableWidthMode = useStorage('config/table-width-mode', TABLE_WIDTH_MODE.AUTO)
+// 默认表头照正式路由器上用顺手的那套:关闭、源 IP、代理链、主机、进站 / 出站速率、进站 / 出站、连接时间
+// (server/defaults/storage-defaults.json 里全新安装的初始值要和这里一致)
 export const connectionTableColumns = useStorage<CONNECTIONS_TABLE_ACCESSOR_KEY[]>(
   'config/connection-table-columns',
   [
     CONNECTIONS_TABLE_ACCESSOR_KEY.Close,
-    CONNECTIONS_TABLE_ACCESSOR_KEY.Host,
-    CONNECTIONS_TABLE_ACCESSOR_KEY.Type,
-    CONNECTIONS_TABLE_ACCESSOR_KEY.Rule,
+    CONNECTIONS_TABLE_ACCESSOR_KEY.SourceIP,
     CONNECTIONS_TABLE_ACCESSOR_KEY.Chains,
+    CONNECTIONS_TABLE_ACCESSOR_KEY.Host,
     CONNECTIONS_TABLE_ACCESSOR_KEY.DlSpeed,
     CONNECTIONS_TABLE_ACCESSOR_KEY.UlSpeed,
     CONNECTIONS_TABLE_ACCESSOR_KEY.Download,

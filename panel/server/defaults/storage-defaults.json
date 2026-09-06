@@ -14,7 +14,7 @@
   "config/connection-history-auto-cleanup-interval": "month",
   "config/connection-sort-direction": "asc",
   "config/connection-sort-type": "host",
-  "config/connection-table-columns": "[\"close\",\"host\",\"type\",\"rule\",\"chains\",\"dlSpeed\",\"ulSpeed\",\"dl\",\"ul\",\"connectTime\"]",
+  "config/connection-table-columns": "[\"close\",\"sourceIP\",\"chains\",\"host\",\"dlSpeed\",\"ulSpeed\",\"dl\",\"ul\",\"connectTime\"]",
   "config/custom-background-image": "local-image-1788361724032",
   "config/custom-global-node-name": "GLOBAL",
   "config/dark-theme": "dark",
