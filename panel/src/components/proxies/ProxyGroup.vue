@@ -40,6 +40,10 @@
               <span class="text-base-content/60 min-w-0 truncate text-xs">
                 {{ proxyGroup.type }}
               </span>
+              <span
+                v-tip="$t('groupNodeCountHint')"
+                class="text-base-content/60 shrink-0 text-xs tabular-nums"
+              >({{ nodeStats.valid }}/{{ nodeStats.total }})</span>
             </div>
             <button
               v-if="manageHiddenGroup"
@@ -108,6 +112,10 @@
           <span class="text-base-content/60 text-xs">
             {{ proxyGroup.type }}
           </span>
+          <span
+            v-tip="$t('groupNodeCountHint')"
+            class="text-base-content/60 shrink-0 text-xs tabular-nums"
+          >({{ nodeStats.valid }}/{{ nodeStats.total }})</span>
           <button
             v-if="manageHiddenGroup"
             class="btn btn-circle btn-xs z-10 ml-1"
@@ -177,6 +185,7 @@
 
 <script setup lang="ts">
 import { useBounceOnVisible } from '@/composables/bouncein'
+import { useGroupNodeStats } from '@/composables/groupNodeStats'
 import { useRenderProxies } from '@/composables/renderProxies'
 import { isHiddenGroup } from '@/helper'
 import { prettyBytesHelper } from '@/helper/utils'
@@ -216,6 +225,8 @@ const props = defineProps<{
 const proxyGroup = computed(() => proxyMap.value[props.name])
 const allProxies = computed(() => proxyGroup.value.all ?? [])
 const { renderProxies } = useRenderProxies(allProxies, props.name)
+// 标题后的「有效 / 总数」
+const nodeStats = useGroupNodeStats(allProxies, props.name)
 const isLatencyTesting = ref(false)
 const handlerLatencyTest = async () => {
   if (isLatencyTesting.value) return

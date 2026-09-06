@@ -612,6 +612,7 @@ const en = {
   subscriptionRenameSampleFeature: 'IEPL',
   groupDroppedEmpty: 'These groups have no usable members and will not be written to the config: {names}',
   groupDroppedCycle: 'These groups reference each other and will not be written to the config: {names}',
+  groupNodeCountHint: 'Usable nodes / total nodes. Usable = the last latency test returned a result, the same rule as the non-grey dots below',
   groupDanglingMembers: 'Group "{group}" references "{members}", which is neither a node nor a group; it will be ignored in the config',
   subscriptionResetNames: 'Reset names',
   subscriptionResetNamesHint: 'Revert {count} manually edited name(s) to the rule-generated ones',

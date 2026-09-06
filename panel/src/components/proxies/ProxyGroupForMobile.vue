@@ -28,6 +28,10 @@
           :class="proxyGroup.icon && 'pr-10'"
         >
           <span>{{ proxyGroup.type }}</span>
+          <span
+            v-tip="$t('groupNodeCountHint')"
+            class="ml-1 tabular-nums"
+          >({{ nodeStats.valid }}/{{ nodeStats.total }})</span>
         </div>
         <div class="flex items-center">
           <div class="flex flex-1 items-center gap-1 truncate">
@@ -94,6 +98,7 @@
 
 <script setup lang="ts">
 import { useBounceOnVisible } from '@/composables/bouncein'
+import { useGroupNodeStats } from '@/composables/groupNodeStats'
 import { disableProxiesPageScroll } from '@/composables/proxies'
 import { useRenderProxies } from '@/composables/renderProxies'
 import { isHiddenGroup } from '@/helper'
@@ -116,6 +121,7 @@ const props = defineProps<{
 const proxyGroup = computed(() => proxyMap.value[props.name])
 const allProxies = computed(() => proxyGroup.value.all ?? [])
 const { renderProxies } = useRenderProxies(allProxies, props.name)
+const nodeStats = useGroupNodeStats(allProxies, props.name)
 const isLatencyTesting = ref(false)
 
 const modalMode = ref(false)

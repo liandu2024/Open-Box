@@ -607,6 +607,7 @@ const zhTW: LANG_MESSAGE = {
   subscriptionRenameSampleFeature: '專線',
   groupDroppedEmpty: '這些分組沒有可用成員,不會寫進設定:{names}',
   groupDroppedCycle: '這些分組互相引用,不會寫進設定:{names}',
+  groupNodeCountHint: '有效節點 / 節點總數。有效 = 最近一次延遲測試有結果,和下面不是灰色的點一個口徑',
   groupDanglingMembers: '分組「{group}」引用的「{members}」既不是節點也不是分組,寫進設定時會被忽略',
   subscriptionResetNames: '恢復預設名稱',
   subscriptionResetNamesHint: '把 {count} 條手工改過的名字改回規則算出來的名字',
