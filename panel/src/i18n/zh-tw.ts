@@ -41,8 +41,8 @@ const zhTW: LANG_MESSAGE = {
   inboundUser: '入站用戶',
   dl: '下載',
   ul: '上傳',
-  dlSpeed: '下載速度',
-  ulSpeed: '上傳速度',
+  dlSpeed: '進站速率',
+  ulSpeed: '出站速率',
   settings: '設定',
   speedtestUrl: '測速地址',
   directTestUrl: '直連測速位址',
@@ -248,7 +248,6 @@ const zhTW: LANG_MESSAGE = {
   importFromUrl: '從 URL 匯入',
   sync: '同步',
   upgradeSuccess: '更新成功',
-  numberOfChartsInSidebar: '側邊欄圖表數量',
   IPInfoAPI: 'IP資訊API',
   IPInfoAPITip:
     '此API會用於IP檢查中全球節點IP資訊查詢、連接詳情中的IP地理資訊查詢、面板DNS查詢中的IP地理資訊查詢。',

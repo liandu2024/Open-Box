@@ -39,8 +39,8 @@ const en = {
   inboundUser: 'Inbound user',
   dl: 'DL',
   ul: 'UL',
-  dlSpeed: 'DL speed',
-  ulSpeed: 'UL speed',
+  dlSpeed: 'Inbound speed',
+  ulSpeed: 'Outbound speed',
   settings: 'Settings',
   speedtestUrl: 'Speedtest URL',
   directTestUrl: 'Direct outbound test URL',
@@ -252,7 +252,6 @@ const en = {
   importFromUrl: 'Import from URL',
   sync: 'Sync',
   upgradeSuccess: 'Upgrade successful',
-  numberOfChartsInSidebar: 'Number of charts in sidebar',
   IPInfoAPI: 'IP info API',
   IPInfoAPITip:
     "This API will be used for IP checks in global node IP information queries, IP geolocation queries in connection details, and IP geolocation queries in zashboard's DNS query feature.",

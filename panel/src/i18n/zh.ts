@@ -41,8 +41,8 @@ const zh: LANG_MESSAGE = {
   inboundUser: '入站用户',
   dl: '下载',
   ul: '上传',
-  dlSpeed: '下载速度',
-  ulSpeed: '上传速度',
+  dlSpeed: '进站速率',
+  ulSpeed: '出站速率',
   settings: '设置',
   speedtestUrl: '测速地址',
   directTestUrl: '直连测速地址',
@@ -248,7 +248,6 @@ const zh: LANG_MESSAGE = {
   importFromUrl: '从 URL 导入',
   sync: '同步',
   upgradeSuccess: '更新成功',
-  numberOfChartsInSidebar: '侧边栏图表数量',
   IPInfoAPI: 'IP信息API',
   IPInfoAPITip:
     '此API会用于IP检查中全球节点IP信息查询、连接详情中的IP地理信息查询、面板DNS查询中的IP地理信息查询。',
