@@ -42,10 +42,12 @@ const props = withDefaults(defineProps<{
   data: { name: string; color?: number; data: { name: number; value: number }[] }[]
   // 右下角要不要放暂停键;不传就有
   pausable?: boolean
+  // 鼠标悬停要不要弹数值浮层;不传就有(侧边栏那张小图关掉)
+  tooltip?: boolean
   labelFormatter: (value: number) => string
   toolTipFormatter: (value: ToolTipParams[]) => string
   min: number
-}>(), { pausable: true })
+}>(), { pausable: true, tooltip: true })
 
 const colorRef = ref()
 const chart = ref()
@@ -97,7 +99,7 @@ const options = computed(() => {
       bottom: 25,
     },
     tooltip: {
-      show: true,
+      show: props.tooltip !== false,
       trigger: 'axis',
       backgroundColor: colorSet.base70,
       borderColor: colorSet.base70,

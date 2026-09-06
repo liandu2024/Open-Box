@@ -6,6 +6,7 @@
     <SpeedCharts
       class="h-[105px]!"
       :pausable="false"
+      :tooltip="false"
     />
   </div>
 </template>
