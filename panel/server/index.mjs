@@ -151,7 +151,7 @@ const store = createStore({
 // 会话密钥落库,不是每次启动随机生成:否则升级 / 重启面板 / 路由器重启后进程一换,所有
 // 浏览器 cookie 立刻失效、被踢回登录页(升级到"替换文件"阶段面板重启就会当场弹登录)。
 // 键在 openbox/ 前缀下(isProtectedStorageKey 保护):不回显给浏览器,也不被设置同步清掉。
-// 改密时令牌本身是 HMAC(密钥, 密码),密码一变旧令牌自然失效,安全性不受影响。
+// 密钥只用来给会话记录里的 passwordTag 做 HMAC(把会话绑到签发时的密码上,改密即失效)。
 const SESSION_SECRET_KEY = 'openbox/session-secret'
 const loadOrCreateSessionSecret = () => {
   const existing = getStorageValueStatement.get(SESSION_SECRET_KEY)?.value
@@ -161,6 +161,46 @@ const loadOrCreateSessionSecret = () => {
   return secret
 }
 const accessSessionSecret = loadOrCreateSessionSecret()
+
+// 会话表也落库(同样在 openbox/ 前缀下):每次登录签发一个随机 id,记下签发时间、到期时间和
+// 当时密码的 HMAC。以前的令牌是 HMAC(密钥, 密码)——同一密码下恒定,30 天只写在浏览器
+// cookie 的 Max-Age 里,服务端从不看过期,退出登录也只是叫浏览器删 cookie:被拷走的令牌直到
+// 改密都有效。现在服务端按记录判有效期、退出即删记录、改密后旧记录的 passwordTag 对不上。
+const SESSIONS_KEY = 'openbox/sessions'
+const MAX_ACCESS_SESSIONS = 32
+const readAccessSessions = () => {
+  try {
+    const parsed = JSON.parse(getStorageValueStatement.get(SESSIONS_KEY)?.value || '{}')
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+const writeAccessSessions = (sessions) => {
+  upsertStorageValueStatement.run(SESSIONS_KEY, JSON.stringify(sessions))
+}
+const passwordTagOf = (password) => createHmac('sha256', accessSessionSecret).update(password).digest('base64url')
+const issueAccessSession = (password) => {
+  const now = Date.now()
+  const sessions = readAccessSessions()
+  // 顺手清掉过期的;活着的太多就丢最早签发的——正常一个人几台设备远到不了这个数
+  for (const [id, s] of Object.entries(sessions)) {
+    if (!s || typeof s !== 'object' || !(Number(s.expiresAt) > now)) delete sessions[id]
+  }
+  const alive = Object.entries(sessions).sort((a, b) => Number(a[1].createdAt) - Number(b[1].createdAt))
+  while (alive.length >= MAX_ACCESS_SESSIONS) delete sessions[alive.shift()[0]]
+  const id = randomBytes(32).toString('hex')
+  sessions[id] = { createdAt: now, expiresAt: now + ACCESS_SESSION_MAX_AGE_MS, passwordTag: passwordTagOf(password) }
+  writeAccessSessions(sessions)
+  return id
+}
+const revokeAccessSession = (id) => {
+  if (!id) return
+  const sessions = readAccessSessions()
+  if (!(id in sessions)) return
+  delete sessions[id]
+  writeAccessSessions(sessions)
+}
 
 // Open-Box 系统层依赖:paths 描述 OpenWrt 上的固定安装布局,ctx 是真实的 exec/fs 抽象
 // (与测试用的 createMockContext 同接口),两者都是无状态的纯对象/闭包,可安全全局复用。
@@ -244,10 +284,6 @@ const readAccessAuthConfig = () => {
   }
 }
 
-const createAccessSessionToken = (password) => {
-  return createHmac('sha256', accessSessionSecret).update(password).digest('base64url')
-}
-
 const safeTokenEquals = (left, right) => {
   if (typeof left !== 'string' || typeof right !== 'string') {
     return false
@@ -268,13 +304,17 @@ const isAccessSessionAuthenticated = (cookieHeader, password) => {
     return false
   }
 
-  const token = parseCookies(cookieHeader).get(ACCESS_SESSION_COOKIE_NAME)
+  const id = parseCookies(cookieHeader).get(ACCESS_SESSION_COOKIE_NAME)
 
-  if (!token) {
+  if (!id) {
     return false
   }
 
-  return safeTokenEquals(token, createAccessSessionToken(password))
+  const session = readAccessSessions()[id]
+  if (!session || typeof session !== 'object') return false
+  // 服务端自己看过期,不信 cookie 的 Max-Age;绑定签发时的密码,改密后旧会话立即失效
+  if (!(Number(session.expiresAt) > Date.now())) return false
+  return safeTokenEquals(String(session.passwordTag || ''), passwordTagOf(password))
 }
 
 const getRequestAccessAuthStatus = (req) => {
@@ -310,7 +350,7 @@ const getUpgradeAccessAuthStatus = (request) => {
 }
 
 const setAccessSessionCookie = (res, password) => {
-  res.cookie(ACCESS_SESSION_COOKIE_NAME, createAccessSessionToken(password), {
+  res.cookie(ACCESS_SESSION_COOKIE_NAME, issueAccessSession(password), {
     httpOnly: true,
     sameSite: 'lax',
     maxAge: ACCESS_SESSION_MAX_AGE_MS,
@@ -799,9 +839,9 @@ app.post('/api/auth/change-password', (req, res) => {
   clearAuthFailures(req)
   upsertStorageValueStatement.run(ACCESS_PASSWORD_KEY, newPassword)
 
-  // 会话 token 是 HMAC(密码) 派生的(见 createAccessSessionToken):改密后旧 token 自动
+  // 会话记录绑定签发时的密码(passwordTag,见 issueAccessSession):改密后旧会话自动
   // 失效,若不在这里重新签发,发起这次改密请求的当前会话本身也会瞬间掉线——必须立刻
-  // 签发一份绑定新密码的 cookie,把当前会话续上。
+  // 签发一份绑定新密码的会话,把当前会话续上。
   setAccessSessionCookie(res, newPassword)
 
   res.json({
@@ -893,7 +933,7 @@ app.post('/api/auth/login', (req, res) => {
   })
 })
 
-app.post('/api/auth/logout', (_req, res) => {
+app.post('/api/auth/logout', (req, res) => {
   res.setHeader('Cache-Control', 'no-store')
 
   const { enabled, password } = readAccessAuthConfig()
@@ -903,6 +943,8 @@ app.post('/api/auth/logout', (_req, res) => {
     return
   }
 
+  // 退出 = 服务端撤销这个会话,不只是叫浏览器删 cookie:拷走的 cookie 从此也不能用
+  revokeAccessSession(parseCookies(req.headers.cookie).get(ACCESS_SESSION_COOKIE_NAME))
   clearAccessSessionCookie(res)
   res.json({
     enabled,
@@ -1234,7 +1276,7 @@ export {
   ACCESS_PASSWORD_INVALID_CODE,
   ACCESS_PASSWORD_REQUIRED_CODE,
   app,
-  createAccessSessionToken as createAccessSessionTokenForTesting,
+  issueAccessSession as issueAccessSessionForTesting,
   db,
   getProxyTarget as getProxyTargetForTesting,
   getRequestAccessAuthStatus as getRequestAccessAuthStatusForTesting,

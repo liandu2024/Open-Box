@@ -11,7 +11,7 @@ process.env.ZASHBOARD_DB_PATH = dbPath
 
 const serverModuleUrl = new URL(`./../index.mjs?test=${Date.now()}`, import.meta.url)
 const {
-  createAccessSessionTokenForTesting,
+  issueAccessSessionForTesting,
   db,
   getRequestAccessAuthStatusForTesting,
   shutdownServer,
@@ -48,7 +48,7 @@ test('service auth state is enforced from persisted settings', () => {
   assert.deepEqual(
     getRequestAccessAuthStatusForTesting({
       headers: {
-        cookie: `openbox_access_session=${createAccessSessionTokenForTesting('test-secret')}`,
+        cookie: `openbox_access_session=${issueAccessSessionForTesting('test-secret')}`,
       },
     }),
     {
