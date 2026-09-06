@@ -151,15 +151,21 @@ export const registerRouteTestRoutes = (app, { store, ctx, paths, fetchImpl = gl
     if (out.dns && out.dns.server) {
       try {
         const selections = await fetchSelections(fetchImpl, secret)
-        const leafOf = (name) => {
-          let cur = name
+        // 顺着 selector 的 now 一路下钻:站点集 → 节点组 → 节点。查询实际经过的线路就是这一串
+        const chainOf = (name) => {
+          const chain = [name]
           const seen = new Set()
-          for (let i = 0; i < 16 && Object.prototype.hasOwnProperty.call(selections, cur) && !seen.has(cur); i++) { seen.add(cur); cur = selections[cur] }
-          return cur
+          let cur = name
+          for (let i = 0; i < 16 && Object.prototype.hasOwnProperty.call(selections, cur) && !seen.has(cur); i++) { seen.add(cur); cur = selections[cur]; chain.push(cur) }
+          return chain
         }
+        const leafOf = (name) => chainOf(name).at(-1)
         const directTag = builtinTags(store.getGroups ? store.getGroups() : []).direct
         const detour = out.dns.server.detour
-        if (detour) out.dns.runtimeLeaf = leafOf(detour)
+        if (detour) {
+          out.dns.runtimeChain = chainOf(detour)
+          out.dns.runtimeLeaf = out.dns.runtimeChain.at(-1)
+        }
         // 这条决策归谁管:一条规则都没命中就是兜底,命中了就按条件反查是哪个站点集写的
         const hitRule = out.dns.ruleIndex === null || out.dns.ruleIndex === undefined
           ? null

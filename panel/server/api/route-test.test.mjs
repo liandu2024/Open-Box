@@ -191,7 +191,8 @@ test('fake-ip:代理侧解析回 198.18.x.x 就标出是 detour 此刻落到的�
     await new Promise((r) => server.once('listening', r))
     try {
       const res = await fetch(`http://127.0.0.1:${server.address().port}/api/openbox/route-test`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ target }) })
-      return (await res.json()).resolve
+      const body = await res.json()
+      return { ...body.resolve, chain: body.dns.runtimeChain }
     } finally {
       await new Promise((r) => server.close(r))
     }
@@ -199,10 +200,12 @@ test('fake-ip:代理侧解析回 198.18.x.x 就标出是 detour 此刻落到的�
   const viaProxy = await run('www.google.com', '198.18.0.55')
   assert.equal(viaProxy.fakeIp, true)
   assert.equal(viaProxy.fakeIpFrom, 'VW | 香港-HOME-01')
+  assert.deepEqual(viaProxy.chain, ['Google', '香港-自动', 'VW | 香港-HOME-01'])
   const real = await run('www.google.com', '142.250.66.4')
   assert.equal(real.fakeIp, undefined)
   assert.equal(real.fakeIpFrom, undefined)
   const direct = await run('www.example.org', '198.18.1.2')
   assert.equal(direct.fakeIp, true)
   assert.equal(direct.fakeIpFrom, undefined)
+  assert.equal(direct.chain, undefined)
 })

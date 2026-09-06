@@ -756,7 +756,8 @@ export interface OpenboxRouteTest {
   dns:
     | { skipped: true }
     | { error: string }
-    | { ruleIndex: number | null; rejected?: boolean; server?: { tag: string; type?: string; server?: string; detour?: string }; viaProxy?: boolean; stale?: 'direct' | 'proxy'; runtimeLeaf?: string }
+    // runtimeChain:代理侧解析时查询实际经过的线路,detour 的站点集 → 节点组 → 节点(按内核此刻的选择);runtimeLeaf 是它的末尾
+    | { ruleIndex: number | null; rejected?: boolean; server?: { tag: string; type?: string; server?: string; detour?: string }; viaProxy?: boolean; stale?: 'direct' | 'proxy'; runtimeLeaf?: string; runtimeChain?: string[] }
   // fakeIp:答案落在 fake-ip 段(198.18.0.0/15),不是配置里那台 DNS 答的;fakeIpFrom 是代理侧解析时
   // 截下查询并应答的那个节点(detour 此刻落到的节点),直连解析回 fake-ip 时没有这个字段
   resolve?: { ok: boolean; status?: number; answers: string[]; ms: number; error?: string; fakeIp?: boolean; fakeIpFrom?: string }

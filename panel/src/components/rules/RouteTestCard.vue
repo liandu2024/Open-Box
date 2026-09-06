@@ -67,13 +67,52 @@
           </div>
         </template>
 
-        <!-- DNS -->
+        <!-- DNS · 应答:谁答的、答了什么。正常是配置里那台服务器答的;代理侧解析时也可能是
+             线路对端(开了 fake-ip 的透明代理)把查询截下来答的——那种情况配置里那台服务器根本
+             没收到查询,所以应答者按实际情况写,不按配置写。 -->
+        <template #dnsAnswer>
+          <div
+            v-if="fakeIpHop"
+            class="flex flex-wrap items-center gap-x-2 gap-y-1"
+          >
+            <ProxyName :name="fakeIpHop" />
+            <span class="text-warning text-xs">{{ $t('routeTestFakeIpAnswered') }}</span>
+          </div>
+          <div
+            v-else
+            class="text-xs"
+          >{{ $t('routeTestAnsweredBy', { server: dnsServerAddress }) }}</div>
+          <div
+            v-if="result.resolve"
+            class="flex flex-wrap items-center gap-x-1.5 gap-y-1"
+          >
+            <template v-if="result.resolve.answers.length">
+              <span
+                v-for="ip in result.resolve.answers"
+                :key="ip"
+                class="badge badge-sm badge-ghost font-mono"
+              >{{ ip }}</span>
+              <span
+                v-if="result.resolve.fakeIp && !fakeIpHop"
+                class="text-warning text-xs"
+              >{{ $t('routeTestFakeIpUpstream') }}</span>
+            </template>
+            <span
+              v-else
+              class="text-warning text-xs"
+            >{{ result.resolve.error || $t('routeTestNoAnswer') }}</span>
+          </div>
+          <div
+            v-if="fakeIpHop"
+            class="text-base-content/60 text-xs"
+          >{{ $t('routeTestFakeIpIntercepted', { server: dnsServerAddress }) }} · {{ $t('routeTestFakeIpNote') }}</div>
+        </template>
+
+        <!-- DNS · 查询:内核按 dns.rules 选了哪台解析器、往哪发,代理侧解析时经过哪条线路
+             (按内核此刻的选择一路下钻到节点,和出站那一行同一种画法) -->
         <template #dns>
           <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <template v-if="'skipped' in result.dns">
-              <span class="text-base-content/50 text-xs">{{ $t('routeTestDnsSkipped') }}</span>
-            </template>
-            <template v-else-if="'error' in result.dns">
+            <template v-if="'error' in result.dns">
               <span class="text-warning text-xs">{{ result.dns.error }}</span>
             </template>
             <template v-else-if="dnsDecision?.rejected">
@@ -86,67 +125,28 @@
                 :off-text="$t('routeTestDnsProxy')"
               />
               <span class="font-mono text-xs">{{ dnsServerText }}</span>
-              <template v-if="dnsDecision?.server?.detour">
-                <span class="text-base-content/60 text-xs">{{ $t('penetrationChainHop') }}</span>
-                <ProxyName
-                  :name="dnsDecision.server.detour"
-                  class="text-xs"
-                />
-              </template>
               <span
                 v-if="dnsDecision?.stale"
                 class="text-warning text-xs"
               >{{ $t(dnsDecision.stale === 'direct' ? 'routeTestDnsStaleDirect' : 'routeTestDnsStaleProxy') }}</span>
             </template>
           </div>
-          <!-- 答案是线路对端的 fake-ip 时,这一环只说"查询没到这台 DNS",答案画在上面那一环里 -->
           <div
-            v-if="fakeIpHop"
-            class="text-warning text-xs"
-          >{{ $t('routeTestFakeIpIntercepted', { server: dnsDecision?.server?.server || dnsDecision?.server?.tag || '' }) }}</div>
-          <div
-            v-else-if="result.resolve"
-            class="flex flex-wrap items-center gap-x-1.5 gap-y-1"
-          >
-            <template v-if="result.resolve.answers.length">
-              <span
-                v-for="ip in result.resolve.answers"
-                :key="ip"
-                class="badge badge-sm badge-ghost font-mono"
-              >{{ ip }}</span>
-              <span
-                v-if="result.resolve.fakeIp"
-                class="text-warning text-xs"
-              >{{ $t('routeTestFakeIpUpstream') }}</span>
-            </template>
-            <span
-              v-else
-              class="text-warning text-xs"
-            >{{ result.resolve.error || $t('routeTestNoAnswer') }}</span>
-          </div>
-        </template>
-
-        <!-- fake-ip 这一环:查询是往配置里那台 DNS 发的,却被线路对端(开了 fake-ip 的透明代理)
-             截下来答了假地址。少画这一环,读者会以为 1.1.1.1 解析出了 198.18.x.x。 -->
-        <template #dnsFake>
-          <div
-            v-if="result.resolve"
+            v-if="dnsChain.length"
             class="flex flex-wrap items-center gap-x-2 gap-y-1"
           >
-            <ProxyName :name="fakeIpHop" />
-            <span class="text-warning text-xs">{{ $t('routeTestFakeIpAnswered') }}</span>
+            <span class="text-base-content/60 text-xs">{{ $t('penetrationChainHop') }}</span>
+            <template
+              v-for="(hop, i) in dnsChain"
+              :key="`${hop}-${i}`"
+            >
+              <ArrowRightCircleIcon
+                v-if="i > 0"
+                class="text-base-content/40 h-4 w-4"
+              />
+              <ProxyName :name="hop" />
+            </template>
           </div>
-          <div
-            v-if="result.resolve"
-            class="flex flex-wrap items-center gap-x-1.5 gap-y-1"
-          >
-            <span
-              v-for="ip in result.resolve.answers"
-              :key="ip"
-              class="badge badge-sm badge-ghost font-mono"
-            >{{ ip }}</span>
-          </div>
-          <div class="text-base-content/60 text-xs">{{ $t('routeTestFakeIpNote') }}</div>
         </template>
 
       </RouteFlow>
@@ -235,18 +235,34 @@ const exitNote = computed(() => {
   return e.connectionsError || ''
 })
 
-// 目标是 IP 时没有解析这一步,DNS 节点整个不画(画出来只能写"不用解析",是噪音)
+// 圆圈就是查询真实经过的一站,自下而上:DNS · 查询(内核选的解析器、经过的线路)→ 应答
+// (谁答的:配置里那台服务器,或者截下查询的线路对端)→ 出站。目标是 IP 时没有解析这两站,
+// 整个不画(画出来只能写"不用解析",是噪音)。
 const dnsSkipped = computed(() => Boolean(result.value && result.value.dns && 'skipped' in result.value.dns))
-// 代理侧解析拿到的是线路对端的 fake-ip:多画一环「DNS · fake-ip」,写清是哪个节点答的。
-// 流向自下而上:DNS(配置里那台)→ DNS(对端 fake-ip)→ 出站,所以它排在 exit 和 dns 之间。
-// 解析耗时照旧记在配置里那台 DNS 那一环上(查询是从那里发出去的)。
+// 答案是线路对端的 fake-ip:应答那一站就是 detour 此刻落到的那个节点
 const fakeIpHop = computed(() => (result.value?.resolve?.fakeIp && result.value.resolve.fakeIpFrom) || '')
+// 代理侧解析实际经过的线路:站点集 → 节点组 → 节点;拿不到内核状态时只有 detour 那一个名字
+const dnsChain = computed(() => {
+  const d = dnsDecision.value
+  if (!d?.server?.detour) return []
+  return d.runtimeChain?.length ? d.runtimeChain : [d.server.detour]
+})
 const flowNodes = computed(() => [
   { key: 'exit', label: t('routeTestExit'), sub: result.value?.exit.ms !== undefined ? `${result.value.exit.ms}ms` : '—' },
-  ...(fakeIpHop.value ? [{ key: 'dnsFake', label: 'DNS', sub: t('routeTestFakeIpSub') }] : []),
-  ...(dnsSkipped.value ? [] : [{ key: 'dns', label: 'DNS', sub: result.value?.resolve ? `${result.value.resolve.ms}ms` : '—' }]),
+  ...(dnsSkipped.value
+    ? []
+    : [
+        { key: 'dnsAnswer', label: t('routeTestDnsAnswer'), sub: result.value?.resolve ? `${result.value.resolve.ms}ms` : '—' },
+        { key: 'dns', label: 'DNS', sub: t('routeTestDnsQuery') },
+      ]),
 ])
 
+// 配置里那台服务器的地址(local 没有地址就用 tag)
+const dnsServerAddress = computed(() => {
+  const d = result.value?.dns
+  if (!d || !('server' in d) || !d.server) return ''
+  return d.server.server || d.server.tag || ''
+})
 const dnsServerText = computed(() => {
   const d = result.value?.dns
   if (!d || !('server' in d) || !d.server) return ''
