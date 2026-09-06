@@ -12,6 +12,16 @@ export const LATENCY_HISTORY_KEY = 'openbox/latency-history'
 // 同一节点两笔超时靠得太近(不同来源在同一事件上各记了一笔)就当一笔
 const TIMEOUT_DEDUPE_MS = 60_000
 
+// 这个组(含嵌套的组)下面有没有任何一个节点有结果——有就说明组还有地方可切
+const anyResultUnder = (proxies, name, seen = new Set()) => {
+  if (seen.has(name)) return false
+  seen.add(name)
+  const p = proxies[name]
+  if (!p || typeof p !== 'object') return false
+  if (Array.isArray(p.all) && p.all.length) return p.all.some((m) => anyResultUnder(proxies, m, seen))
+  return Array.isArray(p.history) && p.history.length > 0
+}
+
 const isSample = (s) => s && typeof s === 'object' && typeof s.time === 'string' && Number.isFinite(Date.parse(s.time)) && typeof s.delay === 'number' && Number.isFinite(s.delay) && s.delay >= 0
 
 // 组的当前选择一路下钻到节点(组可以选组);转圈或超过 16 层就放弃
@@ -76,8 +86,6 @@ export const createLatencyHistory = ({ store, now = () => Date.now() }) => {
   // 变化——以前组的时间线直接取当前所选节点的,切换之后整条线都变成新节点的历史。
   // 时间用节点那次测试的时间;切到一个早就测过的节点(它的结果比组上一笔还旧)就用观察时刻,
   // 时间线才是按发生顺序排的。选中的节点没结果 = 超时(上一笔已经是同一节点的超时就不重复)。
-  const pendingGroupTimeout = new Map()
-  const GROUP_TIMEOUT_CONFIRM_MS = 45_000
   const recordGroup = (proxies, name, proxy, { kernelStartedAt, at }) => {
     const leaf = leafOf(proxies, name)
     if (!leaf) return false
@@ -86,7 +94,6 @@ export const createLatencyHistory = ({ store, now = () => Date.now() }) => {
     const history = proxies[leaf] && proxies[leaf].history
     const last = Array.isArray(history) && history.length ? history[history.length - 1] : null
     if (last) {
-      pendingGroupTimeout.delete(name)
       const t = Date.parse(last.time)
       const prevT = prev ? Date.parse(prev.time) : 0
       if (prev && prev.node === leaf && (prev.time === last.time || t <= prevT)) return false
@@ -96,16 +103,9 @@ export const createLatencyHistory = ({ store, now = () => Date.now() }) => {
     if (!prev) return false
     if (prev.node === leaf && prev.delay === TIMED_OUT) return false
     if (kernelStartedAt !== null && kernelStartedAt !== undefined && kernelStartedAt > Date.parse(prev.time)) return false
-    // 选中的节点刚超时、组还没重选:sing-box 只在整轮探测结束时重选,这一轮别的节点还在测的几秒里
-    // 组会暂时挂在一个没结果的节点上,随后就切走了。这种过渡状态不记;再看一个 tick,组仍停在
-    // 没结果的节点上(说明全组都不通、无处可切)才记这一笔超时。
-    const pending = pendingGroupTimeout.get(name)
-    if (!pending || pending.leaf !== leaf) {
-      pendingGroupTimeout.set(name, { leaf, since: at })
-      return false
-    }
-    if (at - pending.since < GROUP_TIMEOUT_CONFIRM_MS) return false
-    pendingGroupTimeout.delete(name)
+    // 组的时间线不记超时:选中节点超时会导致组切走,切走时记新节点那笔就够了。只有组里所有成员
+    // 都没结果、无处可切,才记一笔超时(sing-box 这时会一直挂在这个没结果的节点上)。
+    if (anyResultUnder(proxies, name)) return false
     return record(name, { time: new Date(at).toISOString(), delay: TIMED_OUT, node: leaf })
   }
 

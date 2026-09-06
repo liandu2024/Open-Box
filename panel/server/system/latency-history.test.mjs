@@ -88,18 +88,19 @@ test('组按当时选中的节点记:切了节点下一笔是新节点的;切到
   // 切到 B:B 的结果(at 0)比组上一笔(at 5)还旧 → 用观察时刻(at 7),排在最后
   h.recordFromProxies(proxies('B', [{ time: at(5), delay: 110 }], [{ time: at(0), delay: 200 }]), { kernelStartedAt: K, at: T0 + 7 * 60_000 })
   assert.deepEqual(h.get().G.map((s) => [s.time, s.delay, s.node]), [[at(0), 100, 'A'], [at(5), 110, 'A'], [at(7), 200, 'B']])
-  // B 没结果了:第一眼不记(可能只是这一轮还没测完、组马上会切走),下一个 tick 组仍停在 B 上才记超时;再来不重复
+  // B 没结果了、但 A 还有结果:组会切走,不记超时(切走时记 A 那笔)
   h.recordFromProxies(proxies('B', [{ time: at(5), delay: 110 }], []), { kernelStartedAt: K, at: T0 + 12 * 60_000 })
   assert.equal(h.get().G.length, 3)
-  h.recordFromProxies(proxies('B', [{ time: at(5), delay: 110 }], []), { kernelStartedAt: K, at: T0 + 13 * 60_000 })
-  h.recordFromProxies(proxies('B', [{ time: at(5), delay: 110 }], []), { kernelStartedAt: K, at: T0 + 14 * 60_000 })
+  // 全组都没结果、无处可切 → 记一笔超时;再来不重复
+  h.recordFromProxies(proxies('B', [], []), { kernelStartedAt: K, at: T0 + 13 * 60_000 })
+  h.recordFromProxies(proxies('B', [], []), { kernelStartedAt: K, at: T0 + 14 * 60_000 })
   assert.deepEqual(h.get().G.slice(-1).map((s) => [s.time, s.delay, s.node]), [[at(13), 0, 'B']])
   assert.equal(h.get().G.length, 4)
   // 节点自己的时间线照旧不带 node
-  assert.deepEqual(h.get().A.map((s) => s.node), [undefined, undefined])
+  assert.ok(h.get().A.every((s) => s.node === undefined))
 })
 
-test('组的过渡状态不记:选中节点刚超时、下一眼组已经切走 → 组的时间线只有切换那笔,没有超时那笔', () => {
+test('组不记超时:选中节点超时、别的成员还有结果 → 等它切走记新节点那笔;成员是组的也一路看到叶子', () => {
   const h = createLatencyHistory({ store: memStore() })
   const K = T0 - 3_600_000
   const proxies = (now, aHist, bHist) => ({ A: node(aHist), B: node(bHist), G: { type: 'URLTest', all: ['A', 'B'], now, history: [] } })
@@ -111,4 +112,10 @@ test('组的过渡状态不记:选中节点刚超时、下一眼组已经切走 
   assert.deepEqual(h.get().G.map((s) => [s.delay, s.node]), [[100, 'A'], [120, 'B']])
   // 节点 A 自己的时间线照样记了超时
   assert.deepEqual(h.get().A.map((s) => s.delay), [100, 0])
+  // 成员是组:外层组选着内层组,内层组的成员还有结果,外层也不记超时
+  const nested = createLatencyHistory({ store: memStore() })
+  const p2 = (inner, aHist, bHist) => ({ A: node(aHist), B: node(bHist), G: { type: 'URLTest', all: ['A', 'B'], now: inner, history: [] }, S: { type: 'Selector', all: ['G'], now: 'G', history: [] } })
+  nested.recordFromProxies(p2('A', [{ time: at(0), delay: 100 }], [{ time: at(0), delay: 120 }]), { kernelStartedAt: K, at: T0 })
+  nested.recordFromProxies(p2('A', [], [{ time: at(0), delay: 120 }]), { kernelStartedAt: K, at: T0 + 60_000 })
+  assert.deepEqual(nested.get().S.map((s) => [s.delay, s.node]), [[100, 'A']])
 })
