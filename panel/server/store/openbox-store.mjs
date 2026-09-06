@@ -36,7 +36,7 @@ export const DEFAULT_PROFILE = {
   traffic: { keepMonths: 3 },
   // 测速地址。testUrl 给自动择优(url-test)组和面板的延迟测试用;directTestUrl 只给内置
   // 直连出站用——默认那个是 Google 的域名,从国内直连去测量出来的是"直连到 Google 有多远"。
-  testUrl: 'https://www.gstatic.com/generate_204',
+  testUrl: 'http://www.gstatic.com/generate_204',
   directTestUrl: 'http://www.msftconnecttest.com/connecttest.txt',
   // 自动更新计划(面板进程内的定时器,见 system/scheduler.mjs):默认都关
   // channel 是自动更新走的通道;checkChannel 是卡片上手动「检查更新 / 立即更新」那个下拉框

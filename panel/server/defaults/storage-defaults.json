@@ -57,7 +57,7 @@
   "config/show-seleted-for-now-node": "true",
   "config/show-statistics-when-sidebar-collapsed": "true",
   "config/speedtest-timeout": "5000",
-  "config/speedtest-url": "https://www.gstatic.com/generate_204",
+  "config/speedtest-url": "http://www.gstatic.com/generate_204",
   "config/split-overview-page": "true",
   "config/swipe-in-pages": "true",
   "config/swipe-in-tabs": "false",

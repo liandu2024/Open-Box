@@ -41,7 +41,7 @@ export const builtinDefaults = () => ([
   { id: BUILTIN_IDS.block, kind: 'block', name: '拒绝', type: 'selector', mode: 'static', icon: 'misc:cross', keywords: [], members: [], enabled: true },
 ])
 
-export const DEFAULT_TEST_URL = 'https://www.gstatic.com/generate_204'
+export const DEFAULT_TEST_URL = 'http://www.gstatic.com/generate_204'
 // 新建自动择优组的默认:5 分钟测一次(面板服务端按这个间隔硬性定时测,见 system/latency-scheduler.mjs)、
 // 容差 100ms(差不到 100ms 不换节点,免得几十毫秒的抖动让选中的节点跳来跳去)
 export const DEFAULT_INTERVAL = '5m'

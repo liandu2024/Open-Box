@@ -19,7 +19,7 @@ import { resolveNodes } from './subscriptions.mjs'
 // 代价:每测一个节点要起一个 sing-box 进程(本机实测走 direct 出站约 0.4~0.9 秒,
 // 路由器上更慢),所以并发压到 4,并给每次调用单独的超时。
 
-const TEST_URL = 'https://www.gstatic.com/generate_204'
+const TEST_URL = 'http://www.gstatic.com/generate_204'
 const DEFAULT_TIMEOUT_MS = 8000
 const MAX_TIMEOUT_MS = 30000
 const MAX_TARGETS = 100
