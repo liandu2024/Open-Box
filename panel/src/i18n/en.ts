@@ -790,6 +790,8 @@ const en = {
   routeTestDnsNodeSub: 'node',
   routeTestNodeResolve: 'Receives its own fake IP {ip}, maps it back to {target}, resolves it with the DNS on the node and connects onward. That lookup happens on the node; its result is not visible here',
   routeTestExitByIp: 'The node receives the IP {ip} and connects to it directly. That address was resolved through the node above, so it is already the CDN nearest the node; no second lookup is needed',
+  routeTestDnsCached: 'Served from the kernel DNS cache ({ttl}s left). This answer came from an earlier lookup; nothing went out over this line this time',
+  routeTestExitByIpCached: 'The node receives the IP {ip} and connects to it directly. That address came from the kernel DNS cache, an earlier lookup, so it may not be the CDN nearest the current line',
   routeTestExitByIpDirectDns: 'The node receives the IP {ip} and connects to it directly. Note this address came from a direct lookup, not the CDN nearest the node',
   routeTestFakeIpUpstream: 'This DNS server answered with a fake IP (reserved 198.18.0.0/15); the real lookup happens on its side',
   routeTestExit: 'Exit',

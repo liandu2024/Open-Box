@@ -193,8 +193,16 @@ export const registerRouteTestRoutes = (app, { store, ctx, paths, fetchImpl = gl
       try {
         const r = await fetchWithTimeout(fetchImpl, `${CLASH_API_BASE}/dns/query?name=${encodeURIComponent(target)}&type=A`, { headers: clashHeaders(secret) }, 8000)
         const body = await r.json().catch(() => null)
-        const answers = ((body && body.Answer) || []).map((a) => a && a.data).filter(Boolean)
-        out.resolve = { ok: r.ok, status: r.status, answers, ms: Date.now() - t0 }
+        const records = ((body && body.Answer) || []).filter((a) => a && a.data)
+        const answers = records.map((a) => a.data)
+        const ms = Date.now() - t0
+        out.resolve = { ok: r.ok, status: r.status, answers, ms }
+        const ttl = records.map((a) => Number(a.TTL)).find((n) => Number.isFinite(n))
+        if (ttl !== undefined) out.resolve.ttl = ttl
+        // 命中内核 DNS 缓存的判断:代理侧解析要在隧道里新开一条 TCP 到 DNS 服务器再问,至少两个
+        // 来回,几十毫秒起步;几毫秒就回来的只能是缓存。缓存不分线路——换了节点,缓存没过期前
+        // 拿到的还是上一条线路问出来的答案。直连解析本来就只有几毫秒,分不出来,不标。
+        if (out.dns && out.dns.server && out.dns.server.detour && ms < 20 && answers.length) out.resolve.cached = true
       } catch (err) {
         out.resolve = { ok: false, answers: [], ms: Date.now() - t0, error: errorMessage(err) }
       }

@@ -136,6 +136,10 @@
               <span class="text-warning text-xs">{{ $t('routeTestFakeIpAnswered') }}</span>
             </template>
             <span
+              v-else-if="result.resolve.cached"
+              class="text-warning text-xs"
+            >{{ $t('routeTestDnsCached', { ttl: result.resolve.ttl ?? '?' }) }}</span>
+            <span
               v-else-if="result.resolve.answers.length"
               class="text-xs"
             >{{ $t('routeTestAnsweredBy', { server: dnsServerAddress }) }}</span>
@@ -277,6 +281,8 @@ const exitNodeNote = computed(() => {
   const ip = e.destinationIP || e.connectTo
   if (!ip) return null
   const viaProxyDns = Boolean(dnsDecision.value?.viaProxy)
+  // 缓存里的答案可能是上一条线路问出来的:换了节点、缓存没过期时,拿到的还是老地址
+  if (result.value?.resolve?.cached) return { text: t('routeTestExitByIpCached', { ip }), warn: true }
   return { text: t(viaProxyDns ? 'routeTestExitByIp' : 'routeTestExitByIpDirectDns', { ip }), warn: !viaProxyDns }
 })
 

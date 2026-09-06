@@ -188,7 +188,7 @@ test('fake-ip:代理侧解析回 198.18.x.x 就标出是 detour 此刻落到的�
   const run = async (target, answer) => {
     const fetchImpl = async (url) => {
       if (url.includes('/proxies')) return { ok: true, status: 200, json: async () => ({ proxies: { Google: { now: '香港-自动' }, '香港-自动': { now: 'VW | 香港-HOME-01' } } }) }
-      if (url.includes('/dns/query')) return { ok: true, status: 200, json: async () => ({ Answer: [{ data: answer }] }) }
+      if (url.includes('/dns/query')) return { ok: true, status: 200, json: async () => ({ Answer: [{ data: answer, TTL: 287 }] }) }
       if (url.includes('/connections')) return { ok: true, status: 200, json: async () => ({ connections: [] }) }
       throw new Error('unexpected fetch ' + url)
     }
@@ -211,8 +211,13 @@ test('fake-ip:代理侧解析回 198.18.x.x 就标出是 detour 此刻落到的�
   const real = await run('www.google.com', '142.250.66.4')
   assert.equal(real.fakeIp, undefined)
   assert.equal(real.fakeIpFrom, undefined)
+  // 代理侧解析几毫秒就回来 = 命中内核缓存;TTL 原样带回去
+  assert.equal(real.ttl, 287)
+  assert.equal(real.cached, true)
   const direct = await run('www.example.org', '198.18.1.2')
   assert.equal(direct.fakeIp, true)
   assert.equal(direct.fakeIpFrom, undefined)
   assert.equal(direct.chain, undefined)
+  // 直连解析本来就快,分不出缓存,不标
+  assert.equal(direct.cached, undefined)
 })

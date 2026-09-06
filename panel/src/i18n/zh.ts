@@ -785,6 +785,8 @@ const zh: LANG_MESSAGE = {
   routeTestDnsNodeSub: '节点',
   routeTestNodeResolve: '收到的是它自己的 fake-ip {ip},反查出 {target} 后用节点那边的 DNS 真正解析,再连出去。这次解析在节点上,结果这里看不到',
   routeTestExitByIp: '节点拿到的是 IP {ip},按它直接连。这个地址是上面经节点问出来的,已经是节点位置就近的 CDN,不用再解析一次',
+  routeTestDnsCached: '命中内核缓存(还剩 {ttl} 秒)。这份答案是之前解析的,这次没有重新经这条线路问',
+  routeTestExitByIpCached: '节点拿到的是 IP {ip},按它直接连。这个地址来自内核缓存,是之前那次解析的答案,未必是当前线路就近的 CDN',
   routeTestExitByIpDirectDns: '节点拿到的是 IP {ip},按它直接连。注意这个地址是直连解析出来的,不是节点位置就近的 CDN',
   routeTestFakeIpUpstream: '这台 DNS 回的是 fake-ip(198.18.0.0/15 保留段),真正的解析在它那边',
   routeTestExit: '出站',
