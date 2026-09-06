@@ -83,8 +83,11 @@ const updateFontFamily = () => {
 
 const options = computed(() => {
   return {
+    // 画布本身已经离卡片边 8px(卡片 p-2),画布里的东西一律贴边:图例不留内边距、绘图区右边不留、
+    // 纵轴标签从画布最左边开始。这样上下左右到卡片边都是 8px。
     legend: {
       bottom: 0,
+      padding: 0,
       data: props.data.map((item) => item.name),
       textStyle: {
         color: colorSet.baseContent,
@@ -95,8 +98,9 @@ const options = computed(() => {
       left: 60,
       // 绘图区上边距 8px,和卡片内边距一个数;最上面那个刻度标签半个字高在这 8px 里放得下
       top: 8,
-      right: 8,
-      bottom: 25,
+      right: 0,
+      // 图例没了 5px 内边距,绘图区和图例之间的间距保持原样
+      bottom: 20,
     },
     tooltip: {
       show: props.tooltip !== false,
@@ -134,7 +138,8 @@ const options = computed(() => {
       },
       axisLabel: {
         align: 'left',
-        padding: [0, 0, 0, -45],
+        // 标签锚点在 grid.left - 8 = 52,往左推满 52 就贴到画布左边
+        padding: [0, 0, 0, -52],
         formatter: props.labelFormatter,
         color: colorSet.baseContent,
         fontFamily,
