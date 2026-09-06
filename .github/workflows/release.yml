@@ -55,8 +55,28 @@ jobs:
         working-directory: panel
         run: corepack pnpm run test:server
 
+      # 校验用的 sing-box 要和打包进产物的是同一个钦定版本,但架构得是 runner 自己的(amd64),
+      # 和 matrix.arch 无关。版本号和校验和直接从 build-release.sh 里读,不在这里再抄一份。
+      # 没放二进制时 check-config.test.mjs 在 CI 上会直接 fail 而不是 skip(以前 9 个用例全跳过、
+      # 步骤照样绿)。
+      - name: Fetch pinned sing-box for the runner (config verification)
+        run: |
+          set -eu
+          ver=$(sed -n 's/^SINGBOX_VERSION="\([^"]*\)"/\1/p' scripts/build-release.sh)
+          sha=$(sed -n 's/^SINGBOX_SHA256_AMD64="\([^"]*\)"/\1/p' scripts/build-release.sh)
+          [ -n "$ver" ] && [ -n "$sha" ] || { echo "无法从 build-release.sh 读出 sing-box 版本 / 校验和"; exit 1; }
+          tarball="sing-box-${ver}-linux-amd64-musl.tar.gz"
+          curl -fsSL -o "/tmp/$tarball" "https://github.com/SagerNet/sing-box/releases/download/v${ver}/${tarball}"
+          echo "${sha}  /tmp/$tarball" | sha256sum -c -
+          mkdir -p panel/.tools
+          tar -xzf "/tmp/$tarball" -C /tmp "sing-box-${ver}-linux-amd64-musl/sing-box"
+          install -m 0755 "/tmp/sing-box-${ver}-linux-amd64-musl/sing-box" panel/.tools/sing-box
+          panel/.tools/sing-box version
+
       - name: Verify generated config against pinned sing-box
         working-directory: panel
+        env:
+          CI: 'true'
         run: corepack pnpm run check:config
 
       - name: Build release tarball

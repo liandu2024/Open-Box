@@ -14,6 +14,13 @@ import { buildRoute } from './routing.mjs'
 const enginedir = path.dirname(fileURLToPath(import.meta.url))
 const sbBin = path.resolve(enginedir, '../../.tools/sing-box')
 const hasBin = fs.existsSync(sbBin)
+// 本机没放二进制就跳过(开发机常态);CI 上不许跳——发布流水线里这一步名叫"用钦定版本的
+// sing-box 校验生成的配置",全跳过还是绿的,拦不住配置和内核版本不兼容的发布。工作流
+// 在跑这个测试之前先把钦定版本下到 panel/.tools/sing-box(见 .github/workflows/release.yml)。
+const inCI = process.env.CI === 'true' || process.env.GITHUB_ACTIONS === 'true'
+const missingBin = `sing-box 二进制缺失(panel/.tools/sing-box);运行 pnpm run check:config 前先放置二进制`
+const skipIfNoBin = hasBin || inCI ? false : missingBin
+const requireBin = () => { if (!hasBin) assert.fail(`${missingBin}——CI 上不允许跳过这项校验`) }
 
 const compileSrs = (dir, tag) => {
   const src = path.join(dir, `${tag}.json`)
@@ -22,7 +29,8 @@ const compileSrs = (dir, tag) => {
   execFileSync(sbBin, ['rule-set', 'compile', '--output', out, src])
 }
 
-test('生成的配置通过 sing-box check(全协议 + wireguard + DNS 分流 + 广告)', { skip: hasBin ? false : 'sing-box 二进制缺失(panel/.tools/sing-box);运行 pnpm run check:config 前先放置二进制' }, () => {
+test('生成的配置通过 sing-box check(全协议 + wireguard + DNS 分流 + 广告)', { skip: skipIfNoBin }, () => {
+  requireBin()
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'openbox-check-'))
   try {
     // 组织多协议订阅样本(分享链接)
@@ -59,7 +67,8 @@ test('生成的配置通过 sing-box check(全协议 + wireguard + DNS 分流 + 
   }
 })
 
-test('坏节点(缺 method)导致 check 失败', { skip: hasBin ? false : 'sing-box 二进制缺失' }, () => {
+test('坏节点(缺 method)导致 check 失败', { skip: skipIfNoBin }, () => {
+  requireBin()
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'openbox-checkbad-'))
   try {
     const config = {
@@ -75,7 +84,8 @@ test('坏节点(缺 method)导致 check 失败', { skip: hasBin ? false : 'sing-
   }
 })
 
-test('生成的配置通过 sing-box check(sing-box JSON 订阅 → wireguard endpoint)', { skip: hasBin ? false : 'sing-box 二进制缺失' }, () => {
+test('生成的配置通过 sing-box check(sing-box JSON 订阅 → wireguard endpoint)', { skip: skipIfNoBin }, () => {
+  requireBin()
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'openbox-checkwg-'))
   try {
     // sing-box JSON 格式订阅:一个常规 outbound(shadowsocks)+ 一个 wireguard endpoint。
@@ -124,7 +134,8 @@ test('生成的配置通过 sing-box check(sing-box JSON 订阅 → wireguard en
   }
 })
 
-test('生成的配置通过 sing-box check(dns.mode=dnsmasq;仅 dns-in 入站被劫持,防 hijack 回环回归)', { skip: hasBin ? false : 'sing-box 二进制缺失' }, () => {
+test('生成的配置通过 sing-box check(dns.mode=dnsmasq;仅 dns-in 入站被劫持,防 hijack 回环回归)', { skip: skipIfNoBin }, () => {
+  requireBin()
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'openbox-checkdnsmasq-'))
   try {
     const sub = [
@@ -168,7 +179,8 @@ test('生成的配置通过 sing-box check(dns.mode=dnsmasq;仅 dns-in 入站被
   }
 })
 
-test('一个节点都没命中的用户组也能过 sing-box check(挂 direct 占位)', { skip: hasBin ? false : 'sing-box 二进制缺失(panel/.tools/sing-box);运行 pnpm run check:config 前先放置二进制' }, () => {
+test('一个节点都没命中的用户组也能过 sing-box check(挂 direct 占位)', { skip: skipIfNoBin }, () => {
+  requireBin()
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'openbox-check-empty-'))
   try {
     const { nodes } = parseSubscription('trojan://pw@hk.example.com:443?sni=hk.example.com#HK-01')
@@ -216,7 +228,8 @@ test('一个节点都没命中的用户组也能过 sing-box check(挂 direct �
 // 规则顺序、站点集 selector、兜底 selector、block 出站、DNS 的 local/detour 写法,
 // 任何一处写错 sing-box 都会在这里报出来,而不是等部署到路由器上才 FATAL。
 for (const fallbackDefault of ['direct', 'proxy']) {
-  test(`兜底=${fallbackDefault}:整份配置过 sing-box check`, { skip: hasBin ? false : 'sing-box 二进制缺失(panel/.tools/sing-box);运行 pnpm run check:config 前先放置二进制' }, () => {
+  test(`兜底=${fallbackDefault}:整份配置过 sing-box check`, { skip: skipIfNoBin }, () => {
+  requireBin()
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), `openbox-check-${fallbackDefault}-`))
     try {
       const { nodes } = parseSubscription(
@@ -293,7 +306,8 @@ for (const fallbackDefault of ['direct', 'proxy']) {
 // hijack / off 两种 DNS 劫持方式也要过 sing-box check:直连侧用 WAN 上游 + (hijack)本地主机名交 local;
 // (off)不劫持、不写 auto_redirect
 for (const mode of ['hijack', 'off']) {
-  test(`生成的配置通过 sing-box check(dns.mode=${mode})`, { skip: hasBin ? false : 'sing-box 二进制缺失' }, () => {
+  test(`生成的配置通过 sing-box check(dns.mode=${mode})`, { skip: skipIfNoBin }, () => {
+  requireBin()
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), `openbox-check-${mode}-`))
     try {
       const sub = [
