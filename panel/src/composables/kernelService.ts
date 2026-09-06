@@ -9,7 +9,6 @@ import {
 import { showNotification } from '@/helper/notification'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { noteKernelUptime } from '@/store/latencyHistory'
 
 export const serviceStatus = ref<OpenboxServiceStatus | null>(null)
 export const pendingAction = ref<OpenboxServiceAction | null>(null)
@@ -50,8 +49,6 @@ export const refreshServiceStatus = async () => {
     const next = await fetchServiceStatus()
     if (mine !== refreshSeq) return
     serviceStatus.value = next
-    // 延迟时间线要靠它判断"历史被清空"是内核重启还是自动测速超时
-    noteKernelUptime(next?.core?.uptimeSeconds)
   } catch {
     // 拿不到就保持上一次的值;按钮的可用性按已知状态算
   }

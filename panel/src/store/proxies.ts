@@ -46,7 +46,7 @@ import {
   directTestUrl,
 } from './settings'
 import { initSmartWeights } from './smart'
-import { recordLatencyHistory, recordLatencySample } from '@/store/latencyHistory'
+import { loadLatencyHistory, reportLatencyTimeouts, syncLatencyHistory } from '@/store/latencyHistory'
 
 export const proxiesFilter = ref('')
 export const proxiesTabShow = useStorage<PROXY_TAB_TYPE>(
@@ -286,8 +286,8 @@ export const fetchProxies = async () => {
       ]
     }),
   )
-  // 延迟时间线:内核每个节点只留最新一次,面板自己攒最近 10 次(见 store/latencyHistory.ts)
-  recordLatencyHistory(proxyMap.value)
+  // 延迟时间线由服务端攒(见 store/latencyHistory.ts),拉节点数据时顺带拉一份
+  void loadLatencyHistory()
   proxyGroupList.value = Object.values(proxyData.proxies)
     .filter((proxy) => proxy.all?.length && proxy.name !== GLOBAL)
     .sort((prev, next) => {
@@ -518,9 +518,14 @@ export const proxyLatencyTest = async (
   await fetchProxies()
 
   if (res.status !== 200) {
-    // 超时也是一次结果:sing-box 超时会把这个节点的 history 直接删掉(不是记 0),重新拉节点
-    // 数据时什么都记不到,时间线上就少了这一次——这里自己补一笔 0(灰点、写「超时」)
-    recordLatencySample(getNowProxyNodeName(proxyName), { time: new Date().toISOString(), delay: NOT_CONNECTED })
+    // 超时也是一次结果:sing-box 超时会把这个节点的 history 直接删掉(不是记 0),服务端读内核
+    // 什么都记不到——面板自己知道是超时,报上去(灰点、写「超时」)
+    void reportLatencyTimeouts([getNowProxyNodeName(proxyName)])
+  } else {
+    void syncLatencyHistory()
+  }
+
+  if (res.status !== 200) {
     showNotification({
       content: 'testFailedTip',
       params: {
@@ -539,8 +544,8 @@ const setHistory = (proxyName: string, delay: number) => {
     time: now.toISOString(),
     delay,
   })
-  // 面板自己测出来的也进时间线,不等下一次拉节点数据
-  recordLatencySample(getNowProxyNodeName(proxyName), { time: now.toISOString(), delay })
+  // 超时要自己报给服务端(内核那边不会有记录);成功的等这一批测完 sync 一次
+  if (delay === NOT_CONNECTED) void reportLatencyTimeouts([getNowProxyNodeName(proxyName)], now.toISOString())
 }
 
 const TIP_KEY = 'testLatencyOneByOneWithTip'
@@ -582,6 +587,8 @@ const testLatencyOneByOneWithTip = async (
       }),
     ),
   )
+  // 这一批测完让服务端读一次内核,成功的结果进时间线
+  void syncLatencyHistory()
   showNotification({
     content: 'testFinishedResultTip',
     key: TIP_KEY + keyName,
@@ -657,9 +664,8 @@ export const proxyGroupLatencyTest = async (proxyGroupName: string) => {
 
   const total = all.length
   const failedNames = all.filter((name) => getLatencyByName(name, proxyGroupName) === NOT_CONNECTED)
-  // 整组测完还没有结果的就是这次超时的成员(内核超时会删掉它的 history),给时间线补一笔 0
-  const testedAt = new Date().toISOString()
-  for (const name of failedNames) recordLatencySample(getNowProxyNodeName(name), { time: testedAt, delay: NOT_CONNECTED })
+  // 整组测完还没有结果的就是这次超时的成员(内核超时会删掉它的 history),报给服务端;成功的让服务端读一次内核
+  void reportLatencyTimeouts(failedNames.map((name) => getNowProxyNodeName(name))).then(() => syncLatencyHistory())
   const testFailed = failedNames.length
 
   showNotification({

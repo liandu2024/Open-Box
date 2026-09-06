@@ -16,6 +16,9 @@ import { registerRulesetRoutes } from './api/rulesets.mjs'
 import { registerUpdateRoutes } from './api/updates.mjs'
 import { registerRouteTestRoutes } from './api/route-test.mjs'
 import { registerTrafficRoutes } from './api/traffic.mjs'
+import { registerLatencyHistoryRoutes } from './api/latency-history.mjs'
+import { createLatencyHistory } from './system/latency-history.mjs'
+import { createLatencyScheduler } from './system/latency-scheduler.mjs'
 import { registerServerRoutes } from './api/servers.mjs'
 import { registerBackupRoutes } from './api/backup.mjs'
 import { readMeta } from './system/updater.mjs'
@@ -1086,6 +1089,12 @@ const trafficCollector = createTrafficCollector({
   log: (m) => console.log(m),
 })
 registerTrafficRoutes(app, { collector: trafficCollector, ctx: obCtx, paths: obPaths })
+// 延迟历史 + 自动组的硬性定时测速(system/latency-scheduler.mjs):sing-box 的 URLTest 只在有流量时才按
+// interval 测,闲置的组停在启动那一次;这里由面板按 interval 定时调内核测,结果记进 openbox/latency-history,
+// 所有浏览器共享。和流量采集一样只在 startServer 里启动。
+const latencyHistory = createLatencyHistory({ store })
+const latencyScheduler = createLatencyScheduler({ store, ctx: obCtx, paths: obPaths, history: latencyHistory, fetchImpl: globalThis.fetch, log: (m) => console.log(m) })
+registerLatencyHistoryRoutes(app, { history: latencyHistory, scheduler: latencyScheduler })
 registerServerRoutes(app, { store, ctx: obCtx })
 // 导出 / 导入(后端设置那张卡片):档案 + 节点组,可选订阅和节点
 registerBackupRoutes(app, {
@@ -1212,6 +1221,7 @@ websocketServer.on('connection', relayControllerWebSocket)
 
 const startServer = async () => {
   trafficCollector.start()
+  latencyScheduler.start()
   if (server.listening) {
     return server
   }
@@ -1257,6 +1267,7 @@ const shutdownServer = async () => {
 
   // 先把攒着没写的流量增量落盘,再关库
   trafficCollector.stop()
+  latencyScheduler.stop()
   if (typeof db.close === 'function') {
     db.close()
   }

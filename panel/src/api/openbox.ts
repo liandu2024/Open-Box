@@ -791,6 +791,16 @@ export interface OpenboxRouteTest {
 export const testRoute = (target: string, port?: number) =>
   requestJson<OpenboxRouteTest>('/api/openbox/route-test', { method: 'POST', body: JSON.stringify({ target, port }) })
 
+// ---- 延迟历史(server/api/latency-history.mjs):每个节点最近 10 次测速结果,服务端记、所有浏览器共享
+export type OpenboxLatencySample = { time: string; delay: number }
+export type OpenboxLatencyHistory = Record<string, OpenboxLatencySample[]>
+export const fetchLatencyHistory = () => requestJson<{ history: OpenboxLatencyHistory }>('/api/openbox/latency-history')
+// 面板手动测出来的超时:内核那边只是删记录,得自己报上去
+export const postLatencySamples = (samples: Array<{ name: string; time: string; delay: number }>) =>
+  requestJson<{ ok: boolean; history: OpenboxLatencyHistory }>('/api/openbox/latency-history/samples', { method: 'POST', body: JSON.stringify({ samples }) })
+// 让服务端立刻读一次内核把新结果记下来(手动测完后调,不用等它下一个 tick)
+export const syncLatencyHistory = () => requestJson<{ history: OpenboxLatencyHistory }>('/api/openbox/latency-history/sync', { method: 'POST', body: '{}' })
+
 // ---- 每日流量(server/api/traffic.mjs)。up = 发往外网的字节(出口),down = 收到的(入口)
 export interface OpenboxTrafficRow {
   key: string
