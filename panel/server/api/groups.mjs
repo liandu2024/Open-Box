@@ -60,12 +60,50 @@ export const registerGroupRoutes = (app, { store } = {}) => {
       seen.add(g.name)
     }
 
-    store.setGroups(normalized)
+    // 组之间、站点集的默认出口、终端分流都是按组名引用的,组名一改这些引用就悬空:
+    // 以前只改当前这一条,引用它的组静默丢掉这个成员(空了就填直连占位),站点集的默认出口
+    // 落到成员表第一项——保存返回 200、dropped 也是空的,用户完全不知道。
+    // 现在按 id 认出改名,把所有引用一并原子迁移(整份 PUT 本来就是原子的)。
+    const previous = new Map(store.getGroups().map((g) => [g.id, g]))
+    const renames = new Map()
+    for (const g of normalized) {
+      const old = previous.get(g.id)
+      if (old && old.name !== g.name) renames.set(old.name, g.name)
+    }
+    const rename = (name) => (renames.has(name) ? renames.get(name) : name)
+    const migrated = renames.size
+      ? normalized.map((g) => ({ ...g, members: g.members.map(rename) }))
+      : normalized
+
+    store.setGroups(migrated)
+
+    if (renames.size) {
+      const profile = store.getProfile() || {}
+      const routing = profile.routing && typeof profile.routing === 'object' ? profile.routing : {}
+      const patch = {}
+      if (Array.isArray(routing.policies)) {
+        patch.routing = { policies: routing.policies.map((p) => (p && typeof p === 'object' && renames.has(p.default) ? { ...p, default: rename(p.default) } : p)) }
+      }
+      if (renames.has(routing.fallbackDefault)) patch.routing = { ...(patch.routing || {}), fallbackDefault: rename(routing.fallbackDefault) }
+      if (Array.isArray(profile.clientRoutes)) {
+        patch.clientRoutes = profile.clientRoutes.map((r) => (r && typeof r === 'object' && renames.has(r.outbound) ? { ...r, outbound: rename(r.outbound) } : r))
+      }
+      if (Object.keys(patch).length) store.setProfile(patch)
+    }
 
     // 把这份定义按当前节点跑一遍,如实告诉调用方哪些组落地不了(成员为空/成环)。
     // 保存本身仍然成功——用户可能只是还没来得及挑成员。
-    const { dropped } = emitUserGroups(normalized, store.getNodes())
-    res.json({ ok: true, groups: store.getGroups(), dropped })
+    const nodes = store.getNodes()
+    const { dropped } = emitUserGroups(migrated, nodes)
+    // 悬空引用(既不是节点也不是组的成员名)也要说出来:生成配置时它会被静默忽略,组没空
+    // 的话连 dropped 都不会提到它
+    const nodeTags = new Set(nodes.map((n) => n && n.tag).filter(Boolean))
+    const groupNames = new Set(migrated.map((g) => g.name))
+    const dangling = migrated
+      .filter((g) => !g.kind && g.mode !== 'dynamic')
+      .map((g) => ({ name: g.name, members: g.members.filter((m) => m !== g.name && !nodeTags.has(m) && !groupNames.has(m)) }))
+      .filter((d) => d.members.length)
+    res.json({ ok: true, groups: store.getGroups(), dropped, dangling, renamed: [...renames].map(([from, to]) => ({ from, to })) })
   })
 
   app.use('/api/openbox', router)

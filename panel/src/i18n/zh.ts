@@ -607,6 +607,7 @@ const zh: LANG_MESSAGE = {
   subscriptionRenameSampleFeature: '专线',
   groupDroppedEmpty: '这些分组没有可用成员,不会写进配置:{names}',
   groupDroppedCycle: '这些分组互相引用,不会写进配置:{names}',
+  groupDanglingMembers: '分组「{group}」引用的「{members}」既不是节点也不是分组,写进配置时会被忽略',
   subscriptionResetNames: '恢复默认名称',
   subscriptionResetNamesHint: '把 {count} 条手工改过的名字改回规则算出来的名字',
   subscriptionRenameCountrySearch: '搜索国家/地区',

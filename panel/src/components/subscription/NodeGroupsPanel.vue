@@ -1054,6 +1054,10 @@ const persist = async (next: OpenboxUserGroup[]) => {
   const res = await saveNodeGroups(next)
   groups.value = res.groups
   reportDropped(res.dropped || [])
+  // 悬空引用:组没空的话 dropped 不会提到它,单独说
+  for (const d of res.dangling || []) {
+    showNotification({ content: 'groupDanglingMembers', params: { group: d.name, members: d.members.join('、') }, type: 'alert-warning' })
+  }
   return res
 }
 

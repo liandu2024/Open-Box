@@ -485,7 +485,14 @@ export const fetchRulesetEntries = async (
 // 整份覆盖而不是逐条改:组之间可以互相引用,逐条改会让中间状态出现悬空引用或环。
 export const saveNodeGroups = async (
   groups: OpenboxUserGroup[],
-): Promise<{ ok: boolean; groups: OpenboxUserGroup[]; dropped: Array<{ name: string; reason: string }> }> =>
+): Promise<{
+  ok: boolean
+  groups: OpenboxUserGroup[]
+  dropped: Array<{ name: string; reason: string }>
+  // 成员里既不是节点也不是组的名字(生成配置时会被忽略);改名时服务端已把引用迁移过
+  dangling?: Array<{ name: string; members: string[] }>
+  renamed?: Array<{ from: string; to: string }>
+}> =>
   requestJson('/api/openbox/groups', { method: 'PUT', body: JSON.stringify({ groups }) })
 
 // 拖拽排序:传全部订阅 id 的新顺序;服务端把节点池也按这个顺序重排(选择器、内核出站顺序都跟着)
