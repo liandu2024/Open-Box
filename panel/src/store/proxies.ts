@@ -46,6 +46,7 @@ import {
   directTestUrl,
 } from './settings'
 import { initSmartWeights } from './smart'
+import { recordLatencyHistory, recordLatencySample } from '@/store/latencyHistory'
 
 export const proxiesFilter = ref('')
 export const proxiesTabShow = useStorage<PROXY_TAB_TYPE>(
@@ -285,6 +286,8 @@ export const fetchProxies = async () => {
       ]
     }),
   )
+  // 延迟时间线:内核每个节点只留最新一次,面板自己攒最近 10 次(见 store/latencyHistory.ts)
+  recordLatencyHistory(proxyMap.value)
   proxyGroupList.value = Object.values(proxyData.proxies)
     .filter((proxy) => proxy.all?.length && proxy.name !== GLOBAL)
     .sort((prev, next) => {
@@ -533,6 +536,8 @@ const setHistory = (proxyName: string, delay: number) => {
     time: now.toISOString(),
     delay,
   })
+  // 面板自己测出来的也进时间线,不等下一次拉节点数据
+  recordLatencySample(getNowProxyNodeName(proxyName), { time: now.toISOString(), delay })
 }
 
 const TIP_KEY = 'testLatencyOneByOneWithTip'
