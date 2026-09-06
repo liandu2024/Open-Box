@@ -494,6 +494,8 @@ const zh: LANG_MESSAGE = {
   groupDeleteTitle: '删除分组',
   groupDeleteConfirm: '确定删除分组「{name}」?分流规则里如果指向了它,需要另选一个目标。',
   groupEdit: '修改分组',
+  groupCardEdit: '修改',
+  groupSavedNeedRestart: '保存成功,重启内核生效',
   groupNameLabel: '分组名称',
   groupTypeLabel: '分组规则',
   groupType_urltest: '自动择优 (url-test)',

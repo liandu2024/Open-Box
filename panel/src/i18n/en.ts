@@ -499,6 +499,8 @@ const en = {
   groupDeleteTitle: 'Delete group',
   groupDeleteConfirm: 'Delete group “{name}”? Routing rules pointing at it will need a new target.',
   groupEdit: 'Edit group',
+  groupCardEdit: 'Edit',
+  groupSavedNeedRestart: 'Saved; restart the core to apply',
   groupNameLabel: 'Group name',
   groupTypeLabel: 'Group rule',
   groupType_urltest: 'Auto by latency (url-test)',

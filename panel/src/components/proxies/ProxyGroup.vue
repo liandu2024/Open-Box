@@ -59,26 +59,40 @@
                 class="h-3 w-3"
               />
             </button>
+            <LatencyTag
+              :class="twMerge('bg-base-200/50 hover:bg-base-200 z-10 ml-1')"
+              :loading="isLatencyTesting"
+              :name="proxyGroup.now"
+              :group-name="proxyGroup.name"
+              :timeline-name="proxyGroup.name"
+              @click.stop="handlerLatencyTest"
+            />
           </div>
-          <div class="text-base-content/80 flex w-full items-center pt-0.5 pb-1.5">
-            <div class="min-w-0 flex-1 pr-3 text-sm">
+          <div class="text-base-content/80 @container flex w-full items-center gap-2 pt-0.5 pb-1">
+            <div class="min-w-0 flex-1 text-sm">
               <ProxyGroupNow
                 :name="name"
               />
             </div>
-          </div>
-        </div>
-        <div class="flex w-16 shrink-0 flex-col items-end gap-2 self-stretch">
-          <LatencyTag
-            :class="twMerge('bg-base-200/50 hover:bg-base-200 z-10')"
-            :loading="isLatencyTesting"
-            :name="proxyGroup.now"
-            :group-name="proxyGroup.name"
-            :timeline-name="proxyGroup.name"
-            @click.stop="handlerLatencyTest"
-          />
-          <div class="text-base-content/80 mt-auto w-full text-right text-xs">
-            {{ prettyBytesHelper(downloadTotal) }}/s
+            <!-- 自动择优组:检测间隔 / 容差;节点管理里的组还给一个「修改」,就地弹窗改,改完仍留在这一页。
+                 和左边当前选中的节点同一行、垂直居中;这一行不到 25rem 宽(两列布局、窄屏)就不显示这段文字,节点名和按钮不让 -->
+            <div
+              v-if="managedGroup"
+              class="flex shrink-0 items-center gap-2"
+            >
+              <span
+                v-if="testMeta"
+                class="text-base-content/60 hidden text-xs whitespace-nowrap tabular-nums @min-[25rem]:inline"
+              >{{ testMeta }}</span>
+              <button
+                v-if="canEditGroup"
+                type="button"
+                class="btn btn-sm bg-base-200 border-base-200 text-base-content/80 hover:text-base-content h-6 min-h-6 shrink-0 cursor-pointer px-2 text-xs font-medium shadow-none"
+                @click.stop="openNodeGroupEditor(managedGroup)"
+              >
+                {{ $t('groupCardEdit') }}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -143,15 +157,31 @@
       </div>
       <div
         v-if="!useLargeProxyGroupIcon"
-        class="text-base-content/80 mt-1.5 mb-1 flex items-start gap-2"
+        class="text-base-content/80 @container mt-1.5 mb-1 flex items-center gap-2"
       >
         <div class="min-w-0 flex-1 text-sm">
           <ProxyGroupNow
             :name="name"
           />
         </div>
-        <div class="min-w-12 shrink-0 text-right text-xs">
-          {{ prettyBytesHelper(downloadTotal) }}/s
+        <!-- 自动择优组:检测间隔 / 容差;节点管理里的组还给一个「修改」,就地弹窗改,改完仍留在这一页。
+             和左边当前选中的节点同一行、垂直居中;这一行不到 25rem 宽(两列布局、窄屏)就不显示这段文字,节点名和按钮不让 -->
+        <div
+          v-if="managedGroup"
+          class="flex shrink-0 items-center gap-2"
+        >
+          <span
+            v-if="testMeta"
+            class="text-base-content/60 hidden text-xs whitespace-nowrap tabular-nums @min-[25rem]:inline"
+          >{{ testMeta }}</span>
+          <button
+            v-if="canEditGroup"
+            type="button"
+            class="btn btn-sm bg-base-200 border-base-200 text-base-content/80 hover:text-base-content h-6 min-h-6 shrink-0 cursor-pointer px-2 text-xs font-medium shadow-none"
+            @click.stop="openNodeGroupEditor(managedGroup)"
+          >
+            {{ $t('groupCardEdit') }}
+          </button>
         </div>
       </div>
     </template>
@@ -190,9 +220,7 @@ import { useBounceOnVisible } from '@/composables/bouncein'
 import { useGroupNodeStats } from '@/composables/groupNodeStats'
 import { useRenderProxies } from '@/composables/renderProxies'
 import { isHiddenGroup } from '@/helper'
-import { prettyBytesHelper } from '@/helper/utils'
 import { isWindowResizing } from '@/helper/windowResizeState'
-import { activeConnections } from '@/store/connections'
 import {
   handlerProxySelect,
   hiddenGroupMap,
@@ -207,11 +235,13 @@ import {
   useLargeProxyGroupIcon,
 } from '@/store/settings'
 import { EyeIcon, EyeSlashIcon } from '@heroicons/vue/24/outline'
-import { siteSetNames } from '@/store/openboxSiteSets'
+import { managedOutbounds, siteSetNames } from '@/store/openboxSiteSets'
+import { openNodeGroupEditor } from '@/store/nodeGroupEditor'
 import { openPenetrationDialog } from '@/store/proxyGroupRulePenetration'
 import { DARK_THEME, theme } from '@/store/settings'
 import { twMerge } from 'tailwind-merge'
 import { computed, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import CollapseCard from '../common/CollapseCard.vue'
 import LatencyTag from './LatencyTag.vue'
 import ProxiesByProvider from './ProxiesByProvider.vue'
@@ -241,12 +271,19 @@ const handlerLatencyTest = async () => {
     isLatencyTesting.value = false
   }
 }
-const downloadTotal = computed(() => {
-  const speed = activeConnections.value
-    .filter((conn) => conn.chains.includes(props.name))
-    .reduce((total, conn) => total + conn.downloadSpeed, 0)
-
-  return speed
+const { t } = useI18n()
+// 节点管理里的这个组(有就是 Open-Box 自己生成的组,没有就是内核配置里别的出站)
+const managedGroup = computed(() => managedOutbounds.value.find((g) => g.name === props.name))
+// 内置的直连/拒绝不在这儿改(它们只有名字和图标可改,入口在节点管理)
+const canEditGroup = computed(() => Boolean(managedGroup.value && !managedGroup.value.kind))
+// 自动择优组显示「检测间隔 5 分钟 · 容差 100 毫秒」;手动组没有这两项
+const testMeta = computed(() => {
+  const g = managedGroup.value
+  if (!g || g.type !== 'urltest') return ''
+  const interval = g.interval || '5m'
+  const m = /^(\d+)m$/.exec(interval)
+  const intervalText = m ? `${m[1]} ${t('groupUnitMinute')}` : interval
+  return `${t('groupInterval')} ${intervalText} · ${t('groupTolerance')} ${g.tolerance ?? 100} ${t('groupUnitMs')}`
 })
 
 const hiddenGroup = computed({

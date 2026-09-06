@@ -494,6 +494,8 @@ const zhTW: LANG_MESSAGE = {
   groupDeleteTitle: '刪除分組',
   groupDeleteConfirm: '確定刪除分組「{name}」?分流規則裡如果指向了它,需要另選一個目標。',
   groupEdit: '修改分組',
+  groupCardEdit: '修改',
+  groupSavedNeedRestart: '儲存成功,重啟核心生效',
   groupNameLabel: '分組名稱',
   groupTypeLabel: '分組規則',
   groupType_urltest: '自動擇優 (url-test)',
