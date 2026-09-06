@@ -1,16 +1,17 @@
 <template>
-  <!-- 一个固定 4:3 的盒子,国旗和地球都放在里面居中——两者外框一模一样,列表里
-       图标后面的文字才对得齐。
-       国旗铺满整个盒子;地球是圆的,按 0.85 缩一点再居中:同样 16px 高的一个圆
-       和一个扁长方形摆在一起,圆看着明显更大(视觉重心问题,不是尺寸问题)。 -->
+  <!-- 外框是 size × size 的方框,和代理页 ProxyIcon.vue 一模一样:国旗按 4:3 塞进方框里
+       (宽 = size,高 = size × 3/4),标识 / 地球铺满方框。同一个图标在设置页的列表、规则页、
+       代理页看到的形状和相对大小才一致——以前这里是 4:3 的盒子让国旗铺满,同一面国旗在
+       列表里比旁边的标识宽出三分之一,到规则页又缩回方框里,像两个不同的图标。
+       所有种类外框一样宽,列表里图标后面的文字才对得齐。 -->
   <span
     class="inline-flex shrink-0 items-center justify-center"
     :class="scaleStyle && 'overflow-hidden'"
-    :style="{ width: `${boxWidth}px`, height: `${size}px` }"
+    :style="{ width: `${size}px`, height: `${size}px` }"
     :title="title || code"
   >
     <!-- 缩放只发生在盒子里(从中心放大 / 缩小),放不下就裁掉,外框尺寸不变,旁边的文字不动。
-         只有真的缩放了才裁:线条地球的元素框本来就比盒子高两像素(见下面 monoGlyph),
+         只有真的缩放了才裁:线条地球的元素框本来就比盒子大两像素(见下面 monoGlyph),
          不缩放时照旧让它探出去,别把描边切掉。 -->
     <span
       class="inline-flex shrink-0 items-center justify-center"
@@ -42,7 +43,7 @@
       :style="
         square
           ? { width: `${glyph}px`, height: `${glyph}px` }
-          : { width: `${boxWidth}px`, height: `${size}px`, objectFit: 'cover' }
+          : { width: `${glyph}px`, height: `${flagHeight}px`, objectFit: 'cover' }
       "
     />
     <!-- 线条地球:节点组可以选,也是"认不出代码"时的占位。选中的用正常前景色,
@@ -140,18 +141,20 @@ const MISC_URL = import.meta.glob<string>('../../assets/misc/*.svg', {
   import: 'default',
 })
 
-// 地球和通用图标都是方的:铺满盒子高度即可,不像国旗那样要 4:3 铺满并描边
+// 地球和通用图标都是方的:铺满方框即可,不像国旗那样是 4:3 的扁长方形还要描边
 const square = computed(() => isGlobe.value || isMisc.value)
 
-const boxWidth = computed(() => Math.round((props.size * 4) / 3))
-// 目标:地球画出来的圆,和国旗的高度一样(国旗是铺满盒子的,即 size)。
+// 国旗素材统一是 4:3(flag-icons 的 640×480),宽铺满方框,高就是 3/4——和 <img> 把
+// 同一个 svg 塞进 ProxyIcon 方框里的结果一样(svg 自己按比例居中),两边算出来完全一致
+const glyph = computed(() => props.size)
+const flagHeight = computed(() => Math.round((props.size * 3) / 4))
+// 目标:地球画出来的圆,和方框一样大(size)。
 // 两种地球的"墨迹"占各自画布的比例不同,所以给的边长也不同:
 //   彩色(Twemoji):圆 r=18 / viewBox 36 —— 铺满,比例 1.0,给 size 就够
 //   线条(heroicons):圆 r=9 加 1.5 描边 / viewBox 24 —— 比例 0.8125,要给
-//     size / 0.8125 才画得出一个 size 高的圆
-// 线条那个的元素框因此比盒子高两像素,往行间距里探出去一点——它只是一条细描边,
-// 没有底色,看不出来,而外框仍是统一的 4:3,文字照样对齐。
-const glyph = computed(() => props.size)
+//     size / 0.8125 才画得出一个 size 大的圆
+// 线条那个的元素框因此比方框大两像素,往四周探出去一点——它只是一条细描边,
+// 没有底色,看不出来,而外框仍是统一的方框,文字照样对齐。
 const monoGlyph = computed(() => Math.round(props.size / 0.8125))
 
 const src = computed(() => {
