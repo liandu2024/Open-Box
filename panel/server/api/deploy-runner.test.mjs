@@ -98,3 +98,56 @@ test('dnsClassesFlipped:站点集在直连 / 代理之间翻面才算 DNS 规则
   // 没有元数据(还没部署过 / 老版本升上来)就不动
   assert.equal(await dnsClassesFlipped(createMockContext({}), paths, store, { 其他: '直连' }), false)
 })
+
+// 审查第 10 项:持有者活着就要一直互斥——靠心跳续租,不再"3 分钟一到谁都能进"
+test('withDeployLock:持有者按心跳刷新时间戳,另一进程看到锁龄超过 3 分钟但心跳新鲜就继续等;锁带 token,PID 被复用也认得出不是自己的', async () => {
+  const { withDeployLock } = await import('./deploy-runner.mjs')
+  const m = new Map()
+  const store = { getRaw: (k) => (m.has(k) ? m.get(k) : null), setRaw: (k, v) => m.set(k, v), delRaw: (k) => m.delete(k) }
+  let t = 1000
+  const now = () => t
+  const beats = []
+  const setIntervalImpl = (fn) => { beats.push(fn); return { unref() {} } }
+  const cleared = []
+  const clearIntervalImpl = (h) => cleared.push(h)
+  // 持有者(pid 101)跑一个"超过 3 分钟"的部署,期间心跳两次
+  let release
+  const holding = withDeployLock(store, () => new Promise((r) => { release = r }), { now, pid: 101, alive: () => true, setIntervalImpl, clearIntervalImpl })
+  await new Promise((r) => setImmediate(r))
+  const first = JSON.parse(m.get('openbox/deploy-lock'))
+  assert.equal(first.pid, 101)
+  assert.ok(first.token)
+  t += 200_000; beats[0]()                       // 3 分 20 秒后心跳,at 刷新
+  assert.equal(JSON.parse(m.get('openbox/deploy-lock')).at, t)
+  // 另一进程(pid 202)此刻来抢:锁龄从签发算已超 3 分钟,但心跳新鲜 → 必须等,等到超时报错
+  const sleeps = []
+  await assert.rejects(
+    () => withDeployLock(store, async () => 'stolen', { sleep: async (ms) => { sleeps.push(ms); t += ms }, now, pid: 202, alive: () => true, waitMs: 2000, setIntervalImpl, clearIntervalImpl }),
+    /另一个部署\(pid 101\)/,
+  )
+  assert.ok(sleeps.length > 0)
+  // 持有者放手后再抢就能进;持有者退出时清了心跳、删了锁
+  release('done')
+  assert.equal(await holding, 'done')
+  assert.equal(cleared.length, 1)
+  assert.ok(!m.has('openbox/deploy-lock'))
+  // PID 复用:锁上是 pid 202 的旧 token,新的 pid 202 进程不会把它当自己的——持有者已死就接管
+  m.set('openbox/deploy-lock', JSON.stringify({ pid: 202, at: t, token: 'stale-token' }))
+  const r = await withDeployLock(store, async () => JSON.parse(m.get('openbox/deploy-lock')).token, { now, pid: 202, alive: () => false, setIntervalImpl, clearIntervalImpl })
+  assert.notEqual(r, 'stale-token')
+})
+
+// 审查第 2 项:停止 / 回滚和部署共用队列
+test('runExclusive:排在部署队列里按顺序执行,前一个没完后一个不动', async () => {
+  const { runExclusive } = await import('./deploy-runner.mjs')
+  const order = []
+  let release
+  const first = runExclusive(null, () => new Promise((r) => { release = r }).then(() => order.push('first')))
+  const second = runExclusive(null, async () => order.push('second'))
+  await new Promise((r) => setTimeout(r, 20))
+  assert.deepEqual(order, [])
+  release()
+  await first
+  await second
+  assert.deepEqual(order, ['first', 'second'])
+})

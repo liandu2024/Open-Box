@@ -1,5 +1,5 @@
 import express from 'express'
-import { buildCurrentConfig, runDeploy, STATUS_BY_STAGE } from './deploy-runner.mjs'
+import { buildCurrentConfig, cancelPendingDeploys, runDeploy, runExclusive, STATUS_BY_STAGE } from './deploy-runner.mjs'
 import { rollbackToDirect } from '../system/deploy.mjs'
 import { disableService } from '../system/service.mjs'
 
@@ -33,8 +33,12 @@ export const registerDeployRoutes = (app, { store, ctx, paths } = {}) => {
   // handler 级 try/catch 兜底 disableService 抛错的情况,避免整个请求变成带调用栈的默认 HTML 错误页。
   router.post('/rollback', async (_req, res) => {
     try {
-      const result = await rollbackToDirect(ctx, paths)
-      const disabled = await disableService(ctx, paths.initd.core)
+      // 和停止一样:进部署队列、拿锁,并把正在跑 / 排队中的部署标成取消,免得回滚完又被旧部署顶掉
+      cancelPendingDeploys()
+      const { result, disabled } = await runExclusive(store, async () => ({
+        result: await rollbackToDirect(ctx, paths),
+        disabled: await disableService(ctx, paths.initd.core),
+      }))
       const failures = [...result.failures]
       if (!disabled.ok) failures.push({ step: 'disable-autostart', message: String(disabled.stderr || disabled.stdout || '').trim() || `code ${disabled.code}` })
       res.json({ ok: result.ok && disabled.ok, actions: result.actions, failures })

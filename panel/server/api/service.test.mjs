@@ -321,3 +321,40 @@ test('停止后内核迟迟不退出 → ok:false 并说明,不再谎报已停�
     await close()
   }
 })
+
+// 审查第 2 项:部署跑到一半(内核已起、正在验证)时点了停止——停止要排在部署后面执行,部署要
+// 认出自己被取消(不报成功、不开自启),最终状态是停止的、自启关着,和用户最后一个动作一致
+test('部署途中点停止:部署被标成取消(不 enable),停止随后执行并 disable,最终状态跟最后一个动作走', async () => {
+  let releaseVerify
+  const verifyGate = new Promise((r) => { releaseVerify = r })
+  let stopped = false
+  const ctx = okCtx({
+    '/etc/init.d/openbox status': () => (stopped ? { code: 1, stdout: 'inactive' } : { code: 0, stdout: 'running' }),
+    '/etc/init.d/openbox stop': () => { stopped = true; return { code: 0 } },
+  })
+  // deployConfig 验证阶段会 sleep 几秒再看第二眼:借这个 sleep 把部署挂住
+  ctx.sleep = () => verifyGate
+  const { baseUrl, close } = await startApp(ctx)
+  try {
+    const starting = fetch(`${baseUrl}/api/openbox/service/core/start`, { method: 'POST' })
+    // 等部署走到重启内核之后(挂在验证的 sleep 里)
+    for (let i = 0; i < 200 && !cmds(ctx).includes('/etc/init.d/openbox restart'); i++) await new Promise((r) => setTimeout(r, 5))
+    assert.ok(cmds(ctx).includes('/etc/init.d/openbox restart'))
+    const stopping = fetch(`${baseUrl}/api/openbox/service/core/stop`, { method: 'POST' })
+    await new Promise((r) => setTimeout(r, 20))
+    // 停止在排队,还没执行
+    assert.ok(!cmds(ctx).includes('/etc/init.d/openbox stop'))
+    releaseVerify()
+    const startBody = await (await starting).json()
+    const stopBody = await (await stopping).json()
+    assert.equal(startBody.ok, false)
+    assert.match(startBody.stderr, /取消/)
+    assert.equal(stopBody.ok, true)
+    const c = cmds(ctx)
+    assert.ok(c.indexOf('/etc/init.d/openbox restart') < c.indexOf('/etc/init.d/openbox stop'), '停止必须排在部署之后执行')
+    assert.ok(!c.includes('/etc/init.d/openbox enable'), '被取消的部署不能把自启打开')
+    assert.ok(c.includes('/etc/init.d/openbox disable'))
+  } finally {
+    await close()
+  }
+})

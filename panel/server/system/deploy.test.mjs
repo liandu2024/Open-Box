@@ -258,3 +258,28 @@ test('规则集已存在时不再下载(GitHub 连不上也能照常部署)', as
   assert.equal(r.ok, true)
   assert.equal(called, false)
 })
+
+// 审查第 2 项:deployConfig 的取消检查点
+test('isCancelled 在落盘前为真 → 直接退出、什么都不动;在 DNS / 防火墙之后为真 → 回滚到直连;内核起了之后为真 → 不报成功也不回滚', async () => {
+  // 1) 落盘前
+  const early = okCtx()
+  const r1 = await deployConfig(early, paths, { config, profile, isCancelled: () => true })
+  assert.equal(r1.stage, 'cancelled')
+  assert.ok(!early.writes.some((w) => w.path === paths.configPath))
+  assert.ok(!cmds(early).includes('/etc/init.d/openbox restart'))
+  // 2) DNS / 防火墙改完、内核还没起:防火墙 reload 之后才取消
+  let flipped = false
+  const mid = okCtx({ '/etc/init.d/firewall reload': () => { flipped = true; return { code: 0 } } })
+  const r2 = await deployConfig(mid, paths, { config, profile, isCancelled: () => flipped })
+  assert.equal(r2.stage, 'cancelled')
+  assert.match(r2.message, /已恢复直连/)
+  assert.ok(!cmds(mid).includes('/etc/init.d/openbox restart'))
+  assert.ok(cmds(mid).includes('/etc/init.d/openbox stop'))
+  // 3) 内核已起(restart 之后)才取消:不报成功、不回滚,留给随后的停止动作
+  let restarted = false
+  const late = okCtx({ '/etc/init.d/openbox restart': () => { restarted = true; return { code: 0 } } })
+  const r3 = await deployConfig(late, paths, { config, profile, isCancelled: () => restarted })
+  assert.equal(r3.stage, 'cancelled')
+  assert.equal(r3.ok, false)
+  assert.ok(!cmds(late).includes('/etc/init.d/openbox stop'))
+})

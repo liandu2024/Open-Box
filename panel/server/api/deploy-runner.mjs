@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import { readSystemDns } from '../system/resolv.mjs'
 import { readLocalSubnets } from '../system/local-subnets.mjs'
 import { resolveHostsToCidrs } from '../system/resolve-hosts.mjs'
@@ -119,6 +120,8 @@ const ROLLED_BACK_STAGES = new Set(['start', 'verify', 'error'])
 export const STATUS_BY_STAGE = {
   conflict: 409,
   validate: 409,
+  // 被停止 / 回滚取消:请求本身没错,只是被后来的用户动作抢先了
+  cancelled: 409,
   // 规则集拉不下来是外部依赖(GitHub / 加速站)不可用,不是请求本身有问题,也没动
   // 任何系统状态 —— 用 503 与"配置有毛病"的 409 区分开。
   rulesets: 503,
@@ -174,8 +177,18 @@ const resolveDirectHostCidrs = async (store, systemDns, lookup) => {
 // 进程内按调用顺序排队;跨进程(升级时 CLI 与面板)靠 store 里的锁记录互相等待。
 let deployQueue = Promise.resolve()
 const LOCK_KEY = 'openbox/deploy-lock'
+// 持有者每隔 HEARTBEAT 刷新一次锁上的时间戳;超过 STALE 没刷新 = 持有者卡死(进程还在但
+// 事件循环挂了),别的进程可以接管。以前没有续租,慢一点的部署(规则集下载 / 编译超过 3 分钟)
+// 持有者活得好好的,另一个进程照样闯进来一起写 config、改 DNS、交错重启。
 const LOCK_STALE_MS = 3 * 60 * 1000
+const LOCK_HEARTBEAT_MS = 20 * 1000
 const LOCK_WAIT_MS = 90 * 1000
+
+// 「停止」「回滚」进来时把正在跑 / 排队中的部署标成取消:部署在几个安全点上检查,取消了就
+// 不再往下走(没动系统的直接退出;动了 DNS / 防火墙但还没起内核的先回滚;已经起了内核的
+// 让排在后面的停止动作去处理),也不会在结尾把开机自启重新打开。
+let stopGeneration = 0
+export const cancelPendingDeploys = () => { stopGeneration += 1 }
 
 const pidAlive = (pid) => {
   if (!Number.isInteger(pid) || pid <= 0) return false
@@ -187,42 +200,75 @@ const pidAlive = (pid) => {
   }
 }
 
-export const withDeployLock = async (store, fn, { sleep = (ms) => new Promise((r) => setTimeout(r, ms)), now = Date.now, waitMs = LOCK_WAIT_MS, pid = process.pid, alive = pidAlive } = {}) => {
+export const withDeployLock = async (store, fn, {
+  sleep = (ms) => new Promise((r) => setTimeout(r, ms)), now = Date.now, waitMs = LOCK_WAIT_MS, pid = process.pid, alive = pidAlive,
+  heartbeatMs = LOCK_HEARTBEAT_MS, setIntervalImpl = setInterval, clearIntervalImpl = clearInterval,
+} = {}) => {
   const canLock = store && typeof store.getRaw === 'function' && typeof store.setRaw === 'function' && typeof store.delRaw === 'function'
   const getLock = () => {
     try { return JSON.parse(store.getRaw(LOCK_KEY) || 'null') } catch { return null }
   }
+  // 锁上带一个随机 token:同一进程内的两次部署、以及被复用的 PID,都不会把别人的锁当成自己的
+  const token = randomBytes(8).toString('hex')
+  const mine = (lock) => Boolean(lock && lock.pid === pid && lock.token === token)
+  let beat = null
   if (canLock) {
     const deadline = now() + waitMs
     for (;;) {
       const lock = getLock()
-      const held = lock && lock.pid !== pid && now() - Number(lock.at || 0) < LOCK_STALE_MS && alive(lock.pid)
-      if (!held) break
-      if (now() > deadline) throw new Error(`另一个部署(pid ${lock.pid})正在进行,等了 ${Math.round(waitMs / 1000)} 秒仍未结束`)
+      const held = lock && !mine(lock) && now() - Number(lock.at || 0) < LOCK_STALE_MS && alive(lock.pid)
+      if (!held) {
+        store.setRaw(LOCK_KEY, JSON.stringify({ pid, at: now(), token }))
+        // 写完再读一次:两个进程同时抢,后写的赢,先写的看到锁不是自己的就回去继续等。不是原子
+        // CAS(存储只有 get / set),但并发窗口从"整个部署"缩到两次写之间的几毫秒。
+        if (mine(getLock())) break
+      }
+      if (now() > deadline) throw new Error(`另一个部署(pid ${lock && lock.pid})正在进行,等了 ${Math.round(waitMs / 1000)} 秒仍未结束`)
       await sleep(500)
     }
-    store.setRaw(LOCK_KEY, JSON.stringify({ pid, at: now() }))
+    beat = setIntervalImpl(() => {
+      const lock = getLock()
+      if (mine(lock)) store.setRaw(LOCK_KEY, JSON.stringify({ ...lock, at: now() }))
+    }, heartbeatMs)
+    if (beat && typeof beat.unref === 'function') beat.unref()
   }
   try {
     return await fn()
   } finally {
     if (canLock) {
-      const lock = getLock()
-      if (!lock || lock.pid === pid) store.delRaw(LOCK_KEY)
+      if (beat) clearIntervalImpl(beat)
+      if (mine(getLock())) store.delRaw(LOCK_KEY)
     }
   }
 }
 
-export const runDeploy = (args) => {
-  const run = deployQueue.then(() => withDeployLock(args.store, () => runDeployInner(args)))
+// 停止 / 回滚这类会改服务、DNS、防火墙的动作和部署共用同一条队列、同一把锁:以前它们绕过
+// 队列直接动系统,停止已经报成功、排在前面的旧部署随后照样把内核拉起来、把自启打开。
+export const runExclusive = (store, fn) => {
+  const run = deployQueue.then(() => withDeployLock(store, fn))
   deployQueue = run.catch(() => {})
   return run
 }
 
-const runDeployInner = async ({ store, ctx, paths, fetchImpl = globalThis.fetch, lookup }) => {
+export const runDeploy = (args) => {
+  // 排队时就记下代数:排队期间来了停止,这次部署轮到时第一个检查点就退出,不再把内核拉起来
+  const generation = stopGeneration
+  const isCancelled = () => stopGeneration !== generation
+  const run = deployQueue.then(() => withDeployLock(args.store, () => runDeployInner({ ...args, isCancelled })))
+  deployQueue = run.catch(() => {})
+  return run
+}
+
+const CANCELLED = { ok: false, stage: 'cancelled', message: '部署被「停止」取消,没有改动系统', badTags: [] }
+
+const runDeployInner = async ({ store, ctx, paths, fetchImpl = globalThis.fetch, lookup, isCancelled = () => false }) => {
   let result
   const startedAt = Date.now()
   try {
+    if (isCancelled()) {
+      store.setDeployState({ stage: CANCELLED.stage, message: CANCELLED.message, at: Date.now(), badTags: [] })
+      return { ...CANCELLED }
+    }
     const [systemDns, localSubnets] = await Promise.all([readSystemDns(ctx), readLocalSubnets(ctx)])
     const directHostCidrs = await resolveDirectHostCidrs(store, systemDns, lookup)
     const selections = resolveSelections(store, await fetchSelections(fetchImpl, store.getClashSecret()))
@@ -238,7 +284,7 @@ const runDeployInner = async ({ store, ctx, paths, fetchImpl = globalThis.fetch,
         ruleLists: ruleLists.lists,
       })
       const prepMs = Date.now() - startedAt
-      result = await deployConfig(ctx, paths, { config, profile, userGroups: store.getGroups(), selections })
+      result = await deployConfig(ctx, paths, { config, profile, userGroups: store.getGroups(), selections, isCancelled })
       // 准备阶段 = 读系统 DNS / 解析节点域名 / 拉当前选择 / 规则集链接 / 生成配置
       result.timings = { 准备: prepMs, ...(result.timings || {}) }
     }
@@ -268,7 +314,10 @@ const runDeployInner = async ({ store, ctx, paths, fetchImpl = globalThis.fetch,
   // 停着、自启却还开着,下次开机 procd 会直接拉起磁盘上那份旧配置(dnsmasq 模式下
   // init 还会先把 dnsmasq 接管过去),等于开机指向一份没验证过的配置。
   try {
-    if (result.ok) {
+    if (result.stage === 'cancelled') {
+      // 自启标志位交给排在后面的停止 / 回滚动作处理:这里既不能 enable(用户要的是停),
+      // 也不抢着 disable(那是停止动作的事,它会做)
+    } else if (result.ok) {
       await enableService(ctx, paths.initd.core)
     } else if (ROLLED_BACK_STAGES.has(result.stage) || !(await serviceStatus(ctx, paths.initd.core)).running) {
       await disableService(ctx, paths.initd.core)

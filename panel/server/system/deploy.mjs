@@ -60,7 +60,7 @@ const lastKernelFatal = async (ctx, rb) => {
   }
 }
 
-export const deployConfig = async (ctx, paths, { config, profile, userGroups, fetchImpl, selections = {} } = {}) => {
+export const deployConfig = async (ctx, paths, { config, profile, userGroups, fetchImpl, selections = {}, isCancelled = () => false } = {}) => {
   // 每一步花了多久:随结果一起带回去写进日志,"重启要一分钟"这种反馈能直接看到卡在哪
   const timings = {}
   let stepStart = Date.now()
@@ -110,6 +110,9 @@ export const deployConfig = async (ctx, paths, { config, profile, userGroups, fe
     const { badTags } = await attributeBadNodes(ctx, paths, config, `${paths.etc}/config.probe.json`)
     return { ok: false, stage: 'validate', message: validation.message, badTags }
   }
+
+  // 到这里还没动系统:排队期间或校验期间来了「停止」,直接退出
+  if (isCancelled()) return withTimings({ ok: false, stage: 'cancelled', message: '部署被「停止」取消,没有改动系统' })
 
   try {
     // 4. 落盘
@@ -164,6 +167,12 @@ export const deployConfig = async (ctx, paths, { config, profile, userGroups, fe
     if (firewall.some((r) => r.changed)) await commitFirewall(ctx)
     mark('防火墙')
 
+    // DNS / 防火墙已经按新配置改了,内核还没起:被停止取消就回滚到直连,不能留着半接管的状态
+    if (isCancelled()) {
+      const rb = await rollbackToDirect(ctx, paths)
+      return withTimings({ ok: false, stage: 'cancelled', message: `部署被「停止」取消,${rollbackSummary(rb)}`, rollback: rb })
+    }
+
     // 7. 重启内核前预检:procd 的 rc_procd 包装(procd_open_service; "$@"; procd_close_service)
     // 会吞掉 start_service 的返回码,二进制/配置缺失时 start 仍可能退出 0 且以零实例注册——
     // 脚本自身的 exit code 不可靠。这里主动检查一次,把"内核启动后未在运行"这类笼统错误
@@ -187,6 +196,8 @@ export const deployConfig = async (ctx, paths, { config, profile, userGroups, fe
     // 又是停止。等几秒再看一次,死循环里的进程这时多半正处在两次崩溃之间。
     for (const wait of [0, VERIFY_SETTLE_MS]) {
       if (wait) await ctx.sleep(wait)
+      // 内核已经起了:取消的话交给排在后面的停止动作去停,这里只要别报成功、别开自启
+      if (isCancelled()) return withTimings({ ok: false, stage: 'cancelled', message: '部署被「停止」取消,内核由随后的停止动作处理' })
       const status = await serviceStatus(ctx, paths.initd.core)
       if (!status.running) {
         const rb = await rollbackToDirect(ctx, paths)
