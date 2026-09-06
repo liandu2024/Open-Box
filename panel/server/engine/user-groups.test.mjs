@@ -23,8 +23,8 @@ test('默认两个组:所有-自动(urltest) 与 所有-手动(selector),成员�
     ['所有-手动', 'selector'],
   ])
   assert.deepEqual(outbounds[0].outbounds, ['香港-01', '香港-02', '美国-01'])
-  assert.equal(outbounds[0].interval, '3m')
-  assert.equal(outbounds[0].tolerance, 50)
+  assert.equal(outbounds[0].interval, '5m')
+  assert.equal(outbounds[0].tolerance, 100)
   // selector 不该带 urltest 才有的字段
   assert.equal(outbounds[1].interval, undefined)
   assert.equal(outbounds[1].tolerance, undefined)
@@ -91,8 +91,8 @@ test('normalizeGroup:非法类型回落 selector,非法容差回落默认值', (
   assert.equal(g.type, 'selector')
   assert.equal(g.tolerance, undefined) // selector 不带这个字段
   const u = normalizeGroup({ name: 'Y', type: 'urltest', tolerance: 'abc' })
-  assert.equal(u.tolerance, 50)
-  assert.equal(u.interval, '3m')
+  assert.equal(u.tolerance, 100)
+  assert.equal(u.interval, '5m')
 })
 
 // -------- 动态组(按关键词现挑成员) --------
@@ -262,8 +262,8 @@ test('自动择优组带 idle_timeout:内核默认 30 分钟不用就停止健�
   )
   const group = outbounds.find((o) => o.tag === '自动')
   assert.equal(group.type, 'urltest')
-  assert.equal(group.interval, '3m')
-  assert.equal(group.tolerance, 50)
+  assert.equal(group.interval, '5m')
+  assert.equal(group.tolerance, 100)
   assert.equal(group.idle_timeout, '12h')
   // 组自己填了就用组的
   const custom = emitUserGroups(

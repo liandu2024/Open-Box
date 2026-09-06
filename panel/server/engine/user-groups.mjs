@@ -41,8 +41,10 @@ export const builtinDefaults = () => ([
 ])
 
 export const DEFAULT_TEST_URL = 'https://www.gstatic.com/generate_204'
-export const DEFAULT_INTERVAL = '3m'
-export const DEFAULT_TOLERANCE = 50
+// 新建自动择优组的默认:5 分钟测一次(面板服务端按这个间隔硬性定时测,见 system/latency-scheduler.mjs)、
+// 容差 100ms(差不到 100ms 不换节点,免得几十毫秒的抖动让选中的节点跳来跳去)
+export const DEFAULT_INTERVAL = '5m'
+export const DEFAULT_TOLERANCE = 100
 // 自动择优组多久不用就停止健康检查。内核的默认值是 30 分钟(constant.DefaultURLTestIdleTimeout):
 // 一个组超过 30 分钟没有流量经过,它自己的定时检查就停了,再也不重测、也不重新择优——直到
 // 下次有连接走它才重新启动(sing-box protocol/group/urltest.go 的 Touch / loopCheck)。

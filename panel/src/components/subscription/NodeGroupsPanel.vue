@@ -750,8 +750,8 @@ const openEditor = (group: OpenboxUserGroup | null) => {
         icon: '',
         keywords: [],
         members: [],
-        interval: '3m',
-        tolerance: 50,
+        interval: '5m',
+        tolerance: 100,
         testUrl: '',
       }
   // 老记录可能没有这几个字段(服务端读的时候会补,但这里编辑的是本地副本)
@@ -1010,7 +1010,7 @@ const createAutoGroups = async () => {
         // 关键词直接用国家目录里的那份,和地区词典是同一套词
         keywords: [...country.keywords],
         members: [],
-        ...(type === 'urltest' ? { interval: '3m', tolerance: 50 } : {}),
+        ...(type === 'urltest' ? { interval: '5m', tolerance: 100 } : {}),
       })
     }
   }
