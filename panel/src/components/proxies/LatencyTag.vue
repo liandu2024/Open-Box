@@ -74,19 +74,29 @@ const handlerHistoryTip = (e: Event) => {
   if (!history.length) return
 
   // 竖着的时间线:左边时间、中间一根线穿过每次的点(顶端箭头,新的在上)、右边延迟按阈值着色;
-  // 组的样本再加一列:那一笔是当时选中的哪个节点测出来的
+  // 组的样本在时间上面用小字标出那一笔是当时选中的哪个节点测出来的
   const withNode = history.some((item) => Boolean(item.node))
   const historyList = document.createElement('div')
   // 顶部留出箭头的位置:箭头探出第一行 0.45rem + 自身 7px,pt-3 的 12px 刚好包住它,再加浮层
   // 自己的内边距,箭头尖离浮层边缘约 10px,不会顶到边
-  historyList.className = `grid ${withNode ? 'grid-cols-[auto_1rem_auto_auto]' : 'grid-cols-[auto_1rem_auto]'} items-stretch gap-x-3 pt-3 pb-1`
+  historyList.className = 'grid grid-cols-[auto_1rem_auto] items-stretch gap-x-3 pt-3 pb-1'
   history.forEach((item, i) => {
     const time = document.createElement('div')
-    time.className = 'flex items-center justify-end text-xs tabular-nums'
-    time.textContent = dayjs(item.time).format('YYYY-MM-DD HH:mm:ss')
+    time.className = `flex flex-col items-end justify-center ${withNode ? 'py-0.5' : ''}`
+    if (withNode) {
+      const node = document.createElement('div')
+      node.className = 'text-[10px] leading-tight opacity-70'
+      node.textContent = item.node || ''
+      time.append(node)
+    }
+    const stamp = document.createElement('div')
+    stamp.className = 'text-xs leading-tight tabular-nums'
+    stamp.textContent = dayjs(item.time).format('YYYY-MM-DD HH:mm:ss')
+    time.append(stamp)
 
+    // 行高跟着左边那格走(组的样本是两行),线从上到下连着
     const cell = document.createElement('div')
-    cell.className = 'relative flex h-6 items-center justify-center'
+    cell.className = 'relative flex min-h-6 items-center justify-center'
     const line = document.createElement('div')
     line.className = 'absolute bottom-0 left-1/2 w-px -translate-x-1/2'
     // 跟着浮层的文字色走(浮层深色底白字),深浅主题都看得清
@@ -109,12 +119,6 @@ const handlerHistoryTip = (e: Event) => {
     latency.textContent = item.delay === NOT_CONNECTED ? t('latencyTimeout') : `${item.delay}ms`
 
     historyList.append(time, cell, latency)
-    if (withNode) {
-      const node = document.createElement('div')
-      node.className = 'flex items-center text-xs opacity-80'
-      node.textContent = item.node || ''
-      historyList.append(node)
-    }
   })
 
   // interactive:鼠标从标签移进浮层里不关,离开浮层才关
