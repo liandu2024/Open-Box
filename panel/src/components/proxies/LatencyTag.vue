@@ -38,7 +38,9 @@ import { CountUp } from 'countup.js'
 import dayjs from 'dayjs'
 import { twMerge } from 'tailwind-merge'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 
+const { t } = useI18n()
 const { showTip } = useTooltip()
 // 最近 10 次结果,新的在上:mihomo 的独立测试模式内核自己留了多条,照用;sing-box 每个节点只留
 // 最新一次,用面板攒的时间线(store/latencyHistory.ts),一条都没攒到就退回内核那一条
@@ -96,7 +98,7 @@ const handlerHistoryTip = (e: Event) => {
 
     const latency = document.createElement('div')
     latency.className = `flex items-center text-xs tabular-nums ${getColorForLatency(item.delay)}`
-    latency.textContent = item.delay === NOT_CONNECTED ? '—' : `${item.delay}ms`
+    latency.textContent = item.delay === NOT_CONNECTED ? t('latencyTimeout') : `${item.delay}ms`
 
     historyList.append(time, cell, latency)
   })

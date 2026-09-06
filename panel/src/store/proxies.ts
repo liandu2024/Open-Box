@@ -518,6 +518,9 @@ export const proxyLatencyTest = async (
   await fetchProxies()
 
   if (res.status !== 200) {
+    // 超时也是一次结果:sing-box 超时会把这个节点的 history 直接删掉(不是记 0),重新拉节点
+    // 数据时什么都记不到,时间线上就少了这一次——这里自己补一笔 0(灰点、写「超时」)
+    recordLatencySample(getNowProxyNodeName(proxyName), { time: new Date().toISOString(), delay: NOT_CONNECTED })
     showNotification({
       content: 'testFailedTip',
       params: {
@@ -653,9 +656,11 @@ export const proxyGroupLatencyTest = async (proxyGroupName: string) => {
   await fetchProxies()
 
   const total = all.length
-  const testFailed = all.filter(
-    (name) => getLatencyByName(name, proxyGroupName) === NOT_CONNECTED,
-  ).length
+  const failedNames = all.filter((name) => getLatencyByName(name, proxyGroupName) === NOT_CONNECTED)
+  // 整组测完还没有结果的就是这次超时的成员(内核超时会删掉它的 history),给时间线补一笔 0
+  const testedAt = new Date().toISOString()
+  for (const name of failedNames) recordLatencySample(getNowProxyNodeName(name), { time: testedAt, delay: NOT_CONNECTED })
+  const testFailed = failedNames.length
 
   showNotification({
     content: 'testFinishedResultTip',

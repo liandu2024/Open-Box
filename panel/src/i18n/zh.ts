@@ -205,6 +205,7 @@ const zh: LANG_MESSAGE = {
   testFinishedTip: '{name}\n{number}/{total} 测试完成',
   testFinishedResultTip: '{name}\n测试完成: {success} 成功，{failed} 超时',
   testFailedTip: '{name}\n测速超时',
+  latencyTimeout: '超时',
   urlTestManualSelectTip: '「{name}」是自动择优组,走哪个节点由内核按测速自己定,不能手动指定。想换线路就点它的闪电重测一次。',
   updateFinishedTip: '{number} 更新完成',
   refreshing: '刷新中',
