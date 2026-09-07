@@ -576,7 +576,7 @@ const en = {
   subscriptionAutoUpdateEvery: 'Auto-updates every {days} days at {time}',
   subscriptionUrlHint: 'Required to save; one per line, nodes from all links are merged. Fetched server-side (private/local addresses are rejected); HTTPS certificates are not verified, so self-signed hosts work.',
   subscriptionContentLabel: 'Nodes',
-  subscriptionContentHint: 'One node link per line (ss:// / trojan:// / vless:// …); a whole Clash or sing-box config also works.',
+  subscriptionContentHint: 'One node link per line (ss:// / trojan:// / vless:// / socks5:// …); a whole Clash or sing-box config also works.',
   subscriptionContentPlaceholder: 'Paste ss:// / trojan:// / hysteria2:// lines, or a Clash/sing-box config…',
   subscriptionSave: 'Save',
   subscriptionPreviewFailed: "Couldn't preview: {message}",

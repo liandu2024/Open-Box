@@ -105,6 +105,18 @@ const MAPPERS = {
       tls: buildClashTls({ ...p, tls: true }) || { enabled: true },
     },
   }),
+  // Clash 的 socks5。sing-box 的 socks 出站没有 TLS 可配,带 tls: true 的条目照搬过去
+  // 只会连不上,这里直接抛出去记成 skipped,让用户知道这条没被收进来。
+  socks5: (p) => {
+    if (p.tls === true) throw new Error('socks5 over tls unsupported')
+    return {
+      type: 'socks',
+      fields: {
+        ...(p.username ? { username: String(p.username) } : {}),
+        ...(p.password ? { password: String(p.password) } : {}),
+      },
+    }
+  },
   wireguard: (p) => ({
     type: 'wireguard',
     fields: {
@@ -117,7 +129,7 @@ const MAPPERS = {
 
 // YAML 里不加引号的纯数字密码(password: 12345678)会被解析成 number,原样写进配置内核
 // 报 cannot unmarshal number into string,整份部署失败。凡是内核要字符串的字段这里统一转成字符串。
-const STRING_FIELDS = ['password', 'uuid', 'cipher', 'obfs-password', 'auth-str', 'auth_str', 'private-key', 'public-key', 'preshared-key', 'servername', 'sni', 'flow']
+const STRING_FIELDS = ['username', 'password', 'uuid', 'cipher', 'obfs-password', 'auth-str', 'auth_str', 'private-key', 'public-key', 'preshared-key', 'servername', 'sni', 'flow']
 const normalizeProxy = (p) => {
   const out = { ...p }
   for (const k of STRING_FIELDS) {

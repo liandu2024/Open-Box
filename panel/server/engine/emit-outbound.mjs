@@ -123,6 +123,15 @@ const EMITTERS = {
     if (n.fields.obfs) o.obfs = n.fields.obfs
     return o
   },
+  // socks 出站只有版本和账号密码:内核这一项没有 tls / transport 字段,多写就 unknown field。
+  // version 缺省是 5,只有 socks4 / 4a 才写出来。
+  socks: (n) => {
+    const o = { type: 'socks', ...base(n) }
+    if (n.fields.version && String(n.fields.version) !== '5') o.version = String(n.fields.version)
+    if (n.fields.username) o.username = String(n.fields.username)
+    if (n.fields.password) o.password = String(n.fields.password)
+    return o
+  },
   tuic: (n) => {
     const o = { type: 'tuic', ...base(n), uuid: n.fields.uuid, password: n.fields.password }
     if (n.fields.congestion_control) o.congestion_control = n.fields.congestion_control

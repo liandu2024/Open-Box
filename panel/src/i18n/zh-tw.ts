@@ -571,7 +571,7 @@ const zhTW: LANG_MESSAGE = {
   subscriptionAutoUpdateEvery: '每 {days} 天 {time} 自動更新',
   subscriptionUrlHint: '儲存時需要;一行一個,多個地址的節點會合在一起。服務端會去抓取(內網/本機地址會被拒絕),不校驗 https 憑證,自簽憑證的地址也能用。',
   subscriptionContentLabel: '節點內容',
-  subscriptionContentHint: '一行一個節點連結(ss:// / trojan:// / vless:// 等);也支援整段 Clash / sing-box 設定。',
+  subscriptionContentHint: '一行一個節點連結(ss:// / trojan:// / vless:// / socks5:// 等);也支援整段 Clash / sing-box 設定。',
   subscriptionContentPlaceholder: '\u8cbc\u4e0a ss:// / trojan:// / hysteria2:// \u7b49\u9023\u7d50,\u6216 Clash/sing-box \u8a2d\u5b9a\u2026',
   subscriptionSave: '\u5132\u5b58',
   subscriptionPreviewFailed: '\u6c92\u9810\u89bd\u6210\u529f:{message}',

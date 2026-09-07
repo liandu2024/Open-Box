@@ -56,3 +56,18 @@ test('wireguard 走 emitOutbound 抛错', () => {
   const w = createNode({ tag: 'W', type: 'wireguard', server: 'a.com', server_port: 51820, fields: { private_key: 'p', peer_public_key: 'q', local_address: ['10.0.0.2/32'] }, source: 'clash' })
   assert.throws(() => emitOutbound(w), /endpoint/)
 })
+
+test('socks emit:只出版本 / 账号 / 密码,没有 tls 与 transport', () => {
+  const n = createNode({ tag: 'S', type: 'socks', server: '1.2.3.4', server_port: 1080, fields: { username: 'u', password: 'p' }, source: 'sharelink' })
+  assert.deepEqual(emitOutbound(n), { type: 'socks', tag: 'S', server: '1.2.3.4', server_port: 1080, username: 'u', password: 'p' })
+
+  // 无认证:不写空的 username / password
+  const anon = createNode({ tag: 'A', type: 'socks', server: '1.2.3.4', server_port: 1080, fields: {}, source: 'sharelink' })
+  assert.deepEqual(emitOutbound(anon), { type: 'socks', tag: 'A', server: '1.2.3.4', server_port: 1080 })
+
+  // version 只有 4 / 4a 写出来,5 是内核默认值
+  const v4 = createNode({ tag: 'V4', type: 'socks', server: '1.2.3.4', server_port: 1080, fields: { version: '4' }, source: 'sharelink' })
+  assert.equal(emitOutbound(v4).version, '4')
+  const v5 = createNode({ tag: 'V5', type: 'socks', server: '1.2.3.4', server_port: 1080, fields: { version: '5' }, source: 'sharelink' })
+  assert.equal(emitOutbound(v5).version, undefined)
+})

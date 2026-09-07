@@ -200,3 +200,20 @@ test('YAML 里不加引号的数字密码转成字符串;kcp / xhttp 传输层�
   assert.equal(byName.SSNUM.fields.password, '123')
   assert.deepEqual(skipped.map((s) => s.name).sort(), ['KCP', 'XH'])
 })
+
+test('Clash socks5 收进来;带 tls 的记为 skipped(内核的 socks 出站没有 TLS)', () => {
+  const yaml = [
+    'proxies:',
+    '  - { name: SK, type: socks5, server: 1.2.3.4, port: 1080, username: alice, password: 123456 }',
+    '  - { name: SKANON, type: socks5, server: 5.6.7.8, port: 1081 }',
+    '  - { name: SKTLS, type: socks5, server: 9.9.9.9, port: 1443, username: u, password: p, tls: true }',
+  ].join('\n')
+  const { nodes, skipped } = parseClashProxies(yaml)
+  const byName = Object.fromEntries(nodes.map((n) => [n.tag, n]))
+  assert.equal(byName.SK.type, 'socks')
+  assert.equal(byName.SK.fields.username, 'alice')
+  assert.equal(byName.SK.fields.password, '123456')          // 数字密码转成字符串
+  assert.equal(typeof byName.SK.fields.password, 'string')
+  assert.equal(byName.SKANON.fields.username, undefined)
+  assert.deepEqual(skipped.map((s) => s.name), ['SKTLS'])
+})

@@ -1,5 +1,5 @@
 export const NODE_TYPES = Object.freeze([
-  'shadowsocks', 'vmess', 'vless', 'trojan', 'hysteria2', 'tuic', 'wireguard', 'anytls',
+  'shadowsocks', 'vmess', 'vless', 'trojan', 'hysteria2', 'tuic', 'wireguard', 'anytls', 'socks',
 ])
 
 export const isNodeType = (value) => NODE_TYPES.includes(value)
