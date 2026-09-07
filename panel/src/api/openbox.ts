@@ -34,6 +34,24 @@ export interface OpenboxRoutingPolicy {
   ipCidr?: string[]
 }
 
+// 前置自定义分流:固定置顶、删不掉的一条,排在所有站点集之前。
+// 它不生成 selector,出口在这里就定死(某个节点 / 节点组 / 直连 / 拒绝)——
+// 站点集只能选到节点组,这条能选到具体节点。
+export interface OpenboxCustomPolicy {
+  name?: string
+  icon?: string
+  iconScale?: number
+  enabled?: boolean
+  // 固定出口:出站 tag(节点名或节点组名),或 direct / block 占位;空 = 还没选,不生效
+  outbound?: string
+  rulesets?: string[]
+  ruleUrls?: string[]
+  domain?: string[]
+  domainSuffix?: string[]
+  domainKeyword?: string[]
+  ipCidr?: string[]
+}
+
 // 「出站」页签:每个站点集的 selector 里能选到哪几类东西
 export interface OpenboxOutboundOptions {
   direct?: boolean
@@ -55,6 +73,8 @@ export interface OpenboxProfileRouting {
   regionId?: string
   regionMode?: string
   outboundOptions?: OpenboxOutboundOptions
+  // 前置自定义分流(固定置顶那一条)
+  custom?: OpenboxCustomPolicy
   policies?: OpenboxRoutingPolicy[]
   adBlock?: boolean
   adRuleset?: string

@@ -121,7 +121,7 @@ export const buildConfig = ({ nodes, profile, userGroups, systemDns, localSubnet
     throw new Error(`出站名称重复:「${duplicateTag}」——节点组、站点集、节点、内置直连/拒绝之间不能同名,请改名后再启动`)
   }
   const { route } = buildRoute(sanitizedRouting, profile.rulesetDir, {
-    dnsMode, directTag: builtin.direct, directHosts,
+    dnsMode, directTag: builtin.direct, blockTag: builtin.block, directHosts,
     tunCidrs: profile.ipv6 ? [TUN_V4_NET, TUN_V6_NET] : [TUN_V4_NET],
     dnsmasqTag: dnsMode === 'dnsmasq' ? DNSMASQ_OUTBOUND_TAG : '',
     // 终端分流(engine/client-routes.mjs);出口只认配置里真有的 outbound

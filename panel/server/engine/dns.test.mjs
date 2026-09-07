@@ -187,3 +187,33 @@ test('dnsPolicyClasses:落进 config.meta.json 的那张"谁走直连、谁走�
     { 谷歌: 'proxy', 中国: 'proxy', 其他: 'direct' },
   )
 })
+
+test('前置自定义分流:解析跟着固定出口走,detour 直接指向那个节点', () => {
+  const dns = buildDns(
+    withRouting({ custom: { outbound: 'VW | 香港-01', domainSuffix: ['openai.com'] } }),
+    { groupTags: ['direct', '香港-自动'] },
+  )
+  const server = dns.servers.find((s) => s.tag === 'dns-custom')
+  assert.equal(server.type, 'tcp')
+  assert.equal(server.detour, 'VW | 香港-01')
+  // 规则排在所有站点集之前,和路由规则一个顺序
+  const rule = dns.rules.find((r) => r.server === 'dns-custom')
+  assert.deepEqual(rule.domain_suffix, ['openai.com'])
+})
+
+test('前置自定义分流:固定出口是直连时用直连侧解析,不另开解析器', () => {
+  const dns = buildDns(
+    withRouting({ custom: { outbound: 'direct', domainSuffix: ['cn.example'] } }),
+    { groupTags: ['direct'] },
+  )
+  assert.ok(!dns.servers.some((s) => s.tag === 'dns-custom'))
+  assert.ok(dns.rules.some((r) => r.server === 'dns-direct' && r.domain_suffix?.includes('cn.example')))
+})
+
+test('前置自定义分流:只按 IP 分流时不进 DNS 规则', () => {
+  const dns = buildDns(
+    withRouting({ custom: { outbound: 'VW | 香港-01', ipCidr: ['1.2.3.0/24'] } }),
+    { groupTags: ['direct'] },
+  )
+  assert.ok(!dns.servers.some((s) => s.tag === 'dns-custom'))
+})

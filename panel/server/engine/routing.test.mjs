@@ -211,3 +211,49 @@ test('终端分流:来源网段的流量走指定出口,排在直连站点之后
   assert.deepEqual(route.rules[i], { source_ip_cidr: ['10.0.0.5/32'], outbound: '香港-自动' })
   assert.equal(route.rules.filter((r) => r.source_ip_cidr).length, 1)
 })
+
+// ---------- 前置自定义分流 ----------
+const custom = (over = {}) => ({ outbound: 'VW | 香港-01', domainSuffix: ['openai.com'], ...over })
+
+test('前置自定义分流排在广告拦截和所有站点集之前,出口直接是选定的节点', () => {
+  const { route } = build(
+    { custom: custom(), policies: [policy()], adBlock: true },
+    { knownOutbounds: new Set(['VW | 香港-01', 'direct', 'block']) },
+  )
+  // 内网直连之后紧跟着它,再往后才是广告拦截和站点集
+  const idx = route.rules.findIndex((r) => r.outbound === 'VW | 香港-01')
+  const ad = route.rules.findIndex((r) => r.action === 'reject' && r.rule_set)
+  const site = route.rules.findIndex((r) => r.outbound === '谷歌')
+  assert.ok(idx > 0 && idx < ad && ad < site, JSON.stringify(route.rules))
+  assert.deepEqual(route.rules[idx], { domain_suffix: ['openai.com'], outbound: 'VW | 香港-01' })
+})
+
+test('前置自定义分流:direct / block 占位换算成内置出站当时的名字', () => {
+  const known = new Set(['直连', '拒绝'])
+  const d = build({ custom: custom({ outbound: 'direct' }) }, { directTag: '直连', blockTag: '拒绝', knownOutbounds: known })
+  assert.ok(d.route.rules.some((r) => r.domain_suffix && r.outbound === '直连'))
+  const b = build({ custom: custom({ outbound: 'block' }) }, { directTag: '直连', blockTag: '拒绝', knownOutbounds: known })
+  assert.ok(b.route.rules.some((r) => r.domain_suffix && r.outbound === '拒绝'))
+})
+
+test('前置自定义分流:出口不在配置里就整条丢掉(内核 outbound not found 起不来)', () => {
+  const { route } = build({ custom: custom({ outbound: '已删掉的节点' }) }, { knownOutbounds: new Set(['direct']) })
+  assert.ok(!route.rules.some((r) => r.domain_suffix))
+})
+
+test('前置自定义分流:停用 / 没选出口 / 一条规则都没有,都不出规则', () => {
+  const known = new Set(['VW | 香港-01', 'direct'])
+  for (const over of [{ enabled: false }, { outbound: '' }, { domainSuffix: [] }]) {
+    const { route } = build({ custom: custom(over) }, { knownOutbounds: known })
+    assert.ok(!route.rules.some((r) => r.outbound === 'VW | 香港-01'), JSON.stringify(over))
+  }
+})
+
+test('前置自定义分流引用的规则集也要下载', () => {
+  const { route, rulesetTags } = build(
+    { custom: custom({ domainSuffix: [], rulesets: ['geosite-openai'] }) },
+    { knownOutbounds: new Set(['VW | 香港-01']) },
+  )
+  assert.ok(rulesetTags.has('geosite-openai'))
+  assert.ok(route.rule_set.some((rs) => rs.tag === 'geosite-openai'))
+})

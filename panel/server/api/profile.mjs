@@ -174,6 +174,11 @@ export const validateProfilePatch = (patch, { reservedNames = [] } = {}) => {
       return 'routing.displayOrder must be an array of strings'
     }
 
+    if ('custom' in routing) {
+      const error = validateCustomPolicy(routing.custom)
+      if (error) return error
+    }
+
     if ('policies' in routing) {
       const error = validatePolicies(routing.policies, isString(routing.fallbackName) ? routing.fallbackName.trim() : '', reservedNames)
       if (error) return error
@@ -248,6 +253,32 @@ export const validateServers = (servers) => {
 // 其余条件(域名/关键词/CIDR)只会进 JSON 配置的值位,不参与路径拼接,所以只做
 // 类型检查,不限制字符——域名里带下划线、CIDR 带斜杠都是合法的。
 const POLICY_LIST_FIELDS = ['domain', 'domainSuffix', 'domainKeyword', 'ipCidr']
+
+// 前置自定义分流(routing.custom):固定置顶那一条。名字只是界面上的标题,不当出站 tag 用,
+// 所以不查重名;但 outbound 会原样写进内核规则的 outbound 字段,rulesets 会被拼进 .srs 路径,
+// 这两处照站点集同一道校验来。
+const validateCustomPolicy = (custom) => {
+  if (!isPlainObject(custom)) return 'routing.custom must be an object'
+  if ('name' in custom && (!isString(custom.name) || !custom.name.trim())) {
+    return 'routing.custom.name must be a non-empty string'
+  }
+  if ('icon' in custom && !isString(custom.icon)) return 'routing.custom.icon must be a string'
+  if ('iconScale' in custom && !isIconScale(custom.iconScale)) {
+    return `routing.custom.iconScale must be an integer within ±${ICON_SCALE_LIMIT}`
+  }
+  if ('enabled' in custom && !isBoolean(custom.enabled)) return 'routing.custom.enabled must be a boolean'
+  if ('outbound' in custom && !isString(custom.outbound)) return 'routing.custom.outbound must be a string'
+  for (const key of ['domain', 'domainSuffix', 'domainKeyword', 'ipCidr', 'rulesets', 'ruleUrls']) {
+    if (key in custom && !isStringArray(custom[key])) return `routing.custom.${key} must be an array of strings`
+  }
+  if (Array.isArray(custom.rulesets) && !custom.rulesets.every(isValidRulesetTag)) {
+    return 'routing.custom.rulesets entries must match /^[A-Za-z0-9._-]+$/'
+  }
+  if (Array.isArray(custom.ruleUrls) && !custom.ruleUrls.every((u) => isString(u) && /^https?:\/\//i.test(u))) {
+    return 'routing.custom.ruleUrls must be http(s) URLs'
+  }
+  return null
+}
 
 const validatePolicies = (policies, fallbackName = '', reservedNames = []) => {
   if (!Array.isArray(policies)) return 'routing.policies must be an array'

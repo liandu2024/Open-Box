@@ -66,6 +66,14 @@ export const REJECT_TAG = 'block'
 export const FALLBACK_TAG = '其他'
 export const FALLBACK_ICON = 'globe:earth-meridians'
 
+// 前置自定义分流:固定置顶、删不掉的一条,排在所有站点集之前(所以叫"前置")。
+// 和站点集的区别只有一处,也是它存在的理由:站点集在内核里是一个同名 selector,走哪条线
+// 由用户在代理页点选;这一条不生成 selector,出口在设置里就定死成某个**节点**或节点组
+// ——站点集只能选到节点组,选不到具体节点。
+// 它单独存在 routing.custom 里而不是混进 policies:混进去就得靠标记位防删、防拖动,
+// 单独存一份天然删不掉。
+export const CUSTOM_POLICY_NAME = '前置自定义分流'
+
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0
 const strList = (v) => (Array.isArray(v) ? v.filter(isNonEmptyString).map((s) => s.trim()) : [])
 
@@ -133,11 +141,47 @@ export const normalizePolicy = (raw, index = 0) => {
   }
 }
 
+// 没传 builtin 时的默认(测试、预览):直连叫 direct、拒绝叫 block,都启用
+export const DEFAULT_BUILTIN = Object.freeze({ direct: 'direct', block: 'block', directEnabled: true, blockEnabled: true })
+
+export const normalizeCustomPolicy = (raw) => {
+  const r = raw && typeof raw === 'object' ? raw : {}
+  const ruleUrls = strList(r.ruleUrls).filter((u) => /^https?:\/\//i.test(u))
+  return {
+    name: isNonEmptyString(r.name) ? r.name.trim() : CUSTOM_POLICY_NAME,
+    icon: isNonEmptyString(r.icon) ? r.icon.trim() : '',
+    iconScale: Number.isInteger(r.iconScale) ? r.iconScale : 0,
+    enabled: r.enabled !== false,
+    // 固定出口:一个出站 tag(节点名 / 节点组名),或 direct / block 这两个占位
+    // (内置出站可以改名,生成配置时再换算成当时的名字)。空 = 还没选,这条不出规则。
+    outbound: isNonEmptyString(r.outbound) ? r.outbound.trim() : '',
+    ruleUrls,
+    rulesets: [...new Set([...strList(r.rulesets), ...ruleUrls.map(listTagForUrl)])],
+    domain: strList(r.domain),
+    domainSuffix: strList(r.domainSuffix),
+    domainKeyword: strList(r.domainKeyword),
+    ipCidr: strList(r.ipCidr),
+  }
+}
+
+// 三个条件都满足才真的出一条规则:启用着、选了出口、至少有一个匹配条件。
+// 少了最后一条会更糟:空条件的规则在 sing-box 里等价于"全部命中",排在最前面
+// 就把后面所有站点集全盖住了。
+export const customPolicyActive = (custom) =>
+  Boolean(custom) && custom.enabled !== false && isNonEmptyString(custom.outbound) && policyHasCondition(custom)
+
+// 固定出口存的可能是 direct / block 占位,换算成内核里此刻的实际 tag
+export const customOutboundTag = (custom, builtin = DEFAULT_BUILTIN) =>
+  custom.outbound === 'direct' ? builtin.direct : custom.outbound === 'block' ? builtin.block : custom.outbound
+
 // 整份档案里用到的规则集链接:部署时要按这张表把它们下回来编译(见 system/rule-lists.mjs)。
 // 停用的站点集不算——它本来就不进配置。
 export const collectRuleListUrls = (routing) => {
   const seen = new Map()
-  for (const p of normalizeRouting(routing).activePolicies) {
+  const conf = normalizeRouting(routing)
+  // 前置自定义分流用到的名单也要下回来,它和站点集一样会引用规则集链接
+  const lists = [...(customPolicyActive(conf.custom) ? [conf.custom] : []), ...conf.activePolicies]
+  for (const p of lists) {
     for (const url of p.ruleUrls) if (!seen.has(url)) seen.set(url, listTagForUrl(url))
   }
   return [...seen.entries()].map(([url, tag]) => ({ url, tag }))
@@ -304,6 +348,7 @@ export const normalizeRouting = (routing) => {
   return {
     proxyTag: isNonEmptyString(raw.proxyTag) ? raw.proxyTag.trim() : 'PROXY',
     outboundOptions,
+    custom: normalizeCustomPolicy(raw.custom),
     policies,
     activePolicies,
     fallback,
@@ -311,9 +356,6 @@ export const normalizeRouting = (routing) => {
     adRuleset: isNonEmptyString(raw.adRuleset) ? raw.adRuleset.trim() : 'geosite-category-ads-all',
   }
 }
-
-// 没传 builtin 时的默认(测试、预览):直连叫 direct、拒绝叫 block,都启用
-export const DEFAULT_BUILTIN = Object.freeze({ direct: 'direct', block: 'block', directEnabled: true, blockEnabled: true })
 
 // 站点集 selector 的成员表:「节点管理」里启用着的条目,按那里的顺序(内置的直连/
 // 拒绝和节点组混排)。要不要某一项,就在节点管理里启用/停用它——原来「出站」页签那套

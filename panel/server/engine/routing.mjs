@@ -1,10 +1,10 @@
-import { normalizeRouting, routeRulesetTags } from './routing-model.mjs'
+import { customOutboundTag, customPolicyActive, normalizeRouting, routeRulesetTags } from './routing-model.mjs'
 
 // 一条策略的匹配条件 → 一条 sing-box 路由规则。
 // 同一条规则里的多个字段是「或」的关系(sing-box 规则内部各字段取并集),所以一条策略
 // 写了域名后缀又写了 IP 段时,任一命中即算这条策略命中——和用户在界面上的理解一致。
 // 规则集链接是域名 / IP 两份 .srs,路由规则两份都引用(见 routing-model.mjs 的 routeRulesetTags)
-const policyRule = (policy, ruleLists) => {
+const policyRule = (policy, ruleLists, outbound) => {
   const rule = {}
   const rulesets = routeRulesetTags(policy, ruleLists)
   if (rulesets.length) rule.rule_set = rulesets
@@ -12,7 +12,8 @@ const policyRule = (policy, ruleLists) => {
   if (policy.domainSuffix.length) rule.domain_suffix = policy.domainSuffix
   if (policy.domainKeyword.length) rule.domain_keyword = policy.domainKeyword
   if (policy.ipCidr.length) rule.ip_cidr = policy.ipCidr
-  rule.outbound = policy.name
+  // 站点集的规则指向它自己的同名 selector;前置自定义分流没有 selector,直接指向固定出口
+  rule.outbound = outbound || policy.name
   return rule
 }
 
@@ -81,13 +82,31 @@ export const buildRoute = (routing, rulesetDir, options = {}) => {
     rules.push({ source_ip_cidr: cr.sources, outbound: cr.outbound })
   }
 
+  const ruleLists = options.ruleLists || {}
+
+  // 前置自定义分流:固定置顶的一条,排在广告拦截和所有站点集之前——它是"不管别的规则
+  // 怎么写,这些目标就走这个出口"的强制通道,被后面任何一条盖住都不算数,所以必须最先。
+  // 出口是设置里定死的(某个节点 / 节点组 / 直连 / 拒绝),不像站点集那样在代理页点选。
+  // 和终端分流同一道防线:出口必须是配置里真有的 outbound,否则内核 outbound not found
+  // 起不来,这种规则直接丢掉。
+  const custom = conf.custom
+  if (customPolicyActive(custom)) {
+    const target = customOutboundTag(custom, {
+      direct: options.directTag || 'direct',
+      block: options.blockTag || 'block',
+    })
+    if (!known || known.has(target)) {
+      for (const tag of routeRulesetTags(custom, ruleLists)) addTag(tag)
+      rules.push(policyRule(custom, ruleLists, target))
+    }
+  }
+
   if (conf.adBlock) {
     addTag(conf.adRuleset)
     rules.push({ rule_set: conf.adRuleset, action: 'reject' })
   }
 
   // 站点集按用户排的顺序逐条匹配,首条命中生效。
-  const ruleLists = options.ruleLists || {}
   for (const policy of conf.activePolicies) {
     for (const tag of routeRulesetTags(policy, ruleLists)) addTag(tag)
     rules.push(policyRule(policy, ruleLists))

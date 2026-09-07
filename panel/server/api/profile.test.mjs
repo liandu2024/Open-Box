@@ -511,3 +511,15 @@ test('validateProfilePatch 图标缩放必须是 ±20 以内的整数(站点集�
   assert.ok(validateProfilePatch({ routing: { policies: [{ id: 'p', name: 'A', iconScale: -21 }] } }))
   assert.ok(validateProfilePatch({ routing: { policies: [{ id: 'p', name: 'A', iconScale: '1' }] } }))
 })
+
+test('validateProfilePatch 校验前置自定义分流', () => {
+  assert.equal(validateProfilePatch({ routing: { custom: { outbound: 'HK', domainSuffix: ['a.com'] } } }), null)
+  assert.equal(validateProfilePatch({ routing: { custom: { enabled: false } } }), null)
+  assert.match(String(validateProfilePatch({ routing: { custom: 'x' } })), /routing\.custom must be an object/)
+  assert.match(String(validateProfilePatch({ routing: { custom: { name: '  ' } } })), /name must be a non-empty string/)
+  assert.match(String(validateProfilePatch({ routing: { custom: { outbound: 1 } } })), /outbound must be a string/)
+  assert.match(String(validateProfilePatch({ routing: { custom: { domain: 'a.com' } } })), /domain must be an array/)
+  // 规则集名会被拼进 .srs 路径,和站点集同一道路径穿越防线
+  assert.match(String(validateProfilePatch({ routing: { custom: { rulesets: ['../x'] } } })), /rulesets entries must match/)
+  assert.match(String(validateProfilePatch({ routing: { custom: { ruleUrls: ['ftp://x/y'] } } })), /ruleUrls must be http/)
+})

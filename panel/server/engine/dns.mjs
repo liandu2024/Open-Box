@@ -1,4 +1,4 @@
-import { DEFAULT_BUILTIN, dnsRulesetTags, normalizeRouting, policyOutboundOptions, policyGoesDirect } from './routing-model.mjs'
+import { DEFAULT_BUILTIN, customOutboundTag, customPolicyActive, dnsRulesetTags, normalizeRouting, policyOutboundOptions, policyGoesDirect } from './routing-model.mjs'
 
 const extractHost = (url) => {
   // "https://1.1.1.1/dns-query" -> "1.1.1.1";裸 host 原样返回
@@ -107,6 +107,20 @@ export const buildDns = (profile, options = {}) => {
   const goesDirect = (name, fallbackDefault) => policyGoesDirect(name, fallbackDefault, members, builtin, selections)
   // 规则集链接的形状表(哪些有域名那份),部署时从 rule-lists.json 得来;没有就按老样子引用
   const ruleLists = options.ruleLists && typeof options.ruleLists === 'object' ? options.ruleLists : {}
+  // 前置自定义分流的解析跟着它的固定出口走:出口定死了,不随代理页的点选变化,所以
+  // 这里直接按出口判——走代理时 detour 到出口本身(节点或节点组都行),让解析和流量同一条路。
+  // 少了这段,被强制送到某个节点的域名仍会在本地解析,拿到的是本地就近的 CDN 地址。
+  const custom = conf.custom
+  if (customPolicyActive(custom) && hasDomainCondition(custom, ruleLists)) {
+    const target = customOutboundTag(custom, builtin)
+    if (target === builtin.direct || target === builtin.block) {
+      rules.push(policyDnsRule(custom, 'dns-direct', ruleLists))
+    } else {
+      servers.push(proxyServerFor(proxyHost, 'dns-custom', target))
+      rules.push(policyDnsRule(custom, 'dns-custom', ruleLists))
+    }
+  }
+
   conf.activePolicies.forEach((policy, index) => {
     if (!hasDomainCondition(policy, ruleLists)) return
     if (goesDirect(policy.name, policy.default)) {

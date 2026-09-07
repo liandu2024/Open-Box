@@ -9,6 +9,66 @@
       {{ $t('routingPoliciesEmpty') }}
     </p>
 
+    <!-- 前置自定义分流:固定置顶、删不掉,排在广告拦截和所有站点集之前。和站点集的区别是
+         出口在这儿定死(而且能选到具体节点,站点集只能选到节点组),不在代理页点选。
+         没选出口、或一条规则都没有时不进内核配置。 -->
+    <div
+      class="card bg-base-100 border-base-content/10 flex flex-row items-center gap-2 border border-dashed p-3"
+      :class="customPolicy.enabled === false && 'opacity-50'"
+    >
+      <CountryFlag
+        v-if="customPolicy.icon"
+        :code="customPolicy.icon"
+        :size="18"
+        :scale="customPolicy.iconScale"
+      />
+      <div class="min-w-0 flex-1">
+        <div class="flex items-center gap-2">
+          <span class="truncate text-base font-medium">{{ customPolicy.name }}</span>
+          <span class="badge badge-ghost badge-sm shrink-0">{{ $t('routingCustomBadge') }}</span>
+          <StatusBadge
+            v-if="customPolicy.enabled === false"
+            :on="false"
+            on-text=""
+            :off-text="$t('groupDisabledBadge')"
+          />
+        </div>
+        <div class="text-base-content/60 mt-0.5 truncate text-xs">
+          {{ customSummary }}
+        </div>
+      </div>
+      <!-- 三个图标和普通站点集对齐;这条能停用、能改,但删不掉 -->
+      <button
+        type="button"
+        class="btn btn-ghost btn-square btn-sm"
+        :class="customPolicy.enabled === false ? 'text-base-content/40' : 'text-success'"
+        v-tip="$t(customPolicy.enabled === false ? 'groupEnable' : 'groupDisable')"
+        :aria-label="$t(customPolicy.enabled === false ? 'groupEnable' : 'groupDisable')"
+        :disabled="saving"
+        @click="toggleCustomEnabled"
+      >
+        <PowerIcon class="h-4 w-4" />
+      </button>
+      <button
+        type="button"
+        class="btn btn-ghost btn-square btn-sm"
+        v-tip="$t('edit')"
+        :aria-label="$t('edit')"
+        @click="openCustomEditor"
+      >
+        <PencilSquareIcon class="h-4 w-4" />
+      </button>
+      <button
+        type="button"
+        class="btn btn-ghost btn-square btn-sm text-base-content/30 cursor-not-allowed"
+        v-tip="$t('routingCustomNoDelete')"
+        :aria-label="$t('routingCustomNoDelete')"
+        aria-disabled="true"
+      >
+        <TrashIcon class="h-4 w-4" />
+      </button>
+    </div>
+
     <!-- 顺序即优先级:sing-box 按首条命中生效,拖拽排序改的就是这个。拖完立刻存,
            不然刷新一下就白拖了(和节点组那边一致)。 -->
     <!-- force-fallback:用鼠标事件模拟拖拽,不走浏览器原生拖放(原生的半透明快照在各浏览器
@@ -232,7 +292,7 @@
 
     <DialogWrapper
       v-model="showEditor"
-      :title="$t(editing ? 'routingPolicyEditTitle' : 'routingPolicyAddTitle')"
+      :title="$t(editingCustom ? 'routingCustomEditTitle' : editing ? 'routingPolicyEditTitle' : 'routingPolicyAddTitle')"
       box-class="w-full max-w-2xl"
     >
       <div
@@ -265,6 +325,48 @@
               :placeholder="$t('routingPolicyNamePlaceholder')"
             />
           </div>
+        </div>
+
+        <!-- 固定出口:这条和站点集最大的不同——出口在这儿定死,而且能选到具体节点。
+             站点集是内核里的一个 selector,只能选到节点组,走哪条线在代理页点。 -->
+        <div
+          v-if="editingCustom"
+          class="flex flex-col gap-1"
+        >
+          <label class="text-xs font-medium">{{ $t('routingCustomOutboundLabel') }}</label>
+          <select
+            v-model="customOutbound"
+            class="select select-sm w-full"
+          >
+            <option value="">{{ $t('routingCustomOutboundNone') }}</option>
+            <!-- 存着的出口已经不在列表里(节点改名/订阅删了):仍然列出来,免得一打开
+                 弹窗就被悄悄换成"未选择",用户还以为本来就没设过 -->
+            <option
+              v-if="outboundMissing"
+              :value="outboundMissing"
+            >
+              {{ outboundMissing }}({{ $t('routingCustomOutboundMissing') }})
+            </option>
+            <optgroup :label="$t('routingCustomOutboundGroups')">
+              <option
+                v-for="name in outboundGroups"
+                :key="name"
+                :value="name"
+              >
+                {{ name }}
+              </option>
+            </optgroup>
+            <optgroup :label="$t('routingCustomOutboundNodes')">
+              <option
+                v-for="name in outboundNodes"
+                :key="name"
+                :value="name"
+              >
+                {{ name }}
+              </option>
+            </optgroup>
+          </select>
+          <p class="text-base-content/50 text-xs">{{ $t('routingCustomOutboundHint') }}</p>
         </div>
 
         <!-- 一条规则一行:类型 + 值。同一个站点集里各行是「或」的关系(和内核一致),
@@ -368,8 +470,8 @@
 </template>
 
 <script setup lang="ts">
-import type { OpenboxProfile, OpenboxRoutingPolicy } from '@/api/openbox'
-import { RULESET_TAG_PATTERN } from '@/api/openbox'
+import type { OpenboxCustomPolicy, OpenboxProfile, OpenboxRoutingPolicy } from '@/api/openbox'
+import { fetchNodeGroups, RULESET_TAG_PATTERN } from '@/api/openbox'
 import CountryFlag from '@/components/common/CountryFlag.vue'
 import CountrySelect from '@/components/common/CountrySelect.vue'
 import IconScaleInput from '@/components/common/IconScaleInput.vue'
@@ -568,7 +670,7 @@ watch(
   { immediate: true, deep: true },
 )
 
-const conditionSummary = (policy: OpenboxRoutingPolicy) => {
+const conditionSummary = (policy: { [K in ConditionKey]?: string[] }) => {
   const parts: string[] = []
   for (const field of CONDITION_FIELDS) {
     const values = policy[field.key] || []
@@ -576,6 +678,71 @@ const conditionSummary = (policy: OpenboxRoutingPolicy) => {
   }
   return parts.length ? parts.join(' · ') : t('routingPolicyNoCondition')
 }
+
+// ---------- 前置自定义分流 ----------
+// 单独存在 routing.custom 里(不在 policies 数组中),所以它天然删不掉、拖不动。
+// 默认名字和服务端同一份(engine/routing-model.mjs 的 CUSTOM_POLICY_NAME)。
+const DEFAULT_CUSTOM_NAME = '前置自定义分流'
+const customPolicy = computed<OpenboxCustomPolicy>(() => {
+  const c = props.profile.routing.custom || {}
+  return { ...c, name: c.name?.trim() || DEFAULT_CUSTOM_NAME }
+})
+
+// 卡片副标题:先说走哪个出口(这条的重点),再说匹配什么
+const customSummary = computed(() => {
+  const c = customPolicy.value
+  const exit = c.outbound
+    ? t('routingCustomOutboundSummary', { name: c.outbound })
+    : t('routingCustomNoOutbound')
+  return `${exit} · ${conditionSummary(c)}`
+})
+
+const toggleCustomEnabled = async () => {
+  if (saving.value) return
+  saving.value = true
+  try {
+    await props.patchProfile({
+      routing: { custom: { ...customPolicy.value, enabled: customPolicy.value.enabled === false } },
+    })
+    showNotification({ content: 'routingPolicySaved', type: 'alert-success' })
+  } catch (error) {
+    showNotification({
+      content: 'routingSaveFailed',
+      type: 'alert-error',
+      params: { message: error instanceof Error ? error.message : String(error) },
+    })
+  } finally {
+    saving.value = false
+  }
+}
+
+// 出口候选:节点管理里的条目(含内置的直连/拒绝)+ 所有节点。停用的组不进内核配置,
+// 选了也没用,所以不列。打开弹窗时才拉,设置页平时不需要这份数据。
+const editingCustom = ref(false)
+const customOutbound = ref('')
+const outboundGroups = ref<string[]>([])
+const outboundNodes = ref<string[]>([])
+let outboundsLoaded = false
+const loadOutbounds = async () => {
+  if (outboundsLoaded) return
+  try {
+    const data = await fetchNodeGroups()
+    outboundGroups.value = (data.groups || []).filter((g) => g.enabled !== false).map((g) => g.name)
+    outboundNodes.value = (data.availableNodes || []).map((n) => n.name)
+    outboundsLoaded = true
+  } catch {
+    // 拉不到就只剩已选的那一项能显示,不挡编辑
+  }
+}
+// 存着的出口已经不在候选里(节点改名、订阅删了):单独列一项,不然一打开弹窗就被
+// 悄悄换成"未选择"。这种出口生成配置时会被丢掉(见 engine/routing.mjs)。
+const outboundMissing = computed(() =>
+  customOutbound.value &&
+  !outboundGroups.value.includes(customOutbound.value) &&
+  !outboundNodes.value.includes(customOutbound.value)
+    ? customOutbound.value
+    : '',
+)
 
 const showEditor = ref(false)
 const editing = ref<OpenboxRoutingPolicy | null>(null)
@@ -602,6 +769,7 @@ const rulesetToRow = (tag: string): RuleRow => {
 }
 
 const openEditor = (policy: OpenboxRoutingPolicy | null) => {
+  editingCustom.value = false
   editing.value = policy
   draft.value = policy ? JSON.parse(JSON.stringify(policy)) : { id: '', name: '', icon: '', iconScale: 0 }
   rules.value = []
@@ -615,6 +783,24 @@ const openEditor = (policy: OpenboxRoutingPolicy | null) => {
   if (!rules.value.length) addRule()
   showEditor.value = true
 }
+// 前置自定义分流用同一个弹窗:多一个「固定出口」下拉,少一个"新增/修改"的区别
+const openCustomEditor = () => {
+  const c = customPolicy.value
+  editingCustom.value = true
+  editing.value = null
+  draft.value = { id: '', name: c.name || DEFAULT_CUSTOM_NAME, icon: c.icon || '', iconScale: c.iconScale || 0 }
+  customOutbound.value = c.outbound || ''
+  rules.value = []
+  for (const url of c.ruleUrls || []) rules.value.push({ key: ++ruleKeySeed, type: 'ruleUrl', value: url })
+  for (const tag of c.rulesets || []) rules.value.push(rulesetToRow(tag))
+  for (const type of ['domainSuffix', 'domain', 'domainKeyword', 'ipCidr'] as const) {
+    for (const value of c[type] || []) addRule(type, value)
+  }
+  if (!rules.value.length) addRule()
+  void loadOutbounds()
+  showEditor.value = true
+}
+
 defineExpose({ openEditor })
 
 // 新增 / 修改 / 删除 / 拖拽排序都走这里。保存只是写档案,内核还在跑旧配置,所以每次都
@@ -631,8 +817,9 @@ const saveDraft = async () => {
     showNotification({ content: 'routingPolicyNameRequired', type: 'alert-error' })
     return
   }
-  // 站点集的名字就是内核里的出站名,重名会生成两个同名出站
-  if (rows.value.some((p) => p.name === name && p.id !== draft.value?.id)) {
+  // 站点集的名字就是内核里的出站名,重名会生成两个同名出站。
+  // 前置自定义分流不生成出站(它直接指向固定出口),名字只是界面标题,不查重。
+  if (!editingCustom.value && rows.value.some((p) => p.name === name && p.id !== draft.value?.id)) {
     showNotification({ content: 'routingPolicyNameDuplicate', type: 'alert-error' })
     return
   }
@@ -660,15 +847,50 @@ const saveDraft = async () => {
     return
   }
 
+  if (!CONDITION_FIELDS.some((f) => collected[f.key].length)) {
+    showNotification({ content: 'routingPolicyConditionRequired', type: 'alert-error' })
+    return
+  }
+
+  if (editingCustom.value) {
+    // 没选出口就没法生成规则:这条的全部意义就是"走这个固定出口"
+    if (!customOutbound.value) {
+      showNotification({ content: 'routingCustomOutboundRequired', type: 'alert-error' })
+      return
+    }
+    saving.value = true
+    try {
+      await props.patchProfile({
+        routing: {
+          custom: {
+            ...collected,
+            name,
+            icon: draft.value.icon || '',
+            iconScale: draft.value.iconScale || 0,
+            enabled: customPolicy.value.enabled !== false,
+            outbound: customOutbound.value,
+          },
+        },
+      })
+      showNotification({ content: 'routingPolicySaved', type: 'alert-success' })
+      showEditor.value = false
+    } catch (error) {
+      showNotification({
+        content: 'routingSaveFailed',
+        type: 'alert-error',
+        params: { message: error instanceof Error ? error.message : String(error) },
+      })
+    } finally {
+      saving.value = false
+    }
+    return
+  }
+
   const item: OpenboxRoutingPolicy = {
     ...draft.value,
     id: draft.value.id || `policy-${Date.now()}`,
     name,
     ...collected,
-  }
-  if (!CONDITION_FIELDS.some((f) => (item[f.key] || []).length)) {
-    showNotification({ content: 'routingPolicyConditionRequired', type: 'alert-error' })
-    return
   }
 
   saving.value = true

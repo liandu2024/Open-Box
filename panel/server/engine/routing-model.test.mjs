@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  CUSTOM_POLICY_NAME,
   FALLBACK_TAG,
+  collectRuleListUrls,
+  customPolicyActive,
   dnsmasqForwardDomains,
   effectiveOutbound,
   normalizeRouting,
@@ -201,4 +204,25 @@ test('dnsmasqForwardDomains:按内核里此刻的选择判断谁走代理,和 DN
   assert.deepEqual(mod.dnsmasqForwardDomains(routing, members, builtin, { '其他': '香港' }), [])
   // 顺着 selector 链下钻到叶子:香港 → 香港-手动 → 直连
   assert.equal(mod.resolveSelectionLeaf({ '谷歌': '香港', '香港': '香港-手动', '香港-手动': '直连' }, '谷歌'), '直连')
+})
+
+test('前置自定义分流:默认值与生效条件', () => {
+  const empty = normalizeRouting({}).custom
+  assert.equal(empty.name, CUSTOM_POLICY_NAME)
+  assert.equal(empty.outbound, '')
+  assert.equal(empty.enabled, true)
+  // 三个条件缺一不可:启用、选了出口、至少一个匹配条件
+  assert.equal(customPolicyActive(empty), false)
+  const ok = normalizeRouting({ custom: { outbound: 'HK', domainSuffix: ['a.com'] } }).custom
+  assert.equal(customPolicyActive(ok), true)
+  assert.equal(customPolicyActive({ ...ok, enabled: false }), false)
+  assert.equal(customPolicyActive({ ...ok, outbound: '' }), false)
+  assert.equal(customPolicyActive({ ...ok, domainSuffix: [] }), false)
+})
+
+test('前置自定义分流:规则集链接折算成规则集名,并进入待下载名单', () => {
+  const routing = { custom: { outbound: 'HK', ruleUrls: ['https://example.com/list.txt'] }, policies: [] }
+  const c = normalizeRouting(routing).custom
+  assert.equal(c.rulesets.length, 1)
+  assert.ok(collectRuleListUrls(routing).some((x) => x.url === 'https://example.com/list.txt'))
 })
