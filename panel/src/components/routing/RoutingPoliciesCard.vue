@@ -396,40 +396,19 @@
               class="input input-sm min-w-0 flex-1 font-mono text-xs"
               :placeholder="$t(placeholderKey(rule.type))"
             />
-            <!-- 这一行自己的出口。站点集没有这一列:它整个集共用一条线路,在代理页点选。 -->
-            <select
+            <!-- 这一行自己的出口:和终端分流用同一个选择器(带搜索,分「节点 / 节点组」两个
+                 页签,内置的直连 / 拒绝排在节点页签最前)。站点集没有这一列:它整个集共用
+                 一条线路,在代理页点选。 -->
+            <div
               v-if="editingCustom"
-              v-model="rule.outbound"
-              class="select select-sm w-40 shrink-0"
+              class="w-52 shrink-0"
             >
-              <option value="">{{ $t('routingCustomOutboundNone') }}</option>
-              <!-- 存着的出口已经不在候选里(节点改名 / 订阅删了):仍然列出来,免得一打开
-                   弹窗就被悄悄换成"未选择",用户还以为本来就没设过 -->
-              <option
-                v-if="rule.outbound && outboundMissing(rule.outbound)"
-                :value="rule.outbound"
-              >
-                {{ rule.outbound }}({{ $t('routingCustomOutboundMissing') }})
-              </option>
-              <optgroup :label="$t('routingCustomOutboundGroups')">
-                <option
-                  v-for="name in outboundGroups"
-                  :key="name"
-                  :value="name"
-                >
-                  {{ name }}
-                </option>
-              </optgroup>
-              <optgroup :label="$t('routingCustomOutboundNodes')">
-                <option
-                  v-for="name in outboundNodes"
-                  :key="name"
-                  :value="name"
-                >
-                  {{ name }}
-                </option>
-              </optgroup>
-            </select>
+              <OutboundPicker
+                v-model="rule.outbound"
+                :options="outboundOptions"
+                :placeholder="$t('outboundPickerPlaceholder')"
+              />
+            </div>
             <button
               type="button"
               class="btn btn-ghost btn-square btn-sm hover:text-error"
@@ -469,11 +448,12 @@
 </template>
 
 <script setup lang="ts">
-import type { OpenboxCustomPolicy, OpenboxCustomRule, OpenboxProfile, OpenboxRoutingPolicy } from '@/api/openbox'
+import type { OpenboxCustomPolicy, OpenboxCustomRule, OpenboxProfile, OpenboxRoutingPolicy, OpenboxUserGroup } from '@/api/openbox'
 import { fetchNodeGroups, RULESET_TAG_PATTERN } from '@/api/openbox'
 import CountryFlag from '@/components/common/CountryFlag.vue'
 import CountrySelect from '@/components/common/CountrySelect.vue'
 import IconScaleInput from '@/components/common/IconScaleInput.vue'
+import OutboundPicker, { type OutboundPickerOptions } from '@/components/common/OutboundPicker.vue'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import GeoRuleValue from '@/components/routing/GeoRuleValue.vue'
 import RuleUrlValue from '@/components/routing/RuleUrlValue.vue'
@@ -655,8 +635,8 @@ interface RuleRow {
   key: number
   type: RuleType
   value: string
-  // 只有前置自定义分流用得上:那里一行一个出口。站点集的行没有这一列。
-  outbound?: string
+  // 只有前置自定义分流用得上:那里一行一个出口。站点集的行没有这一列,恒为空串。
+  outbound: string
 }
 let ruleKeySeed = 0
 
@@ -715,27 +695,31 @@ const toggleCustomEnabled = async () => {
   }
 }
 
-// 出口候选:节点管理里的条目(含内置的直连/拒绝)+ 所有节点。停用的组不进内核配置,
-// 选了也没用,所以不列。打开弹窗时才拉,设置页平时不需要这份数据。
+// 出口候选:内置直连 / 拒绝(用它们当前的名字)、启用的节点组、单个节点(带订阅名)
+// ——和终端分流那边同一套形状。停用的组不进内核配置,选了也没用,所以不列。
+// 打开弹窗时才拉,设置页平时不需要这份数据。
+// 存着的出口已经不在候选里(节点改名 / 订阅删了)也不要紧:选择器按原值显示,不会被
+// 悄悄清空;那一行在生成配置时会被丢掉(见 engine/routing.mjs)。
 const editingCustom = ref(false)
-const outboundGroups = ref<string[]>([])
-const outboundNodes = ref<string[]>([])
+const outboundGroups = ref<OpenboxUserGroup[]>([])
+const outboundNodes = ref<Array<{ name: string; subscription: string }>>([])
 let outboundsLoaded = false
 const loadOutbounds = async () => {
   if (outboundsLoaded) return
   try {
     const data = await fetchNodeGroups()
-    outboundGroups.value = (data.groups || []).filter((g) => g.enabled !== false).map((g) => g.name)
-    outboundNodes.value = (data.availableNodes || []).map((n) => n.name)
+    outboundGroups.value = data.groups || []
+    outboundNodes.value = data.availableNodes || []
     outboundsLoaded = true
   } catch {
     // 拉不到就只剩已选的那一项能显示,不挡编辑
   }
 }
-// 某一行存着的出口已经不在候选里(节点改名、订阅删了):那一行单独把它列出来,不然一打开
-// 弹窗就被悄悄换成"未选择"。这种出口生成配置时那一行会被丢掉(见 engine/routing.mjs)。
-const outboundMissing = (name: string) =>
-  Boolean(name) && !outboundGroups.value.includes(name) && !outboundNodes.value.includes(name)
+const outboundOptions = computed<OutboundPickerOptions>(() => ({
+  builtin: outboundGroups.value.filter((g) => g.kind && g.enabled !== false).map((g) => g.name),
+  groups: outboundGroups.value.filter((g) => !g.kind && g.enabled !== false).map((g) => g.name),
+  nodes: outboundNodes.value,
+}))
 
 const showEditor = ref(false)
 const editing = ref<OpenboxRoutingPolicy | null>(null)
@@ -753,14 +737,15 @@ const addRule = (type: RuleType = 'domainSuffix', value = '', outbound?: string)
   rules.value.push({ key: ++ruleKeySeed, type, value, outbound: outbound ?? last?.outbound ?? '' })
 }
 
+const ruleRow = (type: RuleType, value: string): RuleRow => ({ key: ++ruleKeySeed, type, value, outbound: '' })
+
 // 存下来的规则集 tag → 界面上的一行。geosite-cn 显示成 geosite + cn,
 // 其余前缀原样落到 ruleset 那一档。
 const rulesetToRow = (tag: string): RuleRow => {
   for (const type of ['geosite', 'geoip'] as const) {
-    if (tag.startsWith(`${type}-`))
-      return { key: ++ruleKeySeed, type, value: tag.slice(type.length + 1) }
+    if (tag.startsWith(`${type}-`)) return ruleRow(type, tag.slice(type.length + 1))
   }
-  return { key: ++ruleKeySeed, type: 'ruleset', value: tag }
+  return ruleRow('ruleset', tag)
 }
 
 const openEditor = (policy: OpenboxRoutingPolicy | null) => {
@@ -769,7 +754,7 @@ const openEditor = (policy: OpenboxRoutingPolicy | null) => {
   draft.value = policy ? JSON.parse(JSON.stringify(policy)) : { id: '', name: '', icon: '', iconScale: 0 }
   rules.value = []
   if (policy) {
-    for (const url of policy.ruleUrls || []) rules.value.push({ key: ++ruleKeySeed, type: 'ruleUrl', value: url })
+    for (const url of policy.ruleUrls || []) rules.value.push(ruleRow('ruleUrl', url))
     for (const tag of policy.rulesets || []) rules.value.push(rulesetToRow(tag))
     for (const type of ['domainSuffix', 'domain', 'domainKeyword', 'ipCidr'] as const) {
       for (const value of policy[type] || []) addRule(type, value)
