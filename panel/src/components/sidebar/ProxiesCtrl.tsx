@@ -81,25 +81,13 @@ export default defineComponent({
       }
     }
 
+    // 全局折叠/展开的目标 = 这一页签正在渲染的那些卡片,折叠键就是卡片名(CollapseCard 的 name)。
+    // 「节点」页签渲染的是 nodeGroups(每个节点组一张卡片);fork 基线里这一支指向
+    // penetration:<组名>:level-1——那是策略卡片里嵌套组的键,这一页没人读它,按钮点了没反应。
     const globalCollapseTargets = computed<GlobalCollapseTarget[]>(() => {
-      if (proxiesTabShow.value === PROXY_TAB_TYPE.NODE) {
-        return renderGroups.value.map((name) => ({
-          type: 'group',
-          key: `penetration:${name}:level-1`,
-        }))
-      }
-
-      if (proxiesTabShow.value === PROXY_TAB_TYPE.PROVIDER) {
-        return renderGroups.value.map((name) => ({
-          type: 'group',
-          key: name,
-        }))
-      }
-
-      return renderGroups.value.map((name) => ({
-        type: 'group',
-        key: name,
-      }))
+      const names =
+        proxiesTabShow.value === PROXY_TAB_TYPE.NODE ? nodeGroups.value : renderGroups.value
+      return names.map((name) => ({ type: 'group', key: name }))
     })
 
     const hasExpandedTargets = computed(() => {
