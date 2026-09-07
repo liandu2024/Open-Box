@@ -16,11 +16,22 @@
       class="card bg-base-100 border-base-content/10 flex flex-row items-center gap-2 border border-dashed p-3"
       :class="customPolicy.enabled === false && 'opacity-50'"
     >
+      <!-- 拖拽柄那一格照样占着,只是置灰、不给 drag-handle 类:这条固定在最前面,拖不动。
+           不占位的话标题就和下面的站点集对不齐。 -->
+      <Bars3Icon
+        class="text-base-content/20 h-4 w-4 shrink-0 cursor-not-allowed"
+        v-tip="$t('routingPinnedNoDrag')"
+      />
       <CountryFlag
         v-if="customPolicy.icon"
         :code="customPolicy.icon"
         :size="18"
         :scale="customPolicy.iconScale"
+      />
+      <!-- 没设图标时留一个同样大小的空位,标题才对得齐 -->
+      <span
+        v-else
+        class="h-[18px] w-[18px] shrink-0"
       />
       <div class="min-w-0 flex-1">
         <div class="flex items-center gap-2">
@@ -98,6 +109,10 @@
             :size="18"
             :scale="policy.iconScale"
           />
+          <span
+            v-else
+            class="h-[18px] w-[18px] shrink-0"
+          />
           <div class="min-w-0 flex-1">
             <div class="flex items-center gap-2">
               <span class="truncate text-base font-medium">{{ policy.name }}</span>
@@ -151,7 +166,10 @@
     <div
       class="card bg-base-100 border-base-content/10 flex flex-row items-center gap-2 border border-dashed p-3"
     >
-      <span class="w-4 shrink-0" />
+      <Bars3Icon
+        class="text-base-content/20 h-4 w-4 shrink-0 cursor-not-allowed"
+        v-tip="$t('routingPinnedNoDrag')"
+      />
       <CountryFlag
         :code="fallbackIcon"
         :size="18"

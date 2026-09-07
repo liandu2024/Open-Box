@@ -659,6 +659,7 @@ const zhTW: LANG_MESSAGE = {
   routingPolicySaved: '已儲存;重啟核心後生效。',
   routingPoliciesEmpty: '還沒有站點集。全部流量都照下面的兜底走。',
   routingCustomBadge: '前置',
+  routingPinnedNoDrag: '固定位置,不能拖曳排序',
   routingCustomNoDelete: '前置自訂分流是固定的一條,不能刪除;不用時可以停用。',
   routingCustomEditTitle: '修改前置自訂分流',
   routingCustomOutboundRequired: '每條規則都要選一個出口。',

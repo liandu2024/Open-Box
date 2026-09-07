@@ -664,6 +664,7 @@ const en = {
   routingPolicySaved: 'Saved. Takes effect after a kernel restart.',
   routingPoliciesEmpty: 'No site sets yet — everything follows the fallback below.',
   routingCustomBadge: 'Pre-route',
+  routingPinnedNoDrag: 'Fixed position, cannot be reordered',
   routingCustomNoDelete: 'The pre-route rule is built in and cannot be deleted; disable it if you do not need it.',
   routingCustomEditTitle: 'Edit pre-route rule',
   routingCustomOutboundRequired: 'Every rule needs an exit.',
