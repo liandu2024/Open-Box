@@ -681,10 +681,13 @@ const conditionSummary = (policy: { [K in ConditionKey]?: string[] }) => {
 // ---------- 前置自定义分流 ----------
 // 单独存在 routing.custom 里(不在 policies 数组中),所以它天然删不掉、拖不动。
 // 默认名字和服务端同一份(engine/routing-model.mjs 的 CUSTOM_POLICY_NAME)。
+// 默认名字和图标都和服务端同一份(engine/routing-model.mjs 的 CUSTOM_POLICY_NAME /
+// CUSTOM_POLICY_ICON):图钉表示它固定钉在最前面,和兜底那条的彩色地球一个用意。
 const DEFAULT_CUSTOM_NAME = '前置自定义分流'
+const DEFAULT_CUSTOM_ICON = 'misc:pin'
 const customPolicy = computed<OpenboxCustomPolicy>(() => {
   const c = props.profile.routing.custom || {}
-  return { ...c, name: c.name?.trim() || DEFAULT_CUSTOM_NAME }
+  return { ...c, name: c.name?.trim() || DEFAULT_CUSTOM_NAME, icon: c.icon?.trim() || DEFAULT_CUSTOM_ICON }
 })
 
 // 卡片副标题:逐行列出「条件 → 出口」,这条的重点就是每行各走各的
@@ -786,7 +789,7 @@ const openCustomEditor = () => {
   const c = customPolicy.value
   editingCustom.value = true
   editing.value = null
-  draft.value = { id: '', name: c.name || DEFAULT_CUSTOM_NAME, icon: c.icon || '', iconScale: c.iconScale || 0 }
+  draft.value = { id: '', name: c.name || DEFAULT_CUSTOM_NAME, icon: c.icon || DEFAULT_CUSTOM_ICON, iconScale: c.iconScale || 0 }
   // 存的就是一行一条,按存的顺序读回来(顺序即匹配顺序)
   rules.value = (c.rules || []).map((r) => ({
     key: ++ruleKeySeed,

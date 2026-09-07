@@ -73,6 +73,9 @@ export const FALLBACK_ICON = 'globe:earth-meridians'
 // 它单独存在 routing.custom 里而不是混进 policies:混进去就得靠标记位防删、防拖动,
 // 单独存一份天然删不掉。
 export const CUSTOM_POLICY_NAME = '前置自定义分流'
+// 默认图钉:它固定钉在最前面,和兜底那条的彩色地球一样,是"这条不是你建的"的标记。
+// 和名字一样可以改(界面上的东西,不进内核配置)。
+export const CUSTOM_POLICY_ICON = 'misc:pin'
 
 // 一行能写哪几种条件。和站点集编辑器里的那几档一一对应:
 //   geosite/geoip  官方规则集(值写 cn,存下去是 geosite-cn)
@@ -169,7 +172,7 @@ export const normalizeCustomPolicy = (raw) => {
   const r = raw && typeof raw === 'object' ? raw : {}
   return {
     name: isNonEmptyString(r.name) ? r.name.trim() : CUSTOM_POLICY_NAME,
-    icon: isNonEmptyString(r.icon) ? r.icon.trim() : '',
+    icon: isNonEmptyString(r.icon) ? r.icon.trim() : CUSTOM_POLICY_ICON,
     iconScale: Number.isInteger(r.iconScale) ? r.iconScale : 0,
     enabled: r.enabled !== false,
     // 顺序即匹配顺序(内核首条命中生效),所以是数组
