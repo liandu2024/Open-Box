@@ -1,10 +1,10 @@
-import { customOutboundTag, customPolicyActive, normalizeRouting, routeRulesetTags } from './routing-model.mjs'
+import { customOutboundTag, customPolicyActive, customRuleTag, normalizeRouting, routeRulesetTags } from './routing-model.mjs'
 
 // 一条策略的匹配条件 → 一条 sing-box 路由规则。
 // 同一条规则里的多个字段是「或」的关系(sing-box 规则内部各字段取并集),所以一条策略
 // 写了域名后缀又写了 IP 段时,任一命中即算这条策略命中——和用户在界面上的理解一致。
 // 规则集链接是域名 / IP 两份 .srs,路由规则两份都引用(见 routing-model.mjs 的 routeRulesetTags)
-const policyRule = (policy, ruleLists, outbound) => {
+const policyRule = (policy, ruleLists) => {
   const rule = {}
   const rulesets = routeRulesetTags(policy, ruleLists)
   if (rulesets.length) rule.rule_set = rulesets
@@ -12,9 +12,23 @@ const policyRule = (policy, ruleLists, outbound) => {
   if (policy.domainSuffix.length) rule.domain_suffix = policy.domainSuffix
   if (policy.domainKeyword.length) rule.domain_keyword = policy.domainKeyword
   if (policy.ipCidr.length) rule.ip_cidr = policy.ipCidr
-  // 站点集的规则指向它自己的同名 selector;前置自定义分流没有 selector,直接指向固定出口
-  rule.outbound = outbound || policy.name
+  rule.outbound = policy.name
   return rule
+}
+
+// 前置自定义分流的一行 → 一条 sing-box 路由规则。一行只有一个条件,出口是这行自己选的。
+// 规则集那几档要按 ruleLists 折算成域名 / IP 两份 .srs(和站点集同一套)。
+const customRule = (rule, ruleLists, outbound) => {
+  const tag = customRuleTag(rule)
+  if (tag) {
+    const tags = routeRulesetTags({ rulesets: [tag] }, ruleLists)
+    return tags.length ? { rule_set: tags, outbound } : null
+  }
+  const field = {
+    domain: 'domain', domainSuffix: 'domain_suffix',
+    domainKeyword: 'domain_keyword', ipCidr: 'ip_cidr',
+  }[rule.type]
+  return field ? { [field]: [rule.value], outbound } : null
 }
 
 export const buildRoute = (routing, rulesetDir, options = {}) => {
@@ -84,20 +98,21 @@ export const buildRoute = (routing, rulesetDir, options = {}) => {
 
   const ruleLists = options.ruleLists || {}
 
-  // 前置自定义分流:固定置顶的一条,排在广告拦截和所有站点集之前——它是"不管别的规则
-  // 怎么写,这些目标就走这个出口"的强制通道,被后面任何一条盖住都不算数,所以必须最先。
-  // 出口是设置里定死的(某个节点 / 节点组 / 直连 / 拒绝),不像站点集那样在代理页点选。
+  // 前置自定义分流:固定置顶,排在广告拦截和所有站点集之前——它是"不管别的规则怎么写,
+  // 这些目标就走这个出口"的强制通道,被后面任何一条盖住都不算数,所以必须最先。
+  // 一行一条规则、一行一个出口,按行的先后进配置(内核首条命中生效)。
   // 和终端分流同一道防线:出口必须是配置里真有的 outbound,否则内核 outbound not found
-  // 起不来,这种规则直接丢掉。
+  // 起不来;指向已删掉的节点的那一行跳过,其余行照常生效。
   const custom = conf.custom
   if (customPolicyActive(custom)) {
-    const target = customOutboundTag(custom, {
-      direct: options.directTag || 'direct',
-      block: options.blockTag || 'block',
-    })
-    if (!known || known.has(target)) {
-      for (const tag of routeRulesetTags(custom, ruleLists)) addTag(tag)
-      rules.push(policyRule(custom, ruleLists, target))
+    const builtinTags = { direct: options.directTag || 'direct', block: options.blockTag || 'block' }
+    for (const rule of custom.rules) {
+      const target = customOutboundTag(rule, builtinTags)
+      if (known && !known.has(target)) continue
+      const emitted = customRule(rule, ruleLists, target)
+      if (!emitted) continue
+      for (const tag of emitted.rule_set || []) addTag(tag)
+      rules.push(emitted)
     }
   }
 

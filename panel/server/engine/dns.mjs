@@ -1,4 +1,4 @@
-import { DEFAULT_BUILTIN, customOutboundTag, customPolicyActive, dnsRulesetTags, normalizeRouting, policyOutboundOptions, policyGoesDirect } from './routing-model.mjs'
+import { DEFAULT_BUILTIN, customOutboundTag, customPolicyActive, customRuleTag, dnsRulesetTags, normalizeRouting, policyOutboundOptions, policyGoesDirect } from './routing-model.mjs'
 
 const extractHost = (url) => {
   // "https://1.1.1.1/dns-query" -> "1.1.1.1";裸 host 原样返回
@@ -31,6 +31,19 @@ const directServerFor = (profile, options) => {
 // 用域名形态的 DoH 地址会引出"解析 DoH 域名"的自举问题。TCP 而不是 UDP:UDP 经代理常被
 // 截断/丢包,TCP 的可靠性正好抵掉它多出来的那次握手。端口不写就是 53。
 const proxyServerFor = (server, tag, detour) => ({ type: 'tcp', tag, server, detour })
+
+// 前置自定义分流的一行 → 一条 DNS 规则的匹配部分。只按 IP 分流的行(ip_cidr / geoip /
+// 只编出 IP 那份的规则集链接)不进 DNS:解析的时候还没有 IP,拿什么都匹配不上。
+const customDnsMatch = (rule, ruleLists) => {
+  if (rule.type === 'ipCidr' || rule.type === 'geoip') return null
+  const tag = customRuleTag(rule)
+  if (tag) {
+    const tags = dnsRulesetTags({ rulesets: [tag] }, ruleLists)
+    return tags.length ? { rule_set: tags } : null
+  }
+  const field = { domain: 'domain', domainSuffix: 'domain_suffix', domainKeyword: 'domain_keyword' }[rule.type]
+  return field ? { [field]: [rule.value] } : null
+}
 
 // 劫持模式下局域网的查询根本到不了 dnsmasq,而本地主机名(DHCP 租约名、/etc/hosts、
 // *.lan)只有 dnsmasq 认得:这类名字交给 local(→ 路由器自己的 dnsmasq),其余一律不走
@@ -107,17 +120,27 @@ export const buildDns = (profile, options = {}) => {
   const goesDirect = (name, fallbackDefault) => policyGoesDirect(name, fallbackDefault, members, builtin, selections)
   // 规则集链接的形状表(哪些有域名那份),部署时从 rule-lists.json 得来;没有就按老样子引用
   const ruleLists = options.ruleLists && typeof options.ruleLists === 'object' ? options.ruleLists : {}
-  // 前置自定义分流的解析跟着它的固定出口走:出口定死了,不随代理页的点选变化,所以
-  // 这里直接按出口判——走代理时 detour 到出口本身(节点或节点组都行),让解析和流量同一条路。
+  // 前置自定义分流的解析跟着每一行自己的出口走:出口是设置里定死的,不随代理页的点选变化。
   // 少了这段,被强制送到某个节点的域名仍会在本地解析,拿到的是本地就近的 CDN 地址。
+  // 每个用到的代理出口开一台解析器,同一个出口的多行共用一台。
   const custom = conf.custom
-  if (customPolicyActive(custom) && hasDomainCondition(custom, ruleLists)) {
-    const target = customOutboundTag(custom, builtin)
-    if (target === builtin.direct || target === builtin.block) {
-      rules.push(policyDnsRule(custom, 'dns-direct', ruleLists))
-    } else {
-      servers.push(proxyServerFor(proxyHost, 'dns-custom', target))
-      rules.push(policyDnsRule(custom, 'dns-custom', ruleLists))
+  if (customPolicyActive(custom)) {
+    const serverByTarget = new Map()
+    for (const rule of custom.rules) {
+      const match = customDnsMatch(rule, ruleLists)
+      if (!match) continue
+      const target = customOutboundTag(rule, builtin)
+      if (target === builtin.direct || target === builtin.block) {
+        rules.push({ ...match, server: 'dns-direct' })
+        continue
+      }
+      let tag = serverByTarget.get(target)
+      if (!tag) {
+        tag = `dns-custom-${serverByTarget.size}`
+        serverByTarget.set(target, tag)
+        servers.push(proxyServerFor(proxyHost, tag, target))
+      }
+      rules.push({ ...match, server: tag })
     }
   }
 

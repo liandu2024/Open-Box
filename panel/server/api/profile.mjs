@@ -1,7 +1,7 @@
 import express from 'express'
 import { RESERVED_PORTS, SERVER_PROTOCOLS, SS_METHODS } from '../engine/servers.mjs'
 import { isIpOrCidr } from '../engine/client-routes.mjs'
-import { FALLBACK_TAG, normalizeRouting } from '../engine/routing-model.mjs'
+import { CUSTOM_RULE_TYPES, FALLBACK_TAG, normalizeRouting } from '../engine/routing-model.mjs'
 import { ICON_SCALE_LIMIT, builtinTags, normalizeGroups } from '../engine/user-groups.mjs'
 import { DNSMASQ_OUTBOUND_TAG } from '../engine/config.mjs'
 
@@ -254,9 +254,9 @@ export const validateServers = (servers) => {
 // 类型检查,不限制字符——域名里带下划线、CIDR 带斜杠都是合法的。
 const POLICY_LIST_FIELDS = ['domain', 'domainSuffix', 'domainKeyword', 'ipCidr']
 
-// 前置自定义分流(routing.custom):固定置顶那一条。名字只是界面上的标题,不当出站 tag 用,
-// 所以不查重名;但 outbound 会原样写进内核规则的 outbound 字段,rulesets 会被拼进 .srs 路径,
-// 这两处照站点集同一道校验来。
+// 前置自定义分流(routing.custom):固定置顶那一条,一行一条规则、一行一个出口。
+// 名字只是界面上的标题,不当出站 tag 用,所以不查重名;但每行的 outbound 会原样写进内核
+// 规则的 outbound 字段,规则集名会被拼进 .srs 路径,这两处照站点集同一道校验来。
 const validateCustomPolicy = (custom) => {
   if (!isPlainObject(custom)) return 'routing.custom must be an object'
   if ('name' in custom && (!isString(custom.name) || !custom.name.trim())) {
@@ -267,15 +267,25 @@ const validateCustomPolicy = (custom) => {
     return `routing.custom.iconScale must be an integer within ±${ICON_SCALE_LIMIT}`
   }
   if ('enabled' in custom && !isBoolean(custom.enabled)) return 'routing.custom.enabled must be a boolean'
-  if ('outbound' in custom && !isString(custom.outbound)) return 'routing.custom.outbound must be a string'
-  for (const key of ['domain', 'domainSuffix', 'domainKeyword', 'ipCidr', 'rulesets', 'ruleUrls']) {
-    if (key in custom && !isStringArray(custom[key])) return `routing.custom.${key} must be an array of strings`
-  }
-  if (Array.isArray(custom.rulesets) && !custom.rulesets.every(isValidRulesetTag)) {
-    return 'routing.custom.rulesets entries must match /^[A-Za-z0-9._-]+$/'
-  }
-  if (Array.isArray(custom.ruleUrls) && !custom.ruleUrls.every((u) => isString(u) && /^https?:\/\//i.test(u))) {
-    return 'routing.custom.ruleUrls must be http(s) URLs'
+  if ('rules' in custom) {
+    if (!Array.isArray(custom.rules)) return 'routing.custom.rules must be an array'
+    for (const r of custom.rules) {
+      if (!isPlainObject(r)) return 'routing.custom.rules entries must be objects'
+      if (!CUSTOM_RULE_TYPES.includes(r.type)) {
+        return `routing.custom.rules[].type must be one of ${CUSTOM_RULE_TYPES.join(', ')}`
+      }
+      if (!isString(r.value) || !r.value.trim()) return 'routing.custom.rules[].value is required'
+      if (!isString(r.outbound) || !r.outbound.trim()) return 'routing.custom.rules[].outbound is required'
+      if (r.type === 'ruleUrl' && !/^https?:\/\//i.test(r.value.trim())) {
+        return 'routing.custom.rules[].value must be an http(s) URL when type is ruleUrl'
+      }
+      if (r.type === 'geosite' || r.type === 'geoip' || r.type === 'ruleset') {
+        const tag = r.type === 'ruleset' ? r.value.trim() : `${r.type}-${r.value.trim()}`
+        if (!isValidRulesetTag(tag)) {
+          return 'routing.custom.rules[] ruleset name must match /^[A-Za-z0-9._-]+$/'
+        }
+      }
+    }
   }
   return null
 }

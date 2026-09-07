@@ -327,48 +327,6 @@
           </div>
         </div>
 
-        <!-- 固定出口:这条和站点集最大的不同——出口在这儿定死,而且能选到具体节点。
-             站点集是内核里的一个 selector,只能选到节点组,走哪条线在代理页点。 -->
-        <div
-          v-if="editingCustom"
-          class="flex flex-col gap-1"
-        >
-          <label class="text-xs font-medium">{{ $t('routingCustomOutboundLabel') }}</label>
-          <select
-            v-model="customOutbound"
-            class="select select-sm w-full"
-          >
-            <option value="">{{ $t('routingCustomOutboundNone') }}</option>
-            <!-- 存着的出口已经不在列表里(节点改名/订阅删了):仍然列出来,免得一打开
-                 弹窗就被悄悄换成"未选择",用户还以为本来就没设过 -->
-            <option
-              v-if="outboundMissing"
-              :value="outboundMissing"
-            >
-              {{ outboundMissing }}({{ $t('routingCustomOutboundMissing') }})
-            </option>
-            <optgroup :label="$t('routingCustomOutboundGroups')">
-              <option
-                v-for="name in outboundGroups"
-                :key="name"
-                :value="name"
-              >
-                {{ name }}
-              </option>
-            </optgroup>
-            <optgroup :label="$t('routingCustomOutboundNodes')">
-              <option
-                v-for="name in outboundNodes"
-                :key="name"
-                :value="name"
-              >
-                {{ name }}
-              </option>
-            </optgroup>
-          </select>
-          <p class="text-base-content/50 text-xs">{{ $t('routingCustomOutboundHint') }}</p>
-        </div>
-
         <!-- 一条规则一行:类型 + 值。同一个站点集里各行是「或」的关系(和内核一致),
              所以行与行之间没有先后可言——不给拖拽柄,免得暗示一个并不存在的顺序。
              站点集走哪条线路不在这儿定:在「代理」页点选。 -->
@@ -384,6 +342,13 @@
               {{ $t('routingPolicyRuleAdd') }}
             </button>
           </div>
+
+          <p
+            v-if="editingCustom"
+            class="text-base-content/50 text-xs"
+          >
+            {{ $t('routingCustomRulesHint') }}
+          </p>
 
           <p
             v-if="!rules.length"
@@ -431,6 +396,40 @@
               class="input input-sm min-w-0 flex-1 font-mono text-xs"
               :placeholder="$t(placeholderKey(rule.type))"
             />
+            <!-- 这一行自己的出口。站点集没有这一列:它整个集共用一条线路,在代理页点选。 -->
+            <select
+              v-if="editingCustom"
+              v-model="rule.outbound"
+              class="select select-sm w-40 shrink-0"
+            >
+              <option value="">{{ $t('routingCustomOutboundNone') }}</option>
+              <!-- 存着的出口已经不在候选里(节点改名 / 订阅删了):仍然列出来,免得一打开
+                   弹窗就被悄悄换成"未选择",用户还以为本来就没设过 -->
+              <option
+                v-if="rule.outbound && outboundMissing(rule.outbound)"
+                :value="rule.outbound"
+              >
+                {{ rule.outbound }}({{ $t('routingCustomOutboundMissing') }})
+              </option>
+              <optgroup :label="$t('routingCustomOutboundGroups')">
+                <option
+                  v-for="name in outboundGroups"
+                  :key="name"
+                  :value="name"
+                >
+                  {{ name }}
+                </option>
+              </optgroup>
+              <optgroup :label="$t('routingCustomOutboundNodes')">
+                <option
+                  v-for="name in outboundNodes"
+                  :key="name"
+                  :value="name"
+                >
+                  {{ name }}
+                </option>
+              </optgroup>
+            </select>
             <button
               type="button"
               class="btn btn-ghost btn-square btn-sm hover:text-error"
@@ -470,7 +469,7 @@
 </template>
 
 <script setup lang="ts">
-import type { OpenboxCustomPolicy, OpenboxProfile, OpenboxRoutingPolicy } from '@/api/openbox'
+import type { OpenboxCustomPolicy, OpenboxCustomRule, OpenboxProfile, OpenboxRoutingPolicy } from '@/api/openbox'
 import { fetchNodeGroups, RULESET_TAG_PATTERN } from '@/api/openbox'
 import CountryFlag from '@/components/common/CountryFlag.vue'
 import CountrySelect from '@/components/common/CountrySelect.vue'
@@ -656,6 +655,8 @@ interface RuleRow {
   key: number
   type: RuleType
   value: string
+  // 只有前置自定义分流用得上:那里一行一个出口。站点集的行没有这一列。
+  outbound?: string
 }
 let ruleKeySeed = 0
 
@@ -688,13 +689,11 @@ const customPolicy = computed<OpenboxCustomPolicy>(() => {
   return { ...c, name: c.name?.trim() || DEFAULT_CUSTOM_NAME }
 })
 
-// 卡片副标题:先说走哪个出口(这条的重点),再说匹配什么
+// 卡片副标题:逐行列出「条件 → 出口」,这条的重点就是每行各走各的
 const customSummary = computed(() => {
-  const c = customPolicy.value
-  const exit = c.outbound
-    ? t('routingCustomOutboundSummary', { name: c.outbound })
-    : t('routingCustomNoOutbound')
-  return `${exit} · ${conditionSummary(c)}`
+  const list = customPolicy.value.rules || []
+  if (!list.length) return t('routingCustomNoRule')
+  return list.map((r) => `${r.value} → ${r.outbound}`).join('  ·  ')
 })
 
 const toggleCustomEnabled = async () => {
@@ -719,7 +718,6 @@ const toggleCustomEnabled = async () => {
 // 出口候选:节点管理里的条目(含内置的直连/拒绝)+ 所有节点。停用的组不进内核配置,
 // 选了也没用,所以不列。打开弹窗时才拉,设置页平时不需要这份数据。
 const editingCustom = ref(false)
-const customOutbound = ref('')
 const outboundGroups = ref<string[]>([])
 const outboundNodes = ref<string[]>([])
 let outboundsLoaded = false
@@ -734,15 +732,10 @@ const loadOutbounds = async () => {
     // 拉不到就只剩已选的那一项能显示,不挡编辑
   }
 }
-// 存着的出口已经不在候选里(节点改名、订阅删了):单独列一项,不然一打开弹窗就被
-// 悄悄换成"未选择"。这种出口生成配置时会被丢掉(见 engine/routing.mjs)。
-const outboundMissing = computed(() =>
-  customOutbound.value &&
-  !outboundGroups.value.includes(customOutbound.value) &&
-  !outboundNodes.value.includes(customOutbound.value)
-    ? customOutbound.value
-    : '',
-)
+// 某一行存着的出口已经不在候选里(节点改名、订阅删了):那一行单独把它列出来,不然一打开
+// 弹窗就被悄悄换成"未选择"。这种出口生成配置时那一行会被丢掉(见 engine/routing.mjs)。
+const outboundMissing = (name: string) =>
+  Boolean(name) && !outboundGroups.value.includes(name) && !outboundNodes.value.includes(name)
 
 const showEditor = ref(false)
 const editing = ref<OpenboxRoutingPolicy | null>(null)
@@ -754,8 +747,10 @@ const pickedElsewhere = (index: number) =>
   rules.value.filter((r, i) => i !== index && r.type === rules.value[index]?.type).map((r) => r.value)
 const saving = ref(false)
 
-const addRule = (type: RuleType = 'domainSuffix', value = '') => {
-  rules.value.push({ key: ++ruleKeySeed, type, value })
+const addRule = (type: RuleType = 'domainSuffix', value = '', outbound?: string) => {
+  // 新行沿用上一行的出口:连着写好几条都走同一个节点是常态,每行重选一遍很烦
+  const last = rules.value[rules.value.length - 1]
+  rules.value.push({ key: ++ruleKeySeed, type, value, outbound: outbound ?? last?.outbound ?? '' })
 }
 
 // 存下来的规则集 tag → 界面上的一行。geosite-cn 显示成 geosite + cn,
@@ -789,13 +784,13 @@ const openCustomEditor = () => {
   editingCustom.value = true
   editing.value = null
   draft.value = { id: '', name: c.name || DEFAULT_CUSTOM_NAME, icon: c.icon || '', iconScale: c.iconScale || 0 }
-  customOutbound.value = c.outbound || ''
-  rules.value = []
-  for (const url of c.ruleUrls || []) rules.value.push({ key: ++ruleKeySeed, type: 'ruleUrl', value: url })
-  for (const tag of c.rulesets || []) rules.value.push(rulesetToRow(tag))
-  for (const type of ['domainSuffix', 'domain', 'domainKeyword', 'ipCidr'] as const) {
-    for (const value of c[type] || []) addRule(type, value)
-  }
+  // 存的就是一行一条,按存的顺序读回来(顺序即匹配顺序)
+  rules.value = (c.rules || []).map((r) => ({
+    key: ++ruleKeySeed,
+    type: r.type as RuleType,
+    value: r.value,
+    outbound: r.outbound,
+  }))
   if (!rules.value.length) addRule()
   void loadOutbounds()
   showEditor.value = true
@@ -823,6 +818,60 @@ const saveDraft = async () => {
     showNotification({ content: 'routingPolicyNameDuplicate', type: 'alert-error' })
     return
   }
+  // 前置自定义分流按行存:一行一条规则、一行一个出口,顺序即匹配顺序。
+  // 站点集那套"按类型合成几个数组"在这儿不适用——合并了就分不出哪条走哪个出口。
+  if (editingCustom.value) {
+    const kept = rules.value.filter((r) => r.value.trim())
+    if (!kept.length) {
+      showNotification({ content: 'routingPolicyConditionRequired', type: 'alert-error' })
+      return
+    }
+    if (kept.some((r) => !r.outbound)) {
+      showNotification({ content: 'routingCustomOutboundRequired', type: 'alert-error' })
+      return
+    }
+    // 规则集名会被拼进 .srs 路径,和服务端同一道校验(路径穿越防线,不是排版讲究)
+    const badTag = kept.some((r) => {
+      if (r.type === 'geosite' || r.type === 'geoip') return !RULESET_TAG_PATTERN.test(`${r.type}-${r.value.trim()}`)
+      if (r.type === 'ruleset') return !RULESET_TAG_PATTERN.test(r.value.trim())
+      return false
+    })
+    if (badTag) {
+      showNotification({ content: 'routingRulesetInvalidChars', type: 'alert-error' })
+      return
+    }
+    const customRules: OpenboxCustomRule[] = kept.map((r) => ({
+      type: r.type as OpenboxCustomRule['type'],
+      value: r.value.trim(),
+      outbound: r.outbound as string,
+    }))
+    saving.value = true
+    try {
+      await props.patchProfile({
+        routing: {
+          custom: {
+            name,
+            icon: draft.value.icon || '',
+            iconScale: draft.value.iconScale || 0,
+            enabled: customPolicy.value.enabled !== false,
+            rules: customRules,
+          },
+        },
+      })
+      showNotification({ content: 'routingPolicySaved', type: 'alert-success' })
+      showEditor.value = false
+    } catch (error) {
+      showNotification({
+        content: 'routingSaveFailed',
+        type: 'alert-error',
+        params: { message: error instanceof Error ? error.message : String(error) },
+      })
+    } finally {
+      saving.value = false
+    }
+    return
+  }
+
   // 规则行 → 存储用的那五个数组。空值的行直接忽略(加了一行没填就是没填)
   const collected: Record<ConditionKey, string[]> = {
     rulesets: [],
@@ -849,40 +898,6 @@ const saveDraft = async () => {
 
   if (!CONDITION_FIELDS.some((f) => collected[f.key].length)) {
     showNotification({ content: 'routingPolicyConditionRequired', type: 'alert-error' })
-    return
-  }
-
-  if (editingCustom.value) {
-    // 没选出口就没法生成规则:这条的全部意义就是"走这个固定出口"
-    if (!customOutbound.value) {
-      showNotification({ content: 'routingCustomOutboundRequired', type: 'alert-error' })
-      return
-    }
-    saving.value = true
-    try {
-      await props.patchProfile({
-        routing: {
-          custom: {
-            ...collected,
-            name,
-            icon: draft.value.icon || '',
-            iconScale: draft.value.iconScale || 0,
-            enabled: customPolicy.value.enabled !== false,
-            outbound: customOutbound.value,
-          },
-        },
-      })
-      showNotification({ content: 'routingPolicySaved', type: 'alert-success' })
-      showEditor.value = false
-    } catch (error) {
-      showNotification({
-        content: 'routingSaveFailed',
-        type: 'alert-error',
-        params: { message: error instanceof Error ? error.message : String(error) },
-      })
-    } finally {
-      saving.value = false
-    }
     return
   }
 

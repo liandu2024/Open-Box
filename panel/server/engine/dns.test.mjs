@@ -188,32 +188,52 @@ test('dnsPolicyClasses:落进 config.meta.json 的那张"谁走直连、谁走�
   )
 })
 
-test('前置自定义分流:解析跟着固定出口走,detour 直接指向那个节点', () => {
+test('前置自定义分流:每行的解析跟着这行自己的出口,同一出口共用一台解析器', () => {
   const dns = buildDns(
-    withRouting({ custom: { outbound: 'VW | 香港-01', domainSuffix: ['openai.com'] } }),
+    withRouting({
+      custom: {
+        rules: [
+          { type: 'domainSuffix', value: 'openai.com', outbound: 'VW | 香港-01' },
+          { type: 'domainSuffix', value: 'chat.com', outbound: 'VW | 香港-01' },
+          { type: 'domain', value: 'netflix.com', outbound: 'VW | 美国-01' },
+        ],
+      },
+    }),
     { groupTags: ['direct', '香港-自动'] },
   )
-  const server = dns.servers.find((s) => s.tag === 'dns-custom')
-  assert.equal(server.type, 'tcp')
-  assert.equal(server.detour, 'VW | 香港-01')
-  // 规则排在所有站点集之前,和路由规则一个顺序
-  const rule = dns.rules.find((r) => r.server === 'dns-custom')
-  assert.deepEqual(rule.domain_suffix, ['openai.com'])
+  const customServers = dns.servers.filter((x) => x.tag.startsWith('dns-custom'))
+  assert.deepEqual(customServers.map((x) => x.detour), ['VW | 香港-01', 'VW | 美国-01'])
+  assert.equal(customServers[0].type, 'tcp')
+  // 前两行共用第一台,第三行用第二台
+  const mine = dns.rules.filter((r) => String(r.server).startsWith('dns-custom'))
+  assert.deepEqual(mine, [
+    { domain_suffix: ['openai.com'], server: 'dns-custom-0' },
+    { domain_suffix: ['chat.com'], server: 'dns-custom-0' },
+    { domain: ['netflix.com'], server: 'dns-custom-1' },
+  ])
 })
 
-test('前置自定义分流:固定出口是直连时用直连侧解析,不另开解析器', () => {
+test('前置自定义分流:出口是直连的行用直连侧解析,不另开解析器', () => {
   const dns = buildDns(
-    withRouting({ custom: { outbound: 'direct', domainSuffix: ['cn.example'] } }),
+    withRouting({ custom: { rules: [{ type: 'domainSuffix', value: 'cn.example', outbound: 'direct' }] } }),
     { groupTags: ['direct'] },
   )
-  assert.ok(!dns.servers.some((s) => s.tag === 'dns-custom'))
+  assert.ok(!dns.servers.some((x) => x.tag.startsWith('dns-custom')))
   assert.ok(dns.rules.some((r) => r.server === 'dns-direct' && r.domain_suffix?.includes('cn.example')))
 })
 
-test('前置自定义分流:只按 IP 分流时不进 DNS 规则', () => {
+test('前置自定义分流:只按 IP 匹配的行不进 DNS(解析时还没有 IP)', () => {
   const dns = buildDns(
-    withRouting({ custom: { outbound: 'VW | 香港-01', ipCidr: ['1.2.3.0/24'] } }),
+    withRouting({
+      custom: {
+        rules: [
+          { type: 'ipCidr', value: '1.2.3.0/24', outbound: 'VW | 香港-01' },
+          { type: 'geoip', value: 'cn', outbound: 'direct' },
+        ],
+      },
+    }),
     { groupTags: ['direct'] },
   )
-  assert.ok(!dns.servers.some((s) => s.tag === 'dns-custom'))
+  assert.ok(!dns.servers.some((x) => x.tag.startsWith('dns-custom')))
+  assert.ok(!dns.rules.some((r) => r.ip_cidr))
 })

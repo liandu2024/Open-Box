@@ -35,21 +35,22 @@ export interface OpenboxRoutingPolicy {
 }
 
 // 前置自定义分流:固定置顶、删不掉的一条,排在所有站点集之前。
-// 它不生成 selector,出口在这里就定死(某个节点 / 节点组 / 直连 / 拒绝)——
-// 站点集只能选到节点组,这条能选到具体节点。
+// 和站点集的区别是每一行各带一个出口:站点集整个集共用一条线路、还只能选到节点组,
+// 这里一行一条规则、一行一个出口,而且能选到具体节点。
+export interface OpenboxCustomRule {
+  type: 'domainSuffix' | 'domain' | 'domainKeyword' | 'ipCidr' | 'geosite' | 'geoip' | 'ruleUrl' | 'ruleset'
+  value: string
+  // 这一行自己的出口:出站 tag(节点名或节点组名),或 direct / block 占位
+  outbound: string
+}
+
 export interface OpenboxCustomPolicy {
   name?: string
   icon?: string
   iconScale?: number
   enabled?: boolean
-  // 固定出口:出站 tag(节点名或节点组名),或 direct / block 占位;空 = 还没选,不生效
-  outbound?: string
-  rulesets?: string[]
-  ruleUrls?: string[]
-  domain?: string[]
-  domainSuffix?: string[]
-  domainKeyword?: string[]
-  ipCidr?: string[]
+  // 顺序即匹配顺序,先命中的先生效
+  rules?: OpenboxCustomRule[]
 }
 
 // 「出站」页签:每个站点集的 selector 里能选到哪几类东西

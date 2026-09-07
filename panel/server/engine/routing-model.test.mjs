@@ -5,6 +5,7 @@ import {
   FALLBACK_TAG,
   collectRuleListUrls,
   customPolicyActive,
+  customRuleTag,
   dnsmasqForwardDomains,
   effectiveOutbound,
   normalizeRouting,
@@ -206,23 +207,36 @@ test('dnsmasqForwardDomains:按内核里此刻的选择判断谁走代理,和 DN
   assert.equal(mod.resolveSelectionLeaf({ '谷歌': '香港', '香港': '香港-手动', '香港-手动': '直连' }, '谷歌'), '直连')
 })
 
-test('前置自定义分流:默认值与生效条件', () => {
+test('前置自定义分流:默认值、生效条件、坏行丢弃', () => {
   const empty = normalizeRouting({}).custom
   assert.equal(empty.name, CUSTOM_POLICY_NAME)
-  assert.equal(empty.outbound, '')
-  assert.equal(empty.enabled, true)
-  // 三个条件缺一不可:启用、选了出口、至少一个匹配条件
+  assert.deepEqual(empty.rules, [])
   assert.equal(customPolicyActive(empty), false)
-  const ok = normalizeRouting({ custom: { outbound: 'HK', domainSuffix: ['a.com'] } }).custom
-  assert.equal(customPolicyActive(ok), true)
-  assert.equal(customPolicyActive({ ...ok, enabled: false }), false)
-  assert.equal(customPolicyActive({ ...ok, outbound: '' }), false)
-  assert.equal(customPolicyActive({ ...ok, domainSuffix: [] }), false)
+
+  const c = normalizeRouting({
+    custom: {
+      rules: [
+        { type: 'domainSuffix', value: 'a.com', outbound: 'HK' },
+        { type: 'domain', value: 'b.com', outbound: '' },      // 没选出口
+        { type: 'domain', value: '', outbound: 'HK' },          // 没填值
+        { type: '不认识的类型', value: 'x', outbound: 'HK' },
+        { type: 'ruleUrl', value: 'not-a-url', outbound: 'HK' },
+      ],
+    },
+  }).custom
+  assert.deepEqual(c.rules, [{ type: 'domainSuffix', value: 'a.com', outbound: 'HK' }])
+  assert.equal(customPolicyActive(c), true)
+  assert.equal(customPolicyActive({ ...c, enabled: false }), false)
 })
 
-test('前置自定义分流:规则集链接折算成规则集名,并进入待下载名单', () => {
-  const routing = { custom: { outbound: 'HK', ruleUrls: ['https://example.com/list.txt'] }, policies: [] }
-  const c = normalizeRouting(routing).custom
-  assert.equal(c.rulesets.length, 1)
+test('前置自定义分流:一行引用的规则集名', () => {
+  assert.equal(customRuleTag({ type: 'geosite', value: 'cn' }), 'geosite-cn')
+  assert.equal(customRuleTag({ type: 'geoip', value: 'cn' }), 'geoip-cn')
+  assert.equal(customRuleTag({ type: 'ruleset', value: 'my-list' }), 'my-list')
+  assert.equal(customRuleTag({ type: 'domainSuffix', value: 'a.com' }), '')
+})
+
+test('前置自定义分流里的规则集链接进入待下载名单', () => {
+  const routing = { custom: { rules: [{ type: 'ruleUrl', value: 'https://example.com/list.txt', outbound: 'HK' }] }, policies: [] }
   assert.ok(collectRuleListUrls(routing).some((x) => x.url === 'https://example.com/list.txt'))
 })

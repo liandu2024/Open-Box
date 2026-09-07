@@ -67,12 +67,20 @@ export const FALLBACK_TAG = '其他'
 export const FALLBACK_ICON = 'globe:earth-meridians'
 
 // 前置自定义分流:固定置顶、删不掉的一条,排在所有站点集之前(所以叫"前置")。
-// 和站点集的区别只有一处,也是它存在的理由:站点集在内核里是一个同名 selector,走哪条线
-// 由用户在代理页点选;这一条不生成 selector,出口在设置里就定死成某个**节点**或节点组
-// ——站点集只能选到节点组,选不到具体节点。
+// 和站点集的区别是**每条规则各自带一个出口**:站点集是内核里的一个同名 selector,整个集
+// 共用一条线路、成员还只能是节点组,走哪条由用户在代理页点选;这里一行就是一条规则,
+// 每行自己选出口,而且能选到具体节点。一行 → 内核里一条 route 规则,按行的先后匹配。
 // 它单独存在 routing.custom 里而不是混进 policies:混进去就得靠标记位防删、防拖动,
 // 单独存一份天然删不掉。
 export const CUSTOM_POLICY_NAME = '前置自定义分流'
+
+// 一行能写哪几种条件。和站点集编辑器里的那几档一一对应:
+//   geosite/geoip  官方规则集(值写 cn,存下去是 geosite-cn)
+//   ruleUrl        规则集链接(部署时下回来编译)
+//   ruleset        老档案里可能出现的、不带前缀的规则集名
+export const CUSTOM_RULE_TYPES = Object.freeze([
+  'domainSuffix', 'domain', 'domainKeyword', 'ipCidr', 'geosite', 'geoip', 'ruleUrl', 'ruleset',
+])
 
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0
 const strList = (v) => (Array.isArray(v) ? v.filter(isNonEmptyString).map((s) => s.trim()) : [])
@@ -144,44 +152,58 @@ export const normalizePolicy = (raw, index = 0) => {
 // 没传 builtin 时的默认(测试、预览):直连叫 direct、拒绝叫 block,都启用
 export const DEFAULT_BUILTIN = Object.freeze({ direct: 'direct', block: 'block', directEnabled: true, blockEnabled: true })
 
+// 一行 = 一个条件 + 它自己的出口。三样缺一不可:类型认得、值非空、选了出口。
+// 值或出口空着的行直接丢掉,不是挑剔:空条件的规则在 sing-box 里等价于"全部命中",
+// 而这些行排在所有站点集前面,一条就能把后面全盖住。
+const normalizeCustomRule = (raw) => {
+  if (!raw || typeof raw !== 'object') return null
+  if (!CUSTOM_RULE_TYPES.includes(raw.type)) return null
+  if (!isNonEmptyString(raw.value) || !isNonEmptyString(raw.outbound)) return null
+  const value = raw.value.trim()
+  // 规则集链接必须是个网址,否则部署时按它去下载会直接失败
+  if (raw.type === 'ruleUrl' && !/^https?:\/\//i.test(value)) return null
+  return { type: raw.type, value, outbound: raw.outbound.trim() }
+}
+
 export const normalizeCustomPolicy = (raw) => {
   const r = raw && typeof raw === 'object' ? raw : {}
-  const ruleUrls = strList(r.ruleUrls).filter((u) => /^https?:\/\//i.test(u))
   return {
     name: isNonEmptyString(r.name) ? r.name.trim() : CUSTOM_POLICY_NAME,
     icon: isNonEmptyString(r.icon) ? r.icon.trim() : '',
     iconScale: Number.isInteger(r.iconScale) ? r.iconScale : 0,
     enabled: r.enabled !== false,
-    // 固定出口:一个出站 tag(节点名 / 节点组名),或 direct / block 这两个占位
-    // (内置出站可以改名,生成配置时再换算成当时的名字)。空 = 还没选,这条不出规则。
-    outbound: isNonEmptyString(r.outbound) ? r.outbound.trim() : '',
-    ruleUrls,
-    rulesets: [...new Set([...strList(r.rulesets), ...ruleUrls.map(listTagForUrl)])],
-    domain: strList(r.domain),
-    domainSuffix: strList(r.domainSuffix),
-    domainKeyword: strList(r.domainKeyword),
-    ipCidr: strList(r.ipCidr),
+    // 顺序即匹配顺序(内核首条命中生效),所以是数组
+    rules: Array.isArray(r.rules) ? r.rules.map(normalizeCustomRule).filter(Boolean) : [],
   }
 }
 
-// 三个条件都满足才真的出一条规则:启用着、选了出口、至少有一个匹配条件。
-// 少了最后一条会更糟:空条件的规则在 sing-box 里等价于"全部命中",排在最前面
-// 就把后面所有站点集全盖住了。
 export const customPolicyActive = (custom) =>
-  Boolean(custom) && custom.enabled !== false && isNonEmptyString(custom.outbound) && policyHasCondition(custom)
+  Boolean(custom) && custom.enabled !== false && Array.isArray(custom.rules) && custom.rules.length > 0
 
-// 固定出口存的可能是 direct / block 占位,换算成内核里此刻的实际 tag
-export const customOutboundTag = (custom, builtin = DEFAULT_BUILTIN) =>
-  custom.outbound === 'direct' ? builtin.direct : custom.outbound === 'block' ? builtin.block : custom.outbound
+// 一行引用的规则集名字;纯域名 / IP 那几档没有规则集,返回空串
+export const customRuleTag = (rule) => {
+  if (rule.type === 'geosite' || rule.type === 'geoip') return `${rule.type}-${rule.value}`
+  if (rule.type === 'ruleset') return rule.value
+  if (rule.type === 'ruleUrl') return listTagForUrl(rule.value)
+  return ''
+}
+
+// 出口存的可能是 direct / block 占位,换算成内核里此刻的实际 tag(内置出站可以改名)
+export const customOutboundTag = (rule, builtin = DEFAULT_BUILTIN) =>
+  rule.outbound === 'direct' ? builtin.direct : rule.outbound === 'block' ? builtin.block : rule.outbound
 
 // 整份档案里用到的规则集链接:部署时要按这张表把它们下回来编译(见 system/rule-lists.mjs)。
 // 停用的站点集不算——它本来就不进配置。
 export const collectRuleListUrls = (routing) => {
   const seen = new Map()
   const conf = normalizeRouting(routing)
-  // 前置自定义分流用到的名单也要下回来,它和站点集一样会引用规则集链接
-  const lists = [...(customPolicyActive(conf.custom) ? [conf.custom] : []), ...conf.activePolicies]
-  for (const p of lists) {
+  // 前置自定义分流里的规则集链接也要下回来
+  if (customPolicyActive(conf.custom)) {
+    for (const rule of conf.custom.rules) {
+      if (rule.type === 'ruleUrl' && !seen.has(rule.value)) seen.set(rule.value, listTagForUrl(rule.value))
+    }
+  }
+  for (const p of conf.activePolicies) {
     for (const url of p.ruleUrls) if (!seen.has(url)) seen.set(url, listTagForUrl(url))
   }
   return [...seen.entries()].map(([url, tag]) => ({ url, tag }))
