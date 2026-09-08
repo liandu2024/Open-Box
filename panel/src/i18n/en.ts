@@ -942,7 +942,7 @@ const en = {
   routeRuleNoMatchFallback: 'No rule matched, falls to the fallback policy',
   routeRuleEntries: 'Matched entries',
   routeRuleRecord: 'Connection record',
-  routeRuleOwner: 'Connection owner: {name}',
+  routeRuleOwnerLabel: 'Connection owner',
   routeRuleNoIndex: 'The matched rule number is not provided',
   routeRuleDiff: 'Difference from the prediction',
   routeRuleDiffBody: 'This column is the panel\'s own test connection; its source and inbound path differ from a client\'s, so it cannot fill in the client conditions missing on the left.',

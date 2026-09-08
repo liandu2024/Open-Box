@@ -937,7 +937,7 @@ const zh: LANG_MESSAGE = {
   routeRuleNoMatchFallback: '没有规则命中,走兜底站点集',
   routeRuleEntries: '命中条目',
   routeRuleRecord: '连接记录',
-  routeRuleOwner: '连接归属:{name}',
+  routeRuleOwnerLabel: '连接归属',
   routeRuleNoIndex: '具体命中规则行号未提供',
   routeRuleDiff: '与规则推算的区别',
   routeRuleDiffBody: '本列是面板自己的测试连接,来源和入站路径与终端不同,不能用它补齐左侧缺失的终端条件。',

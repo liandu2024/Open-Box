@@ -937,7 +937,7 @@ const zhTW: LANG_MESSAGE = {
   routeRuleNoMatchFallback: '沒有規則命中,走兜底站點集',
   routeRuleEntries: '命中條目',
   routeRuleRecord: '連線記錄',
-  routeRuleOwner: '連線歸屬:{name}',
+  routeRuleOwnerLabel: '連線歸屬',
   routeRuleNoIndex: '具體命中規則行號未提供',
   routeRuleDiff: '與規則推算的區別',
   routeRuleDiffBody: '本列是面板自己的測試連線,來源和入站路徑與終端不同,不能用它補齊左側缺失的終端條件。',

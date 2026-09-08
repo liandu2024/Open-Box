@@ -306,16 +306,32 @@
           <template v-if="!actual || actualError">
             <span class="text-base-content/50 text-xs">{{ actualError ? '—' : actualLoading ? $t('routeExitStatusTesting') : $t('routeCmpWaiting') }}</span>
           </template>
-          <template v-else-if="actual.exit.rule">
-            <span class="font-mono text-xs break-all">{{ actual.exit.rule }}</span>
+          <!-- 和左列同一个结构:第一行"连接归属 + 站点集名"(对应左列的"站点集 + 名字"),第二行小号等宽的规则原文 -->
+          <template v-else-if="actualOwner || actual.exit.rule">
+            <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span class="text-base-content/60 text-xs">{{ $t('routeRuleOwnerLabel') }}</span>
+              <ProxyName
+                v-if="actualOwner && proxyMap[actualOwner]"
+                :name="actualOwner"
+                class="font-medium"
+              />
+              <span
+                v-else-if="actualOwner"
+                class="font-medium"
+              >{{ actualOwner }}</span>
+              <span
+                v-else
+                class="text-base-content/50 text-xs"
+              >{{ $t('routeEntryUnknown') }}</span>
+            </div>
             <span
-              v-if="actualOwner"
+              v-if="actual.exit.rule"
+              class="text-base-content/50 font-mono text-[11px] break-all"
+            >{{ actual.exit.rule }}</span>
+            <span
+              v-else
               class="text-base-content/60 text-xs"
-            >{{ $t('routeRuleOwner', { name: actualOwner }) }}</span>
-          </template>
-          <template v-else-if="actualOwner">
-            <span class="font-medium">{{ $t('routeRuleOwner', { name: actualOwner }) }}</span>
-            <span class="text-base-content/60 text-xs">{{ $t('routeRuleNoIndex') }}</span>
+            >{{ $t('routeRuleNoIndex') }}</span>
           </template>
           <template v-else>
             <span class="text-base-content/50 text-xs">{{ $t('routeTestRuleUnknown') }}</span>
