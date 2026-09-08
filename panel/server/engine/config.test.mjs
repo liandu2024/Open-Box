@@ -420,3 +420,16 @@ test('IPv6 分层(第三轮 阶段 5):ipv6 开 + ipv6Proxy=ipv4 时按此刻的�
   assert.equal(off.dns.strategy, 'ipv4_only')
   assert.ok(!off.inbounds[0].address.some((a) => a.includes(':')))
 })
+
+test('tun 的 v6 排除表里没有"一直到地址空间末尾"的区间:ff00::/8 会让 sing-tun 建 nft 集合 EEXIST、auto_redirect 起不来(开发路由器实测),组播只排 ff00::/9', () => {
+  const c = buildConfig({ nodes, regionGroups, profile: { ...profile, ipv6: true, tun: { autoRedirect: true } } })
+  const ex6 = c.inbounds[0].route_exclude_address.filter((x) => x.includes(':'))
+  assert.ok(ex6.includes('ff00::/9'))
+  assert.ok(!ex6.includes('ff00::/8'))
+  // 任何 v6 排除段的末尾都不能是 ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+  for (const x of ex6) {
+    const [, prefix] = x.split('/')
+    assert.ok(!(x.startsWith('ff') && Number(prefix) <= 8), `${x} 到地址空间末尾`)
+  }
+  assert.ok(ex6.some((x) => x.startsWith('fe80::')))
+})
