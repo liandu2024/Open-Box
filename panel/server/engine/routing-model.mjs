@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { isRuleListTag, listTagForUrl, ruleListIpTag } from './rule-list.mjs'
 // 分流模型的归一化与老档案迁移。
 //
@@ -151,6 +152,13 @@ export const normalizePolicy = (raw, index = 0) => {
     ipCidr: strList(raw?.ipCidr),
   }
 }
+
+// 分流设置的指纹。部署时把它记进 config.meta.json,规则页拿它和当前档案比:不一样就说明
+// 分流改过但内核还在跑旧配置——那时「规则路由」(按当前设置推算)和「真实路由」(内核此刻
+// 的实际行为)本来就会对不上,界面要能说清楚,而不是让人以为查出来是乱的。
+// 归一化之后再算:同一份设置换个写法(缺省字段、老字段迁移)不该算成改过。
+export const routingFingerprint = (routing) =>
+  createHash('sha256').update(JSON.stringify(normalizeRouting(routing))).digest('hex').slice(0, 16)
 
 // 没传 builtin 时的默认(测试、预览):直连叫 direct、拒绝叫 block,都启用
 export const DEFAULT_BUILTIN = Object.freeze({ direct: 'direct', block: 'block', directEnabled: true, blockEnabled: true })

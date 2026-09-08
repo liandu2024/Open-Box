@@ -5,6 +5,7 @@ import { registerPenetrationRoutes, matchRuleSet , matchLocalConditions } from '
 import { createStore } from '../store/openbox-store.mjs'
 import { createMockContext } from '../system/context.mjs'
 import { createPaths } from '../system/paths.mjs'
+import { routingFingerprint } from '../engine/routing-model.mjs'
 
 const paths = createPaths('/opt/open-box')
 const cmds = (ctx) => ctx.calls.map((c) => [c.cmd, ...c.args].join(' '))
@@ -844,4 +845,30 @@ test('命中站点集时不带 ownerName:它的名字就是出站名,界面直�
   } finally {
     await close()
   }
+})
+
+// 分流改了但内核没重启时,「规则路由」按当前设置推算、「真实路由」是内核此刻的行为,两者
+// 本来就会对不上。界面要能说清楚,所以服务端拿部署时记下的分流指纹和当前档案比一比。
+test('分流改过但没重启:回传 routingStale', async () => {
+  const store = memStore()
+  const routing = { fallbackDefault: 'direct', policies: [{ id: 'a', name: '策略A', domainSuffix: ['a.example.com'], default: 'NodeA' }] }
+  store.setProfile({ directForNodes: false, routing })
+  const metaPath = '/opt/open-box/etc/config.meta.json'
+  const run = async (meta) => {
+    const ctx = createMockContext({ files: { ...withSingbox(), [metaPath]: JSON.stringify(meta) } })
+    const fetchImpl = async () => ({ ok: true, status: 200, json: async () => ({ name: 'NodeA' }) })
+    const { baseUrl, close } = await startApp({ ctx, store, fetchImpl })
+    try {
+      return (await post(baseUrl, 'a.example.com')).body
+    } finally {
+      await close()
+    }
+  }
+  // 指纹对不上 → 提示
+  assert.equal((await run({ routingHash: '0000000000000000' })).routingStale, true)
+  // 指纹一致 → 不提示
+  const same = await run({ routingHash: routingFingerprint(routing) })
+  assert.equal(same.routingStale, undefined)
+  // 老版本部署出来的 meta 没有这个字段 → 不判,免得误报
+  assert.equal((await run({ dnsMode: 'dnsmasq' })).routingStale, undefined)
 })

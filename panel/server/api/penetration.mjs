@@ -4,7 +4,8 @@ import { builtinTags } from '../engine/user-groups.mjs'
 import { loadEntries } from './rulesets.mjs'
 import { decideDnsServer } from './route-test.mjs'
 import { buildRoute } from '../engine/routing.mjs'
-import { customOutboundTag, customPolicyActive, customRuleTag, normalizeRouting } from '../engine/routing-model.mjs'
+import { customOutboundTag, customPolicyActive, customRuleTag, normalizeRouting, routingFingerprint } from '../engine/routing-model.mjs'
+import { configMetaPath } from '../system/deploy.mjs'
 import { isPrivateOrLoopbackIp } from './net-guard.mjs'
 
 // 命中的这条 route 规则是谁生成的。界面上要据此说清楚是"站点集"还是"前置自定义分流"
@@ -335,7 +336,22 @@ export const registerPenetrationRoutes = (app, { store, ctx, paths, fetchImpl = 
       chainError = result.chainError
     }
 
+    // 内核跑的还是不是当前这份分流设置。不一样时「规则路由」(按当前设置推算)和下面的
+    // 「真实路由」(内核此刻的实际行为)本来就会对不上——比如刚删掉一条前置分流还没重启,
+    // 上面已经按新规则走站点集,下面还在按旧规则走那条被删的线路。不说清楚就像查出来是乱的。
+    // 老版本部署出来的 meta 没有这个字段,那就不判,免得误报。
+    let routingStale = false
+    try {
+      const meta = JSON.parse(await ctx.readFile(configMetaPath(paths)))
+      if (typeof meta.routingHash === 'string' && meta.routingHash) {
+        routingStale = meta.routingHash !== routingFingerprint(profile.routing)
+      }
+    } catch {
+      // 没有 meta / 读不动:不判
+    }
+
     const body = { matched, chain, finalOutbound }
+    if (routingStale) body.routingStale = true
     if (chainError) body.chainError = chainError
     if (matchError) body.matchError = matchError
 

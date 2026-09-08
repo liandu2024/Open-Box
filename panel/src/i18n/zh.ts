@@ -782,6 +782,7 @@ const zh: LANG_MESSAGE = {
   ruleLookupNoMatch: '没有规则命中,走兜底站点集',
   ruleLookupOutbound: '出站:',
   ruleLookupTitle: '规则路由',
+  ruleLookupRoutingStale: '分流规则改过了,内核还在跑旧配置。上面是按当前设置推算的,下面的「真实路由」才是内核此刻的实际行为;重启内核后两者一致。',
   ruleFormatQuery: '格式化查询',
   routeTestTitle: '真实路由',
   routeTestRerun: '重新测试',

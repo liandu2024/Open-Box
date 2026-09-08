@@ -787,6 +787,7 @@ const en = {
   ruleLookupNoMatch: 'No rule matched, falls to the fallback site set',
   ruleLookupOutbound: 'Outbound:',
   ruleLookupTitle: 'Rule route',
+  ruleLookupRoutingStale: 'Routing rules changed but the kernel is still running the old config. Above is predicted from the current settings; the real route below is what the kernel does right now. Restart the kernel to make them agree.',
   ruleFormatQuery: 'Normalize & query',
   routeTestTitle: 'Actual route',
   routeTestRerun: 'Test again',

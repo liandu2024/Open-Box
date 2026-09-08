@@ -782,6 +782,7 @@ const zhTW: LANG_MESSAGE = {
   ruleLookupNoMatch: '沒有規則命中,走兜底站點集',
   ruleLookupOutbound: '出站:',
   ruleLookupTitle: '規則路由',
+  ruleLookupRoutingStale: '分流規則改過了,核心還在跑舊設定。上面是按目前設定推算的,下面的「真實路由」才是核心此刻的實際行為;重啟核心後兩者一致。',
   ruleFormatQuery: '格式化查詢',
   routeTestTitle: '真實路由',
   routeTestRerun: '重新測試',

@@ -685,6 +685,9 @@ export interface OpenboxPenetrationResult {
   // matched, falls through to the default" answer, just "couldn't check". Render this distinctly
   // from a genuine no-match (P4b final review, Important 1).
   matchError?: string
+  // 内核还在跑旧的分流配置(改了没重启)。为真时「规则路由」是按当前设置推算的,
+  // 下面的「真实路由」才是内核此刻的实际行为,两者对不上是正常的。
+  routingStale?: boolean
 }
 
 export const queryPenetration = async (target: string): Promise<OpenboxPenetrationResult> => {

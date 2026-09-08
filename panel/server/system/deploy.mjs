@@ -2,7 +2,7 @@ import { detectConflicts } from './conflicts.mjs'
 import { validateConfigObject, attributeBadNodes } from './validate.mjs'
 import { restartService, stopService, serviceStatus } from './service.mjs'
 import { applyDnsTakeover, restoreDnsTakeover, dnsTakeoverBackupPath } from './dns-takeover.mjs'
-import { dnsmasqForwardDomains, normalizeRouting } from '../engine/routing-model.mjs'
+import { dnsmasqForwardDomains, normalizeRouting, routingFingerprint } from '../engine/routing-model.mjs'
 import { dnsPolicyClasses } from '../engine/dns.mjs'
 import { builtinTags } from '../engine/user-groups.mjs'
 import { applyPanelLanRule, applyDnsLanRule, applyIpv6Block, removeProxyRules, applyServerPortRules, commitFirewall } from './firewall.mjs'
@@ -135,6 +135,8 @@ export const deployConfig = async (ctx, paths, { config, profile, userGroups, fe
         // 代理页改出口后要拿它比对,翻面了才重新生成(见 api/deploy-runner.mjs)
         dnsPolicyMembers: policyMembers,
         dnsPolicyClasses: dnsPolicyClasses(profile.routing, policyMembers, builtin, selections || {}),
+        // 这次部署用的是哪份分流设置。规则页拿它和当前档案比,改了没重启就明说
+        routingHash: routingFingerprint(profile.routing),
       }, null, 2),
     )
 

@@ -17,6 +17,16 @@
         >{{ error }}</span>
       </div>
 
+      <!-- 分流改了但内核还没重启:上面按当前设置推算、下面是内核此刻的实际行为,两者对不上
+           是正常的。不说一句的话,看起来就像查出来是乱的。 -->
+      <div
+        v-if="result?.routingStale && !loading"
+        class="text-warning flex items-start gap-1.5 text-xs"
+      >
+        <ExclamationTriangleIcon class="mt-0.5 h-3.5 w-3.5 shrink-0" />
+        <span>{{ $t('ruleLookupRoutingStale') }}</span>
+      </div>
+
       <RouteFlow
         v-if="result && !loading"
         :nodes="flowNodes"
@@ -145,7 +155,7 @@ import RouteFlow from '@/components/rules/RouteFlow.vue'
 import { ruleTypeLabelKey } from '@/helper/ruleType'
 import StatusBadge from '@/components/common/StatusBadge.vue'
 import { proxyMap } from '@/store/proxies'
-import { MagnifyingGlassIcon, NoSymbolIcon, QuestionMarkCircleIcon } from '@heroicons/vue/24/outline'
+import { ExclamationTriangleIcon, MagnifyingGlassIcon, NoSymbolIcon, QuestionMarkCircleIcon } from '@heroicons/vue/24/outline'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
