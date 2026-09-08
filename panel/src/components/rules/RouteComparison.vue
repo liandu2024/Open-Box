@@ -249,22 +249,21 @@
               <span class="text-main font-mono text-xs">{{ firstEntry.value }}</span>
               <span class="text-base-content/50 text-xs">{{ firstEntry.source === 'custom' ? $t('ruleSourceCustom') : firstEntry.source }}</span>
             </template>
-            <span
-              v-if="rule.routingStale"
-              class="route-note basis-full text-xs"
-            >{{ $t('ruleLookupRoutingStale') }}</span>
+
           </template>
           <template v-else>
             <span class="font-medium">{{ $t('routeRuleNoMatchFallback') }}</span>
-            <span
-              v-if="rule.routingStale"
-              class="route-note basis-full text-xs"
-            >{{ $t('ruleLookupRoutingStale') }}</span>
+
           </template>
           <template
-            v-if="rule && !ruleError && !rule.matchError && (rule.matched || ruleAssumptions.relevant.length || ruleAssumptions.same.length)"
+            v-if="rule && !ruleError && !rule.matchError && (rule.matched || rule.routingStale || ruleAssumptions.relevant.length || ruleAssumptions.same.length)"
             #details
           >
+            <!-- 分流改了内核还没重启:推算和下面的实测会对不上,放在详情里说明,主行只留结果 -->
+            <p
+              v-if="rule.routingStale"
+              class="route-note"
+            >{{ $t('ruleLookupRoutingStale') }}</p>
             <template v-if="rule.matched">
               <p class="text-base-content/50 font-mono text-[11px] break-all">{{ conditionText }}</p>
               <!-- 第一条已经跟在站点集后面显示了,这里只列其余的 -->
@@ -511,15 +510,15 @@
               class="text-xs"
               :class="actualDns.v6.tone === 'pending' ? 'text-warning' : actualDns.v6.tone === 'good' ? 'text-success' : 'text-base-content/60'"
             >· {{ actualDns.v6.text }}</span>
-            <span
-              v-if="actualDns.stale"
-              class="route-note basis-full text-xs"
-            >{{ actualDns.stale }}</span>
           </template>
           <template
             v-if="actualDns.kind === 'decision'"
             #details
           >
+            <p
+              v-if="actualDns.stale"
+              class="route-note"
+            >{{ actualDns.stale }}</p>
             <p v-if="actualDns.v6 && !actualDns.v6.queried">{{ actualDns.v6.text }}</p>
             <p v-if="!actualDns.lan"><span class="text-base-content/50">{{ $t('routeDnsResolver') }}</span> <span class="font-mono">{{ actualDns.tag }}</span></p>
             <div
