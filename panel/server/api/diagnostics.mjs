@@ -24,17 +24,19 @@ const redactUrl = (value) => {
   }
 }
 
-// 递归脱敏:按字段名把秘密抹掉、主机名换成占位;数组元素沿用父级的字段名判断
-export const redact = (value, key = '') => {
-  if (Array.isArray(value)) return value.map((v) => redact(v, key))
+// 递归脱敏:按字段名把秘密抹掉、主机名换成占位;数组元素沿用父级的字段名判断。
+// dns 这一段例外:里面的 server 是公共解析器地址(223.5.5.5)或 DNS 服务器的 tag(dns-proxy),
+// 不是节点地址,而且"上游 DNS 是谁、哪条规则走哪个 DNS"正是排 DNS 问题时最要看的
+export const redact = (value, key = '', inDns = false) => {
+  if (Array.isArray(value)) return value.map((v) => redact(v, key, inDns))
   if (value && typeof value === 'object') {
     const out = {}
-    for (const [k, v] of Object.entries(value)) out[k] = redact(v, k)
+    for (const [k, v] of Object.entries(value)) out[k] = redact(v, k, inDns || key === 'dns')
     return out
   }
   if (typeof value === 'string' && value) {
     if (SECRET_KEY.test(key)) return '***'
-    if (HOST_KEY.test(key)) return '<host>'
+    if (HOST_KEY.test(key) && !inDns) return '<host>'
     if (URL_KEY.test(key)) return redactUrl(value)
   }
   return value

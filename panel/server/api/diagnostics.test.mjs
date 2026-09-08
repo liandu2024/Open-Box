@@ -16,7 +16,7 @@ const config = {
     { type: 'direct', tag: '直连' },
   ],
   route: { rules: [{ domain: ['hk.example.com', '203.0.113.9'], outbound: '直连' }, { domain_suffix: ['openai.com'], outbound: 'HK' }] },
-  dns: { servers: [{ tag: 'dns-direct', type: 'udp', server: '223.5.5.5' }] },
+  dns: { servers: [{ tag: 'dns-direct', type: 'udp', server: '223.5.5.5' }, { tag: 'dns-proxy', type: 'https', server: 'dns.google', detour: 'HK' }], rules: [{ domain_suffix: ['openai.com'], server: 'dns-proxy' }] },
   experimental: { clash_api: { secret: 'clash-secret' } },
 }
 const profile = {
@@ -78,6 +78,12 @@ test('诊断包:秘密和节点地址一个都不能剩,该有的信息都在', 
   assert.ok(!text.includes('hk.example.com') && !text.includes('203.0.113.9') && !text.includes('sni.example.com'), text)
   assert.deepEqual(bundle.kernel.config.route.rules[0].domain, ['<node-host>', '<node-host>'])
   assert.match(bundle.logs.kernel, /lookup <node-host>: timeout/)
+  // DNS 段的 server 是解析器地址 / DNS 服务器 tag,排 DNS 问题要看,不脱敏
+  assert.deepEqual(bundle.kernel.config.dns.servers.map((s) => s.server), ['223.5.5.5', 'dns.google'])
+  assert.equal(bundle.kernel.config.dns.rules[0].server, 'dns-proxy')
+  // 出站的 server / SNI 照样是占位
+  assert.equal(bundle.kernel.config.outbounds[0].server, '<host>')
+  assert.equal(bundle.kernel.config.outbounds[1].tls.server_name, '<host>')
   // 订阅整个不出现(只有分流设置)
   assert.equal(bundle.settings.subscriptions, undefined)
   // 该有的信息
