@@ -107,7 +107,7 @@
             <span class="text-base-content/50 text-xs">{{ $t('routeCmpWaiting') }}</span>
           </template>
           <template v-else-if="ruleExit.state === 'pending'">
-            <span class="text-warning font-medium">{{ $t('routeExitPending') }}</span>
+            <span class="font-medium">{{ $t('routeExitPending') }}</span>
             <span class="text-base-content/60 text-xs">{{ $t('routeExitPendingSub') }}</span>
           </template>
           <template v-else-if="ruleReject">
@@ -138,7 +138,7 @@
             v-if="rule?.chainError"
             #details
           >
-            <p class="text-warning">{{ $t('penetrationChainError', { message: rule.chainError }) }}</p>
+            <p class="route-note">{{ $t('penetrationChainError', { message: rule.chainError }) }}</p>
           </template>
         </RouteStage>
         <RouteStage
@@ -203,7 +203,7 @@
             <p
               v-for="(d, i) in exitDetails"
               :key="`${i}-${d.text}`"
-              :class="[d.mono ? 'font-mono' : '', d.warn ? 'text-warning' : '']"
+              :class="[d.mono ? 'font-mono' : '', d.warn ? 'route-note' : '']"
             >{{ d.text }}</p>
           </template>
         </RouteStage>
@@ -223,7 +223,7 @@
             <span class="text-base-content/50 text-xs">{{ ruleError ? '—' : $t('routeCmpWaiting') }}</span>
           </template>
           <template v-else-if="rule.matchError">
-            <span class="text-warning font-medium">{{ $t('penetrationRuleUnknown') }}</span>
+            <span class="font-medium">{{ $t('penetrationRuleUnknown') }}</span>
             <span class="text-base-content/60 text-xs">{{ rule.matchError }}</span>
           </template>
           <template v-else-if="rule.matched">
@@ -308,7 +308,7 @@
             <span class="text-base-content/60 font-medium">{{ $t('routeTermRuleSkippedText') }}</span>
           </template>
           <template v-else-if="ruleView.notSeen">
-            <span class="text-warning font-medium">{{ $t('routeTermRuleNotSeen') }}</span>
+            <span class="font-medium">{{ $t('routeTermRuleNotSeen') }}</span>
           </template>
           <!-- 和左列同一个结构:第一行"连接归属 + 站点集名"(对应左列的"站点集 + 名字"),内核的规则原文在「规则详情」里 -->
           <template v-else-if="ruleView.owner || ruleView.rule">
@@ -360,10 +360,7 @@
             <span class="text-base-content/50 text-xs">{{ ruleError ? '—' : $t('routeCmpWaiting') }}</span>
           </template>
           <template v-else>
-            <span
-              class="font-medium"
-              :class="ruleEntry.state === 'pending' ? 'text-warning' : ''"
-            >{{ ruleEntry.value }}</span>
+            <span class="font-medium">{{ ruleEntry.value }}</span>
             <span class="text-base-content/60 text-xs">{{ ruleEntry.sub }}</span>
           </template>
           <template
@@ -387,10 +384,7 @@
             <span class="text-base-content/50 text-xs">{{ placeholderText }}</span>
           </template>
           <template v-else>
-            <span
-              class="font-medium"
-              :class="actualEntry.state === 'pending' ? 'text-warning' : ''"
-            >{{ actualEntry.value }}</span>
+            <span class="font-medium">{{ actualEntry.value }}</span>
             <span class="text-base-content/60 text-xs">{{ actualEntry.sub }}</span>
           </template>
           <!-- 模拟终端:列出这条连接的系统转发证据(conntrack 原文、路由查询、NAT、nft 旁路集合、内核连接表) -->
@@ -402,7 +396,7 @@
               <p
                 v-for="(e, i) in entryEvidence"
                 :key="`${i}-${e.text}`"
-                :class="[e.mono ? 'font-mono text-[11px]' : '', e.warn ? 'text-warning' : '']"
+                :class="[e.mono ? 'font-mono text-[11px]' : '', e.warn ? 'route-note' : '']"
               ><span
                 v-if="e.label"
                 class="text-base-content/50 mr-1"
@@ -431,7 +425,7 @@
             <span class="text-base-content/60 text-xs">{{ $t('routeDnsNoneSub', { kind: kindText }) }}</span>
           </template>
           <template v-else-if="ruleDns.kind === 'error'">
-            <span class="text-warning font-medium">{{ $t('routeDnsUnknown') }}</span>
+            <span class="font-medium">{{ $t('routeDnsUnknown') }}</span>
             <span class="text-base-content/60 text-xs">{{ ruleDns.message }}</span>
           </template>
           <template v-else-if="ruleDns.kind === 'reject'">
@@ -484,7 +478,7 @@
             <span class="text-base-content/60 text-xs">{{ $t('routeDnsNoneSub', { kind: kindText }) }}</span>
           </template>
           <template v-else-if="actualDns.kind === 'error'">
-            <span class="text-warning font-medium">{{ $t('routeDnsUnknown') }}</span>
+            <span class="font-medium">{{ $t('routeDnsUnknown') }}</span>
             <span class="text-base-content/60 text-xs">{{ actualDns.message }}</span>
           </template>
           <template v-else-if="actualDns.kind === 'reject'">
@@ -503,12 +497,12 @@
             <span
               v-if="actualDns.v4"
               class="text-xs"
-              :class="actualDns.v4.tone === 'pending' ? 'text-warning' : actualDns.v4.tone === 'good' ? 'text-success' : 'text-base-content/60'"
+              :class="actualDns.v4.tone === 'pending' ? 'text-base-content/80 font-medium' : actualDns.v4.tone === 'good' ? 'text-success' : 'text-base-content/60'"
             >{{ actualDns.v4.text }}</span>
             <span
               v-if="actualDns.v6 && actualDns.v6.queried"
               class="text-xs"
-              :class="actualDns.v6.tone === 'pending' ? 'text-warning' : actualDns.v6.tone === 'good' ? 'text-success' : 'text-base-content/60'"
+              :class="actualDns.v6.tone === 'pending' ? 'text-base-content/80 font-medium' : actualDns.v6.tone === 'good' ? 'text-success' : 'text-base-content/60'"
             >· {{ actualDns.v6.text }}</span>
           </template>
           <template
@@ -540,7 +534,7 @@
             <p
               v-for="note in actualDns.notes || []"
               :key="note.text"
-              :class="note.warn ? 'text-warning' : ''"
+              :class="note.warn ? 'route-note' : ''"
             >{{ note.text }}</p>
             <p
               v-for="line in actualDns.assumptions || []"
@@ -602,7 +596,7 @@
         >
           <!-- 设备不具备模拟条件 / 虚拟终端没建起来:在这一站(测试来源)说清楚,并给出改用内核诊断的按钮,不自动退回 -->
           <template v-if="termBlock">
-            <span class="text-warning font-medium">{{ termBlock.kind === 'incapable' ? $t('routeTermNotCapable') : $t('routeTermSetupFailed') }}</span>
+            <span class="font-medium">{{ termBlock.kind === 'incapable' ? $t('routeTermNotCapable') : $t('routeTermSetupFailed') }}</span>
             <span class="text-base-content/60 basis-full text-xs">{{ termBlock.kind === 'incapable' ? $t('routeTermNotCapableSub', { missing: missingText }) : termBlock.message }}</span>
             <span class="text-base-content/60 basis-full text-xs">{{ $t('routeTermNoFallbackNote') }}</span>
             <button
@@ -640,7 +634,7 @@
               <p>{{ $t('routeModeKernelHint') }}</p>
               <p
                 v-if="actual?.context"
-                class="text-warning"
+                class="route-note"
               >{{ $t('routeTestSourceNotProbed', { ip: actual.context.sourceIp }) }}</p>
             </template>
           </template>
@@ -812,7 +806,8 @@ const toneClass = (tone: Tone | undefined) => {
   switch (tone) {
     case 'good': return 'badge-success badge-soft'
     case 'proxy': return 'badge-info badge-soft'
-    case 'pending': return 'badge-warning badge-soft'
+    // 待确认用实底(黄底深字):badge-soft 的黄字在浅色主题上看不清
+    case 'pending': return 'badge-warning'
     case 'error': return 'badge-error badge-soft'
     default: return 'badge-ghost'
   }

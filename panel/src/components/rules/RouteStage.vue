@@ -93,7 +93,7 @@ const badgeClass = computed(() => {
   switch (props.badgeTone) {
     case 'good': return 'badge-success badge-soft'
     case 'proxy': return 'badge-info badge-soft'
-    case 'pending': return 'badge-warning badge-soft'
+    case 'pending': return 'badge-warning'
     case 'error': return 'badge-error badge-soft'
     default: return 'badge-ghost'
   }
