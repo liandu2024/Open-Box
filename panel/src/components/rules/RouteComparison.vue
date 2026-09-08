@@ -165,7 +165,7 @@
                 class="text-error"
               >{{ $t('routeTestRequestFailed', { message: errorText(actual.exit.error) }) }}</span>
             </div>
-            <div class="text-base-content/60 flex basis-full flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+            <div class="text-base-content/60 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
               <span
                 v-if="actualExitIp"
                 class="font-mono"
@@ -433,17 +433,22 @@
           <template v-else>
             <span class="font-medium">{{ actualDns.viaProxy ? $t('routeTestDnsProxy') : $t('routeTestDnsDirect') }}</span>
             <span class="text-base-content/60 font-mono text-xs">{{ actualDns.serverLine }}</span>
-            <!-- IPv4 / IPv6 分开说:v4 成功了不能因为 AAAA 为空写成"没有解析结果" -->
+            <!-- IPv4 / IPv6 分开说、排在第二行:v4 成功了不能因为 AAAA 为空写成"没有解析结果";
+                 档案没开 IPv6 的"未查询"不占这一行,放进解析记录里 -->
+            <span
+              class="basis-full"
+              aria-hidden="true"
+            />
             <span
               v-if="actualDns.v4"
-              class="basis-full text-xs"
+              class="text-xs"
               :class="actualDns.v4.tone === 'pending' ? 'text-warning' : actualDns.v4.tone === 'good' ? 'text-success' : 'text-base-content/60'"
             >{{ actualDns.v4.text }}</span>
             <span
-              v-if="actualDns.v6"
-              class="basis-full text-xs"
+              v-if="actualDns.v6 && actualDns.v6.queried"
+              class="text-xs"
               :class="actualDns.v6.tone === 'pending' ? 'text-warning' : actualDns.v6.tone === 'good' ? 'text-success' : 'text-base-content/60'"
-            >{{ actualDns.v6.text }}</span>
+            >· {{ actualDns.v6.text }}</span>
             <span
               v-if="actualDns.stale"
               class="text-warning basis-full text-xs"
@@ -453,6 +458,7 @@
             v-if="actualDns.kind === 'decision'"
             #details
           >
+            <p v-if="actualDns.v6 && !actualDns.v6.queried">{{ actualDns.v6.text }}</p>
             <p><span class="text-base-content/50">{{ $t('routeDnsResolver') }}</span> <span class="font-mono">{{ actualDns.tag }}</span></p>
             <div
               v-if="actualDns.chain?.length"
@@ -647,7 +653,8 @@ interface DnsView {
   tag?: string
   detour?: string
   v4?: { text: string; tone: Tone }
-  v6?: { text: string; tone: Tone }
+  // queried:档案开了 IPv6、这次真的查了 AAAA;没查的(未开启 IPv6)不占主行,进详情
+  v6?: { text: string; tone: Tone; queried: boolean }
   notes?: Array<{ text: string; warn?: boolean }>
   chain?: string[]
   answers?: string[]
@@ -795,9 +802,9 @@ const actualDns = computed<DnsView>(() => {
     ? { text: t('routeDnsV4Ok', { count: answers.length }), tone: 'good' as Tone }
     : r?.error ? { text: t('routeDnsV4Failed', { message: r.error }), tone: 'pending' as Tone } : { text: t('routeDnsV4Empty'), tone: 'pending' as Tone }
   const v6 = !r || r.answers6 === undefined
-    ? { text: t('routeDnsV6NotQueried'), tone: 'muted' as Tone }
-    : answers6.length ? { text: t('routeDnsV6Ok', { count: answers6.length }), tone: 'good' as Tone }
-      : r.error6 ? { text: t('routeDnsV6Failed', { message: r.error6 }), tone: 'muted' as Tone } : { text: t('routeDnsV6Empty'), tone: 'muted' as Tone }
+    ? { text: t('routeDnsV6NotQueried'), tone: 'muted' as Tone, queried: false }
+    : answers6.length ? { text: t('routeDnsV6Ok', { count: answers6.length }), tone: 'good' as Tone, queried: true }
+      : r.error6 ? { text: t('routeDnsV6Failed', { message: r.error6 }), tone: 'muted' as Tone, queried: true } : { text: t('routeDnsV6Empty'), tone: 'muted' as Tone, queried: true }
   const notes: Array<{ text: string; warn?: boolean }> = []
   const serverAddr = d.server?.server || d.server?.tag || ''
   if (fakeIpHop.value) {

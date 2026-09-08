@@ -30,27 +30,37 @@
         :class="badgeClass"
       >{{ badge }}</span>
     </div>
-    <!-- 内容区:大字和紧跟的小字排在同一行(基线对齐),放不下自然换行;要独占一行的元素由调用方加 basis-full -->
+    <!-- 内容区:大字和紧跟的小字排在同一行(基线对齐),放不下自然换行;要独占一行的元素由调用方加 basis-full。
+         详情开关也排在这一行的末尾(",标题 ∨"),展开后的正文另起一整行(basis-full),箭头翻成 ∧ -->
     <div class="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 [&>*]:min-w-0">
       <slot />
-    </div>
-    <details
-      v-if="$slots.details"
-      class="route-details text-base-content/60 mt-1.5 text-xs"
-    >
-      <summary class="inline-flex cursor-pointer items-center gap-1 py-0.5 select-none">
+      <button
+        v-if="$slots.details"
+        type="button"
+        class="text-base-content/60 hover:text-base-content inline-flex cursor-pointer items-center gap-0.5 text-xs select-none"
+        :aria-expanded="open"
+        @click="open = !open"
+      >
+        <span class="text-base-content/40">,</span>
         {{ detailsTitle || $t('routeStageDetails') }}
-        <span class="route-details-sign" aria-hidden="true" />
-      </summary>
-      <div class="flex flex-col gap-1.5 pt-1.5 break-all">
+        <ChevronDownIcon
+          class="h-3 w-3 transition-transform"
+          :class="open ? 'rotate-180' : ''"
+        />
+      </button>
+      <div
+        v-if="$slots.details && open"
+        class="text-base-content/60 flex basis-full flex-col gap-1.5 text-xs break-all"
+      >
         <slot name="details" />
       </div>
-    </details>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { ChevronDownIcon } from '@heroicons/vue/24/outline'
+import { computed, ref } from 'vue'
 
 export type RouteStageState = 'ok' | 'pending' | 'skip'
 export type RouteStageTone = 'good' | 'proxy' | 'pending' | 'muted' | 'error'
@@ -70,6 +80,8 @@ const props = defineProps<{
   last?: boolean
 }>()
 
+// 详情展开状态:每站自己记
+const open = ref(false)
 const badgeClass = computed(() => {
   switch (props.badgeTone) {
     case 'good': return 'badge-success badge-soft'
@@ -178,17 +190,5 @@ const badgeClass = computed(() => {
 }
 .route-skip .route-rise {
   color: color-mix(in srgb, var(--color-base-content) 35%, transparent);
-}
-.route-details > summary {
-  list-style: none;
-}
-.route-details > summary::-webkit-details-marker {
-  display: none;
-}
-.route-details-sign::before {
-  content: '+';
-}
-.route-details[open] .route-details-sign::before {
-  content: '−';
 }
 </style>
