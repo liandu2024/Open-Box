@@ -944,7 +944,7 @@ const zh: LANG_MESSAGE = {
   routeExitBlocked: '已拦截',
   routeExitChainUnknown: '出口链路未知',
   routeExitTarget: '目标 {ip}',
-  routeExitNodeNote: '节点如何连接',
+  routeExitDetails: '连接详情',
   routeExitStatusSuccess: '访问成功',
   routeExitStatusReachable: '站点可达',
   routeExitStatusFailed: '访问失败',

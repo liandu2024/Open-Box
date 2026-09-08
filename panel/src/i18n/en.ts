@@ -949,7 +949,7 @@ const en = {
   routeExitBlocked: 'Blocked',
   routeExitChainUnknown: 'Outbound chain unknown',
   routeExitTarget: 'Target {ip}',
-  routeExitNodeNote: 'How the node connects',
+  routeExitDetails: 'Connection details',
   routeExitStatusSuccess: 'Success',
   routeExitStatusReachable: 'Reachable',
   routeExitStatusFailed: 'Failed',

@@ -122,7 +122,7 @@
           :state="actualExit.state"
           :badge="actualExit.badge"
           :badge-tone="actualExit.tone"
-          :details-title="$t('routeExitNodeNote')"
+          :details-title="$t('routeExitDetails')"
           last
         >
           <template v-if="actualError">
@@ -132,26 +132,24 @@
             <span class="text-base-content/50 text-xs">{{ actualLoading ? $t('routeExitStatusTesting') : $t('routeCmpWaiting') }}</span>
           </template>
           <template v-else>
-            <div
-              v-if="actual.exit.chains?.length"
-              class="flex flex-wrap items-center gap-x-1.5 gap-y-1"
-            >
-              <template
-                v-for="(hop, i) in actual.exit.chains"
-                :key="`${hop}-${i}`"
-              >
-                <ArrowRightCircleIcon
-                  v-if="i > 0"
-                  class="text-base-content/40 h-4 w-4 shrink-0"
-                />
-                <ProxyName :name="hop" />
+            <!-- 链路、HTTP 状态、结果文字放在同一个行盒里,垂直居中对齐;目标 IP / IPv6 结果 / 节点怎么连进「连接详情」 -->
+            <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <template v-if="actual.exit.chains?.length">
+                <template
+                  v-for="(hop, i) in actual.exit.chains"
+                  :key="`${hop}-${i}`"
+                >
+                  <ArrowRightCircleIcon
+                    v-if="i > 0"
+                    class="text-base-content/40 -ml-0.5 h-4 w-4 shrink-0"
+                  />
+                  <ProxyName :name="hop" />
+                </template>
               </template>
-            </div>
-            <span
-              v-else
-              class="text-base-content/50 text-xs"
-            >{{ $t('routeExitChainUnknown') }}</span>
-            <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+              <span
+                v-else
+                class="text-base-content/50 text-xs"
+              >{{ $t('routeExitChainUnknown') }}</span>
               <span
                 v-if="actual.exit.status !== undefined"
                 class="badge badge-sm"
@@ -159,29 +157,30 @@
               >HTTP {{ actual.exit.status }}</span>
               <span
                 v-if="actual.exit.status !== undefined"
-                class="text-base-content/70"
+                class="text-base-content/70 text-xs"
               >{{ statusText(actual.exit.status) }}</span>
               <span
                 v-if="actual.exit.error"
-                class="text-error"
+                class="text-error text-xs"
               >{{ $t('routeTestRequestFailed', { message: errorText(actual.exit.error) }) }}</span>
-            </div>
-            <div class="text-base-content/60 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-              <span
-                v-if="actualExitIp"
-                class="font-mono"
-              >{{ $t('routeExitTarget', { ip: actualExitIp }) }}</span>
-              <span
-                v-if="actual.exit6"
-                :class="actual.exit6.ok ? '' : 'text-warning'"
-              >IPv6 <span class="font-mono">{{ actual.exit6.connectTo }}</span>: {{ actual.exit6.ok ? `HTTP ${actual.exit6.status} · ${actual.exit6.ms}ms` : $t('routeTestRequestFailed', { message: errorText(actual.exit6.error || '') }) }}</span>
             </div>
           </template>
           <template
-            v-if="exitNodeNote"
+            v-if="actual && !actualError && (actualExitIp || actual.exit6 || exitNodeNote)"
             #details
           >
-            <p :class="exitNodeNote.warn ? 'text-warning' : ''">{{ exitNodeNote.text }}</p>
+            <p
+              v-if="actualExitIp"
+              class="font-mono"
+            >{{ $t('routeExitTarget', { ip: actualExitIp }) }}</p>
+            <p
+              v-if="actual.exit6"
+              :class="actual.exit6.ok ? '' : 'text-warning'"
+            >IPv6 <span class="font-mono">{{ actual.exit6.connectTo }}</span>: {{ actual.exit6.ok ? `HTTP ${actual.exit6.status} · ${actual.exit6.ms}ms` : $t('routeTestRequestFailed', { message: errorText(actual.exit6.error || '') }) }}</p>
+            <p
+              v-if="exitNodeNote"
+              :class="exitNodeNote.warn ? 'text-warning' : ''"
+            >{{ exitNodeNote.text }}</p>
           </template>
         </RouteStage>
 

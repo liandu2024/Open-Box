@@ -944,7 +944,7 @@ const zhTW: LANG_MESSAGE = {
   routeExitBlocked: '已攔截',
   routeExitChainUnknown: '出口鏈路未知',
   routeExitTarget: '目標 {ip}',
-  routeExitNodeNote: '節點如何連線',
+  routeExitDetails: '連線詳情',
   routeExitStatusSuccess: '訪問成功',
   routeExitStatusReachable: '站點可達',
   routeExitStatusFailed: '訪問失敗',
