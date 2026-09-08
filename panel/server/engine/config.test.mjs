@@ -345,3 +345,28 @@ test('原生旁路:走直连的站点集里的 geoip 集合写进 route_exclude_
   const flipped = buildConfig({ nodes, regionGroups, userGroups: firstLayerGroups, localSubnets: subnets, profile: firstLayerProfile(), selections: { '国内': '香港-自动' } })
   assert.equal(flipped.inbounds[0].route_exclude_address_set, undefined)
 })
+
+test('例外挖洞永远不挖本机网段 / tun / 回环 / 链路本地:10.0.0.0/8 → 节点 时 LAN 10.0.0.0/24 仍在排除表里,纯 tun 模式管理通道不断(复审 R6a)', () => {
+  for (const autoRedirect of [false, true]) {
+    const c = buildConfig({
+      nodes, regionGroups, userGroups: firstLayerGroups, localSubnets: ['10.0.0.0/24'],
+      profile: firstLayerProfile({ tun: { autoRedirect }, routing: { fallbackDefault: 'direct', policies: [], custom: { rules: [{ type: 'ipCidr', value: '10.0.0.0/8', outbound: '香港-自动' }] } } }),
+    })
+    const ex = c.inbounds[0].route_exclude_address
+    assert.ok(ex.some((x) => cidrContains(x, '10.0.0.209')), `autoRedirect=${autoRedirect}:LAN 里的终端必须还在排除表里`)
+    assert.ok(ex.some((x) => cidrContains(x, '172.19.0.2')) === false, 'tun 网段照旧挖出来(内核自己要用)')
+    assert.ok(!ex.some((x) => cidrContains(x, '10.77.0.1')), '10/8 里 LAN 之外的部分才挖出来送节点')
+    assert.ok(c.route.rules.some((r) => r.ip_cidr && r.ip_cidr[0] === '10.0.0.0/8'))
+  }
+})
+
+test('例外规则比排除段还大(10.0.0.0/7 盖住 10/8)也要挖:看的是有没有交集,不是谁包含谁(复审 R6b)', () => {
+  const c = buildConfig({
+    nodes, regionGroups, userGroups: firstLayerGroups, localSubnets: ['192.168.3.0/24'],
+    profile: firstLayerProfile({ routing: { fallbackDefault: 'direct', policies: [], custom: { rules: [{ type: 'ipCidr', value: '10.0.0.0/7', outbound: '香港-自动' }] } } }),
+  })
+  const ex = c.inbounds[0].route_exclude_address
+  assert.ok(!ex.some((x) => cidrContains(x, '10.77.0.1')))
+  assert.ok(ex.some((x) => cidrContains(x, '192.168.3.9')), 'LAN 照旧排除')
+  assert.ok(ex.some((x) => cidrContains(x, '172.20.0.1')), '别的私网段照旧排除')
+})

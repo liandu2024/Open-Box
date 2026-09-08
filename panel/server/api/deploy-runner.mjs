@@ -3,7 +3,8 @@ import { readSystemDns } from '../system/resolv.mjs'
 import { readLocalSubnets } from '../system/local-subnets.mjs'
 import { resolveHostsToCidrs } from '../system/resolve-hosts.mjs'
 import { collectDirectHosts } from '../engine/direct-hosts.mjs'
-import { normalizeRouting } from '../engine/routing-model.mjs'
+import { dnsmasqForwardPlan, nativeBypassPlan, normalizeRouting } from '../engine/routing-model.mjs'
+import { normalizeClientRoutes } from '../engine/client-routes.mjs'
 import { builtinTags } from '../engine/user-groups.mjs'
 import { buildConfig } from '../engine/config.mjs'
 import { dnsPolicyClasses } from '../engine/dns.mjs'
@@ -95,6 +96,31 @@ export const dnsClassesFlipped = async (ctx, paths, store, selections) => {
     return Object.keys(next).some((k) => Object.prototype.hasOwnProperty.call(prev, k) && prev[k] !== next[k])
   } catch {
     // 没有元数据(还没部署过 / 老版本升上来的)就不动:下次部署会把表补上
+    return false
+  }
+}
+
+// 第一层的计划(入口原生旁路的集合、DNS 转发的三态)也是生成配置时按当时的选择定死的。只按 IP
+// 分流的站点集(geoip-cn → 直连)不进 DNS 分类表,代理页把它从直连切到代理时 dnsClassesFlipped
+// 看不出来,入口的 nft 集合还按旧的放行(复审 R3)。所以再比一次 config.meta.json 里的 firstLayer。
+export const firstLayerChanged = async (ctx, paths, store, selections) => {
+  try {
+    const meta = JSON.parse(await ctx.readFile(configMetaPath(paths)))
+    const prev = meta && meta.firstLayer
+    const members = meta && Array.isArray(meta.dnsPolicyMembers) ? meta.dnsPolicyMembers : []
+    if (!prev || typeof prev !== 'object' || !members.length) return false
+    const profile = store.getProfile() || {}
+    const builtin = builtinTags(typeof store.getGroups === 'function' ? store.getGroups() : [])
+    const bypass = nativeBypassPlan(profile.routing, { members, builtin, selections: selections || {}, clientRoutes: normalizeClientRoutes(profile.clientRoutes) })
+    const prevBypass = prev.nativeBypass || {}
+    const sortedSets = (v) => [...(Array.isArray(v) ? v : [])].sort().join('\n')
+    if (Boolean(prevBypass.enabled) !== bypass.enabled || sortedSets(prevBypass.sets) !== sortedSets(bypass.sets)) return true
+    if (prev.dnsMode === 'dnsmasq') {
+      const forward = dnsmasqForwardPlan(profile.routing, members, builtin, selections || {})
+      if (forward.mode !== prev.dnsForward) return true
+    }
+    return false
+  } catch {
     return false
   }
 }

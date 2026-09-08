@@ -314,3 +314,49 @@ test('端口这一档的值:单个进 port,范围进 port_range,逗号 / 空格�
     assert.equal(parsePortSpec(bad), null, bad)
   }
 })
+
+test('原生旁路遵守站点集顺序:前面有走代理 / 拒绝的站点集,后面直连站点集的集合不能在入口先放走(复审 R2)', () => {
+  const same = { fallbackDefault: 'direct', policies: [
+    { id: 'first', name: 'CN-proxy-first', default: '香港-自动', rulesets: ['geoip-cn'] },
+    { id: 'second', name: 'CN-direct-second', default: 'direct', rulesets: ['geoip-cn'] },
+  ] }
+  const r = nativeBypassPlan(same, { members: MEMBERS })
+  assert.equal(r.enabled, false)
+  assert.match(r.reason, /CN-direct-second.*CN-proxy-first/)
+  // 拒绝在前同理
+  const blockFirst = nativeBypassPlan({ fallbackDefault: 'direct', policies: [
+    { id: 'a', name: 'Ads', default: 'block', domainSuffix: ['ads.example'] },
+    { id: 'b', name: '国内', default: 'direct', rulesets: ['geoip-cn'] },
+  ] }, { members: MEMBERS })
+  assert.equal(blockFirst.enabled, false)
+  // 较早的纯域名代理站点集也算:域名解析出来的 IP 在入口分不出来,不能猜它不会落在集合里
+  const domainFirst = nativeBypassPlan({ fallbackDefault: 'direct', policies: [
+    { id: 'g', name: 'Google', default: '香港-自动', rulesets: ['geosite-google'] },
+    { id: 'b', name: '国内', default: 'direct', rulesets: ['geoip-cn'] },
+  ] }, { members: MEMBERS })
+  assert.equal(domainFirst.enabled, false)
+  // 直连在前、代理在后:直连集合可以旁路(首条命中本来就是它)
+  const directFirst = nativeBypassPlan({ fallbackDefault: 'direct', policies: [
+    { id: 'b', name: '国内', default: 'direct', rulesets: ['geoip-cn'] },
+    { id: 'g', name: 'Google', default: '香港-自动', rulesets: ['geosite-google'] },
+    { id: 'c', name: '国内2', default: 'direct', rulesets: ['geoip-hk'] },   // 排在 Google 之后:不进
+  ] }, { members: MEMBERS })
+  assert.deepEqual(directFirst.sets, ['geoip-cn'])
+  assert.match(directFirst.reason, /国内2/)
+})
+
+test('转发计划把要拒绝的域名也交给内核(留在原上游会被正常解析);拒绝的关键词 / 规则集、广告拦截只能全量(复审 R7)', () => {
+  const plan = dnsmasqForwardPlan({
+    fallbackDefault: 'direct',
+    policies: [{ id: 'yt', name: 'Youtube', default: '香港-自动', domainSuffix: ['youtube.com'] }],
+    custom: { rules: [{ type: 'domainSuffix', value: 'ads.example', outbound: 'block' }] },
+  }, MEMBERS)
+  assert.equal(plan.mode, 'domains')
+  assert.deepEqual([...plan.domains].sort(), ['ads.example', 'youtube.com'])
+  const kw = dnsmasqForwardPlan({ fallbackDefault: 'direct', custom: { rules: [{ type: 'domainKeyword', value: 'ads', outbound: 'block' }] } }, MEMBERS)
+  assert.equal(kw.mode, 'all')
+  assert.match(kw.reason, /要拒绝的/)
+  const ad = dnsmasqForwardPlan({ fallbackDefault: 'direct', adBlock: true, policies: [] }, MEMBERS)
+  assert.equal(ad.mode, 'all')
+  assert.match(ad.reason, /广告拦截/)
+})

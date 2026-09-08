@@ -7,7 +7,7 @@ import { buildServerInbounds } from './servers.mjs'
 import { normalizeClientRoutes } from './client-routes.mjs'
 import { buildDns } from './dns.mjs'
 import { collectDirectHosts } from './direct-hosts.mjs'
-import { cidrContains, parseCidr, subtractCidrs } from '../system/local-subnets.mjs'
+import { cidrsOverlap, parseCidr, subtractCidrs } from '../system/local-subnets.mjs'
 
 // 面板专用回环入站的端口(见下方 inbounds 注释)
 export const PANEL_INBOUND_PORT = 7891
@@ -153,14 +153,20 @@ export const buildConfig = ({ nodes, profile, userGroups, systemDns, localSubnet
   const holes = autoRedirect && dnsMode === 'hijack' ? [...localSubnets, TUN_V4_NET, TUN_V6_NET] : [TUN_V4_NET, TUN_V6_NET]
   // 用户明确要送去节点的私网段(前置自定义分流的 ip_cidr 行,出口不是直连 / 拒绝)也要挖出来:
   // 不然 10.77.0.0/16 → 节点 这种规则被排除表的 10.0.0.0/8 在入口先放走,永远到不了那条规则
-  // (审核 B5,经 WireGuard 访问对端局域网的典型写法)。只挖落在排除表范围内的,别的本来就进 tun
+  // (审核 B5,经 WireGuard 访问对端局域网的典型写法)。和排除表有交集的都算——规则比排除段
+  // 小(10.77/16 在 10/8 里)和规则比排除段大(10.0.0.0/7 盖住 10/8)是一回事(复审 R6b)。
+  // 但本机接口网段、tun 自己的网段、回环、链路本地永远不能被挖走:纯 tun 模式下排除表是唯一的
+  // "本机网段不进 tun"依据,10.0.0.0/8 → 节点 这种规则挖掉整个 10/8,路由器回给 10.0.0.x 局域网的
+  // 包就全被吞进 tun、面板 / SSH / DNS 失联(复审 R6a)。所以从规则里先扣掉这些保护段,只挖剩下的
   const excludeBase = profile.ipv6 ? [...TUN_EXCLUDE_V4, ...TUN_EXCLUDE_V6] : TUN_EXCLUDE_V4
+  const protectedSubnets = [...localSubnets, TUN_V4_NET, TUN_V6_NET, '127.0.0.0/8', '169.254.0.0/16', '::1/128', 'fe80::/10']
   if (customPolicyActive(routingConf.custom)) {
     for (const rule of routingConf.custom.rules) {
       if (rule.type !== 'ipCidr' || !parseCidr(rule.value)) continue
       const target = customOutboundTag(rule, builtin)
       if (target === builtin.direct || target === builtin.block || !knownOutbounds.has(target)) continue
-      if (excludeBase.some((base) => cidrContains(base, rule.value))) holes.push(rule.value)
+      if (!excludeBase.some((base) => cidrsOverlap(base, rule.value))) continue
+      holes.push(...subtractCidrs([rule.value], protectedSubnets))
     }
   }
   const tunInbound = {

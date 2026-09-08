@@ -89,6 +89,13 @@ const endOf = (c) => c.net + sizeOf(c) - 1n
 const overlaps = (a, b) => a.family === b.family && a.net <= endOf(b) && b.net <= endOf(a)
 const covers = (outer, inner) => outer.family === inner.family && outer.net <= inner.net && endOf(inner) <= endOf(outer)
 
+// 两个网段有没有交集(任一方向包含、或部分重叠都算)
+export const cidrsOverlap = (a, b) => {
+  const x = parseCidr(a)
+  const y = parseCidr(b)
+  return Boolean(x && y && overlaps(x, y))
+}
+
 export const cidrContains = (cidr, ip) => {
   const c = parseCidr(cidr)
   const p = parseCidr(ip)

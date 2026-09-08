@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { fetchSelections, resolveSelections, dnsClassesFlipped } from './deploy-runner.mjs'
+import { fetchSelections, resolveSelections, dnsClassesFlipped, firstLayerChanged } from './deploy-runner.mjs'
 import { createMockContext } from '../system/context.mjs'
 import { createPaths } from '../system/paths.mjs'
 import { configMetaPath } from '../system/deploy.mjs'
@@ -150,4 +150,28 @@ test('runExclusive:排在部署队列里按顺序执行,前一个没完后一个
   await first
   await second
   assert.deepEqual(order, ['first', 'second'])
+})
+
+test('firstLayerChanged:只按 IP 分流的站点集从直连切到代理,DNS 分类表看不出来,但入口旁路的集合变了 → 要重新生成(复审 R3)', async () => {
+  const paths = createPaths('/opt/open-box')
+  const routing = { fallbackDefault: 'direct', policies: [{ name: '国内', default: 'direct', rulesets: ['geoip-cn'] }] }
+  const store = { getProfile: () => ({ routing, clientRoutes: [] }), getGroups: () => [{ id: 'g', name: '香港-自动', type: 'urltest', mode: 'dynamic', keywords: [] }] }
+  const meta = {
+    dnsMode: 'dnsmasq',
+    dnsPolicyMembers: ['直连', '香港-自动', '拒绝'],
+    dnsPolicyClasses: { 其他: 'direct' },
+    firstLayer: { dnsMode: 'dnsmasq', dnsForward: 'none', dnsForwardReason: '', nativeBypass: { enabled: true, sets: ['geoip-cn'], reason: '', via: 'nft' }, dnsSourceRules: false },
+  }
+  const ctx = createMockContext({ files: { [configMetaPath(paths)]: JSON.stringify(meta) } })
+  // 老判断看不出来
+  assert.equal(await dnsClassesFlipped(ctx, paths, store, { 国内: '香港-自动' }), false)
+  // 新判断:旁路集合从 [geoip-cn] 变成空 → 变了
+  assert.equal(await firstLayerChanged(ctx, paths, store, { 国内: '香港-自动' }), true)
+  // 没变(还是直连)→ 不动
+  assert.equal(await firstLayerChanged(ctx, paths, store, { 国内: '直连' }), false)
+  // 切回来之后再切(direct→proxy→direct):和部署时一致,不动
+  assert.equal(await firstLayerChanged(ctx, paths, store, {}), false)
+  // 没有元数据 / 老版本没有 firstLayer:不动
+  assert.equal(await firstLayerChanged(createMockContext({}), paths, store, { 国内: '香港-自动' }), false)
+  assert.equal(await firstLayerChanged(createMockContext({ files: { [configMetaPath(paths)]: JSON.stringify({ ...meta, firstLayer: undefined }) } }), paths, store, { 国内: '香港-自动' }), false)
 })

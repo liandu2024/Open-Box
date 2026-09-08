@@ -2,7 +2,8 @@ import express from 'express'
 import net from 'node:net'
 import tls from 'node:tls'
 import { PANEL_INBOUND_PORT, PANEL_INBOUND_TAG } from '../engine/config.mjs'
-import { CLASH_API_BASE, matchLocalConditions, matchRuleSetList } from './penetration.mjs'
+import { CLASH_API_BASE, hasDestinationCondition, matchLocalConditions, matchRuleSetList } from './penetration.mjs'
+import { cidrContains } from '../system/local-subnets.mjs'
 import { fetchSelections } from './deploy-runner.mjs'
 import { flushDnsCache } from '../system/dns-cache.mjs'
 import { builtinTags } from '../engine/user-groups.mjs'
@@ -41,8 +42,9 @@ const fetchWithTimeout = async (fetchImpl, url, init = {}, timeoutMs = 8000) => 
   }
 }
 
-// dns.rules 里每条的条件和 route.rules 同一套写法(rule_set / domain / domain_suffix / domain_keyword)
-export const decideDnsServer = async (ctx, paths, config, target) => {
+// dns.rules 里每条的条件和 route.rules 同一套写法(rule_set / domain / domain_suffix / domain_keyword /
+// source_ip_cidr)。带来源条件的规则要有终端来源 IP 才判得了;没给就如实说判不了(复审 R5)
+export const decideDnsServer = async (ctx, paths, config, target, { sourceIp = '' } = {}) => {
   const dns = config.dns || {}
   const servers = new Map((dns.servers || []).map((s) => [s.tag, s]))
   const srsPathByTag = new Map(((config.route || {}).rule_set || []).map((r) => [r.tag, r.path]))
@@ -50,9 +52,17 @@ export const decideDnsServer = async (ctx, paths, config, target) => {
   for (let i = 0; i < rules.length; i++) {
     const rule = rules[i]
     if (!rule || typeof rule !== 'object') continue
-    let hit = false
-    if (matchLocalConditions(rule, target)) hit = true
-    else if (Object.prototype.hasOwnProperty.call(rule, 'rule_set')) {
+    const hasDest = hasDestinationCondition(rule)
+    const hasSource = Object.prototype.hasOwnProperty.call(rule, 'source_ip_cidr')
+    if (!hasDest && !hasSource) continue
+    if (hasSource) {
+      if (!sourceIp) return { ruleIndex: i, undetermined: 'sourceIp' }
+      const list = Array.isArray(rule.source_ip_cidr) ? rule.source_ip_cidr : [rule.source_ip_cidr]
+      if (!list.some((c) => cidrContains(c, sourceIp))) continue
+    }
+    let hit = !hasDest
+    if (hasDest && matchLocalConditions(rule, target)) hit = true
+    else if (hasDest && Object.prototype.hasOwnProperty.call(rule, 'rule_set')) {
       const r = await matchRuleSetList(ctx, paths, srsPathByTag, rule.rule_set, target)
       if (r.error) return { error: `dns rule #${i + 1}: ${r.error}` }
       hit = r.hit
@@ -154,7 +164,8 @@ export const registerRouteTestRoutes = (app, { store, ctx, paths, fetchImpl = gl
       out.dns = { skipped: true }
     } else {
       try {
-        out.dns = await decideDnsServer(ctx, paths, config, target)
+        const sourceIp = req.body && typeof req.body.sourceIp === 'string' && net.isIP(req.body.sourceIp.trim()) ? req.body.sourceIp.trim() : ''
+        out.dns = await decideDnsServer(ctx, paths, config, target, { sourceIp })
       } catch (err) {
         out.dns = { error: errorMessage(err) }
       }
@@ -222,6 +233,9 @@ export const registerRouteTestRoutes = (app, { store, ctx, paths, fetchImpl = gl
           try {
             const r6 = await fetchWithTimeout(fetchImpl, `${CLASH_API_BASE}/dns/query?name=${encodeURIComponent(target)}&type=AAAA`, { headers: clashHeaders(secret) }, 8000)
             const body6 = await r6.json().catch(() => null)
+            // 查询本身成没成功(HTTP 状态)和有没有记录分开记:空答案不能盖住"查询失败"
+            out.resolve.ok6 = r6.ok
+            out.resolve.status6 = r6.status
             out.resolve.answers6 = ((body6 && body6.Answer) || []).filter((a) => a && a.data && String(a.data).includes(':')).map((a) => a.data)
           } catch (err) {
             out.resolve.answers6 = []
@@ -316,6 +330,14 @@ export const registerRouteTestRoutes = (app, { store, ctx, paths, fetchImpl = gl
     }
     if (typeof r.close === 'function') r.close()
     out.exit = exit
+    // 有 AAAA 记录就按第一个 v6 地址再访问一次,v4 / v6 链路分别验证(只记探测结果,不再查连接表)
+    const connectTo6 = !isIp(target) && out.resolve && Array.isArray(out.resolve.answers6) && out.resolve.answers6.length ? String(out.resolve.answers6[0]) : ''
+    if (connectTo6) {
+      const r6 = await probe(target, { port, secure, connectTo: connectTo6 })
+      out.exit6 = { connectTo: connectTo6, ok: r6.ok, status: r6.status, ms: r6.ms }
+      if (!r6.ok) out.exit6.error = r6.error
+      if (typeof r6.close === 'function') r6.close()
+    }
     res.json(out)
   })
 

@@ -671,6 +671,8 @@ export interface OpenboxPenetrationMatched {
 
 export interface OpenboxPenetrationResult {
   matched: OpenboxPenetrationMatched | null
+  // 判不了的那条规则:要看终端来源 IP / 目标端口,这次查询没给(matchError 里有人话说明)
+  undetermined?: { index: number; rule: Record<string, unknown>; needs: ('sourceIp' | 'port')[] }
   // 按内核当前配置里的 DNS 规则推出来的解析方式(目标是 IP 时为 skipped)
   dns?:
     | { skipped: true }
@@ -810,7 +812,9 @@ export interface OpenboxRouteTest {
   // 截下查询并应答的那个节点(detour 此刻落到的节点),直连解析回 fake-ip 时没有这个字段
   // ttl:答案的剩余 TTL(秒);cached:代理侧解析几毫秒就回来了,是内核缓存里的答案,这次没有经线路去问
   // answers 是 A 记录;档案开了 IPv6 时再查一次 AAAA 放 answers6(没开就没有这个字段)
-  resolve?: { ok: boolean; status?: number; answers: string[]; answers6?: string[]; error6?: string; ms: number; error?: string; fakeIp?: boolean; fakeIpFrom?: string; ttl?: number; cached?: boolean }
+  resolve?: { ok: boolean; status?: number; answers: string[]; answers6?: string[]; ok6?: boolean; status6?: number; error6?: string; ms: number; error?: string; fakeIp?: boolean; fakeIpFrom?: string; ttl?: number; cached?: boolean }
+  // 有 AAAA 记录时按第一个 v6 地址再访问一次的结果(只有探测结果,没有连接表信息)
+  exit6?: { connectTo: string; ok?: boolean; status?: number; ms?: number; error?: string }
   exit: {
     url: string
     ok?: boolean

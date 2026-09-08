@@ -293,3 +293,27 @@ test('档案开了 IPv6:再查一次 AAAA,单独放 answers6;没开就没有这�
   assert.equal(off.resolve.answers6, undefined)
   assert.deepEqual(asked, ['A'])
 })
+
+test('decideDnsServer:带来源条件的 DNS 规则——没给来源 IP 判不了;给了按来源判;拒绝规则报 rejected(复审 R5)', async () => {
+  const cfg = {
+    dns: {
+      servers: [{ type: 'udp', tag: 'dns-direct', server: '9.9.9.9' }, { type: 'tcp', tag: 'dns-client-0', server: '1.1.1.1', detour: '香港-自动' }],
+      rules: [
+        { source_ip_cidr: ['192.168.3.9/32'], server: 'dns-client-0' },
+        { domain_suffix: ['ads.example'], action: 'reject' },
+        { domain_suffix: ['baidu.com'], server: 'dns-direct' },
+      ],
+      final: 'dns-direct',
+    },
+    route: { rule_set: [] },
+  }
+  const ctx = createMockContext({})
+  const none = await decideDnsServer(ctx, paths, cfg, 'www.baidu.com')
+  assert.deepEqual(none, { ruleIndex: 0, undetermined: 'sourceIp' })
+  const hit = await decideDnsServer(ctx, paths, cfg, 'www.baidu.com', { sourceIp: '192.168.3.9' })
+  assert.equal(hit.server.tag, 'dns-client-0'); assert.equal(hit.viaProxy, true)
+  const other = await decideDnsServer(ctx, paths, cfg, 'www.baidu.com', { sourceIp: '192.168.3.10' })
+  assert.equal(other.server.tag, 'dns-direct'); assert.equal(other.ruleIndex, 2)
+  const rejected = await decideDnsServer(ctx, paths, cfg, 'x.ads.example', { sourceIp: '192.168.3.10' })
+  assert.equal(rejected.rejected, true)
+})

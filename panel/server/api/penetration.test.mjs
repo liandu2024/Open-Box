@@ -52,11 +52,11 @@ const startApp = async ({ ctx, store, fetchImpl } = {}) => {
   }
 }
 
-const post = async (baseUrl, target) => {
+const post = async (baseUrl, target, extra = {}) => {
   const res = await fetch(`${baseUrl}/api/openbox/penetration`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ target }),
+    body: JSON.stringify({ target, ...extra }),
   })
   return { res, body: await res.json() }
 }
@@ -871,4 +871,75 @@ test('分流改过但没重启:回传 routingStale', async () => {
   assert.equal(same.routingStale, undefined)
   // 老版本部署出来的 meta 没有这个字段 → 不判,免得误报
   assert.equal((await run({ dnsMode: 'dnsmasq' })).routingStale, undefined)
+})
+
+// ---------- 复审 R5:IPv6 网段、来源条件、目标 + 端口的组合条件 ----------
+const groupsHK = [{ id: 'hk', name: '香港-自动', type: 'urltest', mode: 'dynamic', keywords: [] }]
+const r5Store = (profilePatch) => {
+  const store = memStore()
+  store.setProfile({ directForNodes: false, ipv6: true, dns: { split: true, mode: 'dnsmasq', direct: '9.9.9.9', proxy: '1.1.1.1' }, routing: { policies: [], fallbackDefault: 'direct' }, ...profilePatch })
+  store.setGroups(groupsHK)
+  store.setNodes(NODES)
+  return store
+}
+const noClash = async () => ({ ok: true, status: 200, json: async () => ({ now: '直连' }) })
+
+test('R5a:前置自定义分流写了 IPv6 网段,查 v6 地址要命中它,不能落到兜底', async () => {
+  const store = r5Store({ routing: { policies: [], fallbackDefault: 'direct', custom: { rules: [{ type: 'ipCidr', value: '2001:db8:1234::/48', outbound: '香港-自动' }] } } })
+  const { baseUrl, close } = await startApp({ ctx: createMockContext({}), store, fetchImpl: noClash })
+  try {
+    const { body } = await post(baseUrl, '2001:db8:1234::42')
+    assert.ok(body.matched, JSON.stringify(body))
+    assert.deepEqual(body.matched.rule.ip_cidr, ['2001:db8:1234::/48'])
+    assert.equal(body.matched.outbound, '香港-自动')
+    const miss = await post(baseUrl, '2001:db8:9999::1')
+    assert.equal(miss.body.matched, null)
+  } finally {
+    await close()
+  }
+})
+
+test('R5b:终端分流的来源条件——没给来源 IP 就如实说判不了(不能当成没命中往下数);给了就按来源判', async () => {
+  const store = r5Store({ clientRoutes: [{ id: 'tv', enabled: true, name: 'TV', sources: ['192.168.3.9'], outbound: '香港-自动' }] })
+  const { baseUrl, close } = await startApp({ ctx: createMockContext({}), store, fetchImpl: noClash })
+  try {
+    const none = await post(baseUrl, 'example.com')
+    assert.equal(none.body.matched, null)
+    assert.equal(none.body.finalOutbound, null)
+    assert.deepEqual(none.body.undetermined.needs, ['sourceIp'])
+    assert.ok(none.body.undetermined.rule.source_ip_cidr)
+    assert.match(none.body.matchError, /终端来源 IP/)
+    const hit = await post(baseUrl, 'example.com', { sourceIp: '192.168.3.9' })
+    assert.deepEqual(hit.body.matched.rule.source_ip_cidr, ['192.168.3.9/32'])
+    assert.equal(hit.body.matched.outbound, '香港-自动')
+    const other = await post(baseUrl, 'example.com', { sourceIp: '192.168.3.10' })
+    assert.equal(other.body.matched, null)
+    assert.equal(other.body.finalOutbound, '其他')
+    assert.equal(other.body.undetermined, undefined)
+    const bad = await post(baseUrl, 'example.com', { sourceIp: 'not-an-ip' })
+    assert.equal(bad.res.status, 400)
+  } finally {
+    await close()
+  }
+})
+
+test('R5c:目标 + 端口是"与"的关系——查 172.19.0.2:443 不能命中只管 53 端口的 dnsmasq 回送规则,要落到后面的 tun 防回环拒绝;不给端口就判不了', async () => {
+  const store = r5Store({})
+  const { baseUrl, close } = await startApp({ ctx: createMockContext({}), store, fetchImpl: noClash })
+  try {
+    const https = await post(baseUrl, '172.19.0.2', { port: 443 })
+    assert.equal(https.body.matched.action, 'reject', JSON.stringify(https.body.matched))
+    assert.deepEqual(https.body.matched.rule.ip_cidr, ['172.19.0.0/30', 'fdfe:dcba:9876::/126'])
+    const dns = await post(baseUrl, '172.19.0.2', { port: 53 })
+    assert.equal(dns.body.matched.outbound, 'dnsmasq')
+    assert.deepEqual(dns.body.matched.rule.port, [53])
+    const unknown = await post(baseUrl, '172.19.0.2')
+    assert.equal(unknown.body.matched, null)
+    assert.deepEqual(unknown.body.undetermined.needs, ['port'])
+    assert.match(unknown.body.matchError, /目标端口/)
+    const bad = await post(baseUrl, '172.19.0.2', { port: 70000 })
+    assert.equal(bad.res.status, 400)
+  } finally {
+    await close()
+  }
 })

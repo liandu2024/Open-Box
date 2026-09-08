@@ -498,14 +498,19 @@ export const dnsmasqForwardPlan = (routing, members = ['direct'], builtin = DEFA
   const conf = normalizeRouting(routing)
   const all = (reason) => ({ mode: 'all', domains: [], reason })
   if (!policyGoesDirect(conf.fallback.name, conf.fallback.default, members, builtin, selections)) return all(`兜底「${conf.fallback.name}」走代理`)
+  // 广告拦截是规则集,dnsmasq 展不开;拦截又必须在 DNS 入口就生效(否则查询交给原上游,内核里的
+  // 拒绝规则根本碰不到),只能全量交给内核(复审 R7)
+  if (conf.adBlock) return all('广告拦截开着,拦截规则集 dnsmasq 展不开,拒绝只能在内核里做')
   const domains = new Set()
-  // 前置自定义分流:走代理的域名行要进名单;按 IP / 端口分流的行在解析阶段用不上,跳过
+  // 前置自定义分流:走代理和要拒绝的域名行都要进名单——拒绝的交给内核,内核的 DNS 规则会拒
+  // (留在原上游它就被正常解析了);按 IP / 端口分流的行在解析阶段用不上,跳过
   if (customPolicyActive(conf.custom)) {
     for (const rule of conf.custom.rules) {
       const target = customOutboundTag(rule, builtin)
-      if (target === builtin.direct || target === builtin.block) continue
+      if (target === builtin.direct) continue
+      const what = target === builtin.block ? '要拒绝的' : ''
       if (rule.type === 'domain' || rule.type === 'domainSuffix') domains.add(rule.value)
-      else if (CUSTOM_TYPE_LABEL[rule.type]) return all(`前置自定义分流的「${rule.value}」是${CUSTOM_TYPE_LABEL[rule.type]},dnsmasq 展不开`)
+      else if (CUSTOM_TYPE_LABEL[rule.type]) return all(`前置自定义分流${what}「${rule.value}」是${CUSTOM_TYPE_LABEL[rule.type]},dnsmasq 展不开`)
     }
   }
   for (const p of conf.activePolicies) {
@@ -536,14 +541,32 @@ export const nativeBypassPlan = (routing, { members = ['direct'], builtin = DEFA
   if (customPolicyActive(conf.custom)) return off('前置自定义分流有规则,它的优先级高于按目标 IP 直连')
   if (clientRoutes.some((cr) => cr && cr.outbound && cr.outbound !== builtin.direct)) return off('有终端被指定走代理,该终端的全部流量都要进内核')
   if (conf.adBlock) return off('广告拦截开着,命中广告规则的目标要在内核里拒绝')
+  // 站点集按顺序首条命中:排在某个直连站点集前面的任何走代理 / 拒绝的站点集,都可能先命中
+  // 同一个地址(同一个 geoip 集合、部分 IP 重叠,或域名规则解析出来正好是这段里的 IP——入口只看
+  // IP,分不出域名)。入口一旦放走,后面的内核规则救不回来。所以只收"前面没有任何非直连站点集"
+  // 的直连集合;后面的直连集合按兼容路径(进内核由 direct 出站连),原因记下来(复审 R2)
   const sets = []
+  let earlierNonDirect = ''
+  const skipped = []
   for (const p of conf.activePolicies) {
-    if (!policyGoesDirect(p.name, p.default, members, builtin, selections)) continue
+    if (!policyGoesDirect(p.name, p.default, members, builtin, selections)) {
+      if (!earlierNonDirect) earlierNonDirect = p.name
+      continue
+    }
     // geoip-private 不收:它含 240.0.0.0/4(一直到 255.255.255.255),sing-tun 1.13.14 把"到地址空间
     // 末尾"的区间编成起止同一个键,内核回 EEXIST、auto_redirect 整个起不来(开发路由器实测:单独
     // 给 geoip-private 就崩,单独给 geoip-cn 正常)。私网段本来就在 tun 的静态排除表里,不需要它
-    for (const tag of p.rulesets) if (/^geoip-/.test(tag) && tag !== 'geoip-private' && !sets.includes(tag)) sets.push(tag)
+    const geoip = p.rulesets.filter((tag) => /^geoip-/.test(tag) && tag !== 'geoip-private')
+    if (!geoip.length) continue
+    if (earlierNonDirect) {
+      skipped.push(p.name)
+      continue
+    }
+    for (const tag of geoip) if (!sets.includes(tag)) sets.push(tag)
   }
-  if (!sets.length) return off('走直连的站点集里没有 geoip 规则集,入口没有可用的 IP 集合')
-  return { enabled: true, sets, reason: '' }
+  if (!sets.length) {
+    if (skipped.length) return off(`站点集「${skipped.join('」「')}」前面还有走代理 / 拒绝的站点集「${earlierNonDirect}」,它可能先命中同样的地址(域名规则解析出来的 IP 在入口分不出来),按顺序不能越过它`)
+    return off('走直连的站点集里没有 geoip 规则集,入口没有可用的 IP 集合')
+  }
+  return { enabled: true, sets, reason: skipped.length ? `站点集「${skipped.join('」「')}」排在「${earlierNonDirect}」之后,没有进入口旁路` : '' }
 }

@@ -64,6 +64,11 @@
             <span class="font-mono">{{ result.exit.url }}</span>
             <span v-if="result.exit.destinationIP">{{ $t('routeTestDestination') }}: <span class="font-mono">{{ result.exit.destinationIP }}</span></span>
             <span v-if="result.exit.status !== undefined">HTTP {{ result.exit.status }} · {{ statusText(result.exit.status) }}</span>
+            <!-- v6 单独访问一次的结果:和 v4 分开看,不然"AAAA 有记录"会被当成"v6 能通" -->
+            <span
+              v-if="result.exit6"
+              :class="result.exit6.ok ? '' : 'text-warning'"
+            >IPv6 <span class="font-mono">{{ result.exit6.connectTo }}</span>: {{ result.exit6.ok ? `HTTP ${result.exit6.status} · ${result.exit6.ms}ms` : $t('routeTestRequestFailed', { message: errorText(result.exit6.error || '') }) }}</span>
           </div>
           <!-- 走节点的:节点拿到的是 IP(内核不改写目标),按它直接连,不会再解析。拿到的是
                fake-ip 的情况由上面「DNS · 节点」那一环说明,这里不重复 -->
