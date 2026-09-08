@@ -238,3 +238,64 @@ test('前置自定义分流:只按 IP 匹配的行不进 DNS(解析时还没有 
   assert.ok(!dns.servers.some((x) => x.tag.startsWith('dns-custom')))
   assert.ok(!dns.rules.some((r) => r.ip_cidr || r.port || r.port_range))
 })
+
+// ---------- 第一层整改:顺序、拒绝、终端来源 ----------
+test('DNS 规则顺序和连接侧一致:前置自定义分流 → 直连站点 → 终端分流 → 广告拦截 → 站点集(审核 B4)', () => {
+  const dns = buildDns(
+    withRouting({
+      adBlock: true,
+      custom: { rules: [{ type: 'domainSuffix', value: 'allowed.example', outbound: 'HK' }] },
+      policies: [{ id: 'p', name: 'P', default: 'HK', domainSuffix: ['p.example'] }],
+    }, { dns: { ...base.dns, mode: 'hijack' } }),
+    { groupTags: ['HK'], directHosts: { domains: ['node.example.com'], cidrs: [] }, clientRoutes: [{ sources: ['192.168.3.9/32'], outbound: 'direct' }] },
+  )
+  const at = (pred) => dns.rules.findIndex(pred)
+  const custom = at((r) => r.domain_suffix && r.domain_suffix[0] === 'allowed.example')
+  const hosts = at((r) => r.domain && r.domain.includes('node.example.com'))
+  const client = at((r) => r.source_ip_cidr)
+  const ad = at((r) => r.action === 'reject' && r.rule_set)
+  const site = at((r) => r.domain_suffix && r.domain_suffix[0] === 'p.example')
+  assert.ok(custom >= 0 && custom < hosts && hosts < client && client < ad && ad < site, JSON.stringify(dns.rules))
+})
+
+test('前置自定义分流出口是拒绝的行:解析也拒,不再当直连解析', () => {
+  const dns = buildDns(withRouting({ custom: { rules: [{ type: 'domain', value: 'bad.example', outbound: 'block' }] } }), { groupTags: [] })
+  assert.deepEqual(dns.rules.find((r) => r.domain && r.domain[0] === 'bad.example'), { domain: ['bad.example'], action: 'reject' })
+})
+
+test('终端分流(劫持模式):指定来源的终端,解析跟着它的出口——直连终端用直连解析器,走节点的终端专属解析器,缓存各自独立(审核 B3)', () => {
+  const dns = buildDns(
+    withRouting({ policies: [{ id: 'y', name: 'Youtube', default: 'HK', domainSuffix: ['youtube.com'] }] }, { dns: { ...base.dns, mode: 'hijack' } }),
+    {
+      groupTags: ['HK', 'US'],
+      knownOutbounds: new Set(['HK', 'US', 'direct', 'block', 'VW | 美国-01']),
+      clientRoutes: [
+        { sources: ['192.168.1.10/32', '2001:db8::10/128'], outbound: 'direct' },
+        { sources: ['192.168.1.20/32'], outbound: 'US' },
+        { sources: ['192.168.1.30/32'], outbound: 'VW | 美国-01' },   // 直接指到节点也行
+        { sources: ['192.168.1.40/32'], outbound: 'block' },
+        { sources: ['192.168.1.50/32'], outbound: '已删掉的组' },        // 出口不存在:丢掉
+      ],
+    },
+  )
+  const src = dns.rules.filter((r) => r.source_ip_cidr)
+  assert.deepEqual(src, [
+    { source_ip_cidr: ['192.168.1.10/32', '2001:db8::10/128'], server: 'dns-direct' },
+    { source_ip_cidr: ['192.168.1.20/32'], server: 'dns-client-0' },
+    { source_ip_cidr: ['192.168.1.30/32'], server: 'dns-client-1' },
+    { source_ip_cidr: ['192.168.1.40/32'], action: 'reject' },
+  ])
+  assert.equal(dns.servers.find((s) => s.tag === 'dns-client-0').detour, 'US')
+  assert.equal(dns.servers.find((s) => s.tag === 'dns-client-1').detour, 'VW | 美国-01')
+  assert.equal(dns.independent_cache, true)
+  // 终端规则排在站点集之前:直连终端查 youtube.com 也用直连解析,和它的连接一致
+  const client = dns.rules.findIndex((r) => r.source_ip_cidr)
+  const site = dns.rules.findIndex((r) => r.domain_suffix && r.domain_suffix[0] === 'youtube.com')
+  assert.ok(client < site)
+})
+
+test('终端分流(dnsmasq 转发模式):内核看不到终端来源,不生成来源规则、不开独立缓存——这是明确的限制,不是漏了', () => {
+  const dns = buildDns(withRouting({}), { groupTags: ['HK'], knownOutbounds: new Set(['HK']), clientRoutes: [{ sources: ['192.168.1.20/32'], outbound: 'HK' }] })
+  assert.ok(!dns.rules.some((r) => r.source_ip_cidr))
+  assert.equal(dns.independent_cache, undefined)
+})

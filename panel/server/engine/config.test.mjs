@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { buildConfig } from './config.mjs'
 import { createNode } from './node-model.mjs'
+import { cidrContains } from '../system/local-subnets.mjs'
 
 const nodes = [
   createNode({ tag: '美国-01', type: 'shadowsocks', server: 'a.com', server_port: 8388, fields: { method: 'aes-256-gcm', password: 'pw' }, source: 'clash' }),
@@ -285,4 +286,62 @@ test('回归:任何 DNS 规则都不引用含 IP 的规则集(geoip-* / 规则�
   assert.deepEqual(c.route.rules.find((r) => r.outbound === 'Netflix').rule_set, ['geosite-netflix', 'geoip-netflix'])
   assert.deepEqual(c.route.rules.find((r) => r.outbound === 'Speed').rule_set, [tag, `${tag}-ip`])
   assert.deepEqual(c.dns.rules.find((r) => r.server === 'dns-direct' && r.rule_set)?.rule_set, ['geosite-cn'])
+})
+
+// ---------- 第一层整改:入口排除表与原生旁路 ----------
+const subnets = ['192.168.1.0/24']
+const firstLayerGroups = [{ id: 'g', name: '香港-自动', type: 'urltest', mode: 'dynamic', keywords: [] }]
+const firstLayerProfile = (over = {}) => ({
+  ...profile,
+  ipv6: true,
+  dns: { split: true, mode: 'dnsmasq', direct: '223.5.5.5', proxy: '1.1.1.1' },
+  tun: { autoRedirect: true },
+  routing: { fallbackDefault: 'direct', policies: [{ id: 'cn', name: '国内', default: 'direct', rulesets: ['geoip-cn', 'geosite-cn'] }] },
+  ...over,
+})
+
+test('前置自定义分流把私网段送去节点时,这段要从入口排除表里挖出来,否则永远到不了那条规则(审核 B5)', () => {
+  const c = buildConfig({
+    nodes, regionGroups, userGroups: firstLayerGroups, localSubnets: subnets,
+    profile: firstLayerProfile({ routing: { fallbackDefault: 'direct', policies: [], custom: { rules: [
+      { type: 'ipCidr', value: '10.77.0.0/16', outbound: '香港-自动' },
+      { type: 'ipCidr', value: 'fd77::/48', outbound: '香港-自动' },
+      { type: 'ipCidr', value: '10.88.0.0/16', outbound: 'direct' },          // 直连的不用挖
+      { type: 'ipCidr', value: '10.99.0.0/16', outbound: '不存在的出口' },     // 规则本身会被丢掉,也不挖
+    ] } } }),
+  })
+  const ex = c.inbounds[0].route_exclude_address
+  assert.ok(!ex.some((x) => cidrContains(x, '10.77.0.1')), '10.77.0.0/16 要挖出来')
+  assert.ok(!ex.some((x) => cidrContains(x, 'fd77::1')), 'fd77::/48 要挖出来')
+  assert.ok(ex.some((x) => cidrContains(x, '10.88.0.1')), '直连的私网段照旧排除')
+  assert.ok(ex.some((x) => cidrContains(x, '10.99.0.1')), '出口不存在的不挖')
+  assert.ok(ex.some((x) => cidrContains(x, '10.1.0.1')), '别的 10/8 仍然排除')
+  assert.ok(c.route.rules.some((r) => r.ip_cidr && r.ip_cidr[0] === '10.77.0.0/16' && r.outbound === '香港-自动'))
+})
+
+test('dnsmasq 转发模式不再把本机网段挖出排除表:局域网发给路由器的 DNS 在入口就 return,不进内核绕一圈(审核 A2);劫持模式照旧要挖', () => {
+  const dnsmasq = buildConfig({ nodes, regionGroups, userGroups: firstLayerGroups, localSubnets: subnets, profile: firstLayerProfile() })
+  assert.equal(dnsmasq.inbounds[0].auto_redirect, true)
+  assert.ok(dnsmasq.inbounds[0].route_exclude_address.some((x) => cidrContains(x, '192.168.1.1')), 'dnsmasq 模式:本机网段留在排除表里')
+  const hijack = buildConfig({ nodes, regionGroups, userGroups: firstLayerGroups, localSubnets: subnets, profile: firstLayerProfile({ dns: { split: true, mode: 'hijack', direct: '223.5.5.5', proxy: '1.1.1.1' } }) })
+  assert.ok(!hijack.inbounds[0].route_exclude_address.some((x) => cidrContains(x, '192.168.1.1')), '劫持模式:要挖,DNS 改写规则才碰得到发给路由器的查询')
+  // tun 自己的网段两种模式都挖
+  for (const c of [dnsmasq, hijack]) assert.ok(!c.inbounds[0].route_exclude_address.some((x) => cidrContains(x, '172.19.0.2')))
+})
+
+test('原生旁路:走直连的站点集里的 geoip 集合写进 route_exclude_address_set,并且那个集合在 route.rule_set 里登记过;条件不满足就不写(审核 A1)', () => {
+  const on = buildConfig({ nodes, regionGroups, userGroups: firstLayerGroups, localSubnets: subnets, profile: firstLayerProfile() })
+  assert.deepEqual(on.inbounds[0].route_exclude_address_set, ['geoip-cn'])
+  assert.ok(on.route.rule_set.some((r) => r.tag === 'geoip-cn'))
+  // 有前置自定义分流 → 不写
+  const custom = buildConfig({ nodes, regionGroups, userGroups: firstLayerGroups, localSubnets: subnets, profile: firstLayerProfile({ routing: { ...firstLayerProfile().routing, custom: { rules: [{ type: 'domainSuffix', value: 'a.cn', outbound: '美国' }] } } }) })
+  assert.equal(custom.inbounds[0].route_exclude_address_set, undefined)
+  // 走代理的终端分流 → 不写;指向直连(终端分流存的是真实出站名)的不妨碍
+  const cr = buildConfig({ nodes, regionGroups, userGroups: firstLayerGroups, localSubnets: subnets, profile: firstLayerProfile({ clientRoutes: [{ id: 'a', name: 'a', sources: ['192.168.1.9'], outbound: '香港-自动' }] }) })
+  assert.equal(cr.inbounds[0].route_exclude_address_set, undefined)
+  const crDirect = buildConfig({ nodes, regionGroups, userGroups: firstLayerGroups, localSubnets: subnets, profile: firstLayerProfile({ clientRoutes: [{ id: 'a', name: 'a', sources: ['192.168.1.9'], outbound: '直连' }] }) })
+  assert.deepEqual(crDirect.inbounds[0].route_exclude_address_set, ['geoip-cn'])
+  // 代理页把「国内」切到代理(selections)→ 不写
+  const flipped = buildConfig({ nodes, regionGroups, userGroups: firstLayerGroups, localSubnets: subnets, profile: firstLayerProfile(), selections: { '国内': '香港-自动' } })
+  assert.equal(flipped.inbounds[0].route_exclude_address_set, undefined)
 })

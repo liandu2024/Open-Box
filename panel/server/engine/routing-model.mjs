@@ -487,16 +487,63 @@ export const policyGoesDirect = (name, policyDefault, members, builtin, selectio
   return chosen === builtin.direct
 }
 
-export const dnsmasqForwardDomains = (routing, members = ['direct'], builtin = DEFAULT_BUILTIN, selections = {}) => {
+// 第一层 · DNS:哪些域名的查询要交给内核(其余留给路由器原有的 dnsmasq 和它的上游)。
+//   none     代理面是空的(全部直连):一个都不转发,原 DNS 原样——不再"全量转发更简单"
+//   domains  代理面能逐条列出(只用了域名 / 域名后缀):只转发这些域名
+//   all      代理面列不出来(兜底走代理、用了规则集 / 关键词 / 规则集链接):只能全量转发,内核里再分
+// 三种情况以前都用 [] 表示,调用方把 [] 当"全量转发",全部直连也被整个接管(审核 B2);
+// 前置自定义分流里走代理的域名也没进名单,DNS 和连接走不同出口(审核 B1)。
+const CUSTOM_TYPE_LABEL = { domainKeyword: '域名关键词', geosite: 'geosite 规则集', ruleUrl: '规则集链接', ruleset: '规则集' }
+export const dnsmasqForwardPlan = (routing, members = ['direct'], builtin = DEFAULT_BUILTIN, selections = {}) => {
   const conf = normalizeRouting(routing)
-  if (!policyGoesDirect(conf.fallback.name, conf.fallback.default, members, builtin, selections)) return []
-  const domains = []
+  const all = (reason) => ({ mode: 'all', domains: [], reason })
+  if (!policyGoesDirect(conf.fallback.name, conf.fallback.default, members, builtin, selections)) return all(`兜底「${conf.fallback.name}」走代理`)
+  const domains = new Set()
+  // 前置自定义分流:走代理的域名行要进名单;按 IP / 端口分流的行在解析阶段用不上,跳过
+  if (customPolicyActive(conf.custom)) {
+    for (const rule of conf.custom.rules) {
+      const target = customOutboundTag(rule, builtin)
+      if (target === builtin.direct || target === builtin.block) continue
+      if (rule.type === 'domain' || rule.type === 'domainSuffix') domains.add(rule.value)
+      else if (CUSTOM_TYPE_LABEL[rule.type]) return all(`前置自定义分流的「${rule.value}」是${CUSTOM_TYPE_LABEL[rule.type]},dnsmasq 展不开`)
+    }
+  }
   for (const p of conf.activePolicies) {
     if (policyGoesDirect(p.name, p.default, members, builtin, selections)) continue
-    // 这个集合要走代理,但它的规则 dnsmasq 展不开 → 只能全局转发
-    if (p.rulesets.length || p.domainKeyword.length) return []
-    domains.push(...p.domain, ...p.domainSuffix)
+    // 这个集合要走代理,但它的规则 dnsmasq 展不开 → 只能全量转发
+    if (p.rulesets.length || p.domainKeyword.length || p.ruleUrls.length) return all(`站点集「${p.name}」用了规则集 / 关键词 / 规则集链接,dnsmasq 展不开`)
+    for (const d of [...p.domain, ...p.domainSuffix]) domains.add(d)
   }
-  // 一条都没有的话没必要走这条路径:那意味着全部直连,全局转发反而更简单可靠
-  return [...new Set(domains)]
+  if (!domains.size) return { mode: 'none', domains: [], reason: '没有走代理的域名,DNS 全部由路由器原有上游解析' }
+  return { mode: 'domains', domains: [...domains], reason: '' }
+}
+// 老接口:只回名单。none / all 都是空数组——只给还没改到计划形状的调用方过渡用
+export const dnsmasqForwardDomains = (routing, members = ['direct'], builtin = DEFAULT_BUILTIN, selections = {}) => {
+  const plan = dnsmasqForwardPlan(routing, members, builtin, selections)
+  return plan.mode === 'domains' ? plan.domains : []
+}
+
+// 第一层 · 连接:哪些目标 IP 集合可以在系统入口(nft)就旁路掉、根本不进内核。
+// 只收"此刻走直连"的站点集里的 geoip 规则集(geoip-cn 之类):它们是纯 IP 集合,能直接编进
+// 内核的 route_exclude_address_set。域名集合(geosite)在入口没法按 IP 判,不收。
+// 但只要存在任何比"按目标 IP 直连"优先级更高、且可能把这些 IP 送去别处的规则,旁路就会
+// 越过它们:前置自定义分流(不管哪种类型——域名行解析出来的也可能是国内 IP)、走代理的终端
+// 分流(该终端的全部流量都该走节点)、广告拦截(命中广告域名的国内 IP 该被拒)。这种情况下
+// 不开旁路,直连目标进内核后由 direct 出站连(兼容路径),并把原因记进 config.meta.json。
+export const nativeBypassPlan = (routing, { members = ['direct'], builtin = DEFAULT_BUILTIN, selections = {}, clientRoutes = [] } = {}) => {
+  const conf = normalizeRouting(routing)
+  const off = (reason) => ({ enabled: false, sets: [], reason })
+  if (customPolicyActive(conf.custom)) return off('前置自定义分流有规则,它的优先级高于按目标 IP 直连')
+  if (clientRoutes.some((cr) => cr && cr.outbound && cr.outbound !== builtin.direct)) return off('有终端被指定走代理,该终端的全部流量都要进内核')
+  if (conf.adBlock) return off('广告拦截开着,命中广告规则的目标要在内核里拒绝')
+  const sets = []
+  for (const p of conf.activePolicies) {
+    if (!policyGoesDirect(p.name, p.default, members, builtin, selections)) continue
+    // geoip-private 不收:它含 240.0.0.0/4(一直到 255.255.255.255),sing-tun 1.13.14 把"到地址空间
+    // 末尾"的区间编成起止同一个键,内核回 EEXIST、auto_redirect 整个起不来(开发路由器实测:单独
+    // 给 geoip-private 就崩,单独给 geoip-cn 正常)。私网段本来就在 tun 的静态排除表里,不需要它
+    for (const tag of p.rulesets) if (/^geoip-/.test(tag) && tag !== 'geoip-private' && !sets.includes(tag)) sets.push(tag)
+  }
+  if (!sets.length) return off('走直连的站点集里没有 geoip 规则集,入口没有可用的 IP 集合')
+  return { enabled: true, sets, reason: '' }
 }

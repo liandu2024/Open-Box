@@ -11,6 +11,8 @@ import {
   normalizeRouting,
   policyOutboundOptions,
   parsePortSpec,
+  dnsmasqForwardPlan,
+  nativeBypassPlan,
 } from './routing-model.mjs'
 
 const GROUPS = ['所有-自动', '香港-自动']
@@ -162,12 +164,71 @@ test('兜底走代理时代理面没法枚举,一律全局转发', () => {
   )
 })
 
-test('全都直连时也不走逐条转发:全局转发更简单可靠', () => {
-  assert.deepEqual(
-    forward({ fallbackDefault: 'direct', policies: [{ id: 'b', name: '中国', default: 'direct', rulesets: ['geosite-cn'] }] }),
-    [],
-  )
+test('全都直连时一个域名都不转发(none),不再"全量转发更简单":原 DNS 原样(审核 B2)', () => {
+  const plan = dnsmasqForwardPlan({ fallbackDefault: 'direct', policies: [{ id: 'b', name: '中国', default: 'direct', rulesets: ['geosite-cn'] }] }, MEMBERS)
+  assert.equal(plan.mode, 'none')
+  assert.deepEqual(plan.domains, [])
+  // 老接口对 none 也回空数组
+  assert.deepEqual(forward({ fallbackDefault: 'direct', policies: [] }), [])
 })
+
+test('转发计划把三种情况分开:none / domains / all,并说明为什么只能全量(审核 B1 B2)', () => {
+  const domains = dnsmasqForwardPlan({
+    fallbackDefault: 'direct',
+    policies: [{ id: 'a', name: '谷歌', default: '香港-自动', domainSuffix: ['google.com'] }],
+    // 前置自定义分流里走代理的域名行也要进名单(以前漏掉,DNS 和连接走不同出口)
+    custom: { rules: [
+      { type: 'domainSuffix', value: 'openai.com', outbound: '所有-自动' },
+      { type: 'domain', value: 'api.example.com', outbound: '香港-自动' },
+      { type: 'domainSuffix', value: 'wan.family', outbound: 'direct' },   // 直连的不进名单
+      { type: 'ipCidr', value: '10.77.0.0/16', outbound: '香港-自动' },     // 解析阶段用不上,跳过
+      { type: 'port', value: '51820', outbound: 'direct' },
+    ] },
+  }, MEMBERS)
+  assert.equal(domains.mode, 'domains')
+  assert.deepEqual([...domains.domains].sort(), ['api.example.com', 'google.com', 'openai.com'])
+
+  const kw = dnsmasqForwardPlan({ fallbackDefault: 'direct', custom: { rules: [{ type: 'domainKeyword', value: 'google', outbound: '香港-自动' }] } }, MEMBERS)
+  assert.equal(kw.mode, 'all')
+  assert.match(kw.reason, /域名关键词/)
+  const url = dnsmasqForwardPlan({ fallbackDefault: 'direct', policies: [{ id: 'a', name: 'x', default: '香港-自动', ruleUrls: ['https://e.com/l.txt'] }] }, MEMBERS)
+  assert.equal(url.mode, 'all')
+  assert.match(url.reason, /站点集「x」/)
+  const fb = dnsmasqForwardPlan({ fallbackDefault: 'proxy', policies: [] }, MEMBERS)
+  assert.equal(fb.mode, 'all')
+  assert.match(fb.reason, /兜底/)
+})
+
+test('原生旁路计划:走直连的站点集里的 geoip 集合进入口旁路;有前置分流 / 走代理的终端 / 广告拦截时不开并说明原因', () => {
+  const routing = {
+    fallbackDefault: 'direct',
+    policies: [
+      { id: 'cn', name: '国内', default: 'direct', rulesets: ['geosite-cn', 'geoip-cn', 'geoip-private'] },
+      { id: 'g', name: '谷歌', default: '香港-自动', rulesets: ['geosite-google', 'geoip-google'] },   // 走代理的 geoip 不进
+      { id: 'ms', name: '微软', default: 'direct', domainSuffix: ['microsoft.com'] },                 // 没有 geoip
+    ],
+  }
+  const on = nativeBypassPlan(routing, { members: MEMBERS })
+  // geoip-private 不进集合:它的 240.0.0.0/4 会让 sing-tun 建 nft 集合时 EEXIST(开发路由器实测),私网段静态排除表已经覆盖
+  assert.deepEqual(on, { enabled: true, sets: ['geoip-cn'], reason: '' })
+  // 代理页把「国内」切到代理:它的集合就不能旁路了
+  assert.equal(nativeBypassPlan(routing, { members: MEMBERS, selections: { '国内': '香港-自动' } }).enabled, false)
+  const custom = nativeBypassPlan({ ...routing, custom: { rules: [{ type: 'domainSuffix', value: 'a.cn', outbound: '香港-自动' }] } }, { members: MEMBERS })
+  assert.equal(custom.enabled, false)
+  assert.match(custom.reason, /前置自定义分流/)
+  const cr = nativeBypassPlan(routing, { members: MEMBERS, clientRoutes: [{ sources: ['192.168.3.9/32'], outbound: '香港-自动' }] })
+  assert.equal(cr.enabled, false)
+  assert.match(cr.reason, /终端/)
+  // 终端分流指向直连不妨碍旁路
+  assert.equal(nativeBypassPlan(routing, { members: MEMBERS, clientRoutes: [{ sources: ['192.168.3.9/32'], outbound: 'direct' }] }).enabled, true)
+  const ad = nativeBypassPlan({ ...routing, adBlock: true }, { members: MEMBERS })
+  assert.equal(ad.enabled, false)
+  assert.match(ad.reason, /广告/)
+  const none = nativeBypassPlan({ fallbackDefault: 'direct', policies: [routing.policies[2]] }, { members: MEMBERS })
+  assert.equal(none.enabled, false)
+  assert.match(none.reason, /geoip/)
+})
+
 
 test('停用的站点集留在 policies 里但不进 activePolicies;兜底名字/图标可改', () => {
   const conf = normalizeRouting({

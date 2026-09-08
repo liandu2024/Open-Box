@@ -694,6 +694,14 @@ export interface OpenboxPenetrationResult {
   // 内核还在跑旧的分流配置(改了没重启)。为真时「规则路由」是按当前设置推算的,
   // 下面的「真实路由」才是内核此刻的实际行为,两者对不上是正常的。
   routingStale?: boolean
+  // 部署时第一层的判定(config.meta.json 的 firstLayer,见 server/system/deploy.mjs)
+  firstLayer?: {
+    dnsMode: string
+    dnsForward: 'none' | 'domains' | 'all'
+    dnsForwardReason: string
+    nativeBypass: { enabled: boolean; sets: string[]; reason: string; via?: 'nft' | 'route' }
+    dnsSourceRules: boolean
+  }
 }
 
 export const queryPenetration = async (target: string): Promise<OpenboxPenetrationResult> => {
@@ -801,7 +809,8 @@ export interface OpenboxRouteTest {
   // fakeIp:答案落在 fake-ip 段(198.18.0.0/15),不是配置里那台 DNS 答的;fakeIpFrom 是代理侧解析时
   // 截下查询并应答的那个节点(detour 此刻落到的节点),直连解析回 fake-ip 时没有这个字段
   // ttl:答案的剩余 TTL(秒);cached:代理侧解析几毫秒就回来了,是内核缓存里的答案,这次没有经线路去问
-  resolve?: { ok: boolean; status?: number; answers: string[]; ms: number; error?: string; fakeIp?: boolean; fakeIpFrom?: string; ttl?: number; cached?: boolean }
+  // answers 是 A 记录;档案开了 IPv6 时再查一次 AAAA 放 answers6(没开就没有这个字段)
+  resolve?: { ok: boolean; status?: number; answers: string[]; answers6?: string[]; error6?: string; ms: number; error?: string; fakeIp?: boolean; fakeIpFrom?: string; ttl?: number; cached?: boolean }
   exit: {
     url: string
     ok?: boolean

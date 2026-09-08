@@ -94,15 +94,10 @@ export const buildDns = (profile, options = {}) => {
   // 就用哪条线路解析,和各站点集各自 detour 到自己的 selector 是同一个道理。
   const servers = [directServer, proxyServerFor(proxyHost, 'dns-proxy', conf.fallback.name)]
 
-  // 本地主机名最前(劫持模式才有),然后是订阅和节点站点直连:它们的域名也用直连侧解析
+  // 规则顺序和连接侧(routing.mjs)对齐:本地主机名 → 前置自定义分流 → 订阅 / 节点站点直连 →
+  // 终端分流 → 广告拦截 → 站点集 → 兜底。以前直连站点和广告拦截排在前置自定义分流前面,
+  // 用户明确放行的域名会先被广告规则拒掉(审核 B4)。
   const rules = [...localRules]
-  const dh = options.directHosts
-  if (dh && dh.domains && dh.domains.length) {
-    rules.push({ domain: dh.domains, server: 'dns-direct' })
-  }
-  if (conf.adBlock) {
-    rules.push({ rule_set: conf.adRuleset, action: 'reject' })
-  }
 
   // 每个站点集的域名怎么解析,看它此刻实际走哪:
   //   · 走直连 → dns-direct(本地/直连解析,国内站点才拿得到就近的 CDN 地址)
@@ -131,8 +126,13 @@ export const buildDns = (profile, options = {}) => {
       const match = customDnsMatch(rule, ruleLists)
       if (!match) continue
       const target = customOutboundTag(rule, builtin)
-      if (target === builtin.direct || target === builtin.block) {
+      if (target === builtin.direct) {
         rules.push({ ...match, server: 'dns-direct' })
+        continue
+      }
+      // 出口是拒绝的行:解析也拒,和连接侧一致(明确拒绝不能变成"先解析再说")
+      if (target === builtin.block) {
+        rules.push({ ...match, action: 'reject' })
         continue
       }
       let tag = serverByTarget.get(target)
@@ -143,6 +143,46 @@ export const buildDns = (profile, options = {}) => {
       }
       rules.push({ ...match, server: tag })
     }
+  }
+
+  // 订阅和节点站点直连:它们的域名也用直连侧解析
+  const dh = options.directHosts
+  if (dh && dh.domains && dh.domains.length) {
+    rules.push({ domain: dh.domains, server: 'dns-direct' })
+  }
+
+  // 终端分流:指定来源的终端,解析也跟着它的出口走。只有劫持模式内核才看得到终端的来源地址
+  // (dnsmasq 转发模式下查询是 dnsmasq 转来的,来源一律是本机,写了也永远不命中——审核 B3),
+  // 所以只在劫持模式生成;各解析器的缓存要分开,否则同一域名两台终端会互相拿到对方出口的答案
+  let sourceRules = false
+  if (dnsMode === 'hijack') {
+    const serverByTarget = new Map()
+    for (const cr of Array.isArray(options.clientRoutes) ? options.clientRoutes : []) {
+      if (!cr || !Array.isArray(cr.sources) || !cr.sources.length || !cr.outbound) continue
+      if (cr.outbound === builtin.block) {
+        rules.push({ source_ip_cidr: cr.sources, action: 'reject' })
+        sourceRules = true
+        continue
+      }
+      if (cr.outbound === builtin.direct) {
+        rules.push({ source_ip_cidr: cr.sources, server: 'dns-direct' })
+        sourceRules = true
+        continue
+      }
+      if (options.knownOutbounds instanceof Set && !options.knownOutbounds.has(cr.outbound)) continue
+      let tag = serverByTarget.get(cr.outbound)
+      if (!tag) {
+        tag = `dns-client-${serverByTarget.size}`
+        serverByTarget.set(cr.outbound, tag)
+        servers.push(proxyServerFor(proxyHost, tag, cr.outbound))
+      }
+      rules.push({ source_ip_cidr: cr.sources, server: tag })
+      sourceRules = true
+    }
+  }
+
+  if (conf.adBlock) {
+    rules.push({ rule_set: conf.adRuleset, action: 'reject' })
   }
 
   conf.activePolicies.forEach((policy, index) => {
@@ -157,7 +197,7 @@ export const buildDns = (profile, options = {}) => {
   })
 
   servers.push(...localServers)
-  return {
+  const dns = {
     servers,
     rules,
     // 兜底:上面都没命中的域名,按兜底站点集此刻走哪来定用哪边解析
@@ -165,6 +205,10 @@ export const buildDns = (profile, options = {}) => {
     strategy,
     reverse_mapping: true,
   }
+  // 有按来源分的规则时,各解析器的缓存必须独立:同一个域名,直连终端和走代理的终端拿到的
+  // 答案本来就该不一样,共用一份缓存就串了
+  if (sourceRules) dns.independent_cache = true
+  return dns
 }
 
 // 这次生成把每个站点集(以及兜底)判成了"直连解析"还是"代理解析"。落进 config.meta.json,

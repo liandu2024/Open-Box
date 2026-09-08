@@ -27,6 +27,13 @@
         <span>{{ $t('ruleLookupRoutingStale') }}</span>
       </div>
 
+      <!-- 第一层(部署时记下的):DNS 怎么分、直连目标在入口有没有原生旁路。这是记录不是推算,
+           所以放在推算的链路之前单独一行,免得和"规则路由"混成一回事 -->
+      <div
+        v-if="firstLayerText && !loading"
+        class="text-base-content/60 text-xs"
+      >{{ firstLayerText }}</div>
+
       <RouteFlow
         v-if="result && !loading"
         :nodes="flowNodes"
@@ -225,6 +232,19 @@ const dnsServerText = computed(() => {
 const outbound = computed(() => result.value?.finalOutbound || '')
 // 命中的是哪一条分流条目:站点集的名字就是出站名,前置自定义分流不是,服务端单独给
 const ownerName = computed(() => result.value?.matched?.ownerName || '')
+// 第一层判定的一句话说明:DNS none / domains / all,入口旁路开没开(nft 还是路由表)、没开的原因
+const firstLayerText = computed(() => {
+  const f = result.value?.firstLayer
+  if (!f) return ''
+  const dns = f.dnsMode === 'dnsmasq'
+    ? t(`ruleLookupFirstLayerDns_${f.dnsForward}`)
+    : f.dnsMode === 'hijack' ? t('ruleLookupFirstLayerDnsHijack') : t('ruleLookupFirstLayerDnsOff')
+  const bypass = f.nativeBypass?.enabled
+    ? t('ruleLookupFirstLayerBypassOn', { sets: f.nativeBypass.sets.join(', '), via: f.nativeBypass.via === 'route' ? t('ruleLookupFirstLayerViaRoute') : 'nft' })
+    : t('ruleLookupFirstLayerBypassOff', { reason: f.nativeBypass?.reason || '' })
+  return `${t('ruleLookupFirstLayer')}:${dns};${bypass}`
+})
+
 const isReject = computed(() => result.value?.matched?.action === 'reject')
 const conditionText = computed(() => {
   const rule = (result.value?.matched?.rule || {}) as Record<string, unknown>

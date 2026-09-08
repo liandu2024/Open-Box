@@ -2,7 +2,8 @@ import { detectConflicts } from './conflicts.mjs'
 import { validateConfigObject, attributeBadNodes } from './validate.mjs'
 import { restartService, stopService, serviceStatus } from './service.mjs'
 import { applyDnsTakeover, restoreDnsTakeover, dnsTakeoverBackupPath } from './dns-takeover.mjs'
-import { dnsmasqForwardDomains, normalizeRouting, routingFingerprint } from '../engine/routing-model.mjs'
+import { dnsmasqForwardPlan, nativeBypassPlan, normalizeRouting, routingFingerprint } from '../engine/routing-model.mjs'
+import { normalizeClientRoutes } from '../engine/client-routes.mjs'
 import { dnsPolicyClasses } from '../engine/dns.mjs'
 import { builtinTags } from '../engine/user-groups.mjs'
 import { applyPanelLanRule, applyDnsLanRule, applyIpv6Block, removeProxyRules, applyServerPortRules, commitFirewall } from './firewall.mjs'
@@ -70,7 +71,7 @@ const crashMessage = (fatal, rb) => (fatal
 // 自动降级再试一次,并把原话和常见原因一起告诉用户(GitHub #12 #15)。
 export const AUTO_REDIRECT_FATAL = /auto-redirect: setup nftables/i
 export const autoRedirectFallbackWarning = (fatal) =>
-  `auto_redirect(nftables 转发)起不来,已改用纯 tun 模式启动:功能不受影响,吞吐略低。内核原话:${fatal}。常见原因:固件缺 kmod-nft-nat 等 nftables 模块,或 PassWall / OpenClash 等插件的 nftables 规则冲突——处理好之后重启内核会自动恢复 auto_redirect。`
+  `auto_redirect(nftables 转发)起不来,已改用纯 tun 模式启动(兼容模式):分流规则不受影响,直连目标的入口旁路改由系统路由表实现,吞吐略低。内核原话:${fatal}。常见原因:固件缺 kmod-nft-nat 等 nftables 模块,或 PassWall / OpenClash 等插件的 nftables 规则冲突——处理好之后重启内核会自动恢复 auto_redirect。`
 
 // rebuild(profilePatch):按改过的档案重新生成一份配置(见 api/deploy-runner.mjs)。只在 auto_redirect
 // 起不来要降级重试时用;不传就不降级,照旧回滚直连。
@@ -139,6 +140,11 @@ export const deployConfig = async (ctx, paths, { config, profile, userGroups, fe
     const fallbackSelector = (config.outbounds || []).find((o) => o.tag === fallbackTag)
     const policyMembers = fallbackSelector ? fallbackSelector.outbounds : []
     const builtin = builtinTags(userGroups || [])
+    // 第一层的两个判定(和 engine/config.mjs 生成 tun 入站、下面的 DNS 接管用的是同一份计算):
+    // DNS 转发计划、入口原生旁路。落进元数据,规则页和诊断包都拿它说明"直连到底进没进内核"
+    const clientRoutes = normalizeClientRoutes(profile.clientRoutes)
+    const dnsForward = dnsmasqForwardPlan(profile.routing, policyMembers, builtin, selections || {})
+    const nativeBypass = nativeBypassPlan(profile.routing, { members: policyMembers, builtin, selections: selections || {}, clientRoutes })
     // 配置 + 元数据一起写;auto_redirect 降级重试时再写一遍
     const writeConfigAndMeta = async (cfg) => {
       await ctx.writeFile(paths.configPath, JSON.stringify(cfg, null, 2))
@@ -154,6 +160,16 @@ export const deployConfig = async (ctx, paths, { config, profile, userGroups, fe
           dnsPolicyClasses: dnsPolicyClasses(profile.routing, policyMembers, builtin, selections || {}),
           // 这次部署用的是哪份分流设置。规则页拿它和当前档案比,改了没重启就明说
           routingHash: routingFingerprint(profile.routing),
+          // 第一层:DNS 怎么分(none / domains / all)、入口有没有原生旁路、终端来源的 DNS 规则
+          // 有没有生效(只有劫持模式内核才看得到终端的来源地址;dnsmasq 转发过来的一律是本机)
+          firstLayer: {
+            dnsMode,
+            dnsForward: dnsMode === 'dnsmasq' ? dnsForward.mode : dnsMode === 'hijack' ? 'all' : 'none',
+            dnsForwardReason: dnsMode === 'dnsmasq' ? dnsForward.reason : '',
+            // 开 auto_redirect 时内核把集合写成 nft 集合在入口 return;纯 tun 模式下等价于加进路由表的排除项
+            nativeBypass: nativeBypass.enabled ? { ...nativeBypass, via: autoRedirect ? 'nft' : 'route' } : nativeBypass,
+            dnsSourceRules: dnsMode === 'hijack' && clientRoutes.length > 0,
+          },
         }, null, 2),
       )
     }
@@ -169,10 +185,7 @@ export const deployConfig = async (ctx, paths, { config, profile, userGroups, fe
     // 代理面能被逐条列出来时,只把那几个域名转给内核,其余交回路由器自己解析——
     // 直连的 DNS 就真的不经过 Open-Box 了。列不出来就照旧全局转发。
     // 成员表从刚生成的配置里取(兜底 selector 的成员就是那一份),不另算一遍。
-    await applyDnsTakeover(ctx, paths, {
-      mode: dnsMode,
-      forwardDomains: dnsmasqForwardDomains(profile.routing, policyMembers, builtin, selections || {}),
-    })
+    await applyDnsTakeover(ctx, paths, { mode: dnsMode, forward: dnsForward })
     mark('DNS 接管')
 
     // 6. 防火墙:四条规则各自对齐到目标状态,只要有一条真变了才 commit + reload,且只一次。

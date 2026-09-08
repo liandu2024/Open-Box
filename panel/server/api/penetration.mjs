@@ -5,6 +5,9 @@ import { loadEntries } from './rulesets.mjs'
 import { decideDnsServer } from './route-test.mjs'
 import { buildRoute } from '../engine/routing.mjs'
 import { customOutboundTag, customPolicyActive, customRuleTag, normalizeRouting, parsePortSpec, routingFingerprint } from '../engine/routing-model.mjs'
+import { DNSMASQ_OUTBOUND_TAG, TUN_V4_NET, TUN_V6_NET } from '../engine/config.mjs'
+import { normalizeClientRoutes } from '../engine/client-routes.mjs'
+import { readRuleListShapes } from '../system/rule-lists.mjs'
 import { configMetaPath } from '../system/deploy.mjs'
 import { isPrivateOrLoopbackIp } from './net-guard.mjs'
 
@@ -247,7 +250,16 @@ export const registerPenetrationRoutes = (app, { store, ctx, paths, fetchImpl = 
     const directHosts = profile.directForNodes === false
       ? null
       : collectDirectHosts(store.getNodes ? store.getNodes() : [], store.getSubscriptions ? store.getSubscriptions() : [])
-    const { route } = buildRoute(profile.routing, profile.rulesetDir, { dnsMode: profile.dns && profile.dns.mode, directTag: builtin.direct, directHosts })
+    // 生成配置时带的上下文这里都要带齐:终端分流、tun 防回环网段、内置拒绝的名字、dnsmasq 回送、
+    // 规则集链接的形状表——少一样,数出来的"第几条"和内核里的就对不上(审核 C1)
+    const dnsMode = (profile.dns && profile.dns.mode) || 'hijack'
+    const { route } = buildRoute(profile.routing, profile.rulesetDir, {
+      dnsMode, directTag: builtin.direct, blockTag: builtin.block, directHosts,
+      tunCidrs: profile.ipv6 ? [TUN_V4_NET, TUN_V6_NET] : [TUN_V4_NET],
+      dnsmasqTag: dnsMode === 'dnsmasq' ? DNSMASQ_OUTBOUND_TAG : '',
+      clientRoutes: normalizeClientRoutes(profile.clientRoutes),
+      ruleLists: await readRuleListShapes(ctx, paths),
+    })
 
     // tag → 本地 .srs 路径:直接复用 buildRoute 已经算好的 rule_set 映射,
     // 不再重复拼接(避免与 buildRoute 内部拼接规则出现两处不一致)。
@@ -347,17 +359,22 @@ export const registerPenetrationRoutes = (app, { store, ctx, paths, fetchImpl = 
     // 上面已经按新规则走站点集,下面还在按旧规则走那条被删的线路。不说清楚就像查出来是乱的。
     // 老版本部署出来的 meta 没有这个字段,那就不判,免得误报。
     let routingStale = false
+    let firstLayer = null
     try {
       const meta = JSON.parse(await ctx.readFile(configMetaPath(paths)))
       if (typeof meta.routingHash === 'string' && meta.routingHash) {
         routingStale = meta.routingHash !== routingFingerprint(profile.routing)
       }
+      // 这次部署时第一层的判定(DNS 怎么分、入口有没有原生旁路),规则页照实说明——它是部署时
+      // 的记录,不是此刻推算;分流改了没重启的话以 routingStale 为准
+      if (meta.firstLayer && typeof meta.firstLayer === 'object') firstLayer = meta.firstLayer
     } catch {
       // 没有 meta / 读不动:不判
     }
 
     const body = { matched, chain, finalOutbound }
     if (routingStale) body.routingStale = true
+    if (firstLayer) body.firstLayer = firstLayer
     if (chainError) body.chainError = chainError
     if (matchError) body.matchError = matchError
 

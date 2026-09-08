@@ -402,3 +402,25 @@ test('不是 auto_redirect 那类崩溃、或没开 auto_redirect、或没给 re
   assert.ok(AUTO_REDIRECT_FATAL.test('FATAL[0000] start service: post-start inbound/tun[tun-in]: auto-redirect: setup nftables: flush nftables: conn.Receive: netlink receive: file exists'))
   assert.ok(!AUTO_REDIRECT_FATAL.test(other))
 })
+
+test('config.meta.json 记下第一层的判定:DNS 转发计划、入口原生旁路、终端来源 DNS 规则是否生效', async () => {
+  const ctx = okCtx()
+  const r = await deployConfig(ctx, paths, {
+    // 兜底 selector 的成员用内核里的真实 tag(内置直连叫「直连」),部署就是从它身上读成员表的
+    config: { ...config, outbounds: [{ type: 'direct', tag: '直连' }, { type: 'selector', tag: '其他', outbounds: ['直连'], default: '直连' }] },
+    profile: {
+      ipv6: false, dns: { mode: 'dnsmasq' }, tun: { autoRedirect: true },
+      routing: { fallbackDefault: 'direct', policies: [{ id: 'cn', name: '国内', default: 'direct', rulesets: ['geoip-cn'] }] },
+      clientRoutes: [],
+    },
+  })
+  assert.equal(r.ok, true, r.message)
+  const meta = JSON.parse(ctx.writes.filter((w) => w.path === configMetaPath(paths)).pop().content)
+  assert.equal(meta.firstLayer.dnsMode, 'dnsmasq')
+  assert.equal(meta.firstLayer.dnsForward, 'none')             // 全部直连:一个域名都不转发
+  assert.match(meta.firstLayer.dnsForwardReason, /原有上游/)
+  assert.deepEqual(meta.firstLayer.nativeBypass, { enabled: true, sets: ['geoip-cn'], reason: '', via: 'nft' })
+  assert.equal(meta.firstLayer.dnsSourceRules, false)
+  // 全部直连时 dnsmasq 不被接管:没有 add_list 127.0.0.1#7853
+  assert.ok(!cmds(ctx).some((c) => c.includes('add_list') && c.includes('127.0.0.1#7853')))
+})

@@ -61,8 +61,25 @@ const listOurEntries = async (ctx) => {
   return String(stdout || '').split(/\s+/).filter((v) => v && v.endsWith(SINGBOX_DNS_UPSTREAM))
 }
 
-export const applyDnsTakeover = async (ctx, paths, { mode, forwardDomains = [] } = {}) => {
+export const applyDnsTakeover = async (ctx, paths, { mode, forwardDomains = [], forward } = {}) => {
   if (mode !== 'dnsmasq') return { changed: false, actions: [] }
+  // 计划(engine/routing-model.mjs 的 dnsmasqForwardPlan)优先;老调用方只传名单时按老语义折算
+  const plan = forward && typeof forward === 'object'
+    ? forward
+    : { mode: Array.isArray(forwardDomains) && forwardDomains.length ? 'domains' : 'all', domains: forwardDomains }
+
+  // 全部直连:DNS 一个都不用转给内核,路由器原有的上游 / AdGuard 链条原样保留。
+  // 之前接管过(有备份)就还原回接管前的状态;没接管过就什么都不动
+  if (plan.mode === 'none') {
+    if (await ctx.exists(backupPath(paths))) {
+      await restoreDnsTakeover(ctx, paths)
+      return { changed: true, actions: ['restore:none'] }
+    }
+    const sp = dnsTakeoverStatePath(paths)
+    if (await ctx.exists(sp)) await ctx.remove(sp)
+    return { changed: false, actions: ['none'] }
+  }
+  forwardDomains = plan.mode === 'domains' ? plan.domains : []
 
   if (!(await ctx.exists(backupPath(paths)))) {
     const { stdout } = await ctx.exec('uci', ['show', 'dhcp.@dnsmasq[0]'])

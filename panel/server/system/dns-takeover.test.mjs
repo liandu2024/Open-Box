@@ -219,3 +219,38 @@ test('还原:重建原上游的 add_list 失败也抛错、留备份;delete / de
   assert.deepEqual(await restoreDnsTakeover(ok, paths), { restored: true })
   assert.equal(await ok.exists('/opt/open-box/data/dnsmasq-backup.txt'), false)
 })
+
+test('转发计划 none(全部直连):接管过就还原到接管前的上游并删状态文件;没接管过就一个字不动', async () => {
+  // 接管过:备份在,uci 里是我们写的全量转发
+  const ctx = createMockContext({
+    files: { '/opt/open-box/data/dnsmasq-backup.txt': "dhcp.cfg01411c.server='223.5.5.5' '192.168.3.5'\ndhcp.cfg01411c.noresolv='0'\n", '/opt/open-box/data/dnsmasq-takeover.txt': 'server=127.0.0.1#7853\nnoresolv=1\n' },
+    execResults: { 'uci -q get dhcp.@dnsmasq[0].server': { code: 0, stdout: '127.0.0.1#7853\n' } },
+  })
+  const r = await applyDnsTakeover(ctx, paths, { mode: 'dnsmasq', forward: { mode: 'none', domains: [], reason: '' } })
+  assert.equal(r.changed, true)
+  assert.deepEqual(r.actions, ['restore:none'])
+  const c = cmds(ctx)
+  assert.ok(c.includes('uci add_list dhcp.@dnsmasq[0].server=223.5.5.5'))
+  assert.ok(c.includes('uci add_list dhcp.@dnsmasq[0].server=192.168.3.5'))
+  assert.ok(c.includes('uci set dhcp.@dnsmasq[0].noresolv=0'))
+  assert.ok(c.includes('uci commit dhcp'))
+  assert.equal(await ctx.exists('/opt/open-box/data/dnsmasq-backup.txt'), false)
+  assert.equal(await ctx.exists('/opt/open-box/data/dnsmasq-takeover.txt'), false)
+  assert.ok(!c.some((x) => x.includes('127.0.0.1#7853') && x.startsWith('uci add_list')))
+
+  // 没接管过:什么都不碰
+  const ctx2 = createMockContext()
+  const r2 = await applyDnsTakeover(ctx2, paths, { mode: 'dnsmasq', forward: { mode: 'none', domains: [] } })
+  assert.equal(r2.changed, false)
+  assert.ok(!cmds(ctx2).some((x) => x.startsWith('uci ')))
+})
+
+test('转发计划 domains / all 和老的名单参数等价', async () => {
+  const mk = () => createMockContext({ execResults: { 'uci show dhcp.@dnsmasq[0]': { code: 0, stdout: "dhcp.cfg01411c.server='223.5.5.5'\n" } } })
+  const a = mk(); await applyDnsTakeover(a, paths, { mode: 'dnsmasq', forward: { mode: 'domains', domains: ['google.com'] } })
+  assert.ok(cmds(a).includes('uci add_list dhcp.@dnsmasq[0].server=/google.com/127.0.0.1#7853'))
+  assert.ok(!cmds(a).some((x) => x.includes('noresolv=1')))
+  const b = mk(); await applyDnsTakeover(b, paths, { mode: 'dnsmasq', forward: { mode: 'all', domains: [], reason: 'x' } })
+  assert.ok(cmds(b).includes('uci add_list dhcp.@dnsmasq[0].server=127.0.0.1#7853'))
+  assert.ok(cmds(b).includes('uci set dhcp.@dnsmasq[0].noresolv=1'))
+})

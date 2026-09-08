@@ -1,13 +1,13 @@
 import { emitOutbound } from './emit-outbound.mjs'
 import { emitEndpoint } from './emit-endpoint.mjs'
 import { emitUserGroups } from './user-groups.mjs'
-import { effectiveOutbound, normalizeRouting, policyOutboundOptions } from './routing-model.mjs'
+import { customOutboundTag, customPolicyActive, effectiveOutbound, nativeBypassPlan, normalizeRouting, policyOutboundOptions } from './routing-model.mjs'
 import { buildRoute } from './routing.mjs'
 import { buildServerInbounds } from './servers.mjs'
 import { normalizeClientRoutes } from './client-routes.mjs'
 import { buildDns } from './dns.mjs'
 import { collectDirectHosts } from './direct-hosts.mjs'
-import { subtractCidrs } from '../system/local-subnets.mjs'
+import { cidrContains, parseCidr, subtractCidrs } from '../system/local-subnets.mjs'
 
 // 面板专用回环入站的端口(见下方 inbounds 注释)
 export const PANEL_INBOUND_PORT = 7891
@@ -17,8 +17,8 @@ export const PANEL_INBOUND_TAG = 'panel-in'
 const TUN_V4 = '172.19.0.1/30'
 const TUN_V6 = 'fdfe:dcba:9876::1/126'
 // 上面两个地址所在的网段,给路由规则做防回环用(见 routing.mjs)
-const TUN_V4_NET = '172.19.0.0/30'
-const TUN_V6_NET = 'fdfe:dcba:9876::/126'
+export const TUN_V4_NET = '172.19.0.0/30'
+export const TUN_V6_NET = 'fdfe:dcba:9876::/126'
 
 // 私网 / 链路本地 / 组播目标不进 TUN,由内核按普通路由转发——和 OpenClash 的 localnetwork
 // 放行一致。否则局域网里发往任何私网地址(包括指向死网关的静态路由网段)的包都会进 sing-box,
@@ -120,39 +120,62 @@ export const buildConfig = ({ nodes, profile, userGroups, systemDns, localSubnet
   if (duplicateTag) {
     throw new Error(`出站名称重复:「${duplicateTag}」——节点组、站点集、节点、内置直连/拒绝之间不能同名,请改名后再启动`)
   }
+  // 终端分流(engine/client-routes.mjs);出口只认配置里真有的 outbound。
+  // wireguard 是 endpoint 不是 outbound,但路由规则一样能指向它的 tag
+  const clientRoutes = normalizeClientRoutes(profile.clientRoutes)
+  const knownOutbounds = new Set([...outbounds, ...endpoints].map((o) => o.tag))
   const { route } = buildRoute(sanitizedRouting, profile.rulesetDir, {
     dnsMode, directTag: builtin.direct, blockTag: builtin.block, directHosts,
     tunCidrs: profile.ipv6 ? [TUN_V4_NET, TUN_V6_NET] : [TUN_V4_NET],
     dnsmasqTag: dnsMode === 'dnsmasq' ? DNSMASQ_OUTBOUND_TAG : '',
-    // 终端分流(engine/client-routes.mjs);出口只认配置里真有的 outbound
-    clientRoutes: normalizeClientRoutes(profile.clientRoutes),
-    // wireguard 是 endpoint 不是 outbound,但路由规则一样能指向它的 tag
-    knownOutbounds: new Set([...outbounds, ...endpoints].map((o) => o.tag)),
+    clientRoutes,
+    knownOutbounds,
     // 规则集链接各自有没有域名 / IP 那份 .srs(见 system/rule-lists.mjs)
     ruleLists,
   })
   // groupTags 传给 DNS:它要按"这个站点集默认走哪"决定用直连还是代理侧解析,
   // 而"默认走哪"在 default 为空时取决于成员表的第一项(见 effectiveOutbound)。
-  const dns = buildDns(profile, { systemDns, groupTags, builtin, selections, directHosts, ruleLists })
+  const dns = buildDns(profile, { systemDns, groupTags, builtin, selections, directHosts, ruleLists, clientRoutes, knownOutbounds })
 
   const tunAddress = profile.ipv6 ? [TUN_V4, TUN_V6] : [TUN_V4]
 
   // auto_redirect 自带 nft 层的 DNS 劫持(局域网发往任何 53 端口的查询都改写进 tun),
   // 关不掉劫持只留 redirect;所以 DNS「禁用」模式只能把它一起关掉,流量靠 auto_route 进 tun。
   const autoRedirect = Boolean(profile.tun && profile.tun.autoRedirect && dnsMode !== 'off')
-  // 本机接口网段只在 auto_redirect 开着时才从排除表里挖出来:挖它是为了 nft 里 DNS 改写规则
-  // 能碰到发给路由器的查询,而 nft 另有 local_address_set 的 return 保证这些网段不进 tun。
+  // 本机接口网段只在「auto_redirect + 劫持模式」下才从排除表里挖出来:挖它是为了 nft 里 DNS 改写
+  // 规则能碰到发给路由器的查询(劫持模式靠这个把局域网 DNS 拦进内核),而 nft 另有 local_address_set
+  // 的 return 保证这些网段不进 tun。dnsmasq 转发模式不需要:局域网的查询本来就该直接到 dnsmasq,
+  // 挖掉只会让每个查询先被改写进 tun、再由内核送回本机 dnsmasq 绕一圈(审核 A2);不挖,发给
+  // 路由器的查询在入口就 return,根本不进内核。
   // 没有 auto_redirect 时只剩路由规则(strict_route),排除表就是唯一的"本机网段不进 tun"
   // 依据——挖掉之后路由器回给局域网的每个包都被路由进 tun 吞掉,LuCI / 面板 / DNS 全部失联,
   // 重启后内核自启立刻复现(v0.1.65–v0.1.70 的「禁用」模式,正式路由器和开发路由器都实测)。
-  const holes = autoRedirect ? [...localSubnets, TUN_V4_NET, TUN_V6_NET] : [TUN_V4_NET, TUN_V6_NET]
+  const holes = autoRedirect && dnsMode === 'hijack' ? [...localSubnets, TUN_V4_NET, TUN_V6_NET] : [TUN_V4_NET, TUN_V6_NET]
+  // 用户明确要送去节点的私网段(前置自定义分流的 ip_cidr 行,出口不是直连 / 拒绝)也要挖出来:
+  // 不然 10.77.0.0/16 → 节点 这种规则被排除表的 10.0.0.0/8 在入口先放走,永远到不了那条规则
+  // (审核 B5,经 WireGuard 访问对端局域网的典型写法)。只挖落在排除表范围内的,别的本来就进 tun
+  const excludeBase = profile.ipv6 ? [...TUN_EXCLUDE_V4, ...TUN_EXCLUDE_V6] : TUN_EXCLUDE_V4
+  if (customPolicyActive(routingConf.custom)) {
+    for (const rule of routingConf.custom.rules) {
+      if (rule.type !== 'ipCidr' || !parseCidr(rule.value)) continue
+      const target = customOutboundTag(rule, builtin)
+      if (target === builtin.direct || target === builtin.block || !knownOutbounds.has(target)) continue
+      if (excludeBase.some((base) => cidrContains(base, rule.value))) holes.push(rule.value)
+    }
+  }
   const tunInbound = {
     type: 'tun', tag: 'tun-in', address: tunAddress,
     auto_route: true, strict_route: true, stack: 'mixed',
-    route_exclude_address: subtractCidrs(profile.ipv6 ? [...TUN_EXCLUDE_V4, ...TUN_EXCLUDE_V6] : TUN_EXCLUDE_V4, holes),
+    route_exclude_address: subtractCidrs(excludeBase, holes),
     udp_timeout: TUN_UDP_TIMEOUT,
   }
   if (autoRedirect) tunInbound.auto_redirect = true
+  // 第一层 · 入口原生旁路:此刻走直连的站点集里的 geoip 集合(geoip-cn 之类)编进
+  // route_exclude_address_set——命中的目标在系统入口就旁路,不进内核。开 auto_redirect 时
+  // 内核把它们写成 nft 集合;不开时等价于加进 route_exclude_address(1.11 起)。条件和
+  // 原因见 routing-model.mjs 的 nativeBypassPlan;不满足时直连目标进内核由 direct 出站连(兼容路径)
+  const bypass = nativeBypassPlan(profile.routing, { members: policyMemberTags, builtin, selections, clientRoutes })
+  if (bypass.enabled) tunInbound.route_exclude_address_set = bypass.sets
 
   // 面板「真实路由」测试用的回环入站:面板进程经它发请求,请求才会真的走内核的分流
   // (路由器自身发出的流量不一定进 tun)。只听 127.0.0.1,外面碰不到。
