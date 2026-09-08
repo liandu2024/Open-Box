@@ -557,71 +557,101 @@ export const dnsmasqForwardDomains = (routing, members = ['direct'], builtin = D
 // 越过它们:前置自定义分流(不管哪种类型——域名行解析出来的也可能是国内 IP)、走代理的终端
 // 分流(该终端的全部流量都该走节点)、广告拦截(命中广告域名的国内 IP 该被拒)。这种情况下
 // 不开旁路,直连目标进内核后由 direct 出站连(兼容路径),并把原因记进 config.meta.json。
-// fakeIp:走代理的域名由内核发占位地址(engine/dns.mjs 的 FakeIP 原型)。这时排在前面的、只按域名
-// 分流的代理 / 拒绝站点集不再是障碍——它们的客户端连接目标是占位地址,永远不会落进直连的 IP 集合;
-// 只有带 IP 条件(geoip 规则集 / ip_cidr / 形状未知的规则集链接)的较早站点集还可能和候选集合重叠,
-// 这些留成 pending,由部署时的 system/native-bypass.mjs 解码两边的集合做区间重叠核对后再定
-export const nativeBypassPlan = (routing, { members = ['direct'], builtin = DEFAULT_BUILTIN, selections = {}, clientRoutes = [], fakeIp = false } = {}) => {
+// 每个站点集(含兜底)此刻实际落到哪一类出口:direct / block / proxy。DNS 分类(dnsPolicyClasses,只看
+// 有域名条件的)、入口旁路(nativeBypassPlan)、IPv6 保护(config.mjs 的 rejectV6For)共用这一张表,选择
+// 同步时也按它比——纯 IP 站点集在直连 / 代理之间切换,DNS 表看不出来,但 v6 保护和旁路都跟着变
+// (第四轮 T3)
+export const policyClasses = (routing, members = ['direct'], builtin = DEFAULT_BUILTIN, selections = {}) => {
   const conf = normalizeRouting(routing)
-  const off = (reason) => ({ enabled: false, sets: [], pending: [], reason })
-  // 较早的非直连规则里带 IP 条件的那些(fakeIp 下唯一还可能和直连集合重叠的东西)
+  const klass = (name, def) => {
+    const chosen = policyChosenOutbound(name, def, members, builtin, selections)
+    return chosen === builtin.direct ? 'direct' : chosen === builtin.block ? 'block' : 'proxy'
+  }
+  const out = {}
+  for (const p of conf.activePolicies) out[p.name] = klass(p.name, p.default)
+  out[conf.fallback.name] = klass(conf.fallback.name, conf.fallback.default)
+  return out
+}
+
+// 入口原生旁路的计划(纯函数)。基准是真实 IP:入口只看目标 IP,任何排在候选直连集合前面、可能把同一个
+// IP 送去别处的规则都必须核对——
+//   · 带域名条件的较早非直连规则(站点集的域名 / 关键词 / geosite,前置自定义分流的域名行):域名解析出来
+//     的 IP 可能正好落在候选集合里,入口分不出域名,一放走内核就救不回来 → 直接挡住后面所有候选;
+//   · 只带 IP 条件的较早非直连规则(geoip / ip_cidr):和候选集合有没有交集是可以算的 → 候选记成 pending,
+//     部署时由 system/native-bypass.mjs 解码两边集合做区间重叠核对,没交集才旁路;
+//   · 端口规则、形状未知的规则集链接、走代理的终端、广告拦截:按目标 IP 判不了 → 不开。
+// fakeIp(隔离试验开关,engine/dns.mjs)且终端查询确实经内核(dnsMode 不是 off)时,走代理的域名拿到的是
+// 占位地址,域名条件才不挡——这是试验路径的前提,不是保证:终端自带加密 DNS、开启前已缓存的真实地址、
+// 转发漏匹配都不在范围内,原因里写明。DNS 禁用模式下即使开着 FakeIP 也按真实 IP 算(第四轮 T4)
+export const nativeBypassPlan = (routing, { members = ['direct'], builtin = DEFAULT_BUILTIN, selections = {}, clientRoutes = [], fakeIp = false, dnsMode = 'dnsmasq' } = {}) => {
+  const conf = normalizeRouting(routing)
+  const domainSafe = Boolean(fakeIp) && dnsMode !== 'off'
+  const notes = []
+  if (fakeIp && dnsMode === 'off') notes.push('DNS 禁用模式下终端的查询不一定经内核,FakeIP 不作旁路前提,按真实 IP 计算')
+  if (domainSafe) notes.push('FakeIP 试验开着:走代理的域名规则按占位地址计,不挡直连集合(终端自带加密 DNS / 开启前已缓存的真实地址 / 转发漏匹配不在此保证内)')
+  const off = (reason) => ({ enabled: false, sets: [], pending: [], fakeIp: domainSafe, reason: [reason, ...notes].join(';') })
   const earlier = []
   if (customPolicyActive(conf.custom)) {
-    if (!fakeIp) return off('前置自定义分流有规则,它的优先级高于按目标 IP 直连')
     const cidrs = []
     const geoip = []
     for (const rule of conf.custom.rules) {
       const target = customOutboundTag(rule, builtin)
       if (target === builtin.direct) continue
       if (rule.type === 'port') return off(`前置自定义分流「${rule.value}」按端口分流,任何目标 IP 都可能命中,入口旁路不能越过它`)
-      if (rule.type === 'ipCidr') cidrs.push(rule.value)
-      else if (rule.type === 'geoip') geoip.push(`geoip-${rule.value}`)
-      else if (rule.type === 'ruleUrl' || rule.type === 'ruleset') return off(`前置自定义分流「${rule.value}」是规则集链接 / 规则集,里面可能有 IP 段,入口旁路不能越过它`)
-      // 域名行:客户端拿到的是占位地址,不会落进直连 IP 集合
+      if (rule.type === 'ipCidr') { cidrs.push(rule.value); continue }
+      if (rule.type === 'geoip') { geoip.push(`geoip-${rule.value}`); continue }
+      if (rule.type === 'ruleUrl' || rule.type === 'ruleset') return off(`前置自定义分流「${rule.value}」是规则集链接 / 规则集,里面可能有 IP 段,入口旁路不能越过它`)
+      // 域名 / 后缀 / 关键词行
+      if (!domainSafe) return off(`前置自定义分流「${rule.value}」按域名分流,它解析出来的 IP 在入口分不出来,旁路不能越过它`)
     }
     if (cidrs.length || geoip.length) earlier.push({ name: '前置自定义分流', geoip, cidrs })
   }
   if (clientRoutes.some((cr) => cr && cr.outbound && cr.outbound !== builtin.direct)) return off('有终端被指定走代理,该终端的全部流量都要进内核')
   if (conf.adBlock) return off('广告拦截开着,命中广告规则的目标要在内核里拒绝')
-  // 站点集按顺序首条命中:排在某个直连站点集前面的任何走代理 / 拒绝的站点集,都可能先命中
-  // 同一个地址(同一个 geoip 集合、部分 IP 重叠,或域名规则解析出来正好是这段里的 IP——入口只看
-  // IP,分不出域名)。入口一旦放走,后面的内核规则救不回来。所以只收"前面没有任何非直连站点集"
-  // 的直连集合;后面的直连集合按兼容路径(进内核由 direct 出站连),原因记下来(复审 R2)
   const sets = []
   const pending = []
-  let earlierAny = ''
+  let blocker = ''
   const skipped = []
   for (const p of conf.activePolicies) {
+    const geoip = p.rulesets.filter((tag) => /^geoip-/.test(tag))
     if (!policyGoesDirect(p.name, p.default, members, builtin, selections)) {
-      if (!earlierAny) earlierAny = p.name
-      const geoip = p.rulesets.filter((tag) => /^geoip-/.test(tag))
       const lists = p.rulesets.filter((tag) => isRuleListTag(tag))
-      if (geoip.length || p.ipCidr.length || lists.length) earlier.push({ name: p.name, geoip, cidrs: [...p.ipCidr], lists })
+      const hasDomain = p.domain.length > 0 || p.domainSuffix.length > 0 || p.domainKeyword.length > 0 || p.rulesets.some((tag) => !/^geoip-/.test(tag) && !isRuleListTag(tag))
+      if (lists.length || (hasDomain && !domainSafe)) {
+        if (!blocker) blocker = p.name
+        continue
+      }
+      if (geoip.length || p.ipCidr.length) earlier.push({ name: p.name, geoip, cidrs: [...p.ipCidr] })
       continue
     }
-    // geoip-private 不收:它含 240.0.0.0/4(一直到 255.255.255.255),sing-tun 1.13.14 把"到地址空间
-    // 末尾"的区间编成起止同一个键,内核回 EEXIST、auto_redirect 整个起不来(开发路由器实测:单独
-    // 给 geoip-private 就崩,单独给 geoip-cn 正常)。私网段本来就在 tun 的静态排除表里,不需要它
-    const geoip = p.rulesets.filter((tag) => /^geoip-/.test(tag) && tag !== 'geoip-private')
     if (!geoip.length) continue
-    if (!fakeIp && earlierAny) {
+    if (blocker) {
       skipped.push(p.name)
       continue
     }
-    if (fakeIp && earlier.length) {
-      pending.push({ policy: p.name, sets: geoip, against: earlier.map((e) => ({ ...e })) })
-      continue
-    }
-    for (const tag of geoip) if (!sets.includes(tag)) sets.push(tag)
+    if (earlier.length) pending.push({ policy: p.name, sets: geoip, against: earlier.map((e) => ({ name: e.name, geoip: [...e.geoip], cidrs: [...e.cidrs] })) })
+    else for (const tag of geoip) if (!sets.includes(tag)) sets.push(tag)
   }
   if (!sets.length && !pending.length) {
-    if (skipped.length) return off(`站点集「${skipped.join('」「')}」前面还有走代理 / 拒绝的站点集「${earlierAny}」,它可能先命中同样的地址(域名规则解析出来的 IP 在入口分不出来),按顺序不能越过它`)
+    if (skipped.length) return off(`站点集「${skipped.join('」「')}」前面还有走代理 / 拒绝的站点集「${blocker}」,它可能先命中同样的地址(域名规则解析出来的 IP 在入口分不出来),按顺序不能越过它`)
     return off('走直连的站点集里没有 geoip 规则集,入口没有可用的 IP 集合')
   }
-  return {
-    enabled: sets.length > 0,
-    sets,
-    pending,
-    reason: skipped.length ? `站点集「${skipped.join('」「')}」排在「${earlierAny}」之后,没有进入口旁路` : pending.length ? `站点集「${pending.map((x) => x.policy).join('」「')}」的集合要先和前面带 IP 条件的规则核对重叠,部署时决定` : '',
-  }
+  const reasons = [...notes]
+  if (skipped.length) reasons.push(`站点集「${skipped.join('」「')}」排在「${blocker}」之后,没有进入口旁路`)
+  for (const x of pending) reasons.push(`站点集「${x.policy}」的集合要先和前面带 IP 条件的「${x.against.map((a) => a.name).join('」「')}」核对重叠,部署时决定`)
+  return { enabled: sets.length > 0, sets, pending, fakeIp: domainSafe, reason: reasons.join(';') }
+}
+
+// 旁路计划的稳定指纹:候选集合、按顺序构成的核对对象(名字 + geoip 集合 + CIDR)、FakeIP 前提。部署时记进
+// config.meta.json,选择同步时按它比——只比站点集名字会漏掉"核对对象从一条变成两条"这种变化(第四轮 T2)
+export const bypassPlanKey = (plan) => {
+  if (!plan || typeof plan !== 'object') return ''
+  const sorted = (v) => [...(Array.isArray(v) ? v : [])].map(String).sort()
+  return JSON.stringify({
+    sets: sorted(plan.sets),
+    pending: [...(Array.isArray(plan.pending) ? plan.pending : [])]
+      .map((x) => ({ policy: x.policy, sets: sorted(x.sets), against: (x.against || []).map((a) => ({ name: a.name, geoip: sorted(a.geoip), cidrs: sorted(a.cidrs) })) }))
+      .sort((a, b) => (a.policy < b.policy ? -1 : a.policy > b.policy ? 1 : 0)),
+    fakeIp: Boolean(plan.fakeIp),
+  })
 }

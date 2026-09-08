@@ -1,21 +1,30 @@
-// 入口原生旁路的第二步:纯函数 nativeBypassPlan(engine/routing-model.mjs)在 FakeIP 下会留下 pending——
-// "这个直连站点集的 geoip 集合,和前面某条带 IP 条件的代理 / 拒绝规则可不可能命中同一个地址"。
-// 这里把两边的集合都解码成 CIDR,做区间重叠核对:没有交集才允许旁路;有交集、或者对方是形状未知的
-// 规则集链接,就把这个候选按兼容路径处理(进内核由 direct 出站连)并写明原因。
+// 入口原生旁路的第二步(部署时):纯函数 nativeBypassPlan(engine/routing-model.mjs)给出候选集合和 pending
+// ("这个直连集合要和前面哪些带 IP 条件的规则核对重叠")。这里把每一份候选集合都解码成 CIDR 做内容校验,
+// 再对 pending 做区间重叠核对:
+//   · 含逻辑 / 取反规则的集合范围说不清 → 不旁路;
+//   · 含"一直到地址空间末尾"区间的集合(240.0.0.0/4、ff00::/8 之类)→ 不旁路:sing-tun 1.13.14 把区间写成
+//     [起点, 终点+1),终点+1 溢出后用起点当终点键,和别的区间同在集合里就 EEXIST、auto_redirect 起不来
+//     (开发路由器实测)。按范围判,不按集合名字;
+//   · FakeIP 试验开着时,集合和占位地址池(198.18.0.0/15 / fc00::/18)有交集 → 不旁路:占位地址进了直连
+//     集合会在入口先被放走,后面的域名规则没机会执行(第四轮 T4);
+//   · pending:和前面任何一条带 IP 条件规则的范围有交集 → 不旁路,原因写明谁和谁重叠。
 // 不做"从候选集合里扣掉重叠部分再旁路":route_exclude_address_set 只认整份规则集,扣过的集合得另编
 // 一份 .srs,这一步先不做——宁可少旁路,不能错旁路。
 import { decodeRuleSetJson } from './dns-forward.mjs'
 import { parseCidr } from './local-subnets.mjs'
+import { FAKEIP_V4, FAKEIP_V6 } from '../engine/dns.mjs'
 
 const V4_BITS = 32n
 const V6_BITS = 128n
+const MAX = { 4: (1n << V4_BITS) - 1n, 6: (1n << V6_BITS) - 1n }
 const rangeOf = (c) => {
   const p = parseCidr(c)
   if (!p) return null
   const bits = p.family === 4 ? V4_BITS : V6_BITS
   const size = 1n << (bits - BigInt(p.prefix))
-  return { family: p.family, start: p.net, end: p.net + size - 1n }
+  return { family: p.family, start: p.net, end: p.net + size - 1n, cidr: c }
 }
+const formatRange = (r) => (r.family === 4 ? `${[24, 16, 8, 0].map((s) => Number((r.start >> BigInt(s)) & 255n)).join('.')}…` : `${r.start.toString(16).slice(0, 8)}…`)
 // 两组 CIDR 有没有交集:按起点排序后扫一遍
 export const cidrListsOverlap = (a, b) => {
   const ra = a.map(rangeOf).filter(Boolean)
@@ -35,7 +44,14 @@ export const cidrListsOverlap = (a, b) => {
   }
   return ''
 }
-const formatRange = (r) => (r.family === 4 ? `${[24, 16, 8, 0].map((s) => Number((r.start >> BigInt(s)) & 255n)).join('.')}…` : `${r.start.toString(16).slice(0, 8)}…`)
+// 有没有区间一直到地址空间末尾(sing-tun 编不进 nft 集合)
+export const reachesEndOfSpace = (cidrs) => {
+  for (const c of cidrs) {
+    const r = rangeOf(c)
+    if (r && r.end === MAX[r.family]) return String(c)
+  }
+  return ''
+}
 
 const list = (v) => (Array.isArray(v) ? v : v === undefined || v === null ? [] : [v])
 // 一份规则集里的 IP 段(只认 ip_cidr;逻辑 / 取反规则说不清范围,按"可能覆盖任何地址"处理)
@@ -50,7 +66,13 @@ const cidrsOfRuleSet = (json) => {
 }
 
 export const resolveNativeBypass = async (ctx, paths, plan) => {
-  if (!plan || !Array.isArray(plan.pending) || !plan.pending.length) return { ...plan, pending: [], checked: [] }
+  const base = { enabled: false, sets: [], pending: [], fakeIp: Boolean(plan && plan.fakeIp), checked: [], reason: (plan && plan.reason) || '' }
+  if (!plan || typeof plan !== 'object') return base
+  const candidates = [
+    ...list(plan.sets).map((tag) => ({ policy: '', sets: [tag], against: [] })),
+    ...list(plan.pending),
+  ]
+  if (!candidates.length) return base
   const cache = new Map()
   const decode = async (tag) => {
     if (cache.has(tag)) return cache.get(tag)
@@ -59,22 +81,28 @@ export const resolveNativeBypass = async (ctx, paths, plan) => {
     cache.set(tag, v)
     return v
   }
-  const sets = [...plan.sets]
+  const sets = []
   const checked = []
   const reasons = plan.reason ? [plan.reason] : []
-  for (const item of plan.pending) {
-    let candidate = []
+  for (const item of candidates) {
+    const candidate = []
     let blocked = ''
-    for (const tag of item.sets) {
+    for (const tag of list(item.sets)) {
       const d = await decode(tag)
-      if (d.error) { blocked = `候选集合「${tag}」${d.error}`; break }
-      if (d.unbounded) { blocked = `候选集合「${tag}」含逻辑 / 取反规则,范围说不清`; break }
+      if (d.error) { blocked = `集合「${tag}」${d.error}`; break }
+      if (d.unbounded) { blocked = `集合「${tag}」含逻辑 / 取反规则,范围说不清`; break }
+      const tail = reachesEndOfSpace(d.cidrs)
+      if (tail) { blocked = `集合「${tag}」含到地址空间末尾的区间(${tail}),sing-tun 编不进 nft 集合`; break }
+      if (plan.fakeIp) {
+        const hit = cidrListsOverlap(d.cidrs, [FAKEIP_V4, FAKEIP_V6])
+        if (hit) { blocked = `集合「${tag}」和 FakeIP 占位地址池有交集(${hit}),占位地址会在入口被放走`; break }
+      }
       candidate.push(...d.cidrs)
     }
-    for (const e of blocked ? [] : item.against) {
+    for (const e of blocked ? [] : list(item.against)) {
       if (e.lists && e.lists.length) { blocked = `「${e.name}」用了规则集链接「${e.lists[0]}」,里面有没有 IP 段说不清`; break }
-      const other = [...(e.cidrs || [])]
-      for (const tag of e.geoip || []) {
+      const other = [...list(e.cidrs)]
+      for (const tag of list(e.geoip)) {
         const d = await decode(tag)
         if (d.error) { blocked = `「${e.name}」的集合「${tag}」${d.error}`; break }
         if (d.unbounded) { blocked = `「${e.name}」的集合「${tag}」含逻辑 / 取反规则,范围说不清`; break }
@@ -84,9 +112,9 @@ export const resolveNativeBypass = async (ctx, paths, plan) => {
       const hit = cidrListsOverlap(candidate, other)
       if (hit) { blocked = `和前面「${e.name}」的 IP 范围有重叠(${hit})`; break }
     }
-    checked.push({ policy: item.policy, sets: item.sets, ok: !blocked, reason: blocked })
-    if (blocked) reasons.push(`站点集「${item.policy}」${blocked},按兼容路径进内核`)
-    else for (const tag of item.sets) if (!sets.includes(tag)) sets.push(tag)
+    checked.push({ policy: item.policy || '', sets: list(item.sets), ok: !blocked, reason: blocked })
+    if (blocked) reasons.push(`${item.policy ? `站点集「${item.policy}」` : ''}${blocked},按兼容路径进内核`)
+    else for (const tag of list(item.sets)) if (!sets.includes(tag)) sets.push(tag)
   }
-  return { enabled: sets.length > 0, sets, pending: [], checked, reason: reasons.join(';') }
+  return { enabled: sets.length > 0, sets, pending: [], fakeIp: Boolean(plan.fakeIp), checked, reason: reasons.join(';') }
 }

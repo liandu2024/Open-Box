@@ -3,7 +3,7 @@ import { readSystemDns } from '../system/resolv.mjs'
 import { readLocalSubnets } from '../system/local-subnets.mjs'
 import { resolveHostsToCidrs } from '../system/resolve-hosts.mjs'
 import { collectDirectHosts } from '../engine/direct-hosts.mjs'
-import { dnsmasqForwardPlan, nativeBypassPlan, normalizeRouting } from '../engine/routing-model.mjs'
+import { bypassPlanKey, dnsmasqForwardPlan, nativeBypassPlan, normalizeRouting, policyClasses } from '../engine/routing-model.mjs'
 import { emitUserGroups } from '../engine/user-groups.mjs'
 import { normalizeClientRoutes } from '../engine/client-routes.mjs'
 import { builtinTags } from '../engine/user-groups.mjs'
@@ -12,7 +12,7 @@ import { dnsPolicyClasses } from '../engine/dns.mjs'
 import { deployConfig, configMetaPath } from '../system/deploy.mjs'
 import { ensureRuleLists } from '../system/rule-lists.mjs'
 import { resolveNativeBypass } from '../system/native-bypass.mjs'
-import { dnsFakeIpEnabled } from '../engine/dns.mjs'
+import { dnsFakeIpEnabled, ipv6ProxyMode } from '../engine/dns.mjs'
 import { policyOutboundOptions } from '../engine/routing-model.mjs'
 import { enableService, disableService, serviceStatus } from '../system/service.mjs'
 import { CLASH_API_BASE } from './penetration.mjs'
@@ -115,12 +115,31 @@ export const firstLayerChanged = async (ctx, paths, store, selections) => {
     if (!prev || typeof prev !== 'object' || !members.length) return false
     const profile = store.getProfile() || {}
     const builtin = builtinTags(typeof store.getGroups === 'function' ? store.getGroups() : [])
-    const bypass = nativeBypassPlan(profile.routing, { members, builtin, selections: selections || {}, clientRoutes: normalizeClientRoutes(profile.clientRoutes), fakeIp: dnsFakeIpEnabled(profile) })
-    const sortedSets = (v) => [...(Array.isArray(v) ? v : [])].sort().join('\n')
-    // 和元数据里计划阶段的结论比(FakeIP 下 pending 的核对要到部署时才做);老元数据没有就退回和实际比
-    const planned = prev.nativeBypassPlanned || { sets: (prev.nativeBypass || {}).sets, pending: [] }
-    const pendingNames = (v) => [...(Array.isArray(v) ? v : [])].map((x) => (typeof x === 'string' ? x : x.policy)).sort().join('\n')
-    if (sortedSets(planned.sets) !== sortedSets(bypass.sets) || pendingNames(planned.pending) !== pendingNames(bypass.pending)) return true
+    const dnsMode = (profile.dns && profile.dns.mode) || 'hijack'
+    const bypass = nativeBypassPlan(profile.routing, { members, builtin, selections: selections || {}, clientRoutes: normalizeClientRoutes(profile.clientRoutes), fakeIp: dnsFakeIpEnabled(profile), dnsMode })
+    // 和元数据里计划阶段的结论比(pending 的重叠核对要到部署时才做)。指纹含候选集合、核对对象(名字 + 集合 +
+    // CIDR)和 FakeIP 前提——"核对对象从一条变成两条"这种变化只比站点集名字会漏掉(第四轮 T2)。老元数据没有
+    // 指纹就退回比集合 / pending 名字
+    if (typeof prev.nativeBypassPlanKey === 'string') {
+      if (prev.nativeBypassPlanKey !== bypassPlanKey(bypass)) return true
+    } else {
+      // 升级前写的元数据没有指纹:有 pending 的计划光比名字看不出核对对象的变化,宁可多重生成一次(之后的元数据
+      // 就带指纹了);没有 pending 的照旧比集合
+      const sortedSets = (v) => [...(Array.isArray(v) ? v : [])].sort().join('\n')
+      const planned = prev.nativeBypassPlanned || { sets: (prev.nativeBypass || {}).sets, pending: [] }
+      const pendingNames = (v) => [...(Array.isArray(v) ? v : [])].map((x) => (typeof x === 'string' ? x : x.policy)).sort().join('\n')
+      if (sortedSets(planned.sets) !== sortedSets(bypass.sets) || pendingNames(planned.pending) !== pendingNames(bypass.pending)) return true
+      if (bypass.pending.length || (Array.isArray(planned.pending) && planned.pending.length)) return true
+    }
+    // IPv6 分层 · 代理 v6 降为 IPv4:每条走代理的路由规则前面有一条 v6 拒绝,纯 IP 站点集在直连 / 代理之间
+    // 切换时 DNS 分类看不出来,但这条保护要跟着变(第四轮 T3)。按元数据里生成时的出口类别表比,只比两边
+    // 都有的名字(和 dnsClassesFlipped 一个道理)
+    if (prev.ipv6 === 'ipv4' && ipv6ProxyMode(profile) === 'ipv4') {
+      // 升级前的元数据没有出口类别表:不知道生成时的 v6 保护落在哪些站点集上,宁可多重生成一次
+      if (!prev.policyClasses || typeof prev.policyClasses !== 'object') return true
+      const next = policyClasses(profile.routing, members, builtin, selections || {})
+      if (Object.keys(next).some((k) => Object.prototype.hasOwnProperty.call(prev.policyClasses, k) && (prev.policyClasses[k] === 'proxy') !== (next[k] === 'proxy'))) return true
+    }
     if (prev.dnsMode === 'dnsmasq') {
       // 这里只能算到计划阶段(规则集要到部署时才展开),所以和元数据里计划阶段的模式比;老元数据
       // 没有这个字段时退回和实际模式比
@@ -179,7 +198,21 @@ export const currentBypassPlan = (store, selections) => {
   const builtin = builtinTags(groups)
   const { outbounds } = emitUserGroups(groups, store.getNodes ? store.getNodes() : [], {})
   const members = policyOutboundOptions(normalizeRouting(profile.routing).outboundOptions, outbounds.map((o) => o.tag), builtin)
-  return nativeBypassPlan(profile.routing, { members, builtin, selections: selections || {}, clientRoutes: normalizeClientRoutes(profile.clientRoutes), fakeIp: dnsFakeIpEnabled(profile) })
+  return nativeBypassPlan(profile.routing, { members, builtin, selections: selections || {}, clientRoutes: normalizeClientRoutes(profile.clientRoutes), fakeIp: dnsFakeIpEnabled(profile), dnsMode: (profile.dns && profile.dns.mode) || 'hijack' })
+}
+
+// 代理页改完出口之后的同步判断 + 执行:DNS 分类翻面、或第一层计划(入口旁路指纹 / DNS 转发三态 / v6 保护
+// 的出口类别)变了,就在后台重新生成配置并重启内核。index.mjs 的选择同步和开发路由器的运行时验收都走这
+// 一个入口,保证"判断变了"之后调用方真的执行了更新(第四轮 T2 / T3)
+export const regenerateIfPlanChanged = async ({ store, ctx, paths, selections, log = () => {}, deploy = runDeploy }) => {
+  const dnsFlipped = await dnsClassesFlipped(ctx, paths, store, selections)
+  const planChanged = dnsFlipped ? false : await firstLayerChanged(ctx, paths, store, selections)
+  if (!dnsFlipped && !planChanged) return { regenerated: false, reason: '' }
+  const reason = dnsFlipped ? '站点集在直连/代理之间翻面' : '第一层计划(入口旁路 / DNS 转发 / v6 保护)变了'
+  log(`[proxies] ${reason},后台重新生成配置`)
+  const result = await deploy({ store, ctx, paths })
+  if (!result.ok) log(`[proxies] 重新生成配置失败(${result.stage}):${result.message}`)
+  return { regenerated: true, reason, result }
 }
 
 export const buildCurrentConfig = (store, systemDns, { cacheFilePath, selections, tlsCert, localSubnets = [], directHostCidrs = [], ruleLists = {}, profilePatch, nativeBypass } = {}) => {

@@ -421,15 +421,40 @@ test('IPv6 分层(第三轮 阶段 5):ipv6 开 + ipv6Proxy=ipv4 时按此刻的�
   assert.ok(!off.inbounds[0].address.some((a) => a.includes(':')))
 })
 
-test('tun 的 v6 排除表里没有"一直到地址空间末尾"的区间:ff00::/8 会让 sing-tun 建 nft 集合 EEXIST、auto_redirect 起不来(开发路由器实测),组播只排 ff00::/9', () => {
-  const c = buildConfig({ nodes, regionGroups, profile: { ...profile, ipv6: true, tun: { autoRedirect: true } } })
-  const ex6 = c.inbounds[0].route_exclude_address.filter((x) => x.includes(':'))
-  assert.ok(ex6.includes('ff00::/9'))
+test('tun 的 v6 排除表(第四轮 T6):组播 ff00::/8 全段照排,auto_redirect 下只把全 1 的最后一个地址挖掉让 nft 区间可编码;纯 tun 原样', () => {
+  const on = buildConfig({ nodes, regionGroups, profile: { ...profile, ipv6: true, tun: { autoRedirect: true } } })
+  const ex6 = on.inbounds[0].route_exclude_address.filter((x) => x.includes(':'))
+  // 两半组播都还在(ff3e::/ffbe:: 分别落在 ff00::/9 和 ff80::/9)
+  assert.ok(ex6.some((x) => cidrContains(x, 'ff3e::1234')))
+  assert.ok(ex6.some((x) => cidrContains(x, 'ffbe::1234')))
+  assert.ok(ex6.some((x) => cidrContains(x, 'ffff:ffff:ffff:ffff:ffff:ffff:ffff:fffe')))
+  // 只有全 1 的那个地址不在排除表里
+  assert.ok(!ex6.some((x) => cidrContains(x, 'ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff')))
   assert.ok(!ex6.includes('ff00::/8'))
-  // 任何 v6 排除段的末尾都不能是 ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
-  for (const x of ex6) {
-    const [, prefix] = x.split('/')
-    assert.ok(!(x.startsWith('ff') && Number(prefix) <= 8), `${x} 到地址空间末尾`)
-  }
   assert.ok(ex6.some((x) => x.startsWith('fe80::')))
+  // 纯 tun(不开 auto_redirect):没有编码问题,ff00::/8 原样
+  const pure = buildConfig({ nodes, regionGroups, profile: { ...profile, ipv6: true, tun: { autoRedirect: false } } })
+  const pure6 = pure.inbounds[0].route_exclude_address.filter((x) => x.includes(':'))
+  assert.ok(pure6.includes('ff00::/8'))
+  assert.equal(pure.inbounds[0].auto_redirect, undefined)
+  // v4 的组播段 224.0.0.0/4 不到地址空间末尾,两种模式都原样
+  for (const c of [on, pure]) assert.ok(c.inbounds[0].route_exclude_address.includes('224.0.0.0/4'))
+})
+
+test('第四轮 T4:DNS 禁用模式下即使开着 FakeIP 试验,较早的域名代理站点集也要挡住后面的直连集合(终端不一定经内核解析)', () => {
+  const p = firstLayerProfile({
+    dns: { split: true, mode: 'off', direct: '223.5.5.5', proxy: '1.1.1.1', fakeIpForProxy: true },
+    routing: { fallbackDefault: 'direct', policies: [
+      { id: 'a', name: '任意域名策略', domainSuffix: ['example.test'], default: '香港-自动' },
+      { id: 'b', name: '后置直连', rulesets: ['geoip-cn'], default: 'direct' },
+    ] },
+  })
+  const off = buildConfig({ nodes, regionGroups, userGroups: firstLayerGroups, localSubnets: subnets, profile: p })
+  assert.equal(off.inbounds[0].route_exclude_address_set, undefined)
+  // 同样的配置换成 dnsmasq 模式:试验前提成立,计划阶段放行(部署时还要做内容校验)
+  const dnsmasq = buildConfig({ nodes, regionGroups, userGroups: firstLayerGroups, localSubnets: subnets, profile: { ...p, dns: { ...p.dns, mode: 'dnsmasq' } } })
+  assert.deepEqual(dnsmasq.inbounds[0].route_exclude_address_set, ['geoip-cn'])
+  // 真实 IP(试验关着):挡住
+  const real = buildConfig({ nodes, regionGroups, userGroups: firstLayerGroups, localSubnets: subnets, profile: { ...p, dns: { ...p.dns, mode: 'dnsmasq', fakeIpForProxy: false } } })
+  assert.equal(real.inbounds[0].route_exclude_address_set, undefined)
 })

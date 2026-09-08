@@ -7,8 +7,9 @@
 //   domain "x"           → /x/       dnsmasq 没有"只匹配 x 本身"的写法,子域会一并交给内核——
 //                                    内核的 DNS 规则会再精确判一次,不命中的落到内核的直连解析器
 //                                    (WAN 上游),不是路由器原来的解析链:这是明确的超集兼容
-//   domain_regex         → 正则末尾能抠出一段字面后缀(…\.googlevideo\.com$ → googlevideo.com)就把
-//                                    这段后缀整段交给内核(超集,内核里再按正则判);抠不出来 → 只能 all
+//   domain_regex         → 能证明"原正则的匹配集合 ⊆ 某几个后缀的覆盖范围"时(regexForwardSuffixes:
+//                                    锚定结尾、字面尾巴、标签边界、分支逐一核对),把这些后缀整段交给内核
+//                                    (超集,内核里再按正则判);证明不了 → 只能 all(第四轮 T1)
 //   domain_keyword       → 表达不了 → all
 //   ip_cidr 等 IP 条件   → 解析阶段用不上,忽略
 //   逻辑规则 / invert    → 表达不了 → all
@@ -18,19 +19,148 @@ import { dnsmasqSafeDomain } from '../engine/dns-names.mjs'
 
 const SINGBOX_DNS_UPSTREAM = '127.0.0.1#7853'
 
-// 正则末尾的字面后缀:从 `$` 往前收 `\.` 和 [a-z0-9-],碰到别的元字符就停。至少两段标签才算数
-export const regexLiteralSuffix = (re) => {
-  const s = String(re || '')
-  if (!s.endsWith('$')) return null
-  let i = s.length - 1
-  let out = ''
-  while (i > 0) {
-    if (s[i - 1] === '.' && i >= 2 && s[i - 2] === '\\') { out = `.${out}`; i -= 2; continue }
-    if (/[a-z0-9-]/i.test(s[i - 1])) { out = s[i - 1] + out; i -= 1; continue }
+// 正则 → dnsmasq 能写的转发后缀(第四轮 T1)。只接受能证明"原正则的匹配集合 ⊆ 转发覆盖范围"的转换:
+//   · 顶层按 `|` 拆成各分支,每一分支都必须转换成功,否则整条不支持;
+//   · 每一分支必须以 `$` 锚定结尾(不锚定的话 `^ads?\.x\.com` 也匹配 ads.x.com.evil,抠不出后缀);
+//   · 从 `$` 往前收字面尾巴:字面字符、`\.` `\-` 这类转义字面、以及"纯字面的分组"((com|net)、(?:www\.)? ——
+//     分组按每个选项分叉成多条尾巴);碰到 `.` `\d` `[...]` `*` `+` `{}` 等能匹配任意内容的东西就停;
+//   · 停下来的位置必须是标签边界:要么尾巴自己以 `\.` 开头(任何匹配都以 ".x" 结尾 → 转 x),要么尾巴前面
+//     就是 `^`(匹配就是这串字面本身 → 转它自己)。`^.*example\.com$` 这种停在 `.*` 后面、尾巴又不带点的,
+//     notexample.com 也能匹配,dnsmasq 按标签匹配盖不住 → 不支持;
+//   · 转出来的后缀至少两段标签(只剩 TLD 等于半个 all,按不支持处理)。
+// dnsmasq 的 /x/ 同时盖住 x 和 *.x,所以转换结果永远是超集(可能多转发,写进 superset 供元数据标明),
+// 不可能少转发。任何解析不了的正则(嵌套分组带量词、反向引用、类 …)一律不支持,由调用方降成 all。
+const parseRegexAlternatives = (src) => {
+  // 只识别转换需要的结构:顶层分支、锚点、字面、转义、分组(可带 ?)、以及"任意内容"占位(其它一切)
+  const nodes = []       // 当前分支的节点表
+  const alternatives = [] // 已完成的分支
+  let i = 0
+  const s = String(src)
+  let group = null       // 正在读的分组 { alts: [[nodes]], cur: [nodes] }
+  const push = (node) => (group ? group.cur : nodes).push(node)
+  while (i < s.length) {
+    const ch = s[i]
+    if (ch === '\\') {
+      const nx = s[i + 1]
+      if (nx === undefined) return null
+      if (/[.\-_~:/@]/.test(nx)) push({ t: 'lit', v: nx })            // 字面转义
+      else if (/[A-Za-z0-9]/.test(nx)) push({ t: 'any' })              // \d \w \S \b … 元字符类,范围说不清
+      else push({ t: 'lit', v: nx })                                    // \\ \$ \| 之类的字面
+      i += 2
+      continue
+    }
+    if (ch === '(') {
+      if (group) return null                                            // 嵌套分组不处理
+      group = { alts: [], cur: [] }
+      i += 1
+      if (s.startsWith('?:', i)) i += 2
+      else if (s[i] === '?') return null                                // 其它 (? 语法(命名组 / 标志)不处理
+      continue
+    }
+    if (ch === ')') {
+      if (!group) return null
+      group.alts.push(group.cur)
+      const g = group
+      group = null
+      i += 1
+      let quant = ''
+      if (s[i] === '?') { quant = '?'; i += 1 }
+      else if (s[i] === '*' || s[i] === '+' || s[i] === '{') quant = 'many'
+      if (quant === 'many') { nodes.push({ t: 'any' }); i += 1; continue }
+      // 分组里每个选项都得是纯字面(含 ^ 也算,给 (^|\.) 这种写法)
+      if (!g.alts.every((alt) => alt.every((n) => n.t === 'lit' || n.t === 'bol'))) { nodes.push({ t: 'any' }); continue }
+      nodes.push({ t: 'group', alts: g.alts, optional: quant === '?' })
+      continue
+    }
+    if (ch === '|') {
+      if (group) { group.alts.push(group.cur); group.cur = []; i += 1; continue }
+      alternatives.push(nodes.splice(0))
+      i += 1
+      continue
+    }
+    if (ch === '^') { push({ t: 'bol' }); i += 1; continue }
+    if (ch === '$') { push({ t: 'eol' }); i += 1; continue }
+    if (ch === '[') {                                                   // 字符类:内容说不清,整段当任意
+      const close = s.indexOf(']', i + 2)
+      if (close < 0) return null
+      i = close + 1
+      push({ t: 'any' })
+      continue
+    }
+    if (ch === '.') { push({ t: 'any' }); i += 1; continue }
+    if (ch === '*' || ch === '+' || ch === '?' || ch === '{') {
+      // 量词作用在前一个节点上:前一个节点不再是确定的字面
+      const target = group ? group.cur : nodes
+      if (!target.length) return null
+      target[target.length - 1] = { t: 'any' }
+      if (ch === '{') {
+        const close = s.indexOf('}', i)
+        if (close < 0) return null
+        i = close + 1
+      } else i += 1
+      continue
+    }
+    push({ t: 'lit', v: ch })
+    i += 1
+  }
+  if (group) return null
+  alternatives.push(nodes)
+  return alternatives
+}
+
+// 一个分支的所有可能"字面尾巴"(带边界证明)。返回 null 表示证明不了
+const literalTailsOf = (alt) => {
+  if (!alt.length || alt[alt.length - 1].t !== 'eol') return null
+  // 从尾巴往前:tails 是若干条"已经收下来的尾巴字符串"(分组分叉);boundary 记录停在哪
+  let tails = ['']
+  let k = alt.length - 2
+  for (; k >= 0; k--) {
+    const n = alt[k]
+    if (n.t === 'lit') { tails = tails.map((t) => n.v + t); continue }
+    if (n.t === 'group') {
+      const options = n.alts.map((o) => (o.every((x) => x.t === 'lit') ? o.map((x) => x.v).join('') : null))
+      if (options.some((o) => o === null)) break                       // 含 ^ 的分组:当边界处理
+      const next = []
+      for (const t of tails) for (const o of options) next.push(o + t)
+      if (n.optional) next.push(...tails)
+      tails = next
+      continue
+    }
     break
   }
-  const trimmed = out.replace(/^\./, '').toLowerCase()
-  return trimmed.split('.').filter(Boolean).length >= 2 ? trimmed : null
+  const stoppedAt = k < 0 ? null : alt[k]
+  // 边界:停在开头且开头是 ^(整串就是字面)→ 尾巴按原样;否则尾巴必须以 "." 开头
+  const anchoredStart = stoppedAt !== null && stoppedAt.t === 'bol' && k === 0
+  const out = []
+  for (const t of tails) {
+    if (anchoredStart && !t.startsWith('.')) { out.push(t); continue }
+    if (!t.startsWith('.')) return null
+    out.push(t.slice(1))
+  }
+  return out
+}
+
+// 一条正则 → 转发后缀列表;转不了回 null。导出给单测和元数据用
+export const regexForwardSuffixes = (re) => {
+  const alternatives = parseRegexAlternatives(re)
+  if (!alternatives) return null
+  const out = new Set()
+  for (const alt of alternatives) {
+    const tails = literalTailsOf(alt)
+    if (!tails || !tails.length) return null
+    for (const t of tails) {
+      const safe = dnsmasqSafeDomain(t)
+      if (!safe || safe.split('.').length < 2) return null
+      out.add(safe)
+    }
+  }
+  return out.size ? [...out] : null
+}
+
+// 兼容旧名字:单后缀的情况和以前一样,多分支时回第一个(调用方应改用 regexForwardSuffixes)
+export const regexLiteralSuffix = (re) => {
+  const list = regexForwardSuffixes(re)
+  return list ? list[0] : null
 }
 
 // 一份解码后的规则集 → dnsmasq 条目(带 *. 前缀表示只匹配子域)。返回 { entries, superset, unsupported }
@@ -53,10 +183,12 @@ export const ruleSetToForwardEntries = (json) => {
       entries.add(raw.startsWith('.') ? `*.${safe}` : safe)
     }
     for (const re of list(rule.domain_regex)) {
-      const suffix = regexLiteralSuffix(re)
-      if (!suffix) return { entries: [], superset: [], unsupported: `含无法抠出字面后缀的正则(${String(re).slice(0, 60)})` }
-      entries.add(suffix)
-      superset.push({ regex: String(re), suffix })
+      const suffixes = regexForwardSuffixes(re)
+      if (!suffixes) return { entries: [], superset: [], unsupported: `含无法证明安全转换的正则(${String(re).slice(0, 60)})` }
+      for (const suffix of suffixes) {
+        entries.add(suffix)
+        superset.push({ regex: String(re), suffix })
+      }
     }
   }
   return { entries: [...entries], superset, unsupported: '' }

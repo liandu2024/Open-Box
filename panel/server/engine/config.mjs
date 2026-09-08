@@ -1,7 +1,7 @@
 import { emitOutbound } from './emit-outbound.mjs'
 import { emitEndpoint } from './emit-endpoint.mjs'
 import { emitUserGroups } from './user-groups.mjs'
-import { customOutboundTag, customPolicyActive, effectiveOutbound, nativeBypassPlan, normalizeRouting, policyChosenOutbound, policyOutboundOptions } from './routing-model.mjs'
+import { customOutboundTag, customPolicyActive, effectiveOutbound, nativeBypassPlan, normalizeRouting, policyClasses, policyOutboundOptions } from './routing-model.mjs'
 import { buildRoute } from './routing.mjs'
 import { buildServerInbounds } from './servers.mjs'
 import { normalizeClientRoutes } from './client-routes.mjs'
@@ -32,12 +32,15 @@ export const TUN_V6_NET = 'fdfe:dcba:9876::/126'
 // 升级后首次启动)tun0 还不存在,从 ip addr 读不到它;若把它连同 172.16/12 一起排除,内核起来后
 // 自己的 DNS 交换全部超时、什么都不通(v0.1.64 在开发路由器上升级后实测)。
 const TUN_EXCLUDE_V4 = ['10.0.0.0/8', '100.64.0.0/10', '169.254.0.0/16', '172.16.0.0/12', '192.168.0.0/16', '224.0.0.0/4']
-// 组播只排 ff00::/9:sing-tun 1.13.14 把排除表编成 nft 区间集合时,任何"一直到地址空间末尾"的区间
-// (ff00::/8 的末尾就是 ffff:…:ffff)只要和别的区间同在一个集合里就报 EEXIST,auto_redirect 整个起不来、
-// 只能退到纯 tun(开发路由器实测:fe80::/10 + ff00::/8 崩,fc00::/7 + fe80::/10 正常,ff00::/8 换成
-// ff00::/9 正常;v4 的 geoip-private 240.0.0.0/4 是同一个坑)。ff80::/9 是组播里的保留标志位段,
-// 不排也没有真实流量;组播本来就走接口上的 on-link 路由,nft 也只改写 TCP
-const TUN_EXCLUDE_V6 = ['fc00::/7', 'fe80::/10', 'ff00::/9']
+const TUN_EXCLUDE_V6 = ['fc00::/7', 'fe80::/10', 'ff00::/8']
+// sing-tun 1.13.14 把排除表编成 nft 区间集合时(auto_redirect),每个区间写成 [起点, 终点+1);"一直到地址
+// 空间末尾"的区间(ff00::/8 的末尾就是 ffff:…:ffff,v4 的 240.0.0.0/4 同理)终点+1 溢出,sing-tun 退回用
+// 起点当终点键,和别的区间同在一个集合里就 EEXIST、auto_redirect 整个起不来(redirect_nftables_exprs.go
+// nftablesCreateIPSet;开发路由器实测 fe80::/10 + ff00::/8 崩、去掉 ff00::/8 正常)。
+// 处理办法不是砍掉半段组播(第四轮 T6:ff80::/9 含 RFC 7371 的 ffbx::/32 SSM 等合法范围),而是只把最后
+// 一个地址(全 1,任何真实流量都不会以它为目标)从排除段里挖掉,让区间终点可编码;纯 tun 模式没有这个
+// 编码问题,排除表原样
+const END_OF_ADDRESS_SPACE = ['255.255.255.255/32', 'ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff/128']
 // UDP 会话空闲超时:sing-box 默认 5 分钟,Clash 系默认 60 秒。打洞 / 探测类的一次性 UDP 包
 // 没必要挂 5 分钟,60 秒足够覆盖正常的 DNS / QUIC / 游戏心跳。
 const TUN_UDP_TIMEOUT = '60s'
@@ -131,14 +134,13 @@ export const buildConfig = ({ nodes, profile, userGroups, systemDns, localSubnet
   const knownOutbounds = new Set([...outbounds, ...endpoints].map((o) => o.tag))
   // IPv6 分层 · 代理 v6 降为 IPv4:出口此刻落在代理线路(不是直连 / 拒绝;站点集按此刻的选择判,
   // 节点组 / 节点 / 隧道端点都算代理线路)的规则前面插 v6 拒绝(engine/routing.mjs)
-  const policyByName = new Map(routingConf.activePolicies.map((p) => [p.name, p]))
+  // 站点集(含兜底)此刻的出口类别:和 DNS 分类、入口旁路、选择同步共用同一张表(routing-model.policyClasses)
+  const classes = policyClasses(profile.routing, policyMemberTags, builtin, selections)
   const rejectV6For = ipv6ProxyMode(profile) === 'ipv4'
     ? (tag) => {
         if (tag === builtin.direct || tag === builtin.block) return false
-        const p = policyByName.get(tag) || (tag === routingConf.fallback.name ? routingConf.fallback : null)
-        if (!p) return true
-        const chosen = policyChosenOutbound(p.name, p.default, policyMemberTags, builtin, selections)
-        return chosen !== builtin.direct && chosen !== builtin.block
+        if (Object.prototype.hasOwnProperty.call(classes, tag)) return classes[tag] === 'proxy'
+        return true
       }
     : null
   const { route } = buildRoute(sanitizedRouting, profile.rulesetDir, {
@@ -190,10 +192,11 @@ export const buildConfig = ({ nodes, profile, userGroups, systemDns, localSubnet
       holes.push(...subtractCidrs([rule.value], protectedSubnets))
     }
   }
+  const routeExclude = subtractCidrs(excludeBase, holes)
   const tunInbound = {
     type: 'tun', tag: 'tun-in', address: tunAddress,
     auto_route: true, strict_route: true, stack: 'mixed',
-    route_exclude_address: subtractCidrs(excludeBase, holes),
+    route_exclude_address: autoRedirect ? subtractCidrs(routeExclude, END_OF_ADDRESS_SPACE) : routeExclude,
     udp_timeout: TUN_UDP_TIMEOUT,
   }
   if (autoRedirect) tunInbound.auto_redirect = true
@@ -205,7 +208,7 @@ export const buildConfig = ({ nodes, profile, userGroups, systemDns, localSubnet
   // 的保守结论——待核对的集合一律不开
   const bypass = nativeBypass && typeof nativeBypass === 'object'
     ? nativeBypass
-    : nativeBypassPlan(profile.routing, { members: policyMemberTags, builtin, selections, clientRoutes, fakeIp })
+    : nativeBypassPlan(profile.routing, { members: policyMemberTags, builtin, selections, clientRoutes, fakeIp, dnsMode })
   if (bypass.enabled && bypass.sets.length) tunInbound.route_exclude_address_set = bypass.sets
 
   // 面板「真实路由」测试用的回环入站:面板进程经它发请求,请求才会真的走内核的分流

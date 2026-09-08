@@ -747,7 +747,7 @@ const en = {
   dnsModeUpstreamHint: 'Kernel DNS address: {addr} (available while the kernel runs, in every mode). Point a LAN AdGuard Home / Pi-hole upstream at it to use the kernel\'s split resolution. After switching modes, flush AdGuard\'s and the clients\' DNS caches: the kernel connects to whatever IP the client resolved, so a cached polluted answer keeps a proxied site unreachable.',
   dnsModeSaved: 'DNS hijack mode saved; restart the kernel to apply.',
   dnsFakeIpTitle: 'Let the node resolve proxied domains (FakeIP, experimental)',
-  dnsFakeIpNote: 'When on, domains matched by a proxied policy are not resolved locally: the kernel first answers with a placeholder address (198.18.0.0/15); when the client connects, the kernel maps the placeholder back to the domain and hands the domain to the currently selected node, which resolves and connects on its side. Resolution and connection therefore always land on the same node, and placeholders can never fall into a direct IP set. Direct domains still resolve for real. Restart the kernel after switching; old addresses cached on clients last until their TTL expires.',
+  dnsFakeIpNote: 'Controlled experiment only, production use undecided, off by default. When on, domains matched by a proxied policy are not resolved locally: the kernel first answers with a placeholder address (198.18.0.0/15); when the client connects, the kernel maps the placeholder back to the domain and hands it to the currently selected outbound. Only outbounds that can carry a domain (SOCKS5 / HTTP / vless / vmess / trojan / hysteria …) let the node resolve it; WireGuard and SOCKS4 resolve inside the kernel first. IP rules placed before the proxied policy (reject / forced outbound / GeoIP) cannot see the real IP of these connections and may no longer match. Clients with their own encrypted DNS, real addresses cached before enabling, and queries in DNS-off mode never go through placeholders. Restart the kernel after switching; after turning it off, placeholders cached on clients last until their TTL expires.',
   nodeDirectTitle: 'Direct for subscription & node hosts',
   nodeDirectDescription: 'Subscription URL hosts and every node server address go direct, ahead of all site sets, regardless of policies and rules.',
   nodeDirectOnNote: 'On: these hosts go direct with local DNS. Takes effect after a kernel restart.',
@@ -759,7 +759,7 @@ const en = {
   ipv6ProxyNode: 'Hand to the node',
   ipv6ProxyIpv4: 'Downgrade to IPv4',
   ipv6ProxyNodeNote: 'IPv6 targets go to the selected node just like IPv4; if the node lacks IPv6 those connections fail. Direct IPv6 is unaffected.',
-  ipv6ProxyIpv4Note: 'Proxied domains no longer get AAAA answers (devices naturally use IPv4); bare IPv6 targets that would go to a proxy are explicitly rejected in the kernel instead of leaking out the WAN. Direct IPv6 still resolves and routes as before. Restart the kernel to apply.',
+  ipv6ProxyIpv4Note: 'Constrains the client side only: proxied domains no longer get AAAA answers (devices naturally use IPv4); bare IPv6 targets that would go to a proxy are explicitly rejected in the kernel instead of leaking out the WAN. Direct IPv6 still resolves and routes as before. It does not restrict which address family the node uses toward the target: a connection handed to the node by domain may still be made over IPv6 on the node side. Restart the kernel to apply.',
 
   // --- Kernel management, emergency rollback & penetration query (P4b Task 7) ---
   kernel: 'Kernel',

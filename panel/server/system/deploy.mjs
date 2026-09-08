@@ -3,7 +3,7 @@ import { validateConfigObject, attributeBadNodes } from './validate.mjs'
 import { restartService, stopService, serviceStatus } from './service.mjs'
 import { applyDnsTakeover, restoreDnsTakeover, dnsTakeoverBackupPath } from './dns-takeover.mjs'
 import { expandDnsForward } from './dns-forward.mjs'
-import { dnsmasqForwardPlan, nativeBypassPlan, normalizeRouting, routingFingerprint } from '../engine/routing-model.mjs'
+import { bypassPlanKey, dnsmasqForwardPlan, nativeBypassPlan, normalizeRouting, policyClasses, routingFingerprint } from '../engine/routing-model.mjs'
 import { normalizeClientRoutes } from '../engine/client-routes.mjs'
 import { dnsFakeIpEnabled, ipv6ProxyMode } from '../engine/dns.mjs'
 import { dnsPolicyClasses } from '../engine/dns.mjs'
@@ -149,7 +149,7 @@ export const deployConfig = async (ctx, paths, { config, profile, userGroups, fe
     // (可能再降级)。元数据记的是最终实际执行的那份;计划阶段的模式另存一份,选择同步时按同口径比
     const dnsPlanned = dnsmasqForwardPlan(profile.routing, policyMembers, builtin, selections || {})
     let dnsForward = dnsMode === 'dnsmasq' ? await expandDnsForward(ctx, paths, dnsPlanned) : dnsPlanned
-    const bypassPlanned = nativeBypassPlan(profile.routing, { members: policyMembers, builtin, selections: selections || {}, clientRoutes, fakeIp: dnsFakeIpEnabled(profile) })
+    const bypassPlanned = nativeBypassPlan(profile.routing, { members: policyMembers, builtin, selections: selections || {}, clientRoutes, fakeIp: dnsFakeIpEnabled(profile), dnsMode })
     // 部署入口(api/deploy-runner.mjs)会带一份做过重叠核对的结论;没带就按纯函数的保守结论
     const nativeBypass = bypassGiven && typeof bypassGiven === 'object' ? bypassGiven : { ...bypassPlanned, pending: [] }
     // 配置 + 元数据一起写;auto_redirect 降级重试时再写一遍
@@ -182,8 +182,11 @@ export const deployConfig = async (ctx, paths, { config, profile, userGroups, fe
             dnsForwardSuperset: (dnsForward.superset || []).map((x) => `${x.tag}:${x.suffix}`),
             // 开 auto_redirect 时内核把集合写成 nft 集合在入口 return;纯 tun 模式下等价于加进路由表的排除项
             nativeBypass: nativeBypass.enabled ? { ...nativeBypass, via: autoRedirect ? 'nft' : 'route' } : nativeBypass,
-            // 计划阶段(纯函数)的结论:选择同步时按同口径比
+            // 计划阶段(纯函数)的结论:选择同步时按同口径比。指纹含候选集合、核对对象和 FakeIP 前提(第四轮 T2)
             nativeBypassPlanned: { sets: bypassPlanned.sets, pending: bypassPlanned.pending.map((x) => x.policy) },
+            nativeBypassPlanKey: bypassPlanKey(bypassPlanned),
+            // 每个站点集(含兜底)此刻的出口类别:纯 IP 站点集切换时 DNS 表看不出来,v6 保护 / 旁路要按它比(第四轮 T3)
+            policyClasses: policyClasses(profile.routing, policyMembers, builtin, selections || {}),
             fakeIp: dnsFakeIpEnabled(profile),
             // IPv6 分层:off(老关闭语义)/ node(代理 v6 交给节点)/ ipv4(走代理的降为 IPv4,裸 v6 明确拒绝)
             ipv6: ipv6ProxyMode(profile),

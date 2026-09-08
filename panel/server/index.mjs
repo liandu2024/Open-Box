@@ -24,7 +24,7 @@ import { registerBackupRoutes } from './api/backup.mjs'
 import { registerDiagnosticsRoutes } from './api/diagnostics.mjs'
 import { readMeta } from './system/updater.mjs'
 import { seedDefaultStorage } from './system/seed-defaults.mjs'
-import { runDeploy, fetchSelections, resolveSelections, dnsClassesFlipped, firstLayerChanged } from './api/deploy-runner.mjs'
+import { runDeploy, fetchSelections, resolveSelections, regenerateIfPlanChanged } from './api/deploy-runner.mjs'
 import { flushDnsCache } from './system/dns-cache.mjs'
 import { startScheduler } from './system/scheduler.mjs'
 import { createTrafficCollector, createTrafficStore } from './system/traffic-collector.mjs'
@@ -542,12 +542,9 @@ const syncSelectionsAfterProxySwitch = () => {
     }
     try {
       const selections = resolveSelections(store, await fetchSelections(fetch, store.getClashSecret()))
-      // DNS 分类翻面,或第一层计划(入口旁路集合 / DNS 转发三态)变了,都得重新生成
-      const dnsFlipped = await dnsClassesFlipped(obCtx, obPaths, store, selections)
-      if (!dnsFlipped && !(await firstLayerChanged(obCtx, obPaths, store, selections))) return
-      console.log(dnsFlipped ? '[proxies] 站点集在直连/代理之间翻面,后台重新生成配置' : '[proxies] 第一层计划(入口旁路 / DNS 转发)变了,后台重新生成配置')
-      const r = await runDeploy({ store, ctx: obCtx, paths: obPaths })
-      if (!r.ok) console.warn(`[proxies] 重新生成配置失败(${r.stage}):${r.message}`)
+      // DNS 分类翻面,或第一层计划(入口旁路指纹 / DNS 转发三态 / v6 保护的出口类别)变了,都得重新生成
+      // (判断和执行都在 api/deploy-runner.mjs 的 regenerateIfPlanChanged 里)
+      await regenerateIfPlanChanged({ store, ctx: obCtx, paths: obPaths, selections, log: (m) => console.log(m) })
     } catch (error) {
       console.warn('[proxies] 同步选择失败:', error instanceof Error ? error.message : error)
     }
