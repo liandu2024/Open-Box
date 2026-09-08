@@ -31,17 +31,21 @@
       >{{ badge }}</span>
     </div>
     <!-- 内容区:大字和紧跟的小字排在同一行(基线对齐),放不下自然换行;要独占一行的元素由调用方加 basis-full。
-         详情开关也排在这一行的末尾(",标题 ∨"),展开后的正文另起一整行(basis-full),箭头翻成 ∧ -->
+         详情开关默认独占一行("标题 ∨"),detailsInline 时排在内容行末尾(",标题 ∨");展开后的正文另起一整行,箭头翻成 ∧ -->
     <div class="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 [&>*]:min-w-0">
       <slot />
       <button
         v-if="$slots.details"
         type="button"
         class="text-base-content/60 hover:text-base-content inline-flex cursor-pointer items-center gap-0.5 text-xs select-none"
+        :class="detailsInline ? '' : 'basis-full'"
         :aria-expanded="open"
         @click="open = !open"
       >
-        <span class="text-base-content/40">,</span>
+        <span
+          v-if="detailsInline"
+          class="text-base-content/40"
+        >,</span>
         {{ detailsTitle || $t('routeStageDetails') }}
         <ChevronDownIcon
           class="h-3 w-3 transition-transform"
@@ -75,6 +79,8 @@ const props = defineProps<{
   badge?: string
   badgeTone?: RouteStageTone
   detailsTitle?: string
+  // 详情开关排在内容行末尾(",标题 ∨")而不是独占一行
+  detailsInline?: boolean
   // first:最底下那站(发起访问),画底边圆角;last:最顶上那站(最终出口),不画往上的主线
   first?: boolean
   last?: boolean

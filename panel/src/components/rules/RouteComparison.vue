@@ -415,6 +415,7 @@
           :badge="actualDns.badge"
           :badge-tone="actualDns.tone"
           :details-title="$t('routeDnsRecords')"
+          details-inline
         >
           <template v-if="!actual || actualError">
             <span class="text-base-content/50 text-xs">{{ actualError ? '—' : actualLoading ? $t('routeExitStatusTesting') : $t('routeCmpWaiting') }}</span>
