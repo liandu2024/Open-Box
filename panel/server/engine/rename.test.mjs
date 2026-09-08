@@ -74,8 +74,29 @@ test('renameNodes 序号按 区域+特征 组合独立递增', () => {
 test('renameNodes 未命中区域:归到"其他"并正常编号,不再把原名塞进 feature 位', () => {
   // 旧行为是 其他-火星基地-01:原名整个进 feature 位,而且原名当序号分组键,
   // 于是每个未识别节点各成一组、全都是 -01(真机上三条法国节点就是这样)。
-  const out = renameNodes([mk('火星基地'), mk('月球基地'), mk('🇫🇷法国01｜三网')])
+  const out = renameNodes([mk('火星基地'), mk('月球基地'), mk('🇦🇶南极01｜三网')])
   assert.deepEqual(out.map((n) => n.tag), ['其他-01', '其他-02', '其他-03'])
+})
+
+// -------- 地区兜底目录(GitHub #6) --------
+
+test('订阅词典没命中的,按内置的全部国家目录再认一遍:马来西亚 / 泰国 / 印尼不再是「其他」', () => {
+  const out = renameNodes(['🇲🇾 Malaysia 01', 'Thailand 曼谷', '印尼-雅加达', '火星基地'].map(mk))
+  assert.deepEqual(out.map((n) => [n.tag, n.regionCode]), [
+    ['马来西亚-01', 'MY'], ['泰国-01', 'TH'], ['印度尼西亚-01', 'ID'], ['其他-01', ''],
+  ])
+})
+
+test('兜底只在用户词典没命中时用;用户词典里有的国家以用户那份为准(名字、顺序)', () => {
+  const dict = [{ code: 'MY', name: '大马', keywords: ['malaysia'] }]
+  const out = renameNodes(['Malaysia 01', 'Thailand 01'].map(mk), { regionDict: dict })
+  // 大马是用户词典的名字,排在前;泰国靠兜底,排在用户词典的所有地区之后、其他之前
+  assert.deepEqual(out.map((n) => n.tag), ['大马-01', '泰国-01'])
+})
+
+test('兜底目录不用会撞英文单词的短码和泛词:"IPLC in HK" 不是印度,"New York" 不是新西兰', () => {
+  const out = renameNodes(['IPLC in HK', 'New York 01', 'Back to Home'].map(mk))
+  assert.deepEqual(out.map((n) => n.tag), ['香港-IPLC-01', '其他-01', '其他-02'])
 })
 
 test('renameNodes 不改原对象', () => {
@@ -186,7 +207,7 @@ test('节点按地区词典顺序排列,未识别的归到最后', () => {
     { code: 'HK', name: '香港', keywords: ['hk', '香港'] },
     { code: 'US', name: '美国', keywords: ['us', '美国'] },
   ]
-  const raw = ['美国01', '法国01', '香港01', '美国02', '法国02', '香港02']
+  const raw = ['美国01', '火星01', '香港01', '美国02', '火星02', '香港02']
   const out = renameNodes(raw.map(mk), { regionDict: dict })
   assert.deepEqual(out.map((n) => n.tag), [
     '香港-01', '香港-02',   // 词典里香港在前
@@ -215,10 +236,10 @@ test('组内保持订阅原始次序,序号仍然连续', () => {
 
 test('previewRename 用节点自带的 originalTag 配对,重排后原名与新名不会错位', () => {
   const dict = [{ code: 'HK', name: '香港', keywords: ['香港'] }]
-  const rows = previewRename(['美国01', '香港01'].map(mk), { regionDict: dict })
+  const rows = previewRename(['火星01', '香港01'].map(mk), { regionDict: dict })
   assert.deepEqual(rows, [
     { originalTag: '香港01', newTag: '香港-01', regionCode: 'HK' },
-    { originalTag: '美国01', newTag: '其他-01', regionCode: '' },
+    { originalTag: '火星01', newTag: '其他-01', regionCode: '' },
   ])
 })
 
