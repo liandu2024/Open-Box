@@ -7,11 +7,12 @@
   <!-- text-sm:整块的基准字号,大字(font-medium)、ProxyName / ProxyGroupNow 的名字和 16px 图标都按它对齐 -->
   <div class="route-grid grid grid-cols-1 gap-x-3 text-sm md:grid-cols-2">
         <!-- 列头:左 = 规则路由 · 依据查询条件推算;右 = 真实路由 · 面板自身发起的测试 -->
+        <!-- 列头:图标放在站号圆圈那一列、和圆圈同大;标题从各站文字的左边缘起(pl-12),上下对齐 -->
         <div
-          class="route-cell route-head flex items-start gap-2 border-x border-t px-3 pt-3 pb-2.5"
+          class="route-cell route-head relative flex items-start gap-2 border-x border-t pr-3 pl-12 pt-3 pb-2.5"
           :style="{ '--m-order': 0 }"
         >
-          <MapIcon class="text-base-content/50 mt-0.5 h-4 w-4 shrink-0" />
+          <MapIcon class="route-head-icon text-base-content/50" />
           <div class="min-w-0">
             <div class="font-medium">{{ $t('ruleLookupTitle') }}</div>
             <div class="text-base-content/50 text-xs">{{ $t('routeCmpRuleSub') }}</div>
@@ -28,10 +29,10 @@
           </span>
         </div>
         <div
-          class="route-cell route-head mt-2 flex items-start gap-2 border-x border-t px-3 pt-3 pb-2.5 md:mt-0"
+          class="route-cell route-head relative mt-2 flex items-start gap-2 border-x border-t pr-3 pl-12 pt-3 pb-2.5 md:mt-0"
           :style="{ '--m-order': 10 }"
         >
-          <BoltIcon class="text-base-content/50 mt-0.5 h-4 w-4 shrink-0" />
+          <BoltIcon class="route-head-icon text-base-content/50" />
           <div class="min-w-0">
             <div class="font-medium">{{ $t('routeTestTitle') }}</div>
             <div class="text-base-content/50 text-xs">{{ $t('routeCmpActualSub') }}</div>
@@ -871,6 +872,14 @@ const exitNodeNote = computed(() => {
 .route-cell {
   order: var(--m-order);
   border-color: color-mix(in srgb, var(--color-base-300) 60%, transparent);
+}
+/* 列头图标:和各站的圆圈同一列(left 0.9rem)、同样 1.75rem 大;垂直居中于标题 + 副标题那两行(pt 0.75rem + (2.25rem − 1.75rem)/2) */
+.route-head-icon {
+  position: absolute;
+  left: 0.9rem;
+  top: 1rem;
+  width: 1.75rem;
+  height: 1.75rem;
 }
 .route-head {
   background-color: var(--color-base-100);
