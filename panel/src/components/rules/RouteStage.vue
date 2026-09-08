@@ -1,0 +1,173 @@
+<template>
+  <!-- 访问路径的一站(RouteComparison 里左右两列各五站,同一站左右在同一行)。
+       站号圆圈在左,主线从圆圈往上接到上一站;顶端那站不画线。待定用虚线 + 琥珀色,跳过用灰色虚线。
+       整格是网格的一个单元:左右两列同一站共享一行,展开详情后另一列的同一站会跟着一起变高。 -->
+  <div
+    class="route-cell relative min-w-0 border-x pl-12 pr-3 pt-2 pb-3"
+    :class="[
+      side === 'left' ? 'route-cell-left' : 'route-cell-right',
+      state === 'pending' ? 'route-pending' : state === 'skip' ? 'route-skip' : '',
+      first ? 'route-cell-first' : '',
+    ]"
+    :style="{ '--m-order': mobileOrder }"
+  >
+    <span
+      v-if="!last"
+      class="route-line"
+      aria-hidden="true"
+    />
+    <span
+      v-if="!last"
+      class="route-rise"
+      aria-hidden="true"
+    >↑</span>
+    <span class="route-marker">{{ index }}</span>
+    <div class="text-base-content/60 mb-1 flex min-h-[1.125rem] items-center justify-between gap-2 text-[11px]">
+      <strong class="font-medium">{{ label }}</strong>
+      <span
+        v-if="badge"
+        class="badge badge-sm whitespace-nowrap"
+        :class="badgeClass"
+      >{{ badge }}</span>
+    </div>
+    <div class="flex min-w-0 flex-col gap-1">
+      <slot />
+    </div>
+    <details
+      v-if="$slots.details"
+      class="route-details text-base-content/60 mt-1.5 text-xs"
+    >
+      <summary class="inline-flex cursor-pointer items-center gap-1 py-0.5 select-none">
+        {{ detailsTitle || $t('routeStageDetails') }}
+        <span class="route-details-sign" aria-hidden="true" />
+      </summary>
+      <div class="flex flex-col gap-1.5 pt-1.5 break-all">
+        <slot name="details" />
+      </div>
+    </details>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { computed } from 'vue'
+
+export type RouteStageState = 'ok' | 'pending' | 'skip'
+export type RouteStageTone = 'good' | 'proxy' | 'pending' | 'muted' | 'error'
+
+const props = defineProps<{
+  index: number
+  label: string
+  side: 'left' | 'right'
+  // 窄屏(单列)时的排列顺序:左列 1–5、右列 11–15,桌面端由网格行决定,忽略它
+  mobileOrder: number
+  state?: RouteStageState
+  badge?: string
+  badgeTone?: RouteStageTone
+  detailsTitle?: string
+  // first:最底下那站(发起访问),画底边圆角;last:最顶上那站(最终出口),不画往上的主线
+  first?: boolean
+  last?: boolean
+}>()
+
+const badgeClass = computed(() => {
+  switch (props.badgeTone) {
+    case 'good': return 'badge-success badge-soft'
+    case 'proxy': return 'badge-info badge-soft'
+    case 'pending': return 'badge-warning badge-soft'
+    case 'error': return 'badge-error badge-soft'
+    default: return 'badge-ghost'
+  }
+})
+</script>
+
+<style scoped>
+.route-cell {
+  order: var(--m-order);
+  border-color: color-mix(in srgb, var(--color-base-300) 60%, transparent);
+  background-color: var(--color-base-100);
+}
+@media (min-width: 768px) {
+  .route-cell {
+    order: 0;
+  }
+}
+.route-cell-first {
+  border-bottom-width: 1px;
+  border-bottom-left-radius: var(--app-radius-box, 1rem);
+  border-bottom-right-radius: var(--app-radius-box, 1rem);
+}
+/* 站号:紧凑的小圆圈,实底(主线从它背后穿过) */
+.route-marker {
+  position: absolute;
+  left: 0.9rem;
+  top: 0.55rem;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 9999px;
+  border: 1px solid color-mix(in srgb, var(--color-success) 55%, transparent);
+  background-color: var(--color-base-100);
+  color: var(--color-success);
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1;
+}
+/* 主线:从本站圆圈顶端往上到本格顶边,和上一格圆圈底下的那截接上 */
+.route-line {
+  position: absolute;
+  left: calc(0.9rem + 0.875rem - 0.5px);
+  top: 0;
+  height: 0.55rem;
+  width: 1px;
+  background-color: color-mix(in srgb, var(--color-success) 45%, transparent);
+}
+.route-rise {
+  position: absolute;
+  left: calc(0.9rem + 0.875rem - 0.35rem);
+  top: -0.6rem;
+  z-index: 1;
+  font-size: 0.8rem;
+  line-height: 1;
+  color: color-mix(in srgb, var(--color-success) 70%, transparent);
+  background-color: var(--color-base-100);
+  padding: 0 1px;
+}
+.route-pending .route-marker {
+  border-color: var(--color-warning);
+  color: var(--color-warning);
+  background-color: color-mix(in srgb, var(--color-warning) 12%, var(--color-base-100));
+}
+.route-pending .route-line {
+  background: none;
+  border-left: 1px dashed var(--color-warning);
+}
+.route-pending .route-rise {
+  color: var(--color-warning);
+}
+.route-skip .route-marker {
+  border-color: color-mix(in srgb, var(--color-base-content) 25%, transparent);
+  color: color-mix(in srgb, var(--color-base-content) 50%, transparent);
+  background-color: var(--color-base-200);
+}
+.route-skip .route-line {
+  background: none;
+  border-left: 1px dashed color-mix(in srgb, var(--color-base-content) 25%, transparent);
+}
+.route-skip .route-rise {
+  color: color-mix(in srgb, var(--color-base-content) 35%, transparent);
+}
+.route-details > summary {
+  list-style: none;
+}
+.route-details > summary::-webkit-details-marker {
+  display: none;
+}
+.route-details-sign::before {
+  content: '+';
+}
+.route-details[open] .route-details-sign::before {
+  content: '−';
+}
+</style>
