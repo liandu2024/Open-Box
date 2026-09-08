@@ -258,3 +258,57 @@ test('两个脚本均为 POSIX sh,无 bashism', () => {
     }
   }
 })
+
+// 内核的 auto_redirect 建的 `inet sing-box` 表,被强杀 / 崩溃时不会被它自己清掉(开发路由器
+// 实测:进程没了表还在)。留着会让下一次启动撞上已存在的对象直接 FATAL(file exist),而且
+// 每次启动都撞、一直起不来。把这个函数原样抽出来配桩跑,验证三件事:有残留就删、正在跑
+// 别的 sing-box 就不动、没有 nft 命令直接放过。
+const runCleanStaleNft = ({ tableExists, singboxRunning, hasNft = true }) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'openbox-nft-'))
+  const fn = core.match(/^openbox_clean_stale_nft\(\) \{[^]*?^\}/m)
+  assert.ok(fn, '抽不出 openbox_clean_stale_nft')
+  const harness = `
+set -u
+D='${dir}'
+LOG="$D/log"; : > "$LOG"
+command() { [ "$1" = -v ] && [ "$2" = nft ] && ${hasNft ? 'return 0' : 'return 1'}; return 0; }
+pgrep() { echo "pgrep $*" >> "$LOG"; ${singboxRunning ? 'return 0' : 'return 1'}; }
+nft() {
+  echo "nft $*" >> "$LOG"
+  case "$1 $2" in
+    'list table') ${tableExists ? 'return 0' : 'return 1'} ;;
+    'delete table') return 0 ;;
+  esac
+  return 0
+}
+${fn[0]}
+openbox_clean_stale_nft
+echo "log=$(tr '\\n' ',' < "$LOG")"
+`
+  const out = execFileSync('sh', ['-c', harness], { encoding: 'utf8' })
+  fs.rmSync(dir, { recursive: true, force: true })
+  return out.trim().replace(/^log=/, '')
+}
+
+test('起内核前清掉上一次残留的 auto_redirect nftables 表', () => {
+  const log = runCleanStaleNft({ tableExists: true, singboxRunning: false })
+  assert.match(log, /nft delete table inet sing-box/, '有残留就该删掉')
+})
+
+test('还有 sing-box 在跑就不动那张表:名字是内核写死的,可能是别的 sing-box(passwall 等)的', () => {
+  const log = runCleanStaleNft({ tableExists: true, singboxRunning: true })
+  assert.doesNotMatch(log, /delete table/, '有进程在跑时不能删别人的表')
+})
+
+test('没有残留 / 没有 nft 命令时都不做事', () => {
+  assert.doesNotMatch(runCleanStaleNft({ tableExists: false, singboxRunning: false }), /delete table/)
+  assert.doesNotMatch(runCleanStaleNft({ tableExists: true, singboxRunning: false, hasNft: false }), /nft /)
+})
+
+test('清理排在起内核之前(顺序反了就白清)', () => {
+  const start = core.match(/^start_service\(\) \{[^]*?^\}/m)
+  assert.ok(start, '抽不出 start_service')
+  const iClean = start[0].indexOf('openbox_clean_stale_nft')
+  const iProcd = start[0].indexOf('procd_open_instance')
+  assert.ok(iClean >= 0 && iProcd >= 0 && iClean < iProcd, start[0])
+})

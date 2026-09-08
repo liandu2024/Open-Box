@@ -158,6 +158,23 @@ openbox_apply_dns_mark() {
 	EOF
 }
 
+# 内核的 auto_redirect 会自己建一张 `inet sing-box` 表。正常退出时它会删掉,但被强杀、
+# OOM 或崩溃时不会——开发路由器上实测:进程早就没了,表还在。留着的表会让下一次启动在
+# 建同名表时撞上已存在的对象,内核直接 FATAL:
+#   auto-redirect: setup nftables: flush nftables: conn.Receive: netlink receive: file exist
+# 而且这个状态自我维持:每次启动都撞同一张表,一直起不来(网友实测:开 IPv6 之后卡在这里)。
+# 所以起内核之前先把上一次的残留清掉。
+# 只在**没有任何 sing-box 在跑**时才清:这张表的名字是内核写死的,机器上要是还跑着别的
+# sing-box(passwall 之类),那张表是它的,不能动。
+openbox_clean_stale_nft() {
+	command -v nft >/dev/null 2>&1 || return 0
+	pgrep sing-box >/dev/null 2>&1 && return 0
+	nft list table inet sing-box >/dev/null 2>&1 || return 0
+	echo "openbox: removing stale nftables table left by a previous kernel run" >&2
+	nft delete table inet sing-box >/dev/null 2>&1
+	return 0
+}
+
 start_service() {
 	# 注意:procd 的 rc_procd 包装(procd_open_service; "$@"; procd_close_service)
 	# 会吞掉这里的返回码——即使 return 1,上游 rc.common 的 start 在 USE_PROCD=1 下
@@ -172,6 +189,7 @@ start_service() {
 		return 1
 	fi
 
+	openbox_clean_stale_nft
 	openbox_apply_takeover
 	openbox_apply_dns_mark
 
