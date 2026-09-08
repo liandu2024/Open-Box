@@ -899,23 +899,25 @@ test('R5a:前置自定义分流写了 IPv6 网段,查 v6 地址要命中它,不�
   }
 })
 
-test('R5b:终端分流的来源条件——没给来源 IP 就如实说判不了(不能当成没命中往下数);给了就按来源判', async () => {
+test('R5b:终端分流的来源条件——没给来源 IP 时把那条记成前提(按不在该来源的终端)继续推算,不中断;给了就按来源判', async () => {
   const store = r5Store({ clientRoutes: [{ id: 'tv', enabled: true, name: 'TV', sources: ['192.168.3.9'], outbound: '香港-自动' }] })
   const { baseUrl, close } = await startApp({ ctx: createMockContext({}), store, fetchImpl: noClash })
   try {
     const none = await post(baseUrl, 'example.com')
     assert.equal(none.body.matched, null)
-    assert.equal(none.body.finalOutbound, null)
-    assert.deepEqual(none.body.undetermined.needs, ['sourceIp'])
-    assert.ok(none.body.undetermined.rule.source_ip_cidr)
-    assert.match(none.body.matchError, /终端来源 IP/)
+    assert.equal(none.body.finalOutbound, '其他')
+    assert.equal(none.body.matchError, undefined)
+    assert.equal(none.body.assumed.length, 1)
+    assert.deepEqual(none.body.assumed[0].needs, ['sourceIp'])
+    assert.deepEqual(none.body.assumed[0].rule.source_ip_cidr, ['192.168.3.9/32'])
+    assert.equal(none.body.assumed[0].outbound, '香港-自动')
     const hit = await post(baseUrl, 'example.com', { sourceIp: '192.168.3.9' })
     assert.deepEqual(hit.body.matched.rule.source_ip_cidr, ['192.168.3.9/32'])
     assert.equal(hit.body.matched.outbound, '香港-自动')
     const other = await post(baseUrl, 'example.com', { sourceIp: '192.168.3.10' })
     assert.equal(other.body.matched, null)
     assert.equal(other.body.finalOutbound, '其他')
-    assert.equal(other.body.undetermined, undefined)
+    assert.equal(other.body.assumed, undefined)
     const bad = await post(baseUrl, 'example.com', { sourceIp: 'not-an-ip' })
     assert.equal(bad.res.status, 400)
   } finally {
@@ -923,7 +925,7 @@ test('R5b:终端分流的来源条件——没给来源 IP 就如实说判不了
   }
 })
 
-test('R5c:目标 + 端口是"与"的关系——查 172.19.0.2:443 不能命中只管 53 端口的 dnsmasq 回送规则,要落到后面的 tun 防回环拒绝;不给端口就判不了', async () => {
+test('R5c:目标 + 端口是"与"的关系——查 172.19.0.2:443 不能命中只管 53 端口的 dnsmasq 回送规则,要落到后面的 tun 防回环拒绝;不给端口就把 53 那条记成前提继续', async () => {
   const store = r5Store({})
   const { baseUrl, close } = await startApp({ ctx: createMockContext({}), store, fetchImpl: noClash })
   try {
@@ -934,9 +936,11 @@ test('R5c:目标 + 端口是"与"的关系——查 172.19.0.2:443 不能命中�
     assert.equal(dns.body.matched.outbound, 'dnsmasq')
     assert.deepEqual(dns.body.matched.rule.port, [53])
     const unknown = await post(baseUrl, '172.19.0.2')
-    assert.equal(unknown.body.matched, null)
-    assert.deepEqual(unknown.body.undetermined.needs, ['port'])
-    assert.match(unknown.body.matchError, /目标端口/)
+    assert.equal(unknown.body.matched.action, 'reject')
+    assert.equal(unknown.body.matchError, undefined)
+    assert.deepEqual(unknown.body.assumed.map((a) => a.needs), [['port']])
+    assert.deepEqual(unknown.body.assumed[0].rule.port, [53])
+    assert.equal(unknown.body.assumed[0].outbound, 'dnsmasq')
     const bad = await post(baseUrl, '172.19.0.2', { port: 70000 })
     assert.equal(bad.res.status, 400)
   } finally {

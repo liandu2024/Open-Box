@@ -43,7 +43,8 @@ const fetchWithTimeout = async (fetchImpl, url, init = {}, timeoutMs = 8000) => 
 }
 
 // dns.rules 里每条的条件和 route.rules 同一套写法(rule_set / domain / domain_suffix / domain_keyword /
-// source_ip_cidr)。带来源条件的规则要有终端来源 IP 才判得了;没给就如实说判不了(复审 R5)
+// source_ip_cidr)。带来源条件的规则要有终端来源 IP 才判得了;没给时不中断,记成前提(按不在该来源里的
+// 终端推算)继续往下,前提原样回给前端列出来
 export const decideDnsServer = async (ctx, paths, config, target, { sourceIp = '' } = {}) => {
   const dns = config.dns || {}
   const servers = new Map((dns.servers || []).map((s) => [s.tag, s]))
@@ -53,7 +54,11 @@ export const decideDnsServer = async (ctx, paths, config, target, { sourceIp = '
   // 连接时选中的节点那头。判定时把它记成 fakeIpRule 后继续往下找同一个匹配的真解析器(其它查询
   // 类型仍走它),两边一起给前端画
   let fakeIpRule
-  const withFake = (r) => (fakeIpRule === undefined ? r : { ...r, fakeIpRule })
+  const assumed = []
+  const withFake = (r) => {
+    const out = fakeIpRule === undefined ? r : { ...r, fakeIpRule }
+    return assumed.length ? { ...out, assumed } : out
+  }
   for (let i = 0; i < rules.length; i++) {
     const rule = rules[i]
     if (!rule || typeof rule !== 'object') continue
@@ -61,8 +66,7 @@ export const decideDnsServer = async (ctx, paths, config, target, { sourceIp = '
     const hasSource = Object.prototype.hasOwnProperty.call(rule, 'source_ip_cidr')
     const fake = rule.server && (servers.get(rule.server) || {}).type === 'fakeip'
     if (!hasDest && !hasSource && !fake) continue
-    if (hasSource) {
-      if (!sourceIp) return { ruleIndex: i, undetermined: 'sourceIp' }
+    if (hasSource && sourceIp) {
       const list = Array.isArray(rule.source_ip_cidr) ? rule.source_ip_cidr : [rule.source_ip_cidr]
       if (!list.some((c) => cidrContains(c, sourceIp))) continue
     }
@@ -74,6 +78,14 @@ export const decideDnsServer = async (ctx, paths, config, target, { sourceIp = '
       hit = r.hit
     }
     if (!hit) continue
+    // 目标这一组命中了、但规则还要看来源而这次没给:记成前提,按不在该来源里的终端继续
+    if (hasSource && !sourceIp) {
+      const a = { ruleIndex: i, needs: ['sourceIp'], sourceIpCidr: [].concat(rule.source_ip_cidr) }
+      if (rule.server !== undefined) a.server = rule.server
+      if (rule.action !== undefined) a.action = rule.action
+      assumed.push(a)
+      continue
+    }
     if (rule.action === 'reject') return withFake({ ruleIndex: i, rejected: true })
     if (fake) {
       if (fakeIpRule === undefined) fakeIpRule = i

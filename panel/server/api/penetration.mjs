@@ -318,8 +318,10 @@ export const registerPenetrationRoutes = (app, { store, ctx, paths, fetchImpl = 
     let matched = null
     // 三条规则里第几条(1-based,仅用于 matchError 里的人类可读定位)没能确认检查结果。
     let matchError
-    // 判不了的那条:规则要看来源 IP / 目标端口,这次查询没给
-    let undetermined = null
+    // 要看来源 IP / 目标端口 / 地址族才能判、而这次查询没给的规则:不在这里中断(那样后面明明命中的
+    // 规则永远轮不到,查一个 geoip-cn 里的 IP 也只能得到"判不了"),而是明确记成前提——按"不满足这条
+    // 规则的情况"(不在该来源里的终端 / 不是该端口)继续推算,前端把这些前提原样列出来
+    const assumed = []
     let preResolve = false
     for (let i = 0; i < route.rules.length; i++) {
       const rule = route.rules[i]
@@ -365,11 +367,11 @@ export const registerPenetrationRoutes = (app, { store, ctx, paths, fetchImpl = 
       const verdict = evaluateRuleGroups(rule, { destMatch, sourceIp, port, ipVersion })
       if (verdict.result === 'miss') continue
       if (verdict.result === 'undetermined') {
-        // 和规则集读不到一样:这条判不了,后面的都不可信
-        const what = verdict.needs.map((n) => (n === 'sourceIp' ? '终端来源 IP' : n === 'ipVersion' ? '连接用的是 IPv4 还是 IPv6' : '目标端口')).join('和')
-        undetermined = { index: i, rule, needs: verdict.needs }
-        matchError = `第 ${i + 1} 条规则要看${what}才能判定,这次查询没有这个信息`
-        break
+        const a = { index: i, rule, needs: verdict.needs }
+        if (rule.outbound !== undefined) a.outbound = rule.outbound
+        if (rule.action !== undefined) a.action = rule.action
+        assumed.push(a)
+        continue
       }
       const hit = true
       if (hit) {
@@ -425,7 +427,7 @@ export const registerPenetrationRoutes = (app, { store, ctx, paths, fetchImpl = 
     }
 
     const body = { matched, chain, finalOutbound }
-    if (undetermined) body.undetermined = undetermined
+    if (assumed.length) body.assumed = assumed
     if (routingStale) body.routingStale = true
     if (firstLayer) body.firstLayer = firstLayer
     // 规则表里有预解析(有按 IP 判的规则排在域名规则前面):以域名进内核的连接会先解析再判,预测按"目标已有真实 IP"算

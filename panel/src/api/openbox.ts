@@ -673,17 +673,33 @@ export interface OpenboxPenetrationMatched {
   ownerName?: string
 }
 
+// 推算时按"不满足它"处理的规则:needs 是它要看而这次没给的信息;outbound / action 是它命中时的去向
+export interface OpenboxRuleAssumption {
+  index: number
+  rule: Record<string, unknown>
+  needs: ('sourceIp' | 'port' | 'ipVersion')[]
+  outbound?: string
+  action?: string
+}
+// DNS 规则里按来源分的那几条,没给来源时同样记成前提
+export interface OpenboxDnsAssumption {
+  ruleIndex: number
+  needs: string[]
+  sourceIpCidr: string[]
+  server?: string
+  action?: string
+}
 export interface OpenboxPenetrationResult {
   matched: OpenboxPenetrationMatched | null
-  // 判不了的那条规则:要看终端来源 IP / 目标端口,这次查询没给(matchError 里有人话说明)
-  undetermined?: { index: number; rule: Record<string, unknown>; needs: ('sourceIp' | 'port' | 'ipVersion')[] }
+  // 要看终端来源 IP / 目标端口 / 地址族才能判、这次查询没给的规则:推算按"不满足它"的情况继续,这里把前提列出来
+  assumed?: OpenboxRuleAssumption[]
   // 规则表里有预解析动作(按 IP 判的规则排在域名规则前面):以域名进内核的连接先解析成真实 IP 再判
   preResolve?: boolean
   // 按内核当前配置里的 DNS 规则推出来的解析方式(目标是 IP 时为 skipped)
   dns?:
     | { skipped: true }
     | { error: string }
-    | { ruleIndex: number | null; rejected?: boolean; server?: { tag: string; type?: string; server?: string; detour?: string }; viaProxy?: boolean }
+    | { ruleIndex: number | null; rejected?: boolean; server?: { tag: string; type?: string; server?: string; detour?: string }; viaProxy?: boolean; assumed?: OpenboxDnsAssumption[] }
   // Starts with the resolved policy target (outbound) and drills down through clash_api's `now`
   // field to the leaf node; empty when the match was an outright reject (nothing to route).
   chain: string[]
@@ -818,7 +834,7 @@ export interface OpenboxRouteTest {
     | { error: string }
     // runtimeChain:代理侧解析时查询实际经过的线路,detour 的站点集 → 节点组 → 节点(按内核此刻的选择);runtimeLeaf 是它的末尾
     // fakeIpRule:内核自己的 fakeip 规则(FakeIP 原型)先命中,A / AAAA 拿占位地址;server 是其它查询类型走的真解析器
-    | { ruleIndex: number | null; rejected?: boolean; server?: { tag: string; type?: string; server?: string; detour?: string }; viaProxy?: boolean; stale?: 'direct' | 'proxy'; runtimeLeaf?: string; runtimeChain?: string[]; fakeIpRule?: number }
+    | { ruleIndex: number | null; rejected?: boolean; server?: { tag: string; type?: string; server?: string; detour?: string }; viaProxy?: boolean; stale?: 'direct' | 'proxy'; runtimeLeaf?: string; runtimeChain?: string[]; fakeIpRule?: number; assumed?: OpenboxDnsAssumption[] }
   // fakeIp:答案落在 fake-ip 段(198.18.0.0/15),不是配置里那台 DNS 答的;fakeIpFrom 是代理侧解析时
   // 截下查询并应答的那个节点(detour 此刻落到的节点),直连解析回 fake-ip 时没有这个字段;
   // fakeIpLocal:占位地址是内核自己发的(FakeIP 原型),连接时按它找回域名交给选中的节点解析
