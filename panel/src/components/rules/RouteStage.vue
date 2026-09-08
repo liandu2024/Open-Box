@@ -30,7 +30,8 @@
         :class="badgeClass"
       >{{ badge }}</span>
     </div>
-    <div class="flex min-w-0 flex-col gap-1">
+    <!-- 内容区:大字和紧跟的小字排在同一行(基线对齐),放不下自然换行;要独占一行的元素由调用方加 basis-full -->
+    <div class="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 [&>*]:min-w-0">
       <slot />
     </div>
     <details

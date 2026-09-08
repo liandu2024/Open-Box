@@ -164,7 +164,7 @@
                 class="text-error"
               >{{ $t('routeTestRequestFailed', { message: errorText(actual.exit.error) }) }}</span>
             </div>
-            <div class="text-base-content/60 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+            <div class="text-base-content/60 flex basis-full flex-wrap items-center gap-x-3 gap-y-1 text-xs">
               <span
                 v-if="actualExitIp"
                 class="font-mono"
@@ -225,14 +225,14 @@
             <span class="text-base-content/50 font-mono text-[11px] break-all">{{ conditionText }}</span>
             <span
               v-if="rule.routingStale"
-              class="text-warning text-xs"
+              class="text-warning basis-full text-xs"
             >{{ $t('ruleLookupRoutingStale') }}</span>
           </template>
           <template v-else>
             <span class="font-medium">{{ $t('routeRuleNoMatchFallback') }}</span>
             <span
               v-if="rule.routingStale"
-              class="text-warning text-xs"
+              class="text-warning basis-full text-xs"
             >{{ $t('ruleLookupRoutingStale') }}</span>
           </template>
           <template
@@ -435,17 +435,17 @@
             <!-- IPv4 / IPv6 分开说:v4 成功了不能因为 AAAA 为空写成"没有解析结果" -->
             <span
               v-if="actualDns.v4"
-              class="text-xs"
+              class="basis-full text-xs"
               :class="actualDns.v4.tone === 'pending' ? 'text-warning' : actualDns.v4.tone === 'good' ? 'text-success' : 'text-base-content/60'"
             >{{ actualDns.v4.text }}</span>
             <span
               v-if="actualDns.v6"
-              class="text-xs"
+              class="basis-full text-xs"
               :class="actualDns.v6.tone === 'pending' ? 'text-warning' : actualDns.v6.tone === 'good' ? 'text-success' : 'text-base-content/60'"
             >{{ actualDns.v6.text }}</span>
             <span
               v-if="actualDns.stale"
-              class="text-warning text-xs"
+              class="text-warning basis-full text-xs"
             >{{ actualDns.stale }}</span>
           </template>
           <template
@@ -510,7 +510,7 @@
           first
         >
           <span class="font-mono font-medium break-all">{{ target }}</span>
-          <span class="text-base-content/60 text-xs">{{ $t('routeStartSourceUnspecified') }} · {{ port ? $t('routeStartPort', { port }) : $t('routeStartPortUnspecified') }}</span>
+          <span class="text-base-content/60 basis-full text-xs">{{ $t('routeStartSourceUnspecified') }} · {{ port ? $t('routeStartPort', { port }) : $t('routeStartPortUnspecified') }}</span>
         </RouteStage>
         <RouteStage
           :index="1"
