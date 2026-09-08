@@ -3,6 +3,7 @@ import test from 'node:test'
 import { createMockContext } from './context.mjs'
 import { createPaths } from './paths.mjs'
 import { deployConfig, rollbackToDirect, configMetaPath } from './deploy.mjs'
+import { routingFingerprint } from '../engine/routing-model.mjs'
 import { dnsTakeoverBackupPath } from './dns-takeover.mjs'
 
 const paths = createPaths('/opt/open-box')
@@ -62,6 +63,11 @@ test('元数据带上"谁走直连、谁走代理"的判断:代理页改完出�
   const meta = JSON.parse(ctx.writes.find((w) => w.path === configMetaPath(paths)).content)
   assert.deepEqual(meta.dnsPolicyClasses, { 国内: 'direct', 其他: 'proxy' })
   assert.deepEqual(meta.dnsPolicyMembers, ['直连', '香港-自动'])
+  // 这次部署用的是哪份分流设置:规则页拿它和当前档案比,改了没重启就明说(见 api/penetration.mjs)
+  assert.equal(
+    meta.routingHash,
+    routingFingerprint({ fallbackDefault: 'proxy', policies: [{ name: '国内', default: 'direct', rulesets: ['geosite-cn'] }] }),
+  )
   // init 脚本靠 grep 这一行判 dnsmasq 模式,加字段不能把它挤走
   assert.match(JSON.stringify(meta, null, 2), /"dnsMode": "hijack"/)
 })
