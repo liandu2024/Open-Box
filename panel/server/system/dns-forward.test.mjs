@@ -125,13 +125,13 @@ test('U1:正则尾巴展开有预算——到了标签边界就停不再枚举�
 
 test('U1:在 32MB 堆的 Worker 里跑复审的病态正则,能及时返回而不是内存耗尽', async () => {
   const { Worker } = await import('node:worker_threads')
-  const { pathToFileURL } = await import('node:url')
+  const { pathToFileURL, fileURLToPath } = await import('node:url')
   const run = (pattern) => new Promise((resolve) => {
     const worker = new Worker(`const { parentPort, workerData } = require('node:worker_threads');
       (async () => { const { regexForwardSuffixes } = await import(workerData.module);
         const started = Date.now(); const result = regexForwardSuffixes(workerData.pattern);
         parentPort.postMessage({ result, ms: Date.now() - started }) })().catch((e) => parentPort.postMessage({ error: e.message }))`, {
-      eval: true, workerData: { module: pathToFileURL(new URL('./dns-forward.mjs', import.meta.url).pathname).href, pattern }, resourceLimits: { maxOldGenerationSizeMb: 32 },
+      eval: true, workerData: { module: pathToFileURL(fileURLToPath(new URL('./dns-forward.mjs', import.meta.url))).href, pattern }, resourceLimits: { maxOldGenerationSizeMb: 32 },
     })
     const timer = setTimeout(() => { worker.terminate(); resolve({ timedOut: true }) }, 5000)
     worker.once('message', (v) => { clearTimeout(timer); worker.terminate(); resolve(v) })

@@ -145,10 +145,12 @@ export const buildConfig = ({ nodes, profile, userGroups, systemDns, localSubnet
     : null
   // groupTags 传给 DNS:它要按"这个站点集默认走哪"决定用直连还是代理侧解析,
   // 而"默认走哪"在 default 为空时取决于成员表的第一项(见 effectiveOutbound)。
-  // 先算 DNS:路由规则的预解析要用它交出的"谁用哪台解析器"映射
-  const { dns, resolvers } = buildDnsWithResolvers(profile, { systemDns, groupTags, builtin, selections, directHosts, ruleLists, clientRoutes, knownOutbounds })
+  // 预解析(engine/routing.mjs 的 preResolveRules)本轮不进正式配置:收尾验收复现了它的回归——兜底那条无条件
+  // resolve 会先于排在 IP 规则前面的域名规则执行,直连解析器对只有节点认得的域名回 NXDOMAIN 时连接被终止。
+  // 解析器映射先不交给路由(留待后续方案验证),以域名进内核的连接仍按"没有真实目标 IP"处理
+  const { dns } = buildDnsWithResolvers(profile, { systemDns, groupTags, builtin, selections, directHosts, ruleLists, clientRoutes, knownOutbounds })
   const { route } = buildRoute(sanitizedRouting, profile.rulesetDir, {
-    dnsMode, directTag: builtin.direct, blockTag: builtin.block, directHosts, rejectV6For, resolvers,
+    dnsMode, directTag: builtin.direct, blockTag: builtin.block, directHosts, rejectV6For,
     tunCidrs: profile.ipv6 ? [TUN_V4_NET, TUN_V6_NET] : [TUN_V4_NET],
     dnsmasqTag: dnsMode === 'dnsmasq' ? DNSMASQ_OUTBOUND_TAG : '',
     clientRoutes,

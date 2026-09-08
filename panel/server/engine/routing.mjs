@@ -155,14 +155,17 @@ export const buildRoute = (routing, rulesetDir, options = {}) => {
   if (Array.isArray(options.tunCidrs) && options.tunCidrs.length) {
     rules.push({ ip_cidr: options.tunCidrs, action: 'reject' })
   }
-  // 需要真实目标 IP 的范围(第五轮 任务 4):用户配置里按目标 IP 判的规则(前置自定义分流的 ip_cidr / geoip /
+  // 【本轮不启用】需要真实目标 IP 的范围(第五轮 任务 4):用户配置里按目标 IP 判的规则(前置自定义分流的 ip_cidr / geoip /
   // 规则集行,站点集的 ip_cidr / geoip / 规则集链接的 IP 那份)排在某条域名规则前面时,以域名进内核的连接
   // (面板回环 mixed、共享网络的 SOCKS5h / HTTP 代理、FakeIP 试验找回的域名)在这条 IP 规则那里没有真实 IP,
   // 会直接掠过它、落到后面的域名规则——和终端按 IP 连接的 tun 路径语义不一致。
   // 处理办法:在所有分流规则前面,给"排在第一条 IP 规则之后的域名规则"各插一条同条件的 resolve 动作,用
   // 这条规则自己的解析器(engine/dns.mjs 交出的映射:直连的用 dns-direct,走代理的用它自己 detour 的解析器)
   // 先把域名解析成真实 IP,再往下按原顺序判;没有这种前后关系时一条都不插。resolve 只对域名目标生效,
-  // 按 IP 连进来的 tun 流量不受影响;解析走的是站点集自己的线路,和 DNS 规则一致,不是节点自己解析
+  // 按 IP 连进来的 tun 流量不受影响;解析走的是站点集自己的线路,和 DNS 规则一致,不是节点自己解析。
+  // 收尾验收复现的回归:兜底那条无条件 resolve 排在所有分流规则前面,原本排在 IP 规则前面的域名规则也会先经
+  // 它解析,直连解析器对只有节点认得的域名回 NXDOMAIN 时连接被终止(resolve 失败会结束连接)。所以正式生成
+  // (engine/config.mjs)现在不传 resolvers,这段只在显式给了映射时生效,留给后续方案验证
   const resolvers = options.resolvers && typeof options.resolvers === 'object' ? options.resolvers : null
   const preResolve = resolvers ? preResolveRules(conf, ruleLists, resolvers, options) : []
   const preResolveAt = rules.length
