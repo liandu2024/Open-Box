@@ -24,6 +24,7 @@ import { registerBackupRoutes } from './api/backup.mjs'
 import { readMeta } from './system/updater.mjs'
 import { seedDefaultStorage } from './system/seed-defaults.mjs'
 import { runDeploy, fetchSelections, resolveSelections, dnsClassesFlipped } from './api/deploy-runner.mjs'
+import { flushDnsCache } from './system/dns-cache.mjs'
 import { startScheduler } from './system/scheduler.mjs'
 import { createTrafficCollector, createTrafficStore } from './system/traffic-collector.mjs'
 import { registerSubscriptionRoutes } from './api/subscriptions.mjs'
@@ -530,6 +531,14 @@ const syncSelectionsAfterProxySwitch = () => {
   if (selectionSyncTimer) clearTimeout(selectionSyncTimer)
   selectionSyncTimer = setTimeout(async () => {
     selectionSyncTimer = null
+    // 先清 DNS 缓存:缓存里的答案是上一条线路问出来的,换了线路还用它,连上去的 CDN
+    // 就不是新线路就近的那个(见 system/dns-cache.mjs)。翻面要重启的情况下重启本身也会
+    // 清掉,这里清一次是为了"只换线路、不重启"的那种切换——那才是大多数。
+    try {
+      await flushDnsCache(fetch, store.getClashSecret())
+    } catch {
+      // 清不掉不影响下面的同步
+    }
     try {
       const selections = resolveSelections(store, await fetchSelections(fetch, store.getClashSecret()))
       if (!(await dnsClassesFlipped(obCtx, obPaths, store, selections))) return

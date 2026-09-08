@@ -14,7 +14,7 @@
           v-else
           type="button"
           class="btn btn-ghost btn-xs"
-          @click="run"
+          @click="run(true)"
         >
           <ArrowPathIcon class="h-3.5 w-3.5" />
           {{ $t('routeTestRerun') }}
@@ -188,12 +188,14 @@ const result = ref<OpenboxRouteTest | null>(null)
 let timer = 0
 let seq = 0
 
-const run = async () => {
+// fresh 只有「重新测试」按钮传 true:那时用户是想看当前线路真实的解析结果,
+// 服务端会先清一次内核 DNS 缓存。打字触发的自动探测不清。
+const run = async (fresh = false) => {
   const mine = ++seq
   loading.value = true
   error.value = ''
   try {
-    const r = await testRoute(props.target, props.port ?? undefined)
+    const r = await testRoute(props.target, props.port ?? undefined, fresh)
     if (mine !== seq) return
     result.value = r
   } catch (err) {
@@ -211,7 +213,7 @@ watch(
   () => {
     window.clearTimeout(timer)
     result.value = null
-    timer = window.setTimeout(run, 600)
+    timer = window.setTimeout(() => run(), 600)
   },
   { immediate: true },
 )

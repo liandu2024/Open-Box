@@ -221,3 +221,39 @@ test('fake-ip:代理侧解析回 198.18.x.x 就标出是 detour 此刻落到的�
   // 直连解析本来就快,分不出缓存,不标
   assert.equal(direct.cached, undefined)
 })
+
+test('POST /route-test:只有 fresh 才先清内核 DNS 缓存,而且清在解析之前', async () => {
+  const ctx = createMockContext({ files: { [paths.configPath]: JSON.stringify(config), [paths.singbox]: 'x', [`${paths.rulesetDir}/geosite-openai.srs`]: 'x' } })
+  const run = async (body) => {
+    const calls = []
+    const fetchImpl = async (url, init) => {
+      calls.push(`${(init && init.method) || 'GET'} ${url.replace(/^https?:\/\/[^/]+/, '')}`)
+      if (url.includes('/cache/dns/flush')) return { ok: true, status: 204, json: async () => ({}) }
+      if (url.includes('/dns/query')) return { ok: true, status: 200, json: async () => ({ Answer: [{ data: '39.156.66.10' }] }) }
+      if (url.includes('/connections')) return { ok: true, status: 200, json: async () => ({ connections: [] }) }
+      throw new Error('unexpected fetch ' + url)
+    }
+    const app = express()
+    registerRouteTestRoutes(app, { store: { getClashSecret: () => 's' }, ctx, paths, fetchImpl, probe: async () => ({ ok: true, status: 200, ms: 3 }) })
+    const server = app.listen(0)
+    await new Promise((r) => server.once('listening', r))
+    try {
+      const res = await fetch(`http://127.0.0.1:${server.address().port}/api/openbox/route-test`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+      assert.equal(res.status, 200)
+      return calls
+    } finally {
+      await new Promise((r) => server.close(r))
+    }
+  }
+
+  // 打字触发的那次:不清缓存
+  const plain = await run({ target: 'www.baidu.com' })
+  assert.ok(!plain.some((c) => c.includes('/cache/dns/flush')), plain.join(' | '))
+
+  // 点「重新测试」:先 flush,再问 /dns/query
+  const fresh = await run({ target: 'www.baidu.com', fresh: true })
+  const iFlush = fresh.findIndex((c) => c.includes('/cache/dns/flush'))
+  const iQuery = fresh.findIndex((c) => c.includes('/dns/query'))
+  assert.ok(iFlush >= 0 && iQuery >= 0 && iFlush < iQuery, fresh.join(' | '))
+  assert.ok(fresh[iFlush].startsWith('POST '), fresh[iFlush])
+})

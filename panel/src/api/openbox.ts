@@ -809,8 +809,10 @@ export interface OpenboxRouteTest {
     debug?: { connections: number; sample: string[] }
   }
 }
-export const testRoute = (target: string, port?: number) =>
-  requestJson<OpenboxRouteTest>('/api/openbox/route-test', { method: 'POST', body: JSON.stringify({ target, port }) })
+// fresh:点「重新测试」时带上,服务端会先清内核 DNS 缓存再探测,结果才是当前线路真的
+// 问出来的。打字触发的自动探测不带——清缓存是全局的,不该被每次输入牵动。
+export const testRoute = (target: string, port?: number, fresh = false) =>
+  requestJson<OpenboxRouteTest>('/api/openbox/route-test', { method: 'POST', body: JSON.stringify({ target, port, fresh }) })
 
 // ---- 延迟历史(server/api/latency-history.mjs):每个节点最近 10 次测速结果,服务端记、所有浏览器共享
 // node:组的样本带当时选中的节点;节点自己的样本没有
