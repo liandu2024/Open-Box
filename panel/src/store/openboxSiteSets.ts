@@ -37,6 +37,14 @@ export const siteSetIconScales = ref<Map<string, number>>(new Map())
 
 // 兜底站点集的名字,和服务端 engine/routing-model.mjs 的 FALLBACK_TAG 同一个值
 const FALLBACK_NAME = '其他'
+// 前置自定义分流的默认名字和图标,同样和服务端那份对齐(CUSTOM_POLICY_NAME / CUSTOM_POLICY_ICON)
+const CUSTOM_NAME = '前置自定义分流'
+const CUSTOM_ICON = 'misc:pin'
+
+// 前置自定义分流:命中顺序里排在所有站点集之前(见 server/engine/routing.mjs)。
+// 它不是 selector,代理页上没有它的卡片,所以只在「策略设置」的命中顺序里露面。
+// active = 启用着且至少有一条规则;不满足时它不进内核配置,列表里标成未生效。
+export const customPolicySummary = ref<{ name: string; icon: string; iconScale: number; active: boolean } | null>(null)
 
 // 「节点管理」里的条目:代理页的「节点」页签按它排、按它给图标;内置的直连/拒绝也在其中。
 export const managedOutbounds = ref<OpenboxUserGroup[]>([])
@@ -78,6 +86,13 @@ export const loadOpenboxSiteSets = async () => {
     const scales = new Map<string, number>(policies.map((p) => [p.name, Number(p.iconScale) || 0]))
     scales.set(fallbackName, Number(profile.routing.fallbackIconScale) || 0)
     siteSetIconScales.value = scales
+    const custom = profile.routing.custom || {}
+    customPolicySummary.value = {
+      name: custom.name?.trim() || CUSTOM_NAME,
+      icon: custom.icon?.trim() || CUSTOM_ICON,
+      iconScale: Number(custom.iconScale) || 0,
+      active: custom.enabled !== false && (custom.rules || []).length > 0,
+    }
   } catch {
     // 拉不到就保持原样(空集 → 退回猜法),不让代理页因此打不开
   }

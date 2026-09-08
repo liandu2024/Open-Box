@@ -35,6 +35,29 @@
     <div class="flex flex-col gap-2">
       <div class="text-xs font-medium">{{ $t('policyMatchOrder') }}</div>
       <div class="flex flex-col gap-1">
+        <!-- 前置自定义分流固定排在所有站点集之前(见 server/engine/routing.mjs),所以钉在这一列
+             最上面。它不是站点集、不占编号,用「前置」标记表示"在下面这些之前";没规则或停用时
+             它不进内核配置,标成未生效并压暗。 -->
+        <div
+          v-if="customPolicySummary"
+          class="bg-base-200/60 flex items-center gap-2 rounded-lg px-2 py-1.5"
+          :class="!customPolicySummary.active && 'opacity-50'"
+        >
+          <span class="w-4 shrink-0" />
+          <ProxyIcon
+            v-if="customIcon"
+            :icon="customIcon"
+            :size="16"
+            :scale="customPolicySummary.iconScale"
+            :margin="0"
+          />
+          <span class="truncate text-sm">{{ customPolicySummary.name }}</span>
+          <span class="badge badge-ghost badge-xs shrink-0">{{ $t('routingCustomBadge') }}</span>
+          <span
+            v-if="!customPolicySummary.active"
+            class="text-base-content/50 shrink-0 text-xs"
+          >{{ $t('routingCustomInactiveBadge') }}</span>
+        </div>
         <div
           v-for="(name, index) in matchOrder"
           :key="name"
@@ -60,7 +83,7 @@
 import ProxyIcon from '@/components/proxies/ProxyIcon.vue'
 import { iconUrlFor } from '@/helper/iconUrl'
 import { showNotification } from '@/helper/notification'
-import { effectiveSiteSetOrder, saveSiteSetDisplayOrder, siteSetIconScales, siteSetIcons, siteSetOrder } from '@/store/openboxSiteSets'
+import { customPolicySummary, effectiveSiteSetOrder, saveSiteSetDisplayOrder, siteSetIconScales, siteSetIcons, siteSetOrder } from '@/store/openboxSiteSets'
 import { Bars3Icon } from '@heroicons/vue/24/outline'
 import { computed, ref, watch } from 'vue'
 import Draggable from 'vuedraggable'
@@ -83,6 +106,11 @@ watch(effectiveSiteSetOrder, (order) => {
 })
 
 const matchOrder = computed(() => siteSetOrder.value)
+// 前置自定义分流的图标不在 siteSetIcons 里(它不是站点集),自己换一次
+const customIcon = computed(() => {
+  const code = customPolicySummary.value?.icon
+  return (code && iconUrlFor(code)) || ''
+})
 
 const persist = async () => {
   try {
