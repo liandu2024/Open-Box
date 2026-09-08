@@ -100,3 +100,44 @@ test('resolveNativeBypass + FakeIP 试验:候选集合和占位地址池有交�
   const real = await resolveNativeBypass(ctx(), paths, { ...plan, fakeIp: false })
   assert.equal(real.enabled, true)
 })
+
+test('U2:候选集合按内容认——纯目标 IP 才能入口旁路;带 port / source_ip_cidr / 域名 / 其它条件的整份走兼容路径并说明;集合名字可改,不按名字判;不牵连别的集合', async () => {
+  const plan = { enabled: true, sets: ['geoip-pure', 'geoip-port-restricted', 'geoip-source-restricted', 'geoip-mixed', 'geoip-empty'], pending: [], fakeIp: false, reason: '' }
+  const r = await resolveNativeBypass(withDecoded({
+    'geoip-pure': cidrs('198.51.100.0/24'),
+    'geoip-port-restricted': { rules: [{ ip_cidr: ['198.51.100.0/24'], port: [443] }] },
+    'geoip-source-restricted': { rules: [{ ip_cidr: ['198.51.100.0/24'], source_ip_cidr: ['192.0.2.9/32'] }] },
+    'geoip-mixed': { rules: [{ ip_cidr: ['198.51.100.0/24'] }, { domain_suffix: ['x.test'], network: ['tcp'] }] },
+    'geoip-empty': { rules: [{ domain_suffix: ['only-domain.test'] }] },
+  }), paths, plan)
+  assert.deepEqual(r.sets, ['geoip-pure'])
+  assert.equal(r.enabled, true)
+  const byTag = Object.fromEntries(r.checked.map((c) => [c.sets[0], c]))
+  assert.equal(byTag['geoip-pure'].ok, true)
+  assert.match(byTag['geoip-port-restricted'].reason, /不是纯目标 IP 规则\(含 port 条件\)/)
+  assert.match(byTag['geoip-source-restricted'].reason, /含 source_ip_cidr 条件/)
+  assert.match(byTag['geoip-mixed'].reason, /domain_suffix \/ network/)
+  assert.match(byTag['geoip-empty'].reason, /不是纯目标 IP 规则/)
+  // 同样的内容换个名字结论不变
+  const renamed = await resolveNativeBypass(withDecoded({ 'whatever-set': { rules: [{ ip_cidr: ['198.51.100.0/24'], port: [443] }] } }), paths, { ...plan, sets: ['whatever-set'] })
+  assert.equal(renamed.enabled, false)
+  assert.match(renamed.reason, /含 port 条件/)
+})
+
+test('U2:较早规则的集合也按内容认——里面有域名条件就是域名规则(挡住);只带端口 / 来源的仍按它的 IP 段核对重叠', async () => {
+  const pend = (against) => ({ enabled: false, sets: [], fakeIp: false, reason: '', pending: [{ policy: '直连集合', sets: ['geoip-user'], against: [{ name: '前面的', geoip: [against], cidrs: [] }] }] })
+  const ctx = () => withDecoded({
+    'geoip-user': cidrs('1.0.1.0/24'),
+    'geoip-with-domain': { rules: [{ ip_cidr: ['91.108.4.0/22'], domain_suffix: ['x.test'] }] },
+    'geoip-port-only': { rules: [{ ip_cidr: ['91.108.4.0/22'], port: [443] }] },
+    'geoip-port-overlap': { rules: [{ ip_cidr: ['1.0.1.0/26'], port: [443] }] },
+  })
+  const dom = await resolveNativeBypass(ctx(), paths, pend('geoip-with-domain'))
+  assert.equal(dom.enabled, false)
+  assert.match(dom.reason, /含域名条件\(domain_suffix\)/)
+  const port = await resolveNativeBypass(ctx(), paths, pend('geoip-port-only'))
+  assert.equal(port.enabled, true)
+  const portOverlap = await resolveNativeBypass(ctx(), paths, pend('geoip-port-overlap'))
+  assert.equal(portOverlap.enabled, false)
+  assert.match(portOverlap.reason, /有重叠/)
+})

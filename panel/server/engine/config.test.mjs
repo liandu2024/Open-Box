@@ -458,3 +458,29 @@ test('第四轮 T4:DNS 禁用模式下即使开着 FakeIP 试验,较早的域名
   const real = buildConfig({ nodes, regionGroups, userGroups: firstLayerGroups, localSubnets: subnets, profile: { ...p, dns: { ...p.dns, mode: 'dnsmasq', fakeIpForProxy: false } } })
   assert.equal(real.inbounds[0].route_exclude_address_set, undefined)
 })
+
+test('预解析贯通(第五轮 任务 4):buildConfig 里 DNS 先算、把每条规则的解析器交给路由;走代理站点集用自己 detour 的解析器,直连的用 dns-direct;FakeIP 试验开着也一样', () => {
+  const p = firstLayerProfile({
+    routing: { fallbackDefault: 'direct', policies: [
+      { id: 't', name: '电报', default: '香港-自动', rulesets: ['geoip-telegram'] },
+      { id: 'g', name: 'Google', default: '香港-自动', rulesets: ['geosite-google'] },
+      { id: 'cn', name: '国内', default: 'direct', rulesets: ['geosite-cn', 'geoip-cn'] },
+    ] },
+  })
+  const c = buildConfig({ nodes, regionGroups, userGroups: firstLayerGroups, localSubnets: subnets, profile: p })
+  const pre = c.route.rules.filter((r) => r.action === 'resolve')
+  assert.deepEqual(pre, [
+    { rule_set: ['geosite-google'], action: 'resolve', server: 'dns-policy-1' },
+    { rule_set: ['geosite-cn'], action: 'resolve', server: 'dns-direct' },
+    { action: 'resolve', server: 'dns-direct' },
+  ])
+  // 解析器 tag 和 DNS 规则里的一致
+  assert.ok(c.dns.rules.some((r) => r.server === 'dns-policy-1' && r.rule_set && r.rule_set.includes('geosite-google')))
+  assert.ok(c.dns.servers.some((s) => s.tag === 'dns-policy-1' && s.detour === 'Google'))
+  // 把「电报」挪到最后:前面没有 IP 规则,一条预解析都没有
+  const moved = buildConfig({ nodes, regionGroups, userGroups: firstLayerGroups, localSubnets: subnets, profile: firstLayerProfile({ routing: { fallbackDefault: 'direct', policies: [p.routing.policies[1], p.routing.policies[2], p.routing.policies[0]] } }) })
+  // 「国内」自己带 geoip-cn,排在 Google 后面 → Google 不需要;兜底在国内之后 → 需要
+  assert.deepEqual(moved.route.rules.filter((r) => r.action === 'resolve'), [{ action: 'resolve', server: 'dns-direct' }])
+  const fake = buildConfig({ nodes, regionGroups, userGroups: firstLayerGroups, localSubnets: subnets, profile: { ...p, dns: { ...p.dns, fakeIpForProxy: true } } })
+  assert.equal(fake.route.rules.filter((r) => r.action === 'resolve').length, 3)
+})

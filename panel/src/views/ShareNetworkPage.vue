@@ -22,6 +22,12 @@
       :style="padding"
     >
       <div class="flex flex-col gap-2 px-2 md:py-2">
+        <!-- 以域名进来的连接(SOCKS5h / HTTP 代理)和终端按 IP 连的 tun 路径不同:有前置 IP 规则时内核先解析再判 -->
+        <div class="card">
+          <div class="app-card-inset text-base-content/50 text-xs">
+            {{ $t('serverDomainTargetNote') }}
+          </div>
+        </div>
         <div
           v-if="loading"
           class="card"

@@ -108,21 +108,36 @@ const parseRegexAlternatives = (src) => {
   return alternatives
 }
 
-// 一个分支的所有可能"字面尾巴"(带边界证明)。返回 null 表示证明不了
+// 展开预算(第四轮 U1):一条正则最多分叉出这么多条尾巴 / 这么多字节,超了就当"证明不了"(降 all),不能
+// 生成完再截断——`^(a|b){22}\.example\.com$` 这种 126 字符的合法正则理论上 2^22 条尾巴
+export const REGEX_TAIL_BUDGET = Object.freeze({ tails: 64, bytes: 8192 })
+// 一份规则集里所有正则加起来的条目上限:超了整份不支持
+export const RULESET_REGEX_ENTRY_BUDGET = 2048
+const BUDGET = Symbol('budget')
+
+// 一个分支的所有可能"字面尾巴"(带边界证明)。返回 null 表示证明不了,BUDGET 表示超过预算
 const literalTailsOf = (alt) => {
   if (!alt.length || alt[alt.length - 1].t !== 'eol') return null
-  // 从尾巴往前:tails 是若干条"已经收下来的尾巴字符串"(分组分叉);boundary 记录停在哪
+  // 从尾巴往前:tails 是若干条"已经收下来的尾巴字符串"(分组分叉)
   let tails = ['']
   let k = alt.length - 2
   for (; k >= 0; k--) {
     const n = alt[k]
     if (n.t === 'lit') { tails = tails.map((t) => n.v + t); continue }
     if (n.t === 'group') {
+      // 已经收到的尾巴都以 "." 开头 = 已经到了标签边界,这些尾巴本身就是可证明的超集(任何匹配都以
+      // ".x" 结尾),不必再把前面的分组枚举进去——`(a|b)(a|b)…\.example\.com$` 直接得 example.com
+      if (tails.length && tails.every((t) => t.startsWith('.'))) break
       const options = n.alts.map((o) => (o.every((x) => x.t === 'lit') ? o.map((x) => x.v).join('') : null))
       if (options.some((o) => o === null)) break                       // 含 ^ 的分组:当边界处理
+      // 先算这一组会分叉成多少条,超预算立即终止,不生成
+      const count = tails.length * options.length + (n.optional ? tails.length : 0)
+      if (count > REGEX_TAIL_BUDGET.tails) return BUDGET
       const next = []
-      for (const t of tails) for (const o of options) next.push(o + t)
-      if (n.optional) next.push(...tails)
+      let bytes = 0
+      for (const t of tails) for (const o of options) { const v = o + t; bytes += v.length; next.push(v) }
+      if (n.optional) for (const t of tails) { bytes += t.length; next.push(t) }
+      if (bytes > REGEX_TAIL_BUDGET.bytes) return BUDGET
       tails = next
       continue
     }
@@ -140,22 +155,28 @@ const literalTailsOf = (alt) => {
   return out
 }
 
-// 一条正则 → 转发后缀列表;转不了回 null。导出给单测和元数据用
-export const regexForwardSuffixes = (re) => {
+// 一条正则 → 转发后缀列表;转不了回 null。导出给单测和元数据用。
+// 需要区分"证明不了"和"超过预算"时用 regexForwardSuffixesDetail
+export const regexForwardSuffixesDetail = (re) => {
   const alternatives = parseRegexAlternatives(re)
-  if (!alternatives) return null
+  if (!alternatives) return { suffixes: null, reason: 'unsupported' }
   const out = new Set()
+  let total = 0
   for (const alt of alternatives) {
     const tails = literalTailsOf(alt)
-    if (!tails || !tails.length) return null
+    if (tails === BUDGET) return { suffixes: null, reason: 'budget' }
+    if (!tails || !tails.length) return { suffixes: null, reason: 'unsupported' }
+    total += tails.length
+    if (total > REGEX_TAIL_BUDGET.tails) return { suffixes: null, reason: 'budget' }
     for (const t of tails) {
       const safe = dnsmasqSafeDomain(t)
-      if (!safe || safe.split('.').length < 2) return null
+      if (!safe || safe.split('.').length < 2) return { suffixes: null, reason: 'unsupported' }
       out.add(safe)
     }
   }
-  return out.size ? [...out] : null
+  return out.size ? { suffixes: [...out], reason: '' } : { suffixes: null, reason: 'unsupported' }
 }
+export const regexForwardSuffixes = (re) => regexForwardSuffixesDetail(re).suffixes
 
 // 兼容旧名字:单后缀的情况和以前一样,多分支时回第一个(调用方应改用 regexForwardSuffixes)
 export const regexLiteralSuffix = (re) => {
@@ -167,6 +188,7 @@ export const regexLiteralSuffix = (re) => {
 export const ruleSetToForwardEntries = (json) => {
   const entries = new Set()
   const superset = []
+  let regexEntries = 0
   const list = (v) => (Array.isArray(v) ? v : v === undefined || v === null ? [] : [v])
   for (const rule of (json && json.rules) || []) {
     if (!rule || typeof rule !== 'object') continue
@@ -183,8 +205,12 @@ export const ruleSetToForwardEntries = (json) => {
       entries.add(raw.startsWith('.') ? `*.${safe}` : safe)
     }
     for (const re of list(rule.domain_regex)) {
-      const suffixes = regexForwardSuffixes(re)
-      if (!suffixes) return { entries: [], superset: [], unsupported: `含无法证明安全转换的正则(${String(re).slice(0, 60)})` }
+      const { suffixes, reason } = regexForwardSuffixesDetail(re)
+      if (!suffixes) {
+        return { entries: [], superset: [], unsupported: reason === 'budget' ? `含分支组合超过预算(${REGEX_TAIL_BUDGET.tails} 条)的正则(${String(re).slice(0, 60)})` : `含无法证明安全转换的正则(${String(re).slice(0, 60)})` }
+      }
+      regexEntries += suffixes.length
+      if (regexEntries > RULESET_REGEX_ENTRY_BUDGET) return { entries: [], superset: [], unsupported: `正则展开的条目累计超过预算(${RULESET_REGEX_ENTRY_BUDGET})` }
       for (const suffix of suffixes) {
         entries.add(suffix)
         superset.push({ regex: String(re), suffix })

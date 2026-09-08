@@ -5,7 +5,7 @@ import { customOutboundTag, customPolicyActive, effectiveOutbound, nativeBypassP
 import { buildRoute } from './routing.mjs'
 import { buildServerInbounds } from './servers.mjs'
 import { normalizeClientRoutes } from './client-routes.mjs'
-import { buildDns, dnsFakeIpEnabled, ipv6ProxyMode, FAKEIP_V6 } from './dns.mjs'
+import { buildDnsWithResolvers, dnsFakeIpEnabled, ipv6ProxyMode, FAKEIP_V6 } from './dns.mjs'
 import { collectDirectHosts } from './direct-hosts.mjs'
 import { cidrsOverlap, parseCidr, subtractCidrs } from '../system/local-subnets.mjs'
 
@@ -143,8 +143,12 @@ export const buildConfig = ({ nodes, profile, userGroups, systemDns, localSubnet
         return true
       }
     : null
+  // groupTags 传给 DNS:它要按"这个站点集默认走哪"决定用直连还是代理侧解析,
+  // 而"默认走哪"在 default 为空时取决于成员表的第一项(见 effectiveOutbound)。
+  // 先算 DNS:路由规则的预解析要用它交出的"谁用哪台解析器"映射
+  const { dns, resolvers } = buildDnsWithResolvers(profile, { systemDns, groupTags, builtin, selections, directHosts, ruleLists, clientRoutes, knownOutbounds })
   const { route } = buildRoute(sanitizedRouting, profile.rulesetDir, {
-    dnsMode, directTag: builtin.direct, blockTag: builtin.block, directHosts, rejectV6For,
+    dnsMode, directTag: builtin.direct, blockTag: builtin.block, directHosts, rejectV6For, resolvers,
     tunCidrs: profile.ipv6 ? [TUN_V4_NET, TUN_V6_NET] : [TUN_V4_NET],
     dnsmasqTag: dnsMode === 'dnsmasq' ? DNSMASQ_OUTBOUND_TAG : '',
     clientRoutes,
@@ -152,9 +156,6 @@ export const buildConfig = ({ nodes, profile, userGroups, systemDns, localSubnet
     // 规则集链接各自有没有域名 / IP 那份 .srs(见 system/rule-lists.mjs)
     ruleLists,
   })
-  // groupTags 传给 DNS:它要按"这个站点集默认走哪"决定用直连还是代理侧解析,
-  // 而"默认走哪"在 default 为空时取决于成员表的第一项(见 effectiveOutbound)。
-  const dns = buildDns(profile, { systemDns, groupTags, builtin, selections, directHosts, ruleLists, clientRoutes, knownOutbounds })
 
   const tunAddress = profile.ipv6 ? [TUN_V4, TUN_V6] : [TUN_V4]
 

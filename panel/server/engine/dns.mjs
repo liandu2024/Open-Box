@@ -90,7 +90,12 @@ const policyDnsRule = (policy, server, ruleLists) => {
 const hasDomainCondition = (p, ruleLists) =>
   dnsRulesetTags(p, ruleLists).length > 0 || p.domain.length > 0 || p.domainSuffix.length > 0 || p.domainKeyword.length > 0
 
-export const buildDns = (profile, options = {}) => {
+export const buildDns = (profile, options = {}) => buildDnsWithResolvers(profile, options).dns
+
+// 生成 DNS 配置,同时交出"谁用哪台解析器"的映射:站点集名 → 解析器 tag、前置自定义分流每一行 → 解析器 tag
+// (拒绝行 / 纯 IP 行为 null)、指定终端的来源 → 解析器 tag、兜底 → 解析器 tag。engine/routing.mjs 按它给
+// 路由规则加"先解析再判 IP 规则"的 resolve 动作(第五轮 任务 4)
+export const buildDnsWithResolvers = (profile, options = {}) => {
   const strategy = profile.ipv6 ? 'prefer_ipv4' : 'ipv4_only'
   const dnsMode = (profile.dns && profile.dns.mode) || 'hijack'
   const directServer = directServerFor(profile, options)
@@ -100,10 +105,11 @@ export const buildDns = (profile, options = {}) => {
   // reverse_mapping:内核记住"这个 IP 是哪个域名解析出来的",客户端随后按 IP 去连时把域名
   // 找回来再匹配规则。没有它,SSH / 游戏这类嗅不出域名的连接永远命中不了域名规则(比如
   // 「订阅和节点站点直连」),全落到兜底走代理。
+  const resolvers = { policies: {}, custom: [], clients: [], fallback: 'dns-direct' }
   if (!profile.dns.split) {
     const only = { servers: [directServer, ...localServers], final: 'dns-direct', strategy, reverse_mapping: true }
     if (localRules.length) only.rules = localRules
-    return only
+    return { dns: only, resolvers }
   }
 
   const conf = normalizeRouting(profile.routing)
@@ -151,15 +157,17 @@ export const buildDns = (profile, options = {}) => {
     const serverByTarget = new Map()
     for (const rule of custom.rules) {
       const match = customDnsMatch(rule, ruleLists)
-      if (!match) continue
+      if (!match) { resolvers.custom.push(null); continue }
       const target = customOutboundTag(rule, builtin)
       if (target === builtin.direct) {
         rules.push({ ...match, server: 'dns-direct' })
+        resolvers.custom.push('dns-direct')
         continue
       }
       // 出口是拒绝的行:解析也拒,和连接侧一致(明确拒绝不能变成"先解析再说")
       if (target === builtin.block) {
         rules.push({ ...match, action: 'reject' })
+        resolvers.custom.push(null)
         continue
       }
       let tag = serverByTarget.get(target)
@@ -169,6 +177,7 @@ export const buildDns = (profile, options = {}) => {
         servers.push(proxyServerFor(proxyHost, tag, target))
       }
       pushProxyRule(match, tag)
+      resolvers.custom.push(tag)
     }
   }
 
@@ -193,6 +202,7 @@ export const buildDns = (profile, options = {}) => {
       }
       if (cr.outbound === builtin.direct) {
         rules.push({ source_ip_cidr: cr.sources, server: 'dns-direct' })
+        resolvers.clients.push({ sources: cr.sources, server: 'dns-direct' })
         sourceRules = true
         continue
       }
@@ -204,6 +214,7 @@ export const buildDns = (profile, options = {}) => {
         servers.push(proxyServerFor(proxyHost, tag, cr.outbound))
       }
       pushProxyRule({ source_ip_cidr: cr.sources }, tag)
+      resolvers.clients.push({ sources: cr.sources, server: tag })
       sourceRules = true
     }
   }
@@ -216,14 +227,17 @@ export const buildDns = (profile, options = {}) => {
     if (!hasDomainCondition(policy, ruleLists)) return
     if (goesDirect(policy.name, policy.default)) {
       rules.push(policyDnsRule(policy, 'dns-direct', ruleLists))
+      resolvers.policies[policy.name] = 'dns-direct'
       return
     }
     const tag = `dns-policy-${index}`
     servers.push(proxyServerFor(proxyHost, tag, policy.name))
     pushProxyRule(policyDnsRule(policy, '', ruleLists), tag)
+    resolvers.policies[policy.name] = tag
   })
 
   const fallbackDirect = goesDirect(conf.fallback.name, conf.fallback.default)
+  resolvers.fallback = fallbackDirect ? 'dns-direct' : 'dns-proxy'
   if (fakeIp) {
     // v6 占位段只在"代理也管 v6"时给;降为 IPv4 时 AAAA 从占位服务器回空
     servers.push({ type: 'fakeip', tag: FAKEIP_TAG, inet4_range: FAKEIP_V4, ...(profile.ipv6 && !proxyV4Only ? { inet6_range: FAKEIP_V6 } : {}) })
@@ -244,7 +258,7 @@ export const buildDns = (profile, options = {}) => {
   // 有按来源分的规则时,各解析器的缓存必须独立:同一个域名,直连终端和走代理的终端拿到的
   // 答案本来就该不一样,共用一份缓存就串了
   if (sourceRules) dns.independent_cache = true
-  return dns
+  return { dns, resolvers }
 }
 
 // 这次生成把每个站点集(以及兜底)判成了"直连解析"还是"代理解析"。落进 config.meta.json,

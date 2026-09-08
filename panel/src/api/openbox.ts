@@ -677,6 +677,8 @@ export interface OpenboxPenetrationResult {
   matched: OpenboxPenetrationMatched | null
   // 判不了的那条规则:要看终端来源 IP / 目标端口,这次查询没给(matchError 里有人话说明)
   undetermined?: { index: number; rule: Record<string, unknown>; needs: ('sourceIp' | 'port' | 'ipVersion')[] }
+  // 规则表里有预解析动作(按 IP 判的规则排在域名规则前面):以域名进内核的连接先解析成真实 IP 再判
+  preResolve?: boolean
   // 按内核当前配置里的 DNS 规则推出来的解析方式(目标是 IP 时为 skipped)
   dns?:
     | { skipped: true }

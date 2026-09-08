@@ -342,3 +342,50 @@ test('IPv6 分层 · 代理 v6 降为 IPv4:出口是代理线路的规则前面�
   const plain = build({ policies: [{ id: 'g', name: '谷歌', rulesets: ['geosite-google'] }] })
   assert.ok(!plain.route.rules.some((r) => r.ip_version))
 })
+
+test('预解析(第五轮 任务 4):只有当按目标 IP 判的规则排在某条域名规则前面时,才给后面的域名规则各插一条同条件的 resolve,用它自己的解析器;没有这种前后关系一条都不插', () => {
+  const resolvers = { policies: { 谷歌: 'dns-policy-0', 国内: 'dns-direct', 纯IP: undefined }, custom: [null, 'dns-custom-0', 'dns-direct'], clients: [{ sources: ['192.168.1.9/32'], server: 'dns-client-0' }], fallback: 'dns-proxy' }
+  // 前置自定义分流:第 1 行 ip_cidr(IP 规则)→ 后面的域名行、终端分流、站点集、兜底都要预解析
+  const { route } = build({
+    policies: [
+      { id: 'g', name: '谷歌', rulesets: ['geosite-google'], domainSuffix: ['google.com'] },
+      { id: 'ip', name: '纯IP', rulesets: ['geoip-telegram'] },
+      { id: 'cn', name: '国内', rulesets: ['geosite-cn', 'geoip-cn'], default: 'direct' },
+    ],
+    custom: { rules: [{ type: 'ipCidr', value: '1.2.3.4/32', outbound: 'block' }, { type: 'domainSuffix', value: 'x.test', outbound: '香港-自动' }, { type: 'domainSuffix', value: 'y.test', outbound: 'direct' }] },
+  }, { resolvers, clientRoutes: [{ sources: ['192.168.1.9/32'], outbound: '香港-自动' }] })
+  const pre = route.rules.filter((r) => r.action === 'resolve')
+  assert.deepEqual(pre, [
+    { domain_suffix: ['x.test'], action: 'resolve', server: 'dns-custom-0' },
+    { domain_suffix: ['y.test'], action: 'resolve', server: 'dns-direct' },
+    { source_ip_cidr: ['192.168.1.9/32'], action: 'resolve', server: 'dns-client-0' },
+    { rule_set: ['geosite-google'], domain_suffix: ['google.com'], action: 'resolve', server: 'dns-policy-0' },
+    { rule_set: ['geosite-cn'], action: 'resolve', server: 'dns-direct' },
+    { action: 'resolve', server: 'dns-proxy' },
+  ])
+  // 预解析排在所有分流规则前面(sniff / DNS 劫持之后、前置自定义分流之前)
+  const firstResolve = route.rules.findIndex((r) => r.action === 'resolve')
+  const firstCustom = route.rules.findIndex((r) => r.domain_suffix && r.outbound)
+  assert.ok(firstResolve > 0 && firstResolve < firstCustom)
+  // 原来的分流规则一条不少、顺序不变
+  assert.deepEqual(route.rules.filter((r) => r.outbound && r.domain_suffix).map((r) => r.outbound), ['香港-自动', 'direct', '谷歌'])
+
+  // IP 规则在站点集中间:只有它后面的域名站点集要预解析;前面的不用
+  const mid = build({ policies: [
+    { id: 'g', name: '谷歌', rulesets: ['geosite-google'] },
+    { id: 'ip', name: '纯IP', rulesets: ['geoip-telegram'] },
+    { id: 'cn', name: '国内', rulesets: ['geosite-cn'], default: 'direct' },
+  ] }, { resolvers: { policies: { 谷歌: 'dns-policy-0', 国内: 'dns-direct' }, custom: [], clients: [], fallback: 'dns-direct' } })
+  assert.deepEqual(mid.route.rules.filter((r) => r.action === 'resolve'), [
+    { rule_set: ['geosite-cn'], action: 'resolve', server: 'dns-direct' },
+    { action: 'resolve', server: 'dns-direct' },
+  ])
+  // 没有任何 IP 规则:一条都不插
+  const none = build({ policies: [{ id: 'g', name: '谷歌', rulesets: ['geosite-google'] }, { id: 'cn', name: '国内', rulesets: ['geosite-cn'], default: 'direct' }] }, { resolvers: { policies: { 谷歌: 'dns-policy-0', 国内: 'dns-direct' }, custom: [], clients: [], fallback: 'dns-direct' } })
+  assert.ok(!none.route.rules.some((r) => r.action === 'resolve'))
+  // IP 规则在最后:前面的域名规则不需要
+  const last = build({ policies: [{ id: 'g', name: '谷歌', rulesets: ['geosite-google'] }, { id: 'cn', name: '国内', rulesets: ['geoip-cn'], default: 'direct' }] }, { resolvers: { policies: { 谷歌: 'dns-policy-0' }, custom: [], clients: [], fallback: 'dns-direct' } })
+  assert.deepEqual(last.route.rules.filter((r) => r.action === 'resolve'), [{ action: 'resolve', server: 'dns-direct' }])
+  // 没给解析器映射(老调用方 / 预览):不插
+  assert.ok(!build({ policies: [{ id: 'ip', name: '纯IP', rulesets: ['geoip-x'] }, { id: 'g', name: '谷歌', rulesets: ['geosite-google'] }] }).route.rules.some((r) => r.action === 'resolve'))
+})

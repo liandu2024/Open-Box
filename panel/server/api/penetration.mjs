@@ -320,12 +320,19 @@ export const registerPenetrationRoutes = (app, { store, ctx, paths, fetchImpl = 
     let matchError
     // 判不了的那条:规则要看来源 IP / 目标端口,这次查询没给
     let undetermined = null
+    let preResolve = false
     for (let i = 0; i < route.rules.length; i++) {
       const rule = route.rules[i]
       // 目标地址那一组:域名 / IP / ip_is_private / 规则集,任一命中即算命中;没有这一组就是 null
       const needsDest = hasDestinationCondition(rule)
       if (!needsDest && !hasContextCondition(rule)) {
         continue // action:'sniff' / protocol:'dns' hijack-dns 等无条件规则,不参与穿透判定
+      }
+      // resolve 动作不是终点:它只把域名目标先解析成真实 IP 供后面的 IP 规则判(engine/routing.mjs 的预解析),
+      // 匹配继续往下走。预测按"目标已有真实 IP"处理,和 tun 路径一致;这里只记一下有没有这类规则
+      if (rule.action === 'resolve') {
+        preResolve = true
+        continue
       }
       // 来源 / 端口这两组已知不命中时不用再去 exec 规则集
       const context = evaluateRuleGroups(rule, { destMatch: null, sourceIp, port, ipVersion })
@@ -421,6 +428,8 @@ export const registerPenetrationRoutes = (app, { store, ctx, paths, fetchImpl = 
     if (undetermined) body.undetermined = undetermined
     if (routingStale) body.routingStale = true
     if (firstLayer) body.firstLayer = firstLayer
+    // 规则表里有预解析(有按 IP 判的规则排在域名规则前面):以域名进内核的连接会先解析再判,预测按"目标已有真实 IP"算
+    if (preResolve) body.preResolve = true
     if (chainError) body.chainError = chainError
     if (matchError) body.matchError = matchError
 

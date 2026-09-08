@@ -98,3 +98,48 @@ test('forwardConfText:一行一条 server=/域名/127.0.0.1#7853,去重排序,*.
   const text = forwardConfText(['youtube.com', '*.ggpht.com', 'youtube.com'])
   assert.equal(text, '# Open-Box:走代理的域名交给内核解析(127.0.0.1#7853),其余由路由器原有上游解析。由 Open-Box 生成,勿手改\nserver=/*.ggpht.com/127.0.0.1#7853\nserver=/youtube.com/127.0.0.1#7853\n')
 })
+
+test('U1:正则尾巴展开有预算——到了标签边界就停不再枚举前面的分组;不带边界的组合超预算立即终止并按"超过预算"降级;一份规则集的正则条目累计也有上限', async () => {
+  const { regexForwardSuffixesDetail, REGEX_TAIL_BUDGET, RULESET_REGEX_ENTRY_BUDGET } = await import('./dns-forward.mjs')
+  // 复审 U1 的输入:22 个独立二选一分组,理论 2^22 条尾巴;尾巴 ".example.com" 已到标签边界 → 直接得超集,不枚举
+  const heavy = '^' + '(a|b)'.repeat(22) + '\\.example\\.com$'
+  assert.deepEqual(regexForwardSuffixes(heavy), ['example.com'])
+  // 没有边界可停的组合(分组直接接在最后一段标签前):算到要分叉的条数超预算就终止
+  const unbounded = '^' + '(a|b)'.repeat(22) + 'x\\.example\\.com$'
+  assert.deepEqual(regexForwardSuffixesDetail(unbounded), { suffixes: null, reason: 'budget' })
+  assert.equal(regexForwardSuffixes(unbounded), null)
+  // 预算内的组合照常展开(3 组 × 2 = 8 条,可选分组 ×2 = 16 条)
+  const small = '^(a|b)(c|d)(e|f)x\\.example\\.com$'
+  assert.equal(regexForwardSuffixesDetail(small).suffixes.length, 8)
+  const optional = '^(?:www\\.)?(a|b)(c|d)x\\.example\\.com$'
+  assert.equal(regexForwardSuffixesDetail(optional).suffixes.length, 8)
+  // 重复分支不重复计条目
+  assert.deepEqual(regexForwardSuffixes('^(a|a)x\\.example\\.com$'), ['ax.example.com'])
+  // 规则集:超预算的正则整份降级,原因说明是预算;多条正则累计超过上限也降级
+  const r = ruleSetToForwardEntries({ rules: [{ domain_regex: [unbounded] }] })
+  assert.match(r.unsupported, /超过预算/)
+  const many = Array.from({ length: Math.ceil(RULESET_REGEX_ENTRY_BUDGET / 8) + 1 }, (_, i) => `^(a|b)(c|d)(e|f)x${i}\\.example\\.com$`)
+  assert.match(ruleSetToForwardEntries({ rules: [{ domain_regex: many }] }).unsupported, /累计超过预算/)
+  assert.ok(REGEX_TAIL_BUDGET.tails <= 256)
+})
+
+test('U1:在 32MB 堆的 Worker 里跑复审的病态正则,能及时返回而不是内存耗尽', async () => {
+  const { Worker } = await import('node:worker_threads')
+  const { pathToFileURL } = await import('node:url')
+  const run = (pattern) => new Promise((resolve) => {
+    const worker = new Worker(`const { parentPort, workerData } = require('node:worker_threads');
+      (async () => { const { regexForwardSuffixes } = await import(workerData.module);
+        const started = Date.now(); const result = regexForwardSuffixes(workerData.pattern);
+        parentPort.postMessage({ result, ms: Date.now() - started }) })().catch((e) => parentPort.postMessage({ error: e.message }))`, {
+      eval: true, workerData: { module: pathToFileURL(new URL('./dns-forward.mjs', import.meta.url).pathname).href, pattern }, resourceLimits: { maxOldGenerationSizeMb: 32 },
+    })
+    const timer = setTimeout(() => { worker.terminate(); resolve({ timedOut: true }) }, 5000)
+    worker.once('message', (v) => { clearTimeout(timer); worker.terminate(); resolve(v) })
+    worker.once('error', (e) => { clearTimeout(timer); resolve({ error: e.message, code: e.code }) })
+  })
+  for (const pattern of ['^' + '(a|b)'.repeat(22) + '\\.example\\.com$', '^' + '(a|b)'.repeat(22) + 'x\\.example\\.com$', '^' + '(a|b|c|d)'.repeat(40) + '$']) {
+    const v = await run(pattern)
+    assert.ok(!v.error && !v.timedOut, JSON.stringify(v))
+    assert.ok(v.ms < 1000, `${pattern.slice(0, 30)}… took ${v.ms}ms`)
+  }
+})

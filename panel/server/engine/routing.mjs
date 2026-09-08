@@ -36,6 +36,63 @@ const customRule = (rule, ruleLists, outbound) => {
   return field ? { [field]: [rule.value], outbound } : null
 }
 
+// 一条规则(前置自定义分流的一行 / 站点集)有没有按目标 IP 判的条件
+const customRowNeedsIp = (rule, ruleLists) => {
+  if (rule.type === 'ipCidr' || rule.type === 'geoip') return true
+  const tag = customRuleTag(rule)
+  if (!tag) return false
+  const shape = ruleLists && ruleLists[tag]
+  return !shape || Boolean(shape.ip)
+}
+const policyNeedsIp = (policy, ruleLists) => policy.ipCidr.length > 0 || routeRulesetTags(policy, ruleLists).some((tag) => /^geoip-/.test(tag) || tag.endsWith('-ip'))
+const policyDomainMatch = (policy, ruleLists) => {
+  const rule = policyRule(policy, ruleLists)
+  delete rule.outbound
+  // 只留域名类条件:IP 条件本来就按 IP 判,不需要预解析
+  delete rule.ip_cidr
+  if (rule.rule_set) {
+    rule.rule_set = rule.rule_set.filter((tag) => !/^geoip-/.test(tag) && !tag.endsWith('-ip'))
+    if (!rule.rule_set.length) delete rule.rule_set
+  }
+  return Object.keys(rule).length ? rule : null
+}
+
+// "需要真实目标 IP"的范围 → 预解析规则表(见 buildRoute 里的说明)。顺序是内核里的真实顺序:
+// 前置自定义分流各行 → 终端分流 → 站点集 → 兜底
+export const preResolveRules = (conf, ruleLists, resolvers, options = {}) => {
+  const builtinTags = { direct: options.directTag || 'direct', block: options.blockTag || 'block' }
+  const known = options.knownOutbounds instanceof Set ? options.knownOutbounds : null
+  const out = []
+  let ipSeen = false
+  if (customPolicyActive(conf.custom)) {
+    conf.custom.rules.forEach((rule, i) => {
+      const target = customOutboundTag(rule, builtinTags)
+      if (known && !known.has(target)) return
+      if (customRowNeedsIp(rule, ruleLists)) { ipSeen = true; return }
+      const server = resolvers.custom && resolvers.custom[i]
+      if (!ipSeen || !server) return
+      const row = customRule(rule, ruleLists, target)
+      if (!row) return
+      delete row.outbound
+      out.push({ ...row, action: 'resolve', server })
+    })
+  }
+  // 终端分流按来源判,本身不需要 IP;但它后面的站点集要看它前面有没有 IP 规则——顺序不变,这里只记录
+  for (const cr of Array.isArray(resolvers.clients) ? resolvers.clients : []) {
+    if (ipSeen && cr && cr.sources && cr.sources.length && cr.server) out.push({ source_ip_cidr: cr.sources, action: 'resolve', server: cr.server })
+  }
+  for (const policy of conf.activePolicies) {
+    if (policyNeedsIp(policy, ruleLists)) ipSeen = true
+    const server = resolvers.policies && resolvers.policies[policy.name]
+    if (!ipSeen || !server) continue
+    const match = policyDomainMatch(policy, ruleLists)
+    if (match) out.push({ ...match, action: 'resolve', server })
+  }
+  // 兜底:前面有 IP 规则时,没命中任何域名规则的域名目标也先解析(否则它们在 IP 规则处同样没有真实 IP)
+  if (ipSeen && resolvers.fallback) out.push({ action: 'resolve', server: resolvers.fallback })
+  return out
+}
+
 export const buildRoute = (routing, rulesetDir, options = {}) => {
   const conf = normalizeRouting(routing)
   const rulesetTags = new Set()
@@ -96,6 +153,17 @@ export const buildRoute = (routing, rulesetDir, options = {}) => {
   if (Array.isArray(options.tunCidrs) && options.tunCidrs.length) {
     rules.push({ ip_cidr: options.tunCidrs, action: 'reject' })
   }
+  // 需要真实目标 IP 的范围(第五轮 任务 4):用户配置里按目标 IP 判的规则(前置自定义分流的 ip_cidr / geoip /
+  // 规则集行,站点集的 ip_cidr / geoip / 规则集链接的 IP 那份)排在某条域名规则前面时,以域名进内核的连接
+  // (面板回环 mixed、共享网络的 SOCKS5h / HTTP 代理、FakeIP 试验找回的域名)在这条 IP 规则那里没有真实 IP,
+  // 会直接掠过它、落到后面的域名规则——和终端按 IP 连接的 tun 路径语义不一致。
+  // 处理办法:在所有分流规则前面,给"排在第一条 IP 规则之后的域名规则"各插一条同条件的 resolve 动作,用
+  // 这条规则自己的解析器(engine/dns.mjs 交出的映射:直连的用 dns-direct,走代理的用它自己 detour 的解析器)
+  // 先把域名解析成真实 IP,再往下按原顺序判;没有这种前后关系时一条都不插。resolve 只对域名目标生效,
+  // 按 IP 连进来的 tun 流量不受影响;解析走的是站点集自己的线路,和 DNS 规则一致,不是节点自己解析
+  const resolvers = options.resolvers && typeof options.resolvers === 'object' ? options.resolvers : null
+  const preResolve = resolvers ? preResolveRules(conf, ruleLists, resolvers, options) : []
+  const preResolveAt = rules.length
   // 前置自定义分流:用户手写的强制通道,"不管别的规则怎么写,这些目标就走这个出口"。
   // 所以它排在所有规则最前面,只让上面那条 tun 防回环走在它前头——那条挡的是内核自己
   // 喂自己(真机上出现过几十秒把整机吃死),不是分流,不能被任何规则盖过。
@@ -149,6 +217,8 @@ export const buildRoute = (routing, rulesetDir, options = {}) => {
   }
   // 兜底此刻走代理:没命中的 v6 连接同样明确拒绝(final 写不了条件,单独一条)
   if (rejectV6For && rejectV6For(conf.fallback.name)) rules.push({ ip_version: 6, action: 'reject' })
+
+  if (preResolve.length) rules.splice(preResolveAt, 0, ...preResolve)
 
   // 上面都没命中的流量交给兜底站点集(它也是一个 selector,见 config.mjs);
   // 内核的 final 必须指向某个存在的出站,所以这条永远有。

@@ -66,6 +66,12 @@
               class="text-warning text-xs"
             >{{ exitNote }}</span>
           </div>
+          <!-- 面板探测以域名进内核回环入站:和终端按 IP 连的 tun 路径不同——有前置 IP 规则时内核先按站点集的解析器把
+               域名解析成真实 IP 再判,没有时按域名规则判;终端实际访问不一定和这里一样 -->
+          <div
+            v-if="!dnsSkipped"
+            class="text-base-content/50 text-xs"
+          >{{ $t('routeTestDomainTargetNote') }}</div>
           <div class="text-base-content/60 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
             <span class="font-mono">{{ result.exit.url }}</span>
             <span v-if="result.exit.destinationIP">{{ $t('routeTestDestination') }}: <span class="font-mono">{{ result.exit.destinationIP }}</span></span>

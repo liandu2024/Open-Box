@@ -54,15 +54,26 @@ export const reachesEndOfSpace = (cidrs) => {
 }
 
 const list = (v) => (Array.isArray(v) ? v : v === undefined || v === null ? [] : [v])
-// 一份规则集里的 IP 段(只认 ip_cidr;逻辑 / 取反规则说不清范围,按"可能覆盖任何地址"处理)
-const cidrsOfRuleSet = (json) => {
-  const out = []
+const DOMAIN_KEYS = ['domain', 'domain_suffix', 'domain_keyword', 'domain_regex']
+// 一份规则集的内容形状(第四轮 U2)。入口旁路只认"仅目标 IP"的规则:sing-tun 从规则集里提取地址集合时
+// 只取 ip_cidr,不带 port / source_ip_cidr / network 这些附加条件,整份拿去入口旁路就会把"只对 443 端口 /
+// 只对某个来源直连"放大成全部直连。所以:
+//   cidrs        规则里的 ip_cidr
+//   unbounded    含逻辑 / 取反规则,范围说不清
+//   domainKeys   含域名类条件(按内容认,不看集合叫不叫 geoip-*)
+//   otherKeys    含 port / source_ip_cidr / network / process 等其它条件
+const shapeOfRuleSet = (json) => {
+  const out = { cidrs: [], unbounded: false, domainKeys: [], otherKeys: [] }
   for (const rule of (json && json.rules) || []) {
     if (!rule || typeof rule !== 'object') continue
-    if (rule.type === 'logical' || rule.rules || rule.invert) return { cidrs: [], unbounded: true }
-    out.push(...list(rule.ip_cidr))
+    if (rule.type === 'logical' || rule.rules || rule.invert) { out.unbounded = true; continue }
+    for (const key of Object.keys(rule)) {
+      if (key === 'ip_cidr' || key === 'type') continue
+      if (DOMAIN_KEYS.includes(key)) { if (!out.domainKeys.includes(key)) out.domainKeys.push(key) } else if (!out.otherKeys.includes(key)) out.otherKeys.push(key)
+    }
+    out.cidrs.push(...list(rule.ip_cidr))
   }
-  return { cidrs: out, unbounded: false }
+  return out
 }
 
 export const resolveNativeBypass = async (ctx, paths, plan) => {
@@ -77,7 +88,7 @@ export const resolveNativeBypass = async (ctx, paths, plan) => {
   const decode = async (tag) => {
     if (cache.has(tag)) return cache.get(tag)
     const r = await decodeRuleSetJson(ctx, paths, tag)
-    const v = r.error ? { error: r.error } : cidrsOfRuleSet(r.json)
+    const v = r.error ? { error: r.error } : shapeOfRuleSet(r.json)
     cache.set(tag, v)
     return v
   }
@@ -91,6 +102,9 @@ export const resolveNativeBypass = async (ctx, paths, plan) => {
       const d = await decode(tag)
       if (d.error) { blocked = `集合「${tag}」${d.error}`; break }
       if (d.unbounded) { blocked = `集合「${tag}」含逻辑 / 取反规则,范围说不清`; break }
+      // 候选集合必须是"仅目标 IP":带域名 / 端口 / 来源等条件的规则,入口只按 IP 放行会放大直连范围
+      if (d.domainKeys.length || d.otherKeys.length) { blocked = `集合「${tag}」不是纯目标 IP 规则(含 ${[...d.domainKeys, ...d.otherKeys].join(' / ')} 条件),入口只按 IP 放行会放大它的范围`; break }
+      if (!d.cidrs.length) { blocked = `集合「${tag}」里没有 ip_cidr`; break }
       const tail = reachesEndOfSpace(d.cidrs)
       if (tail) { blocked = `集合「${tag}」含到地址空间末尾的区间(${tail}),sing-tun 编不进 nft 集合`; break }
       if (plan.fakeIp) {
@@ -106,6 +120,9 @@ export const resolveNativeBypass = async (ctx, paths, plan) => {
         const d = await decode(tag)
         if (d.error) { blocked = `「${e.name}」的集合「${tag}」${d.error}`; break }
         if (d.unbounded) { blocked = `「${e.name}」的集合「${tag}」含逻辑 / 取反规则,范围说不清`; break }
+        // 较早规则的集合按内容认:里面有域名条件,它就是一条域名规则,解析出来的 IP 在入口分不出来 → 挡住
+        if (d.domainKeys.length) { blocked = `「${e.name}」的集合「${tag}」含域名条件(${d.domainKeys.join(' / ')}),它解析出来的 IP 在入口分不出来`; break }
+        // 端口 / 来源等附加条件只会让较早规则更窄:仍按它的 IP 段核对重叠(保守)
         other.push(...d.cidrs)
       }
       if (blocked) break
