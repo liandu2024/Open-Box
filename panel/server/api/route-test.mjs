@@ -16,7 +16,15 @@ import { normalizeRouting } from '../engine/routing-model.mjs'
 //      clash_api /connections 里找这条连接,读它实际走的链路和命中的规则;顺带记耗时。
 const TARGET_PATTERN = /^[A-Za-z0-9._:-]+$/
 const isValidTarget = (v) => typeof v === 'string' && v.length > 0 && !v.startsWith('-') && TARGET_PATTERN.test(v)
-const isIp = (v) => /^\d{1,3}(\.\d{1,3}){3}$/.test(v) || v.includes(':')
+const isIp = (v) => net.isIP(String(v)) !== 0
+// host:port 的写法:IPv6 字面量要加方括号(RFC 3986 §3.2.2),否则 "2001:db8::1:80" 分不出端口
+export const hostPort = (host, port) => (net.isIPv6(host) ? `[${host}]:${port}` : `${host}:${port}`)
+// URL 里的 host 部分:IPv6 同样加括号;默认端口不写
+export const targetUrl = (host, port, secure) => {
+  const h = net.isIPv6(host) ? `[${host}]` : host
+  const defaultPort = secure ? 443 : 80
+  return `${secure ? 'https' : 'http'}://${h}${port === defaultPort ? '' : `:${port}`}/`
+}
 // fake-ip 的地址段:sing-box / Clash / OpenClash 默认都在 198.18.0.0/15(RFC 2544 保留段,公网上
 // 不会有),sing-box 的 IPv6 默认 fc00::/18。解析结果落在这里面,只可能是某个做 fake-ip 的
 // 客户端替真正的 DNS 答的:查询是往 1.1.1.1 发的,却在半路(线路对端的透明代理)被截下来。
@@ -80,8 +88,8 @@ export const probeViaKernel = (host, { port = 443, secure = port !== 80, proxyPo
     socket.once('error', (err) => { clearTimeout(timer); finish({ ok: false, error: connected ? err.message : `inbound: ${err.message}` }) })
     socket.once('connect', () => {
       connected = true
-      const dest = connectTo || host
-      socket.write(`CONNECT ${dest}:${port} HTTP/1.1\r\nHost: ${dest}:${port}\r\n\r\n`)
+      const dest = hostPort(connectTo || host, port)
+      socket.write(`CONNECT ${dest} HTTP/1.1\r\nHost: ${dest}\r\n\r\n`)
     })
     let buf = ''
     const onConnectData = (chunk) => {
@@ -93,7 +101,8 @@ export const probeViaKernel = (host, { port = 443, secure = port !== 80, proxyPo
       if (!/^HTTP\/1\.[01] 200/.test(line)) { clearTimeout(timer); finish({ ok: false, error: `CONNECT: ${line}` }); socket.destroy(); return }
       // keep-alive:带 Connection: close 的话对端一答完就关,内核随即把它从连接表里删掉,
       // 后面就查不到了。连接由调用方 close() 收尾。
-      const request = `HEAD / HTTP/1.1\r\nHost: ${host}\r\nUser-Agent: open-box-route-test\r\nConnection: keep-alive\r\n\r\n`
+      const hostHeader = net.isIPv6(host) ? `[${host}]` : host
+      const request = `HEAD / HTTP/1.1\r\nHost: ${hostHeader}\r\nUser-Agent: open-box-route-test\r\nConnection: keep-alive\r\n\r\n`
       const readStatus = (stream) => {
         let head = ''
         stream.on('data', (c) => {
@@ -112,7 +121,8 @@ export const probeViaKernel = (host, { port = 443, secure = port !== 80, proxyPo
         stream.once('close', () => { clearTimeout(timer); finish({ ok: false, error: 'connection closed' }) })
       }
       if (secure) {
-        const secureStream = tls.connect({ socket, servername: host, rejectUnauthorized: false }, () => secureStream.write(request))
+        // SNI 只能是域名:IP 字面量不能进 SNI(RFC 6066),Node 也会拒
+        const secureStream = tls.connect({ socket, ...(isIp(host) ? {} : { servername: host }), rejectUnauthorized: false }, () => secureStream.write(request))
         readStatus(secureStream)
       } else {
         socket.write(request)
@@ -205,6 +215,19 @@ export const registerRouteTestRoutes = (app, { store, ctx, paths, fetchImpl = gl
         out.resolve = { ok: r.ok, status: r.status, answers, ms }
         const ttl = records.map((a) => Number(a.TTL)).find((n) => Number.isFinite(n))
         if (ttl !== undefined) out.resolve.ttl = ttl
+        // 档案开了 IPv6 才问 AAAA:关着时内核 strategy=ipv4_only,问了也是空。分开报,A / AAAA
+        // 各自验证(审核 C1:以前只查 A,IPv6 路径完全没看)
+        const profile = store.getProfile ? store.getProfile() : null
+        if (profile && profile.ipv6) {
+          try {
+            const r6 = await fetchWithTimeout(fetchImpl, `${CLASH_API_BASE}/dns/query?name=${encodeURIComponent(target)}&type=AAAA`, { headers: clashHeaders(secret) }, 8000)
+            const body6 = await r6.json().catch(() => null)
+            out.resolve.answers6 = ((body6 && body6.Answer) || []).filter((a) => a && a.data && String(a.data).includes(':')).map((a) => a.data)
+          } catch (err) {
+            out.resolve.answers6 = []
+            out.resolve.error6 = errorMessage(err)
+          }
+        }
         // 命中内核 DNS 缓存的判断:代理侧解析要在隧道里新开一条 TCP 到 DNS 服务器再问,至少两个
         // 来回,几十毫秒起步;几毫秒就回来的只能是缓存。缓存不分线路——换了节点,缓存没过期前
         // 拿到的还是上一条线路问出来的答案。直连解析本来就只有几毫秒,分不出来,不标。
@@ -228,7 +251,7 @@ export const registerRouteTestRoutes = (app, { store, ctx, paths, fetchImpl = gl
     const bodyPort = Number((req.body || {}).port)
     const port = Number.isInteger(bodyPort) && bodyPort >= 1 && bodyPort <= 65535 ? bodyPort : isIp(target) ? 80 : 443
     const secure = port !== 80
-    let exit = { url: `${secure ? 'https' : 'http'}://${target}${(secure && port === 443) || (!secure && port === 80) ? '' : `:${port}`}/` }
+    let exit = { url: targetUrl(target, port, secure) }
     // 查连接表和访问并行,而不是访问完再查:访问失败(对端关连接、超时)的那一刻这条连接就从内核
     // 连接表里消失了,事后什么都查不到;趁请求还挂着的时候找到它,失败了也知道是从哪个节点出去的。
     // 探测连接认得很准:入站是面板的回环 mixed(metadata.type = mixed/panel-in)、目标端口对得上、

@@ -241,10 +241,19 @@ export const ensureRuleLists = async (
     }
   }
   await ctx.writeFile(listStatePath(paths), JSON.stringify(next, null, 2))
+  return { ok: true, updated, failed, lists: shapesOf(next) }
+}
+
+// 状态表 → 形状表(每条名单编成了域名 / IP 哪几份)。老版式(没有 split 标记)的本地文件是
+// 域名 IP 混在一起的一份,形状说不清,不填
+const shapesOf = (state) => {
   const lists = {}
-  for (const [tag, entry] of Object.entries(next)) {
-    // 老版式(没有 split 标记)的本地文件是域名 IP 混在一起的一份,形状说不清,不填
+  for (const [tag, entry] of Object.entries(state || {})) {
     if (entry && entry.split === SPLIT_VERSION && entry.counts) lists[tag] = ruleListShape(entry.counts)
   }
-  return { ok: true, updated, failed, lists }
+  return lists
 }
+
+// 不拉网络、只按上次部署留下的状态读形状表:规则页推算「规则路由」要和生成配置时引用的是
+// 同一份 .srs(域名那份还是 IP 那份),否则算出来的"第几条"对不上
+export const readRuleListShapes = async (ctx, paths) => shapesOf(await readState(ctx, paths))

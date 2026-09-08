@@ -154,6 +154,19 @@
                 class="text-warning text-xs"
               >{{ $t('routeTestFakeIpUpstream') }}</span>
             </template>
+            <!-- AAAA 单独列:开了 IPv6 才查,没有记录也明说,别让人以为 v6 和 v4 走了同一条 -->
+            <template v-if="result.resolve.answers6">
+              <span class="text-base-content/50 text-xs">AAAA</span>
+              <span
+                v-for="ip in result.resolve.answers6"
+                :key="'6' + ip"
+                class="badge badge-sm badge-outline font-mono"
+              >{{ ip }}</span>
+              <span
+                v-if="!result.resolve.answers6.length"
+                class="text-base-content/50 text-xs"
+              >{{ result.resolve.error6 || $t('routeTestNoAaaa') }}</span>
+            </template>
             <span
               v-else
               class="text-warning text-xs"

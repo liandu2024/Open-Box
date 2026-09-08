@@ -21,3 +21,13 @@ test('normalizeClientRoutes:停用的、来源全非法的、没出口的都丢�
   assert.deepEqual(normalizeClientRoutes(list), [{ id: 'a', name: '电视', sources: ['10.0.0.5/32', '10.0.1.0/24'], outbound: '香港-自动' }])
   assert.deepEqual(normalizeClientRoutes(null), [])
 })
+
+test('IPv6 校验交给 node:net:段数不够、段超 ffff、段数超 8 一律拒;带 zone 的链路本地地址不当网段;IPv4-mapped 收(审核 B6)', () => {
+  for (const bad of ['1:2:3', '12345::1', '2001:db8:0:0:0:0:0:0:1', 'fe80::1%eth0', ':::1', '2001:db8::/129', '256.1.1.1']) {
+    assert.equal(normalizeCidr(bad), '', bad)
+    assert.equal(isIpOrCidr(bad), false, bad)
+  }
+  assert.equal(normalizeCidr('2001:db8::10'), '2001:db8::10/128')
+  assert.equal(normalizeCidr('2001:db8:1234::/48'), '2001:db8:1234::/48')
+  assert.equal(normalizeCidr('::ffff:192.168.1.1'), '::ffff:192.168.1.1/128')
+})

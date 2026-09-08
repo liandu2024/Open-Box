@@ -3,11 +3,14 @@
 // source_ip_cidr。出口不存在的规则由 routing.mjs 按 knownOutbounds 丢掉(不然内核
 // 会因为 outbound not found 起不来)。
 
-const IPV4 = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/
-const IPV6 = /^[0-9a-f:]+$/i
+import net from 'node:net'
 
-const isIpv4 = (s) => IPV4.test(s)
-const isIpv6 = (s) => IPV6.test(s) && s.includes(':') && s.split('::').length <= 2
+// 地址合法性交给 node:net 判:以前的正则只看字符集,"1:2:3""12345::1""2001:db8:0:0:0:0:0:0:1"
+// 这种都会被放过,到部署时 sing-box check 才拒(GitHub 审核 B6)。带 zone 的链路本地地址
+// (fe80::1%eth0)不当普通网段:规则里写它没有意义,内核也不收。
+const isIpv4 = (s) => net.isIPv4(s)
+const isIpv6 = (s) => net.isIPv6(s) && !s.includes('%')
+export const isIpLiteral = (s) => isIpv4(s) || isIpv6(s)
 
 // 合法就返回规范化后的 CIDR,不合法返回空串
 export const normalizeCidr = (raw) => {

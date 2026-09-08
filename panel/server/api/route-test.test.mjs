@@ -258,3 +258,38 @@ test('POST /route-test:每次查询都先清内核 DNS 缓存,而且清在解析
   const ipCalls = await run({ target: '8.8.8.8' })
   assert.ok(!ipCalls.some((c) => c.includes('/cache/dns/flush')), ipCalls.join(' | '))
 })
+
+test('档案开了 IPv6:再查一次 AAAA,单独放 answers6;没开就没有这个字段', async () => {
+  const ctx = createMockContext({ files: { [paths.configPath]: JSON.stringify(config), [paths.singbox]: 'x', [`${paths.rulesetDir}/geosite-openai.srs`]: 'x' } })
+  const asked = []
+  const fetchImpl = async (url, init) => {
+    if (url.includes('/dns/query')) {
+      asked.push(new URL(url).searchParams.get('type'))
+      return { ok: true, status: 200, json: async () => ({ Answer: url.includes('type=AAAA') ? [{ data: '2400:3200::1' }] : [{ data: '39.156.66.10' }] }) }
+    }
+    if (url.includes('/connections')) return { ok: true, status: 200, json: async () => ({ connections: [] }) }
+    if (url.includes('/cache/dns/flush')) return { ok: true, status: 204, json: async () => ({}) }
+    throw new Error('unexpected fetch ' + url + (init ? '' : ''))
+  }
+  const probe = async () => ({ ok: true, status: 200, ms: 1 })
+  const run = async (ipv6) => {
+    asked.length = 0
+    const app = express()
+    registerRouteTestRoutes(app, { store: { getClashSecret: () => 's', getProfile: () => ({ ipv6 }) }, ctx, paths, fetchImpl, probe })
+    const server = app.listen(0)
+    await new Promise((r) => server.once('listening', r))
+    try {
+      const res = await fetch(`http://127.0.0.1:${server.address().port}/api/openbox/route-test`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ target: 'www.baidu.com' }) })
+      return await res.json()
+    } finally {
+      await new Promise((r) => server.close(r))
+    }
+  }
+  const on = await run(true)
+  assert.deepEqual(on.resolve.answers, ['39.156.66.10'])
+  assert.deepEqual(on.resolve.answers6, ['2400:3200::1'])
+  assert.deepEqual(asked, ['A', 'AAAA'])
+  const off = await run(false)
+  assert.equal(off.resolve.answers6, undefined)
+  assert.deepEqual(asked, ['A'])
+})
