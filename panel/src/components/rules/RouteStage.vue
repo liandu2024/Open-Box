@@ -8,11 +8,11 @@
       side === 'left' ? 'route-cell-left' : 'route-cell-right',
       state === 'pending' ? 'route-pending' : state === 'skip' ? 'route-skip' : '',
       first ? 'route-cell-first' : '',
+      last ? 'route-cell-last' : '',
     ]"
     :style="{ '--m-order': mobileOrder }"
   >
     <span
-      v-if="!last"
       class="route-line"
       aria-hidden="true"
     />
@@ -114,14 +114,25 @@ const badgeClass = computed(() => {
   font-weight: 500;
   line-height: 1;
 }
-/* 主线:从本站圆圈顶端往上到本格顶边,和上一格圆圈底下的那截接上 */
+/* 主线:贯穿整格(圆圈实底盖在它上面),相邻两格的线首尾相接就是一根连续的线;
+   最底下那站只画到圆圈中心为止,最顶上那站从圆圈中心往下画 */
 .route-line {
   position: absolute;
   left: calc(0.9rem + 0.875rem - 0.5px);
   top: 0;
-  height: 0.55rem;
+  bottom: 0;
   width: 1px;
   background-color: color-mix(in srgb, var(--color-success) 45%, transparent);
+}
+.route-cell-first .route-line {
+  bottom: auto;
+  height: calc(0.55rem + 0.875rem);
+}
+.route-cell-last .route-line {
+  top: calc(0.55rem + 0.875rem);
+}
+.route-cell-first.route-cell-last .route-line {
+  display: none;
 }
 .route-rise {
   position: absolute;
