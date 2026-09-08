@@ -21,6 +21,11 @@ export const DEFAULT_PROFILE = {
   // v6 地址、并在防火墙上 REJECT 掉 lan→wan 的 v6——也就是干脆不走 IPv6,免得它绕开
   // 隧道直连出去。要用 v6 的人在「其他」页签里自己打开。
   ipv6: false,
+  // IPv6 开着时,走代理的目标怎么处理(engine/dns.mjs 的 ipv6ProxyMode):
+  //   node:v6 目标和 v4 一样交给节点(老行为);
+  //   ipv4:走代理的域名不给 AAAA(终端自然用 v4),裸 v6 目标要走代理时在内核里明确拒绝——
+  //        代理线路不支持 v6 时用它,直连的 v6 照常。
+  ipv6Proxy: 'node',
   // 订阅链接和节点服务器的地址一律直连,不看站点集(engine/direct-hosts.mjs)
   directForNodes: true,
   tun: { autoRedirect: true },

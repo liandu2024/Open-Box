@@ -146,6 +146,8 @@ export interface OpenboxProfile {
   directForNodes?: boolean
   region: string
   ipv6: boolean
+  // IPv6 开着时走代理的目标怎么处理:node 交给节点(默认)/ ipv4 降为 IPv4(走代理的域名不给 AAAA,裸 v6 明确拒绝)
+  ipv6Proxy?: 'node' | 'ipv4'
   tun?: { autoRedirect?: boolean }
   dns: OpenboxProfileDns
   routing: OpenboxProfileRouting
@@ -674,7 +676,7 @@ export interface OpenboxPenetrationMatched {
 export interface OpenboxPenetrationResult {
   matched: OpenboxPenetrationMatched | null
   // 判不了的那条规则:要看终端来源 IP / 目标端口,这次查询没给(matchError 里有人话说明)
-  undetermined?: { index: number; rule: Record<string, unknown>; needs: ('sourceIp' | 'port')[] }
+  undetermined?: { index: number; rule: Record<string, unknown>; needs: ('sourceIp' | 'port' | 'ipVersion')[] }
   // 按内核当前配置里的 DNS 规则推出来的解析方式(目标是 IP 时为 skipped)
   dns?:
     | { skipped: true }
@@ -705,6 +707,10 @@ export interface OpenboxPenetrationResult {
     dnsForwardReason: string
     nativeBypass: { enabled: boolean; sets: string[]; reason: string; via?: 'nft' | 'route' }
     dnsSourceRules: boolean
+    // 走代理的域名由内核发占位地址(FakeIP 原型)
+    fakeIp?: boolean
+    // IPv6 分层:off 老关闭语义 / node 代理 v6 交给节点 / ipv4 走代理的降为 IPv4
+    ipv6?: 'off' | 'node' | 'ipv4'
   }
 }
 

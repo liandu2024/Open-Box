@@ -242,7 +242,8 @@ const firstLayerText = computed(() => {
   const bypass = f.nativeBypass?.enabled
     ? t('ruleLookupFirstLayerBypassOn', { sets: f.nativeBypass.sets.join(', '), via: f.nativeBypass.via === 'route' ? t('ruleLookupFirstLayerViaRoute') : 'nft' })
     : t('ruleLookupFirstLayerBypassOff', { reason: f.nativeBypass?.reason || '' })
-  return `${t('ruleLookupFirstLayer')}:${dns};${bypass}`
+  const v6 = f.ipv6 ? `;${t(`ruleLookupFirstLayerIpv6_${f.ipv6}`)}` : ''
+  return `${t('ruleLookupFirstLayer')}:${dns};${bypass}${v6}`
 })
 
 const isReject = computed(() => result.value?.matched?.action === 'reject')

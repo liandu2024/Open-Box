@@ -481,12 +481,13 @@ export const resolveSelectionLeaf = (selections, name) => {
 }
 
 // 某个站点集(或兜底)此刻是不是直连:内核在跑就按它当前的选择,否则按档案默认
-export const policyGoesDirect = (name, policyDefault, members, builtin, selections) => {
-  const chosen = selections && Object.prototype.hasOwnProperty.call(selections, name)
+// 站点集此刻实际落到的出口:代理页里选过就按选择(顺着 selector 链找到叶子),没选过按档案默认
+export const policyChosenOutbound = (name, policyDefault, members, builtin, selections) =>
+  selections && Object.prototype.hasOwnProperty.call(selections, name)
     ? resolveSelectionLeaf(selections, name)
     : effectiveOutbound(policyDefault, members, builtin)
-  return chosen === builtin.direct
-}
+export const policyGoesDirect = (name, policyDefault, members, builtin, selections) =>
+  policyChosenOutbound(name, policyDefault, members, builtin, selections) === builtin.direct
 
 // 第一层 · DNS:哪些域名的查询要交给内核(其余留给路由器原有的 dnsmasq 和它的上游)。
 //   none     代理面是空的(全部直连):一个都不转发,原 DNS 原样——不再"全量转发更简单"

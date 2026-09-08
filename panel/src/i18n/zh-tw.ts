@@ -750,6 +750,11 @@ const zhTW: LANG_MESSAGE = {
   ipv6Description: '預設關閉。關著時不解析 IPv6 網域,也不存取 IPv6 位址。',
   ipv6OffWarning: '關閉中:DNS 只解析 IPv4,IPv6 對外流量直接封鎖——它繞不過通道。',
   ipv6OnNote: '開啟後,你的裝置可以和 IPv4 一樣使用 IPv6,同樣遵循分流頁的規則。',
+  ipv6ProxyTitle: '走代理的 IPv6',
+  ipv6ProxyNode: '交給節點',
+  ipv6ProxyIpv4: '降為 IPv4',
+  ipv6ProxyNodeNote: 'IPv6 目標和 IPv4 一樣交給此刻選中的節點;節點不支援 IPv6 時這些連線會失敗。直連的 IPv6 照常。',
+  ipv6ProxyIpv4Note: '走代理的網域不再給 AAAA(裝置自然用 IPv4 連);裸 IPv6 目標要走代理時在核心裡明確拒絕,不會從 WAN 直出。直連的 IPv6 照常解析、照常走。重啟核心生效。',
 
   // --- \u5167\u6838\u7ba1\u7406\u3001\u7dca\u6025\u6062\u5fa9\u76f4\u9023\u8207\u7a7f\u900f\u67e5\u8a62(P4b Task 7) ---
   kernel: '\u5167\u6838',
@@ -807,6 +812,9 @@ const zhTW: LANG_MESSAGE = {
   ruleLookupFirstLayerBypassOn: '直連 IP 集合 {sets} 在入口旁路({via}),不進核心',
   ruleLookupFirstLayerBypassOff: '直連目標進核心後由直連出站連(相容路徑:{reason})',
   ruleLookupFirstLayerViaRoute: '路由表',
+  ruleLookupFirstLayerIpv6_off: 'IPv6 關閉(只解析 A,區網→WAN 的 v6 攔掉)',
+  ruleLookupFirstLayerIpv6_node: 'IPv6 開啟,走代理的 v6 交給節點',
+  ruleLookupFirstLayerIpv6_ipv4: 'IPv6 開啟,走代理的降為 IPv4(裸 v6 要走代理時拒絕)',
   ruleLookupRoutingStale: '分流規則改過了,核心還在跑舊設定。上面是按目前設定推算的,下面的「真實路由」才是核心此刻的實際行為;重啟核心後兩者一致。',
   ruleFormatQuery: '格式化查詢',
   routeTestTitle: '真實路由',

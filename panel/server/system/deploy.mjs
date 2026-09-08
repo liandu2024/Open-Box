@@ -5,7 +5,7 @@ import { applyDnsTakeover, restoreDnsTakeover, dnsTakeoverBackupPath } from './d
 import { expandDnsForward } from './dns-forward.mjs'
 import { dnsmasqForwardPlan, nativeBypassPlan, normalizeRouting, routingFingerprint } from '../engine/routing-model.mjs'
 import { normalizeClientRoutes } from '../engine/client-routes.mjs'
-import { dnsFakeIpEnabled } from '../engine/dns.mjs'
+import { dnsFakeIpEnabled, ipv6ProxyMode } from '../engine/dns.mjs'
 import { dnsPolicyClasses } from '../engine/dns.mjs'
 import { builtinTags } from '../engine/user-groups.mjs'
 import { applyPanelLanRule, applyDnsLanRule, applyIpv6Block, removeProxyRules, applyServerPortRules, commitFirewall } from './firewall.mjs'
@@ -185,6 +185,8 @@ export const deployConfig = async (ctx, paths, { config, profile, userGroups, fe
             // 计划阶段(纯函数)的结论:选择同步时按同口径比
             nativeBypassPlanned: { sets: bypassPlanned.sets, pending: bypassPlanned.pending.map((x) => x.policy) },
             fakeIp: dnsFakeIpEnabled(profile),
+            // IPv6 分层:off(老关闭语义)/ node(代理 v6 交给节点)/ ipv4(走代理的降为 IPv4,裸 v6 明确拒绝)
+            ipv6: ipv6ProxyMode(profile),
             dnsSourceRules: dnsMode === 'hijack' && clientRoutes.length > 0,
           },
         }, null, 2),

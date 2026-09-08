@@ -47,6 +47,19 @@ export const buildRoute = (routing, rulesetDir, options = {}) => {
   const known = options.knownOutbounds instanceof Set ? options.knownOutbounds : null
   const ruleLists = options.ruleLists || {}
   const rules = [{ action: 'sniff' }]
+  // IPv6 分层 · 代理 v6 降为 IPv4(engine/dns.mjs 的 ipv6ProxyMode):某条规则的出口此刻是代理线路时,
+  // 先插一条同条件 + ip_version 6 的 reject——裸 v6 目标、终端自己解析出来的 v6 地址要走代理线路
+  // 时明确失败,不能悄悄从 WAN 直出,也不影响直连出口的 v6(直连规则前面不插)。
+  // rejectV6For(出口 tag) 由调用方按此刻的选择算(config.mjs)
+  const rejectV6For = typeof options.rejectV6For === 'function' ? options.rejectV6For : null
+  const pushRule = (rule) => {
+    if (rejectV6For && rule.outbound && rejectV6For(rule.outbound)) {
+      const match = { ...rule }
+      delete match.outbound
+      rules.push({ ...match, ip_version: 6, action: 'reject' })
+    }
+    rules.push(rule)
+  }
   // off:Open-Box 不劫持任何 DNS——不改写、不回交,局域网的 53 端口流量当普通 UDP 按规则走
   // (配合 config.mjs 里关掉 auto_redirect,它自带 nft 层的 DNS 劫持,关不掉)。但内核 DNS 入站
   // dns-in 仍开着,主动发到 <路由器 IP>:7853 的查询(AdGuard Home / Pi-hole 的上游)照常解析。
@@ -99,7 +112,7 @@ export const buildRoute = (routing, rulesetDir, options = {}) => {
       const emitted = customRule(rule, ruleLists, target)
       if (!emitted) continue
       for (const tag of emitted.rule_set || []) addTag(tag)
-      rules.push(emitted)
+      pushRule(emitted)
     }
   }
 
@@ -121,7 +134,7 @@ export const buildRoute = (routing, rulesetDir, options = {}) => {
   for (const cr of Array.isArray(options.clientRoutes) ? options.clientRoutes : []) {
     if (!cr || !Array.isArray(cr.sources) || !cr.sources.length || !cr.outbound) continue
     if (known && !known.has(cr.outbound)) continue
-    rules.push({ source_ip_cidr: cr.sources, outbound: cr.outbound })
+    pushRule({ source_ip_cidr: cr.sources, outbound: cr.outbound })
   }
 
   if (conf.adBlock) {
@@ -132,8 +145,10 @@ export const buildRoute = (routing, rulesetDir, options = {}) => {
   // 站点集按用户排的顺序逐条匹配,首条命中生效。
   for (const policy of conf.activePolicies) {
     for (const tag of routeRulesetTags(policy, ruleLists)) addTag(tag)
-    rules.push(policyRule(policy, ruleLists))
+    pushRule(policyRule(policy, ruleLists))
   }
+  // 兜底此刻走代理:没命中的 v6 连接同样明确拒绝(final 写不了条件,单独一条)
+  if (rejectV6For && rejectV6For(conf.fallback.name)) rules.push({ ip_version: 6, action: 'reject' })
 
   // 上面都没命中的流量交给兜底站点集(它也是一个 selector,见 config.mjs);
   // 内核的 final 必须指向某个存在的出站,所以这条永远有。

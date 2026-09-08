@@ -462,3 +462,18 @@ test('部署时把走代理站点集的 geosite 解码进转发名单:元数据�
   assert.match(meta2.firstLayer.dnsForwardReason, /geosite-youtube.*关键词/)
   assert.ok(cmds(ctx2).includes('uci add_list dhcp.@dnsmasq[0].server=127.0.0.1#7853'))
 })
+
+test('config.meta.json 的 firstLayer 记 IPv6 分层模式:关 → off,开 → node,开 + 降为 IPv4 → ipv4', async () => {
+  const run = async (over) => {
+    const ctx = okCtx()
+    const r = await deployConfig(ctx, paths, {
+      config: { ...config, outbounds: [{ type: 'direct', tag: '直连' }, { type: 'selector', tag: '其他', outbounds: ['直连'], default: '直连' }] },
+      profile: { ipv6: false, dns: { mode: 'dnsmasq' }, tun: { autoRedirect: true }, routing: { fallbackDefault: 'direct', policies: [] }, clientRoutes: [], ...over },
+    })
+    assert.equal(r.ok, true, r.message)
+    return JSON.parse(ctx.writes.filter((w) => w.path === configMetaPath(paths)).pop().content).firstLayer.ipv6
+  }
+  assert.equal(await run({ ipv6: false, ipv6Proxy: 'ipv4' }), 'off')
+  assert.equal(await run({ ipv6: true }), 'node')
+  assert.equal(await run({ ipv6: true, ipv6Proxy: 'ipv4' }), 'ipv4')
+})

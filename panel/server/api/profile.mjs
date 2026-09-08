@@ -49,6 +49,9 @@ export const validateProfilePatch = (patch, { reservedNames = [] } = {}) => {
   if ('ipv6' in patch && !isBoolean(patch.ipv6)) {
     return 'ipv6 must be a boolean'
   }
+  if ('ipv6Proxy' in patch && !['node', 'ipv4'].includes(patch.ipv6Proxy)) {
+    return 'ipv6Proxy must be one of node, ipv4'
+  }
   if ('directForNodes' in patch && !isBoolean(patch.directForNodes)) {
     return 'directForNodes must be a boolean'
   }

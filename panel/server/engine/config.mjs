@@ -1,11 +1,11 @@
 import { emitOutbound } from './emit-outbound.mjs'
 import { emitEndpoint } from './emit-endpoint.mjs'
 import { emitUserGroups } from './user-groups.mjs'
-import { customOutboundTag, customPolicyActive, effectiveOutbound, nativeBypassPlan, normalizeRouting, policyOutboundOptions } from './routing-model.mjs'
+import { customOutboundTag, customPolicyActive, effectiveOutbound, nativeBypassPlan, normalizeRouting, policyChosenOutbound, policyOutboundOptions } from './routing-model.mjs'
 import { buildRoute } from './routing.mjs'
 import { buildServerInbounds } from './servers.mjs'
 import { normalizeClientRoutes } from './client-routes.mjs'
-import { buildDns, dnsFakeIpEnabled, FAKEIP_V6 } from './dns.mjs'
+import { buildDns, dnsFakeIpEnabled, ipv6ProxyMode, FAKEIP_V6 } from './dns.mjs'
 import { collectDirectHosts } from './direct-hosts.mjs'
 import { cidrsOverlap, parseCidr, subtractCidrs } from '../system/local-subnets.mjs'
 
@@ -124,8 +124,20 @@ export const buildConfig = ({ nodes, profile, userGroups, systemDns, localSubnet
   // wireguard 是 endpoint 不是 outbound,但路由规则一样能指向它的 tag
   const clientRoutes = normalizeClientRoutes(profile.clientRoutes)
   const knownOutbounds = new Set([...outbounds, ...endpoints].map((o) => o.tag))
+  // IPv6 分层 · 代理 v6 降为 IPv4:出口此刻落在代理线路(不是直连 / 拒绝;站点集按此刻的选择判,
+  // 节点组 / 节点 / 隧道端点都算代理线路)的规则前面插 v6 拒绝(engine/routing.mjs)
+  const policyByName = new Map(routingConf.activePolicies.map((p) => [p.name, p]))
+  const rejectV6For = ipv6ProxyMode(profile) === 'ipv4'
+    ? (tag) => {
+        if (tag === builtin.direct || tag === builtin.block) return false
+        const p = policyByName.get(tag) || (tag === routingConf.fallback.name ? routingConf.fallback : null)
+        if (!p) return true
+        const chosen = policyChosenOutbound(p.name, p.default, policyMemberTags, builtin, selections)
+        return chosen !== builtin.direct && chosen !== builtin.block
+      }
+    : null
   const { route } = buildRoute(sanitizedRouting, profile.rulesetDir, {
-    dnsMode, directTag: builtin.direct, blockTag: builtin.block, directHosts,
+    dnsMode, directTag: builtin.direct, blockTag: builtin.block, directHosts, rejectV6For,
     tunCidrs: profile.ipv6 ? [TUN_V4_NET, TUN_V6_NET] : [TUN_V4_NET],
     dnsmasqTag: dnsMode === 'dnsmasq' ? DNSMASQ_OUTBOUND_TAG : '',
     clientRoutes,

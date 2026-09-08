@@ -314,3 +314,31 @@ test('值或出口空着的行在归一化时就被丢掉(空条件的规则等�
     { domain_suffix: ['ok.com'], outbound: 'VW | 香港-01' },
   ])
 })
+
+test('IPv6 分层 · 代理 v6 降为 IPv4:出口是代理线路的规则前面插一条同条件的 ip_version 6 拒绝;直连 / 拒绝出口不插;兜底走代理时收尾再拒一条', () => {
+  const rejectV6For = (tag) => tag !== 'direct' && tag !== 'block' && tag !== '国内'
+  const { route } = build({
+    policies: [
+      { id: 'g', name: '谷歌', rulesets: ['geosite-google'], ipCidr: ['8.8.8.0/24'] },
+      { id: 'cn', name: '国内', rulesets: ['geosite-cn'], default: 'direct' },
+    ],
+    custom: { rules: [{ type: 'domainSuffix', value: 'x.test', outbound: '香港-自动' }, { type: 'domainSuffix', value: 'y.test', outbound: 'direct' }] },
+  }, { rejectV6For, clientRoutes: [{ sources: ['192.168.1.9/32'], outbound: '香港-自动' }] })
+  const rules = route.rules.slice(2)   // 跳过 sniff / hijack-dns(前置自定义分流排在 ip_is_private 前面)
+  // 前置自定义分流:代理行前有 v6 拒绝,直连行没有
+  assert.deepEqual(rules[0], { domain_suffix: ['x.test'], ip_version: 6, action: 'reject' })
+  assert.deepEqual(rules[1], { domain_suffix: ['x.test'], outbound: '香港-自动' })
+  assert.deepEqual(rules[2], { domain_suffix: ['y.test'], outbound: 'direct' })
+  // 之后的顺序:ip_is_private → 终端分流 → 站点集
+  const i = rules.findIndex((r) => r.source_ip_cidr && r.action === 'reject')
+  assert.deepEqual(rules[i], { source_ip_cidr: ['192.168.1.9/32'], ip_version: 6, action: 'reject' })
+  assert.deepEqual(rules[i + 1], { source_ip_cidr: ['192.168.1.9/32'], outbound: '香港-自动' })
+  const g = rules.findIndex((r) => r.outbound === '谷歌')
+  assert.deepEqual(rules[g - 1], { rule_set: ['geosite-google'], ip_cidr: ['8.8.8.0/24'], ip_version: 6, action: 'reject' })
+  assert.deepEqual(rules[g + 1], { rule_set: ['geosite-cn'], outbound: '国内' })
+  // 兜底「其他」不在直连名单里 → 收尾一条裸 v6 拒绝
+  assert.deepEqual(rules.at(-1), { ip_version: 6, action: 'reject' })
+  // 没开:一条 ip_version 都没有
+  const plain = build({ policies: [{ id: 'g', name: '谷歌', rulesets: ['geosite-google'] }] })
+  assert.ok(!plain.route.rules.some((r) => r.ip_version))
+})

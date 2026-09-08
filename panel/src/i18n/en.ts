@@ -755,6 +755,11 @@ const en = {
   ipv6Description: 'Off by default: IPv6 names are not resolved and IPv6 addresses are not reached.',
   ipv6OffWarning: 'Off: DNS resolves IPv4 only and outbound IPv6 is blocked — it cannot slip around the tunnel.',
   ipv6OnNote: 'On: your devices can use IPv6 alongside IPv4, both following the routing rules.',
+  ipv6ProxyTitle: 'Proxied IPv6',
+  ipv6ProxyNode: 'Hand to the node',
+  ipv6ProxyIpv4: 'Downgrade to IPv4',
+  ipv6ProxyNodeNote: 'IPv6 targets go to the selected node just like IPv4; if the node lacks IPv6 those connections fail. Direct IPv6 is unaffected.',
+  ipv6ProxyIpv4Note: 'Proxied domains no longer get AAAA answers (devices naturally use IPv4); bare IPv6 targets that would go to a proxy are explicitly rejected in the kernel instead of leaking out the WAN. Direct IPv6 still resolves and routes as before. Restart the kernel to apply.',
 
   // --- Kernel management, emergency rollback & penetration query (P4b Task 7) ---
   kernel: 'Kernel',
@@ -812,6 +817,9 @@ const en = {
   ruleLookupFirstLayerBypassOn: 'direct IP sets {sets} bypass at the entry ({via}), never enter the kernel',
   ruleLookupFirstLayerBypassOff: 'direct targets enter the kernel and use the direct outbound (compat path: {reason})',
   ruleLookupFirstLayerViaRoute: 'routing table',
+  ruleLookupFirstLayerIpv6_off: 'IPv6 off (A records only, LAN→WAN v6 blocked)',
+  ruleLookupFirstLayerIpv6_node: 'IPv6 on, proxied v6 handed to the node',
+  ruleLookupFirstLayerIpv6_ipv4: 'IPv6 on, proxied targets downgraded to IPv4 (bare v6 bound for a proxy is rejected)',
   ruleLookupRoutingStale: 'Routing rules changed but the kernel is still running the old config. Above is predicted from the current settings; the real route below is what the kernel does right now. Restart the kernel to make them agree.',
   ruleFormatQuery: 'Normalize & query',
   routeTestTitle: 'Actual route',

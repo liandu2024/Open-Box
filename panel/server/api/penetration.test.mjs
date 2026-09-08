@@ -943,3 +943,12 @@ test('R5c:目标 + 端口是"与"的关系——查 172.19.0.2:443 不能命中�
     await close()
   }
 })
+
+test('evaluateRuleGroups:ip_version 是"与"组——IP 目标按自己的地址族判;域名目标要看终端用 A 还是 AAAA(ipVersion),没给就判不了', async () => {
+  const { evaluateRuleGroups } = await import('./penetration.mjs')
+  const rule = { rule_set: ['geosite-google'], ip_version: 6, action: 'reject' }
+  assert.deepEqual(evaluateRuleGroups(rule, { destMatch: true, ipVersion: 6 }), { result: 'hit' })
+  assert.deepEqual(evaluateRuleGroups(rule, { destMatch: true, ipVersion: 4 }), { result: 'miss' })
+  assert.deepEqual(evaluateRuleGroups(rule, { destMatch: true }), { result: 'undetermined', needs: ['ipVersion'] })
+  assert.deepEqual(evaluateRuleGroups(rule, { destMatch: false, ipVersion: 6 }), { result: 'miss' })
+})

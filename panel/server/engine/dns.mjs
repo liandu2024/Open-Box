@@ -43,6 +43,13 @@ export const FAKEIP_V6 = 'fc00::/18'
 export const FAKEIP_TAG = 'dns-fakeip'
 export const dnsFakeIpEnabled = (profile) => Boolean(profile && profile.dns && profile.dns.split !== false && profile.dns.fakeIpForProxy === true)
 
+// IPv6 分层(第三轮 阶段 5):
+//   off  —— 档案 ipv6 关着:老语义原样保留,DNS 只解析 A、tun 不给 v6、防火墙 REJECT 局域网→WAN 的 v6
+//   node —— ipv6 开着、走代理的 v6 目标和 v4 一样交给节点(老"开启"语义)
+//   ipv4 —— ipv6 开着,但代理线路不管 v6:走代理的域名不给 AAAA(终端自然用 v4 连),裸 v6 目标要走
+//           代理时在内核里明确拒绝(engine/routing.mjs),不悄悄从 WAN 直出;直连的 v6 照常解析、照常走
+export const ipv6ProxyMode = (profile) => (!profile || !profile.ipv6 ? 'off' : profile.ipv6Proxy === 'ipv4' ? 'ipv4' : 'node')
+
 // 前置自定义分流的一行 → 一条 DNS 规则的匹配部分。只按 IP 分流的行(ip_cidr / geoip /
 // 只编出 IP 那份的规则集链接)不进 DNS:解析的时候还没有 IP,拿什么都匹配不上。
 // 端口同理:DNS 查询里没有目标端口。
@@ -133,9 +140,11 @@ export const buildDns = (profile, options = {}) => {
   // 走代理的匹配:开了 FakeIP 就先给 A / AAAA 一条占位地址规则,其它查询类型(HTTPS / TXT …)仍走
   // 代理侧真实解析器
   const fakeIp = dnsFakeIpEnabled(profile)
+  // 代理 v6 降为 IPv4:走代理的匹配只解析 A(AAAA 回空),终端就不会拿着 v6 地址去连代理线路
+  const proxyV4Only = ipv6ProxyMode(profile) === 'ipv4'
   const pushProxyRule = (match, tag) => {
     if (fakeIp) rules.push({ ...match, query_type: ['A', 'AAAA'], server: FAKEIP_TAG })
-    rules.push({ ...match, server: tag })
+    rules.push(proxyV4Only ? { ...match, server: tag, strategy: 'ipv4_only' } : { ...match, server: tag })
   }
   const custom = conf.custom
   if (customPolicyActive(custom)) {
@@ -216,10 +225,13 @@ export const buildDns = (profile, options = {}) => {
 
   const fallbackDirect = goesDirect(conf.fallback.name, conf.fallback.default)
   if (fakeIp) {
-    servers.push({ type: 'fakeip', tag: FAKEIP_TAG, inet4_range: FAKEIP_V4, ...(profile.ipv6 ? { inet6_range: FAKEIP_V6 } : {}) })
+    // v6 占位段只在"代理也管 v6"时给;降为 IPv4 时 AAAA 从占位服务器回空
+    servers.push({ type: 'fakeip', tag: FAKEIP_TAG, inet4_range: FAKEIP_V4, ...(profile.ipv6 && !proxyV4Only ? { inet6_range: FAKEIP_V6 } : {}) })
     // 兜底走代理:上面都没命中的域名 A / AAAA 也发占位地址
     if (!fallbackDirect) rules.push({ query_type: ['A', 'AAAA'], server: FAKEIP_TAG })
   }
+  // 兜底走代理 + 代理 v6 降为 IPv4:没命中的域名 AAAA 也回空(final 本身写不了 strategy)
+  if (!fallbackDirect && proxyV4Only) rules.push({ query_type: ['AAAA'], server: 'dns-proxy', strategy: 'ipv4_only' })
   servers.push(...localServers)
   const dns = {
     servers,

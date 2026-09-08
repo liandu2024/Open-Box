@@ -387,3 +387,36 @@ test('FakeIP 原型:cache_file 存占位映射;开了 IPv6 时把 fc00::/18 从 
   const none = buildConfig({ nodes, regionGroups, userGroups: firstLayerGroups, localSubnets: subnets, profile: firstLayerProfile(), nativeBypass: { enabled: false, sets: [], reason: 'x' } })
   assert.equal(none.inbounds[0].route_exclude_address_set, undefined)
 })
+
+test('IPv6 分层(第三轮 阶段 5):ipv6 开 + ipv6Proxy=ipv4 时按此刻的选择给代理出口插 v6 拒绝、DNS 代理规则只解析 A;站点集切到直连就不插;老开关语义不变', () => {
+  const p = (over = {}) => firstLayerProfile({
+    ipv6: true, ipv6Proxy: 'ipv4',
+    routing: { fallbackDefault: 'direct', policies: [
+      { id: 'g', name: 'Google', default: '香港-自动', rulesets: ['geosite-google', 'geoip-google'] },
+      { id: 'cn', name: '国内', default: 'direct', rulesets: ['geoip-cn', 'geosite-cn'] },
+    ] },
+    ...over,
+  })
+  const split = buildConfig({ nodes, regionGroups, userGroups: firstLayerGroups, localSubnets: subnets, profile: p() })
+  const g = split.route.rules.findIndex((r) => r.outbound === 'Google')
+  assert.deepEqual(split.route.rules[g - 1], { rule_set: ['geosite-google', 'geoip-google'], ip_version: 6, action: 'reject' })
+  assert.ok(!split.route.rules.some((r) => r.ip_version === 6 && r.rule_set && r.rule_set.includes('geoip-cn')), '直连站点集前不插')
+  assert.ok(!split.route.rules.some((r) => r.ip_version === 6 && !r.rule_set), '兜底直连:没有裸 v6 拒绝')
+  assert.deepEqual(split.dns.rules.find((r) => r.server === 'dns-policy-0'), { server: 'dns-policy-0', rule_set: ['geosite-google'], strategy: 'ipv4_only' })
+  assert.equal(split.dns.strategy, 'prefer_ipv4')
+  assert.ok(split.inbounds[0].address.some((a) => a.includes(':')), 'tun 仍有 v6 地址:直连 v6 照常走')
+  // 代理页把 Google 切到直连:不再插;把「国内」切到代理:插
+  const flipped = buildConfig({ nodes, regionGroups, userGroups: firstLayerGroups, localSubnets: subnets, profile: p(), selections: { Google: '直连', 国内: '香港-自动' } })
+  assert.ok(!flipped.route.rules.some((r) => r.ip_version === 6 && r.rule_set && r.rule_set.includes('geosite-google')))
+  assert.ok(flipped.route.rules.some((r) => r.ip_version === 6 && r.rule_set && r.rule_set.includes('geoip-cn')))
+  // 兜底走代理:收尾裸 v6 拒绝
+  const fb = buildConfig({ nodes, regionGroups, userGroups: firstLayerGroups, localSubnets: subnets, profile: p({ routing: { ...p().routing, fallbackDefault: 'proxy' } }) })
+  assert.deepEqual(fb.route.rules.at(-1), { ip_version: 6, action: 'reject' })
+  // node(老"开启")/ ipv6 关(老"关闭"):一条 ip_version 都没有;关着仍是 ipv4_only + 无 v6 地址
+  const node = buildConfig({ nodes, regionGroups, userGroups: firstLayerGroups, localSubnets: subnets, profile: p({ ipv6Proxy: 'node' }) })
+  assert.ok(!node.route.rules.some((r) => r.ip_version))
+  const off = buildConfig({ nodes, regionGroups, userGroups: firstLayerGroups, localSubnets: subnets, profile: p({ ipv6: false }) })
+  assert.ok(!off.route.rules.some((r) => r.ip_version))
+  assert.equal(off.dns.strategy, 'ipv4_only')
+  assert.ok(!off.inbounds[0].address.some((a) => a.includes(':')))
+})

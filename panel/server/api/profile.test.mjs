@@ -544,3 +544,9 @@ test('validateProfilePatch dns.fakeIpForProxy 必须是布尔', () => {
   assert.equal(validateProfilePatch({ dns: { fakeIpForProxy: false } }), null)
   assert.match(validateProfilePatch({ dns: { fakeIpForProxy: 'yes' } }), /fakeIpForProxy/)
 })
+
+test('validateProfilePatch ipv6Proxy 只认 node / ipv4', () => {
+  assert.equal(validateProfilePatch({ ipv6Proxy: 'node' }), null)
+  assert.equal(validateProfilePatch({ ipv6Proxy: 'ipv4' }), null)
+  assert.match(validateProfilePatch({ ipv6Proxy: 'off' }), /ipv6Proxy/)
+})

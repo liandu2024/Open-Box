@@ -139,10 +139,17 @@ const portMatches = (rule, port) => {
 // 查询时没给来源 IP / 目标端口,而规则又要看它们:老实说"判不了"(undetermined),不能当成没命中
 // 继续往下数——那样会把后面本不该命中的规则报成命中(复审 R5)。
 // destMatch:目标地址那一组的结果(域名 / IP / ip_is_private / 规则集),由调用方算好传进来
-export const evaluateRuleGroups = (rule, { destMatch, sourceIp, port }) => {
+export const evaluateRuleGroups = (rule, { destMatch, sourceIp, port, ipVersion }) => {
   const has = (k) => Object.prototype.hasOwnProperty.call(rule, k)
   const needs = []
   let miss = false
+  // ip_version:连接的目标地址族(IPv6 分层里"走代理的 v6 明确拒绝"那几条规则用它)。目标是 IP 字面量时
+  // 就是它的地址族;域名目标看调用方给的 ipVersion(终端拿到 A 还是 AAAA 才决定),没给就判不了
+  if (has('ip_version')) {
+    if (ipVersion === 4 || ipVersion === 6) {
+      if (Number(rule.ip_version) !== ipVersion) miss = true
+    } else needs.push('ipVersion')
+  }
   if (has('source_ip_cidr')) {
     if (sourceIp) {
       const list = Array.isArray(rule.source_ip_cidr) ? rule.source_ip_cidr : [rule.source_ip_cidr]
@@ -163,7 +170,7 @@ export const evaluateRuleGroups = (rule, { destMatch, sourceIp, port }) => {
 export const hasDestinationCondition = (rule) =>
   hasLocalCondition(rule) || Object.prototype.hasOwnProperty.call(rule, 'ip_is_private') || Object.prototype.hasOwnProperty.call(rule, 'rule_set')
 // 来源 / 端口这两组
-const hasContextCondition = (rule) => ['source_ip_cidr', 'port', 'port_range'].some((k) => Object.prototype.hasOwnProperty.call(rule, k))
+const hasContextCondition = (rule) => ['source_ip_cidr', 'port', 'port_range', 'ip_version'].some((k) => Object.prototype.hasOwnProperty.call(rule, k))
 
 // 单条条目(规则集解出来的,或站点集里手写的)是否命中目标——和 matchLocalConditions
 // 同一套语义,多认一个 domain_regex。给「命中了哪一条具体的域名/IP」用。
@@ -271,6 +278,11 @@ export const registerPenetrationRoutes = (app, { store, ctx, paths, fetchImpl = 
     const portRaw = req.body && req.body.port !== undefined && req.body.port !== null && req.body.port !== '' ? Number(req.body.port) : undefined
     if (portRaw !== undefined && !(Number.isInteger(portRaw) && portRaw >= 1 && portRaw <= 65535)) return res.status(400).json({ message: 'port must be 1-65535' })
     const port = portRaw
+    // 连接的目标地址族:目标是 IP 就是它自己的;域名目标可选带 ipVersion(终端拿到 A 还是 AAAA 才决定),
+    // 没给而规则又看 ip_version(IPv6 分层里"走代理的 v6 明确拒绝"那几条)就如实说判不了
+    const ipVersionRaw = req.body && req.body.ipVersion !== undefined && req.body.ipVersion !== null && req.body.ipVersion !== '' ? Number(req.body.ipVersion) : undefined
+    if (ipVersionRaw !== undefined && ipVersionRaw !== 4 && ipVersionRaw !== 6) return res.status(400).json({ message: 'ipVersion must be 4 or 6' })
+    const ipVersion = net.isIP(target) ? net.isIP(target) : ipVersionRaw
 
     const profile = store.getProfile()
     const builtin = builtinTags(store.getGroups ? store.getGroups() : [])
@@ -316,7 +328,7 @@ export const registerPenetrationRoutes = (app, { store, ctx, paths, fetchImpl = 
         continue // action:'sniff' / protocol:'dns' hijack-dns 等无条件规则,不参与穿透判定
       }
       // 来源 / 端口这两组已知不命中时不用再去 exec 规则集
-      const context = evaluateRuleGroups(rule, { destMatch: null, sourceIp, port })
+      const context = evaluateRuleGroups(rule, { destMatch: null, sourceIp, port, ipVersion })
       if (context.result === 'miss') continue
       let destMatch = null
       if (needsDest) {
@@ -343,11 +355,11 @@ export const registerPenetrationRoutes = (app, { store, ctx, paths, fetchImpl = 
           }
         }
       }
-      const verdict = evaluateRuleGroups(rule, { destMatch, sourceIp, port })
+      const verdict = evaluateRuleGroups(rule, { destMatch, sourceIp, port, ipVersion })
       if (verdict.result === 'miss') continue
       if (verdict.result === 'undetermined') {
         // 和规则集读不到一样:这条判不了,后面的都不可信
-        const what = verdict.needs.map((n) => (n === 'sourceIp' ? '终端来源 IP' : '目标端口')).join('和')
+        const what = verdict.needs.map((n) => (n === 'sourceIp' ? '终端来源 IP' : n === 'ipVersion' ? '连接用的是 IPv4 还是 IPv6' : '目标端口')).join('和')
         undetermined = { index: i, rule, needs: verdict.needs }
         matchError = `第 ${i + 1} 条规则要看${what}才能判定,这次查询没有这个信息`
         break
