@@ -2,48 +2,9 @@
   <!-- 规则页顶上的访问路径:左边「规则路由」按查询条件推算,右边「真实路由」是面板自己发起的一次测试。
        两列都是同一套五站、自下而上(① 发起访问 → ⑤ 最终出口),同一站左右同一行。
        整块是一个网格:桌面两列,每一行是同一站的左右两格,所以展开详情时另一列同一站跟着变高、始终对齐;
-       窄屏改成单列,按 --m-order 先排完左列再排右列,各自还是从下往上。 -->
-  <div class="card">
-    <div class="app-card-inset flex flex-col gap-3 text-sm">
-      <div class="flex flex-wrap items-center gap-2">
-        <MagnifyingGlassIcon class="text-base-content/60 h-4 w-4 shrink-0" />
-        <span class="font-medium">{{ $t('routeCmpTitle') }}</span>
-        <span class="text-base-content/50">·</span>
-        <span class="font-mono font-medium">{{ display || target }}</span>
-      </div>
-
-      <!-- 入口策略:部署时记下的第一层判定,收成一行短状态,原因点开看 -->
-      <details
-        v-if="policy"
-        class="route-policy text-xs"
-      >
-        <summary class="flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 select-none">
-          <span class="text-base-content/50">{{ $t('routePolicyLabel') }}</span>
-          <span
-            v-for="item in policy.items"
-            :key="item.text"
-            class="inline-flex items-center gap-1.5"
-          >
-            <span
-              class="inline-block h-1.5 w-1.5 rounded-full"
-              :class="item.tone === 'good' ? 'bg-success' : item.tone === 'pending' ? 'bg-warning' : 'bg-base-content/40'"
-            />
-            <span>{{ item.text }}</span>
-          </span>
-          <span class="text-base-content/50 ml-auto inline-flex items-center gap-0.5">
-            {{ $t('routePolicyMore') }}
-            <ChevronDownIcon class="route-policy-chevron h-3 w-3" />
-          </span>
-        </summary>
-        <div class="text-base-content/60 flex flex-col gap-1 pt-2 break-all">
-          <p
-            v-for="line in policy.details"
-            :key="line"
-          >{{ line }}</p>
-        </div>
-      </details>
-
-      <div class="route-grid grid grid-cols-1 gap-x-3 md:grid-cols-2">
+       窄屏改成单列,按 --m-order 先排完左列再排右列,各自还是从下往上。没有外层卡片和说明文字,
+       两列各自就是一张卡(列头圆角 + 最底下一格圆角)。 -->
+  <div class="route-grid grid grid-cols-1 gap-x-3 md:grid-cols-2">
         <!-- 列头:左 = 规则路由 · 依据查询条件推算;右 = 真实路由 · 面板自身发起的测试 -->
         <div
           class="route-cell route-head flex items-start gap-2 border-x border-t px-3 pt-3 pb-2.5"
@@ -66,7 +27,7 @@
           </span>
         </div>
         <div
-          class="route-cell route-head flex items-start gap-2 border-x border-t px-3 pt-3 pb-2.5"
+          class="route-cell route-head mt-2 flex items-start gap-2 border-x border-t px-3 pt-3 pb-2.5 md:mt-0"
           :style="{ '--m-order': 10 }"
         >
           <BoltIcon class="text-base-content/50 mt-0.5 h-4 w-4 shrink-0" />
@@ -579,15 +540,6 @@
           </template>
         </RouteStage>
 
-        <div
-          class="route-cell text-base-content/50 flex flex-wrap items-center justify-between gap-2 px-1 pt-2 text-[11px] md:col-span-2"
-          :style="{ '--m-order': 20 }"
-        >
-          <span class="inline-flex items-center gap-1"><ArrowUpIcon class="h-3 w-3" />{{ $t('routeCmpReadUp') }}</span>
-          <span>{{ $t('routeCmpNotTerminal') }}</span>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -600,12 +552,12 @@ import RouteStage from '@/components/rules/RouteStage.vue'
 import type { RouteStageState, RouteStageTone } from '@/components/rules/RouteStage.vue'
 import { ruleTypeLabelKey } from '@/helper/ruleType'
 import { proxyMap } from '@/store/proxies'
-import { ArrowPathIcon, ArrowRightCircleIcon, ArrowUpIcon, BoltIcon, ChevronDownIcon, MagnifyingGlassIcon, MapIcon, NoSymbolIcon } from '@heroicons/vue/24/outline'
+import { ArrowPathIcon, ArrowRightCircleIcon, BoltIcon, MapIcon, NoSymbolIcon } from '@heroicons/vue/24/outline'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-// target 是拿去查规则 / DNS 的主机名;display 是搜索框里的原样(可能带端口);port 只给真实访问用
-const props = defineProps<{ target: string; display?: string; port?: number | null }>()
+// target 是拿去查规则 / DNS 的主机名;port 只给真实访问用
+const props = defineProps<{ target: string; port?: number | null }>()
 const emit = defineEmits<{ matched: [index: number | null] }>()
 const { t } = useI18n()
 
@@ -742,37 +694,6 @@ const errorText = (raw: string) => {
   if (/connection closed|ECONNRESET/i.test(raw)) return t('routeTestErrClosed')
   return raw
 }
-
-// ---------- 入口策略(部署时记下的第一层判定,收成短状态) ----------
-const policy = computed(() => {
-  const f = rule.value?.firstLayer
-  if (!f) return null
-  const items: Array<{ text: string; tone: Tone }> = []
-  const details: string[] = []
-  if (f.dnsMode === 'dnsmasq') {
-    items.push({ text: t(`routePolicyDns_${f.dnsForward}`), tone: f.dnsForward === 'all' ? 'pending' : 'good' })
-    details.push(t(`ruleLookupFirstLayerDns_${f.dnsForward}`) + (f.dnsForwardReason ? `(${f.dnsForwardReason})` : ''))
-  } else if (f.dnsMode === 'hijack') {
-    items.push({ text: t('routePolicyDnsHijack'), tone: 'good' })
-    details.push(t('ruleLookupFirstLayerDnsHijack'))
-  } else {
-    items.push({ text: t('routePolicyDnsOff'), tone: 'muted' })
-    details.push(t('ruleLookupFirstLayerDnsOff'))
-  }
-  if (f.nativeBypass?.enabled) {
-    const via = f.nativeBypass.via === 'route' ? t('ruleLookupFirstLayerViaRoute') : 'nft'
-    items.push({ text: t('routePolicyBypassOn', { via }), tone: 'good' })
-    details.push(t('ruleLookupFirstLayerBypassOn', { sets: f.nativeBypass.sets.join(', '), via }))
-  } else {
-    items.push({ text: t('routePolicyBypassOff'), tone: 'pending' })
-    details.push(t('ruleLookupFirstLayerBypassOff', { reason: f.nativeBypass?.reason || '' }))
-  }
-  if (f.ipv6) {
-    items.push({ text: t(`routePolicyIpv6_${f.ipv6}`), tone: 'muted' })
-    details.push(t(`ruleLookupFirstLayerIpv6_${f.ipv6}`))
-  }
-  return { items, details }
-})
 
 // ---------- 左列:规则路由 ----------
 const ruleOutbound = computed(() => rule.value?.finalOutbound || '')
@@ -947,14 +868,5 @@ const exitNodeNote = computed(() => {
   .route-cell {
     order: 0;
   }
-}
-.route-policy > summary {
-  list-style: none;
-}
-.route-policy > summary::-webkit-details-marker {
-  display: none;
-}
-.route-policy[open] .route-policy-chevron {
-  transform: rotate(180deg);
 }
 </style>

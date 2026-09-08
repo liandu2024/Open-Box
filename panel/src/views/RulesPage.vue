@@ -10,7 +10,6 @@
           <RouteComparison
             v-if="lookupHost"
             :target="lookupHost"
-            :display="lookupTarget"
             :port="lookupPort"
             @matched="matchedIndex = $event"
           />
@@ -41,7 +40,6 @@
         >
           <RouteComparison
             :target="lookupHost"
-            :display="lookupTarget"
             :port="lookupPort"
             @matched="matchedIndex = $event"
           />
