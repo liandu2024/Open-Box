@@ -853,6 +853,77 @@ export interface OpenboxRouteTest {
 export const testRoute = (target: string, port?: number) =>
   requestJson<OpenboxRouteTest>('/api/openbox/route-test', { method: 'POST', body: JSON.stringify({ target, port }) })
 
+// ---- 模拟 LAN 终端的真实路由测试(server/api/terminal-test.mjs)
+// 面板在路由器上建一个虚拟终端(独立网络命名空间 + veth 接到 LAN 网桥 + DHCP 取址),让它像一台普通 LAN 设备
+// 一样问 LAN 的 DNS、从 LAN 入口进入路由器;入口旁路还是进内核由实际入口规则决定,判旁路要有系统转发证据。
+export type OpenboxTerminalMissing = 'root' | 'netns' | 'veth' | 'lan' | 'conntrack' | 'dhcp'
+export interface OpenboxTerminalCapability {
+  ok: boolean
+  missing: OpenboxTerminalMissing[]
+  lan?: { device: string; address: string; mask: number | null } | null
+}
+export interface OpenboxTerminalEntry {
+  // bypass:入口旁路、系统直接转发;kernel:进了内核;unknown:证据不足,不判
+  kind: 'bypass' | 'kernel' | 'unknown'
+  // kernel 的依据:redirect(conntrack 回复方改写成路由器地址)/ tun(打了 tun 标记)/ connection-table(内核连接表里有)
+  via?: 'redirect' | 'tun' | 'connection-table' | 'forward'
+  // unknown 的原因:no-conntrack / dnat-elsewhere / no-route / route-tun / not-connected / no-connection / evidence-failed
+  reason?: string
+  redirectPort?: number
+  rewrittenTo?: string
+  device?: string
+  gateway?: string
+  masquerade?: boolean
+  error?: string
+  evidence: {
+    conntrack?: string
+    mark?: number | null
+    route?: string
+    kernelConn?: boolean
+    set?: string | null
+    setHit?: boolean
+    conntrackError?: string
+    kernelError?: string
+    autoRedirect?: boolean
+    tunDevice?: string
+  }
+}
+export interface OpenboxTerminalTest {
+  target: string
+  mode: 'lan'
+  capable: boolean
+  missing?: OpenboxTerminalMissing[]
+  // 具备条件但虚拟终端没建起来(建命名空间 / DHCP 失败),原因原文
+  setupError?: string
+  firstLayer?: { bypassEnabled: boolean; bypassSets: string[]; dnsMode: string; dnsForward: string }
+  source?: { kind: 'virtual'; name: string; ip: string; mac: string; via: 'dhcp'; dns: string[]; gateway: string; lanDevice: string; reused: boolean; dhcpMs?: number }
+  dns?: { skipped: true } | { server: string; ok: boolean; answers: string[]; answers6?: string[]; ms: number; error?: string; error6?: string }
+  // dnsmasq 按转发清单把这个域名交给内核 DNS 还是直接问上游(配置推算)
+  dnsForward?: { forward: 'kernel' | 'upstream' | 'unknown'; plan: string; suffix?: string; to?: string }
+  // conntrack 里虚拟终端发往 DNS 服务器的查询:回复方是不是它本人(被内核劫持时回复方是 tun 对端)
+  dnsEvidence?: { flows: number; hijacked: boolean; answeredBy: string; line: string }
+  entry?: OpenboxTerminalEntry
+  kernel?: { seen: boolean; inbound?: string; rule?: string; rulePayload?: string; chains?: string[]; destinationIP?: string; host?: string; viaProxy?: boolean }
+  exit?: {
+    url: string
+    port: number
+    connectTo?: string
+    localPort?: number
+    connectMs?: number
+    ok?: boolean
+    status?: number
+    ms?: number
+    error?: string
+    // 旁路时:系统从哪个设备转出去、经哪个网关、有没有 NAT 成该设备的地址
+    forward?: { device: string; gateway: string; masquerade: boolean; address: string }
+  }
+  probeStderr?: string
+  timing?: { totalMs: number }
+}
+export const fetchTerminalCapability = () => requestJson<OpenboxTerminalCapability>('/api/openbox/terminal-test/capability')
+export const testTerminal = (target: string, port?: number) =>
+  requestJson<OpenboxTerminalTest>('/api/openbox/terminal-test', { method: 'POST', body: JSON.stringify({ target, port }) })
+
 // ---- 延迟历史(server/api/latency-history.mjs):每个节点最近 10 次测速结果,服务端记、所有浏览器共享
 // node:组的样本带当时选中的节点;节点自己的样本没有
 export type OpenboxLatencySample = { time: string; delay: number; node?: string }

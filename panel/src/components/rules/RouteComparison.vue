@@ -1,12 +1,15 @@
 <template>
-  <!-- 规则页顶上的访问路径:左边「规则路由」按查询条件推算,右边「真实路由」是面板自己发起的一次测试。
+  <!-- 规则页顶上的访问路径:左边「规则路由」按查询条件推算,右边「真实路由」是一次真实的测试。
+       右边有两种测法:默认「模拟终端」——面板在路由器上建一台虚拟 LAN 终端(独立网络命名空间 + veth 接到 LAN
+       网桥 + DHCP 取址),让它像普通设备一样问 LAN 的 DNS、从 LAN 入口进入路由器,入口旁路还是进内核由实际入口
+       规则决定,并给出系统转发证据;「内核诊断」是原来的回环 mixed 入站测试,只看内核内部的分流,不经过 LAN 入口。
+       设备不具备模拟条件时如实提示,不悄悄退回内核诊断。
        两列都是同一套五站、自下而上(① 发起访问 → ⑤ 最终出口),同一站左右同一行。
        整块是一个网格:桌面两列,每一行是同一站的左右两格,所以展开详情时另一列同一站跟着变高、始终对齐;
-       窄屏改成单列,按 --m-order 先排完左列再排右列,各自还是从下往上。没有外层卡片和说明文字,
-       两列各自就是一张卡(列头圆角 + 最底下一格圆角)。 -->
+       窄屏改成单列,按 --m-order 先排完左列再排右列,各自还是从下往上。 -->
   <!-- text-sm:整块的基准字号,大字(font-medium)、ProxyName / ProxyGroupNow 的名字和 16px 图标都按它对齐 -->
   <div class="route-grid grid grid-cols-1 gap-x-3 text-sm md:grid-cols-2">
-        <!-- 列头:左 = 规则路由 · 依据查询条件推算;右 = 真实路由 · 面板自身发起的测试 -->
+        <!-- 列头:左 = 规则路由 · 依据查询条件推算;右 = 真实路由 · 模拟终端 / 内核诊断 -->
         <!-- 列头:图标放在站号圆圈那一列、和圆圈同大;标题从各站文字的左边缘起(pl-12),上下对齐 -->
         <div
           class="route-cell route-head relative flex items-start gap-2 border-x border-t pr-3 pl-12 pt-3 pb-2.5"
@@ -50,9 +53,28 @@
                 <template v-else>{{ actualPill.text }}</template>
               </span>
             </div>
-            <div class="text-base-content/50 text-xs">{{ $t('routeCmpActualSub') }}</div>
+            <div class="text-base-content/50 text-xs">{{ mode === 'terminal' ? $t('routeCmpTerminalSub') : $t('routeCmpActualSub') }}</div>
           </div>
+          <!-- 测法切换 + 重新测试,靠右 -->
           <div class="ml-auto flex shrink-0 items-center gap-1">
+            <div class="join">
+              <button
+                type="button"
+                class="btn btn-xs join-item"
+                :class="mode === 'terminal' ? 'btn-active' : 'btn-ghost'"
+                :disabled="actualLoading"
+                :title="$t('routeCmpTerminalSub')"
+                @click="switchMode('terminal')"
+              >{{ $t('routeModeTerminal') }}</button>
+              <button
+                type="button"
+                class="btn btn-xs join-item"
+                :class="mode === 'kernel' ? 'btn-active' : 'btn-ghost'"
+                :disabled="actualLoading"
+                :title="$t('routeModeKernelHint')"
+                @click="switchMode('kernel')"
+              >{{ $t('routeModeKernel') }}</button>
+            </div>
             <button
               type="button"
               class="btn btn-ghost btn-xs"
@@ -133,15 +155,19 @@
           <template v-if="actualError">
             <span class="text-error text-xs">{{ actualError }}</span>
           </template>
-          <template v-else-if="!actual">
-            <span class="text-base-content/50 text-xs">{{ actualLoading ? $t('routeExitStatusTesting') : $t('routeCmpWaiting') }}</span>
+          <template v-else-if="!hasResult">
+            <span class="text-base-content/50 text-xs">{{ placeholderText }}</span>
           </template>
           <template v-else>
-            <!-- 链路、HTTP 状态、结果文字放在同一个行盒里,垂直居中对齐;目标 IP / IPv6 结果 / 节点怎么连进「连接详情」 -->
+            <!-- 链路(或"系统转发")、HTTP 状态、结果文字放在同一个行盒里;目标 IP / 来源端口 / IPv6 结果 / 节点怎么连进「连接详情」 -->
             <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <template v-if="actual.exit.chains?.length">
+              <template v-if="exitView.forward">
+                <span class="font-medium">{{ $t('routeTermExitForward') }}</span>
+                <span class="text-base-content/60 text-xs">{{ $t('routeTermExitForwardVia', { device: exitView.forward.device, gateway: exitView.forward.gateway }) }}</span>
+              </template>
+              <template v-else-if="exitView.chains.length">
                 <template
-                  v-for="(hop, i) in actual.exit.chains"
+                  v-for="(hop, i) in exitView.chains"
                   :key="`${hop}-${i}`"
                 >
                   <ArrowRightCircleIcon
@@ -156,36 +182,29 @@
                 class="text-base-content/50 text-xs"
               >{{ $t('routeExitChainUnknown') }}</span>
               <span
-                v-if="actual.exit.status !== undefined"
+                v-if="exitView.status !== undefined"
                 class="badge badge-sm"
-                :class="toneClass(statusTone(actual.exit.status))"
-              >HTTP {{ actual.exit.status }}</span>
+                :class="toneClass(statusTone(exitView.status))"
+              >HTTP {{ exitView.status }}</span>
               <span
-                v-if="actual.exit.status !== undefined"
+                v-if="exitView.status !== undefined"
                 class="text-base-content/70 text-xs"
-              >{{ statusText(actual.exit.status) }}</span>
+              >{{ statusText(exitView.status) }}</span>
               <span
-                v-if="actual.exit.error"
+                v-if="exitView.error"
                 class="text-error text-xs"
-              >{{ $t('routeTestRequestFailed', { message: errorText(actual.exit.error) }) }}</span>
+              >{{ $t('routeTestRequestFailed', { message: errorText(exitView.error) }) }}</span>
             </div>
           </template>
           <template
-            v-if="actual && !actualError && (actualExitIp || actual.exit6 || exitNodeNote)"
+            v-if="hasResult && !actualError && exitDetails.length"
             #details
           >
             <p
-              v-if="actualExitIp"
-              class="font-mono"
-            >{{ $t('routeExitTarget', { ip: actualExitIp }) }}</p>
-            <p
-              v-if="actual.exit6"
-              :class="actual.exit6.ok ? '' : 'text-warning'"
-            >IPv6 <span class="font-mono">{{ actual.exit6.connectTo }}</span>: {{ actual.exit6.ok ? `HTTP ${actual.exit6.status} · ${actual.exit6.ms}ms` : $t('routeTestRequestFailed', { message: errorText(actual.exit6.error || '') }) }}</p>
-            <p
-              v-if="exitNodeNote"
-              :class="exitNodeNote.warn ? 'text-warning' : ''"
-            >{{ exitNodeNote.text }}</p>
+              v-for="(d, i) in exitDetails"
+              :key="`${i}-${d.text}`"
+              :class="[d.mono ? 'font-mono' : '', d.warn ? 'text-warning' : '']"
+            >{{ d.text }}</p>
           </template>
         </RouteStage>
 
@@ -277,22 +296,29 @@
           :badge-tone="actualRule.tone"
           :details-title="$t('routeRuleDetail')"
         >
-          <template v-if="!actual || actualError">
-            <span class="text-base-content/50 text-xs">{{ actualError ? '—' : actualLoading ? $t('routeExitStatusTesting') : $t('routeCmpWaiting') }}</span>
+          <template v-if="!hasResult || actualError">
+            <span class="text-base-content/50 text-xs">{{ placeholderText }}</span>
+          </template>
+          <!-- 命中入口旁路:没进内核,这一站整个跳过 -->
+          <template v-else-if="ruleView.skipped">
+            <span class="text-base-content/60 font-medium">{{ $t('routeTermRuleSkippedText') }}</span>
+          </template>
+          <template v-else-if="ruleView.notSeen">
+            <span class="text-warning font-medium">{{ $t('routeTermRuleNotSeen') }}</span>
           </template>
           <!-- 和左列同一个结构:第一行"连接归属 + 站点集名"(对应左列的"站点集 + 名字"),内核的规则原文在「规则详情」里 -->
-          <template v-else-if="actualOwner || actual.exit.rule">
+          <template v-else-if="ruleView.owner || ruleView.rule">
             <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
               <span class="text-base-content/60 text-xs">{{ $t('routeRuleOwnerLabel') }}</span>
               <ProxyName
-                v-if="actualOwner && proxyMap[actualOwner]"
-                :name="actualOwner"
+                v-if="ruleView.owner && proxyMap[ruleView.owner]"
+                :name="ruleView.owner"
                 class="font-medium"
               />
               <span
-                v-else-if="actualOwner"
+                v-else-if="ruleView.owner"
                 class="font-medium"
-              >{{ actualOwner }}</span>
+              >{{ ruleView.owner }}</span>
               <span
                 v-else
                 class="text-base-content/50 text-xs"
@@ -303,13 +329,13 @@
             <span class="text-base-content/50 text-xs">{{ $t('routeTestRuleUnknown') }}</span>
           </template>
           <template
-            v-if="actual && !actualError"
+            v-if="hasResult && !actualError && !ruleView.skipped"
             #details
           >
             <p
-              v-if="actual.exit.rule"
+              v-if="ruleView.rule"
               class="text-base-content/50 font-mono text-[11px] break-all"
-            >{{ actual.exit.rule }}</p>
+            >{{ ruleView.rule }}</p>
             <p v-else>{{ $t('routeRuleNoIndex') }}</p>
             <p>{{ $t('routeRuleDiffBody') }}</p>
           </template>
@@ -351,10 +377,10 @@
           :state="actualEntry.state"
           :badge="actualEntry.badge"
           :badge-tone="actualEntry.tone"
-          :details-title="$t('routeEntryInboundDiff')"
+          :details-title="mode === 'terminal' ? $t('routeTermEvidence') : $t('routeEntryInboundDiff')"
         >
-          <template v-if="!actual || actualError">
-            <span class="text-base-content/50 text-xs">{{ actualError ? '—' : actualLoading ? $t('routeExitStatusTesting') : $t('routeCmpWaiting') }}</span>
+          <template v-if="!hasResult || actualError">
+            <span class="text-base-content/50 text-xs">{{ placeholderText }}</span>
           </template>
           <template v-else>
             <span
@@ -363,11 +389,22 @@
             >{{ actualEntry.value }}</span>
             <span class="text-base-content/60 text-xs">{{ actualEntry.sub }}</span>
           </template>
+          <!-- 模拟终端:列出这条连接的系统转发证据(conntrack 原文、路由查询、NAT、nft 旁路集合、内核连接表) -->
           <template
-            v-if="actual && !actualError && !dnsSkipped"
+            v-if="hasResult && !actualError && (mode === 'terminal' ? entryEvidence.length > 0 : !dnsSkipped)"
             #details
           >
-            <p>{{ $t('routeTestDomainTargetNote') }}</p>
+            <template v-if="mode === 'terminal'">
+              <p
+                v-for="(e, i) in entryEvidence"
+                :key="`${i}-${e.text}`"
+                :class="[e.mono ? 'font-mono text-[11px]' : '', e.warn ? 'text-warning' : '']"
+              ><span
+                v-if="e.label"
+                class="text-base-content/50 mr-1"
+              >{{ e.label }}</span>{{ e.text }}</p>
+            </template>
+            <p v-else>{{ $t('routeTestDomainTargetNote') }}</p>
           </template>
         </RouteStage>
 
@@ -426,8 +463,8 @@
           :details-title="$t('routeDnsRecords')"
           details-inline
         >
-          <template v-if="!actual || actualError">
-            <span class="text-base-content/50 text-xs">{{ actualError ? '—' : actualLoading ? $t('routeExitStatusTesting') : $t('routeCmpWaiting') }}</span>
+          <template v-if="!hasResult || actualError">
+            <span class="text-base-content/50 text-xs">{{ placeholderText }}</span>
           </template>
           <template v-else-if="actualDns.kind === 'skip'">
             <span class="font-medium">{{ $t('routeDnsNone') }}</span>
@@ -441,7 +478,8 @@
             <span class="badge badge-sm badge-error badge-soft w-fit">{{ $t('penetrationBlockedTitle') }}</span>
           </template>
           <template v-else>
-            <span class="font-medium">{{ actualDns.viaProxy ? $t('routeTestDnsProxy') : $t('routeTestDnsDirect') }}</span>
+            <!-- 模拟终端问的是 LAN 的 DNS(DHCP 发下来的那台);内核诊断是内核自己的直连 / 代理解析器 -->
+            <span class="font-medium">{{ actualDns.lan ? $t('routeTermDnsLan') : actualDns.viaProxy ? $t('routeTestDnsProxy') : $t('routeTestDnsDirect') }}</span>
             <span class="text-base-content/60 font-mono text-xs">{{ actualDns.serverLine }}</span>
             <!-- IPv4 / IPv6 分开说、排在第二行:v4 成功了不能因为 AAAA 为空写成"没有解析结果";
                  档案没开 IPv6 的"未查询"不占这一行,放进解析记录里 -->
@@ -469,7 +507,7 @@
             #details
           >
             <p v-if="actualDns.v6 && !actualDns.v6.queried">{{ actualDns.v6.text }}</p>
-            <p><span class="text-base-content/50">{{ $t('routeDnsResolver') }}</span> <span class="font-mono">{{ actualDns.tag }}</span></p>
+            <p v-if="!actualDns.lan"><span class="text-base-content/50">{{ $t('routeDnsResolver') }}</span> <span class="font-mono">{{ actualDns.tag }}</span></p>
             <div
               v-if="actualDns.chain?.length"
               class="flex flex-wrap items-center gap-x-1.5 gap-y-1"
@@ -534,35 +572,70 @@
           side="right"
           :mobile-order="15"
           :label="$t('routeStageStart')"
+          :state="termBlock ? 'pending' : 'ok'"
           :badge="kindText"
           badge-tone="muted"
           :details-title="$t('routeStartSourceTitle')"
           first
         >
-          <span class="font-medium">{{ $t('routeStartPanel') }}</span>
-          <span
-            v-if="actual?.exit.url"
-            class="text-base-content/60 font-mono text-xs break-all"
-          >{{ actual.exit.url }}</span>
-          <span
-            v-else
-            class="text-base-content/60 text-xs"
-          >{{ target }}{{ port ? `:${port}` : '' }}</span>
+          <!-- 设备不具备模拟条件 / 虚拟终端没建起来:在这一站(测试来源)说清楚,并给出改用内核诊断的按钮,不自动退回 -->
+          <template v-if="termBlock">
+            <span class="text-warning font-medium">{{ termBlock.kind === 'incapable' ? $t('routeTermNotCapable') : $t('routeTermSetupFailed') }}</span>
+            <span class="text-base-content/60 basis-full text-xs">{{ termBlock.kind === 'incapable' ? $t('routeTermNotCapableSub', { missing: missingText }) : termBlock.message }}</span>
+            <span class="text-base-content/60 basis-full text-xs">{{ $t('routeTermNoFallbackNote') }}</span>
+            <button
+              type="button"
+              class="btn btn-outline btn-xs"
+              @click="switchMode('kernel')"
+            >{{ $t('routeTermUseKernel') }}</button>
+          </template>
+          <template v-else-if="mode === 'terminal'">
+            <span class="font-medium">{{ terminal?.source ? $t('routeStartVirtual', { name: terminal.source.name }) : $t('routeModeTerminal') }}</span>
+            <span class="text-base-content/60 font-mono text-xs break-all">{{ terminal?.exit?.url || `${target}${port ? `:${port}` : ''}` }}</span>
+            <span class="text-base-content/60 basis-full text-xs">{{ terminal?.source ? $t('routeStartVirtualSub', { ip: terminal.source.ip }) : $t('routeStartVirtualPending') }}</span>
+          </template>
+          <template v-else>
+            <span class="font-medium">{{ $t('routeStartPanel') }}</span>
+            <span
+              v-if="actual?.exit.url"
+              class="text-base-content/60 font-mono text-xs break-all"
+            >{{ actual.exit.url }}</span>
+            <span
+              v-else
+              class="text-base-content/60 text-xs"
+            >{{ target }}{{ port ? `:${port}` : '' }}</span>
+          </template>
           <template #details>
-            <p>{{ $t('routeStartPanelDetail') }}</p>
-            <p
-              v-if="actual?.context"
-              class="text-warning"
-            >{{ $t('routeTestSourceNotProbed', { ip: actual.context.sourceIp }) }}</p>
+            <template v-if="mode === 'terminal'">
+              <p>{{ $t('routeStartVirtualDetail') }}</p>
+              <p
+                v-if="terminal?.source"
+                class="font-mono"
+              >{{ $t('routeStartVirtualLease', { mac: terminal.source.mac, gateway: terminal.source.gateway, dns: terminal.source.dns.join(' ') }) }}</p>
+            </template>
+            <template v-else>
+              <p>{{ $t('routeStartPanelDetail') }}</p>
+              <p>{{ $t('routeModeKernelHint') }}</p>
+              <p
+                v-if="actual?.context"
+                class="text-warning"
+              >{{ $t('routeTestSourceNotProbed', { ip: actual.context.sourceIp }) }}</p>
+            </template>
           </template>
         </RouteStage>
 
   </div>
 </template>
 
+<script lang="ts">
+import type { OpenboxTerminalCapability } from '@/api/openbox'
+// 设备能力只问一次(同一次会话里不会变),各个查询共用
+let capabilityPromise: Promise<OpenboxTerminalCapability> | null = null
+</script>
+
 <script setup lang="ts">
-import type { OpenboxPenetrationResult, OpenboxRouteTest } from '@/api/openbox'
-import { queryPenetration, testRoute } from '@/api/openbox'
+import type { OpenboxPenetrationResult, OpenboxRouteTest, OpenboxTerminalEntry, OpenboxTerminalMissing, OpenboxTerminalTest } from '@/api/openbox'
+import { fetchTerminalCapability, queryPenetration, testRoute, testTerminal } from '@/api/openbox'
 import ProxyGroupNow from '@/components/proxies/ProxyGroupNow.vue'
 import ProxyName from '@/components/proxies/ProxyName.vue'
 import RouteStage from '@/components/rules/RouteStage.vue'
@@ -612,27 +685,62 @@ watch(
   { immediate: true },
 )
 
-// ---------- 真实路由(面板自己测一次) ----------
+// ---------- 真实路由:模拟终端(默认)/ 内核诊断 ----------
+type ActualMode = 'terminal' | 'kernel'
+const mode = ref<ActualMode>('terminal')
+const capability = ref<OpenboxTerminalCapability | null>(null)
+const terminal = ref<OpenboxTerminalTest | null>(null)
 const actual = ref<OpenboxRouteTest | null>(null)
 const actualLoading = ref(false)
 const actualError = ref('')
 let actualTimer = 0
 let actualSeq = 0
+const loadCapability = async () => {
+  if (!capabilityPromise) {
+    capabilityPromise = fetchTerminalCapability().catch((err) => {
+      capabilityPromise = null
+      throw err
+    })
+  }
+  const cap = await capabilityPromise
+  capability.value = cap
+  return cap
+}
 const runActual = async () => {
   const mine = ++actualSeq
   actualLoading.value = true
   actualError.value = ''
   try {
-    const r = await testRoute(props.target, props.port ?? undefined)
-    if (mine !== actualSeq) return
-    actual.value = r
+    if (mode.value === 'terminal') {
+      const cap = await loadCapability()
+      if (mine !== actualSeq) return
+      // 不具备条件:停在这里如实提示,不悄悄改跑内核诊断
+      if (!cap.ok) { terminal.value = null; return }
+      const r = await testTerminal(props.target, props.port ?? undefined)
+      if (mine !== actualSeq) return
+      terminal.value = r
+    } else {
+      const r = await testRoute(props.target, props.port ?? undefined)
+      if (mine !== actualSeq) return
+      actual.value = r
+    }
   } catch (err) {
     if (mine !== actualSeq) return
     actual.value = null
+    terminal.value = null
     actualError.value = err instanceof Error ? err.message : String(err)
   } finally {
     if (mine === actualSeq) actualLoading.value = false
   }
+}
+const switchMode = (m: ActualMode) => {
+  if (mode.value === m) return
+  mode.value = m
+  actual.value = null
+  terminal.value = null
+  actualError.value = ''
+  window.clearTimeout(actualTimer)
+  void runActual()
 }
 // 真实访问一次是有代价的(出网、占一条连接),等输入停下 600ms 再跑
 watch(
@@ -640,6 +748,7 @@ watch(
   () => {
     window.clearTimeout(actualTimer)
     actual.value = null
+    terminal.value = null
     actualTimer = window.setTimeout(runActual, 600)
   },
   { immediate: true },
@@ -659,6 +768,8 @@ interface DnsView {
   tone: Tone
   message?: string
   viaProxy?: boolean
+  // lan:模拟终端问的是 LAN 的 DNS(不是内核的解析器)
+  lan?: boolean
   serverLine?: string
   tag?: string
   detour?: string
@@ -671,6 +782,7 @@ interface DnsView {
   answers6?: string[]
   stale?: string
 }
+interface DetailLine { text: string; mono?: boolean; warn?: boolean; label?: string }
 const toneClass = (tone: Tone | undefined) => {
   switch (tone) {
     case 'good': return 'badge-success badge-soft'
@@ -706,10 +818,12 @@ const statusText = (code: number) => {
 const statusTone = (code: number): Tone => (code < 400 ? 'good' : 'pending')
 // 访问失败的原因翻译成人话
 const errorText = (raw: string) => {
+  if (/^dns: /i.test(raw)) return t('routeTermDnsFailed', { message: raw.replace(/^dns:\s*/i, '') })
   if (/timeout/i.test(raw)) return t('routeTestErrTimeout')
   if (/^inbound:/i.test(raw)) return t('routeTestErrInbound')
   if (/^CONNECT:/i.test(raw)) return t('routeTestErrConnect', { detail: raw.replace(/^CONNECT:\s*/i, '') })
   if (/connection closed|ECONNRESET/i.test(raw)) return t('routeTestErrClosed')
+  if (/ECONNREFUSED/i.test(raw)) return t('routeTestErrRefused')
   return raw
 }
 
@@ -780,17 +894,33 @@ const ruleExit = computed<{ state: RouteStageState; badge?: string; tone: Tone }
   return { state: 'ok', badge: t(isDirect ? 'routeExitDirect' : 'routeExitProxy'), tone: isDirect ? 'good' : 'proxy' }
 })
 
-// ---------- 右列:真实路由 ----------
-const dnsSkipped = computed(() => Boolean(actual.value && actual.value.dns && 'skipped' in actual.value.dns))
-const actualDecision = computed(() => {
-  const d = actual.value?.dns
-  return d && 'ruleIndex' in d ? d : null
+// ---------- 右列:两种测法共用的骨架 ----------
+// 模拟终端的有效结果:具备条件、虚拟终端建起来了、真的发了一次访问
+const termResult = computed(() => {
+  const tr = terminal.value
+  return tr && tr.capable && !tr.setupError && tr.exit ? tr : null
 })
-const actualExitIp = computed(() => actual.value?.exit.destinationIP || actual.value?.exit.connectTo || '')
-const actualOwner = computed(() => actual.value?.exit.chains?.[0] || '')
+// 模拟终端跑不了的原因:设备不具备条件(列出缺什么)/ 虚拟终端没建起来(原因原文)
+const termBlock = computed<{ kind: 'incapable'; missing: OpenboxTerminalMissing[] } | { kind: 'setup'; message: string } | null>(() => {
+  if (mode.value !== 'terminal') return null
+  if (capability.value && !capability.value.ok) return { kind: 'incapable', missing: capability.value.missing }
+  const tr = terminal.value
+  if (tr && !tr.capable) return { kind: 'incapable', missing: tr.missing || [] }
+  if (tr && tr.setupError) return { kind: 'setup', message: tr.setupError }
+  return null
+})
+const missingText = computed(() => {
+  const b = termBlock.value
+  const list = b && b.kind === 'incapable' ? b.missing : []
+  return list.map((m) => t(`routeTermMissing_${m}`)).join(t('routeListJoin'))
+})
+const hasResult = computed(() => (mode.value === 'terminal' ? Boolean(termResult.value) : Boolean(actual.value)))
+const placeholderText = computed(() => (actualError.value ? '—' : actualLoading.value ? t('routeExitStatusTesting') : termBlock.value ? '—' : t('routeCmpWaiting')))
 const actualPill = computed<{ text: string; tone: Tone }>(() => {
   if (actualError.value) return { text: t('routeCmpPillFailed'), tone: 'error' }
-  const e = actual.value?.exit
+  const b = termBlock.value
+  if (b) return b.kind === 'incapable' ? { text: t('routeTermPillIncapable'), tone: 'pending' } : { text: t('routeTermPillSetupFailed'), tone: 'error' }
+  const e = mode.value === 'terminal' ? termResult.value?.exit : actual.value?.exit
   if (!e) return { text: t('routeExitStatusTesting'), tone: 'muted' }
   if (e.error) return { text: t('routeExitStatusFailed'), tone: 'error' }
   if (e.status !== undefined && e.status < 300) return { text: t('routeExitStatusSuccess'), tone: 'good' }
@@ -798,9 +928,17 @@ const actualPill = computed<{ text: string; tone: Tone }>(() => {
   if (e.status !== undefined) return { text: t('routeExitStatusReachable'), tone: 'pending' }
   return { text: t('routeExitStatusPending'), tone: 'pending' }
 })
+
+// ---------- 右列:内核诊断(回环 mixed 入站) ----------
+const dnsSkipped = computed(() => Boolean(actual.value && actual.value.dns && 'skipped' in actual.value.dns))
+const actualDecision = computed(() => {
+  const d = actual.value?.dns
+  return d && 'ruleIndex' in d ? d : null
+})
+const actualExitIp = computed(() => actual.value?.exit.destinationIP || actual.value?.exit.connectTo || '')
 // 本地这次解析的答案是线路对端的 fake-ip:应答者就是 detour 此刻落到的那个节点
 const fakeIpHop = computed(() => (actual.value?.resolve?.fakeIp && !actual.value.resolve.fakeIpLocal && actual.value.resolve.fakeIpFrom) || '')
-const actualDns = computed<DnsView>(() => {
+const kernelDns = computed<DnsView>(() => {
   const a = actual.value
   if (!a || actualError.value) return { kind: 'none', state: 'ok', tone: 'muted' }
   const d = a.dns
@@ -838,28 +976,14 @@ const actualDns = computed<DnsView>(() => {
     stale: d.stale ? t(d.stale === 'direct' ? 'routeTestDnsStaleDirect' : 'routeTestDnsStaleProxy') : '',
   }
 })
-// ③ 右:只有连接表里认出了这条连接,才能说"经过了内核"
-const actualEntry = computed(() => {
+// ③ 右(内核诊断):只有连接表里认出了这条连接,才能说"经过了内核"
+const kernelEntry = computed(() => {
   const e = actual.value?.exit
   if (!e || actualError.value) return { state: 'ok' as RouteStageState, value: '', sub: '', badge: undefined as string | undefined, tone: 'muted' as Tone }
   if (e.chains?.length || e.rule || e.destinationIP) return { state: 'ok' as RouteStageState, value: t('routeEntryPanelInbound'), sub: t('routeEntryPanelKernel'), badge: t('routeEntryEntered'), tone: 'good' as Tone }
   if (e.error && /^inbound:/i.test(e.error)) return { state: 'pending' as RouteStageState, value: t('routeEntryUnknown'), sub: t('routeTestErrInbound'), badge: t('routeEntryUnknown'), tone: 'pending' as Tone }
   if (e.notSeen) return { state: 'pending' as RouteStageState, value: t('routeEntryPanelNotSeen'), sub: t(e.error ? 'routeTestNotSeenFailed' : 'routeTestNotSeen'), badge: t('routeEntryUnknown'), tone: 'pending' as Tone }
   return { state: 'pending' as RouteStageState, value: t('routeEntryUnknown'), sub: e.connectionsError || '', badge: t('routeEntryUnknown'), tone: 'pending' as Tone }
-})
-const actualRule = computed<{ state: RouteStageState; badge?: string; tone: Tone }>(() => {
-  const e = actual.value?.exit
-  if (!e || actualError.value) return { state: 'ok', tone: 'muted' }
-  if (e.rule || e.chains?.length) return { state: 'ok', badge: t('routeRuleRecord'), tone: 'muted' }
-  return { state: 'pending', badge: t('routeEntryUnknown'), tone: 'pending' }
-})
-const actualExit = computed<{ state: RouteStageState; badge?: string; tone: Tone }>(() => {
-  const e = actual.value?.exit
-  if (!e || actualError.value) return { state: 'ok', tone: 'muted' }
-  const badge = e.ms !== undefined ? `${e.ms} ms` : undefined
-  if (e.error) return { state: 'pending', badge, tone: 'error' }
-  if (e.status !== undefined && e.status >= 400) return { state: 'ok', badge, tone: 'pending' }
-  return { state: 'ok', badge, tone: 'good' }
 })
 // 走节点、拿到的是真实 IP:节点按它直接连。这个地址是不是节点位置就近的 CDN,看那次解析是经节点问的还是直连问的
 const exitNodeNote = computed(() => {
@@ -870,6 +994,158 @@ const exitNodeNote = computed(() => {
   const viaProxyDns = Boolean(actualDecision.value?.viaProxy)
   if (actual.value?.resolve?.cached) return { text: t('routeTestExitByIpCached', { ip }), warn: true }
   return { text: t(viaProxyDns ? 'routeTestExitByIp' : 'routeTestExitByIpDirectDns', { ip }), warn: !viaProxyDns }
+})
+
+// ---------- 右列:模拟终端 ----------
+// ② 模拟终端的 DNS:问的是 LAN 的 DNS(DHCP 发下来的那台,一般就是路由器的 dnsmasq);
+//    详情里说这条查询是谁应答的(conntrack 证据)以及 dnsmasq 按转发清单会把它交给谁(配置推算)
+const termDns = computed<DnsView>(() => {
+  const tr = termResult.value
+  if (!tr) return { kind: 'none', state: 'ok', tone: 'muted' }
+  const d = tr.dns
+  if (!d || 'skipped' in d) return { kind: 'skip', state: 'skip', badge: t('routeDnsSkippedBadge'), tone: 'muted' }
+  const answers = d.answers || []
+  const answers6 = d.answers6 || []
+  const v4 = answers.length
+    ? { text: t('routeDnsV4Ok', { count: answers.length }), tone: 'good' as Tone }
+    : d.error ? { text: t('routeDnsV4Failed', { message: d.error }), tone: 'pending' as Tone } : { text: t('routeDnsV4Empty'), tone: 'pending' as Tone }
+  const v6 = d.answers6 === undefined
+    ? { text: t('routeDnsV6NotQueried'), tone: 'muted' as Tone, queried: false }
+    : answers6.length ? { text: t('routeDnsV6Ok', { count: answers6.length }), tone: 'good' as Tone, queried: true }
+      : d.error6 ? { text: t('routeDnsV6Failed', { message: d.error6 }), tone: 'muted' as Tone, queried: true } : { text: t('routeDnsV6Empty'), tone: 'muted' as Tone, queried: true }
+  const notes: Array<{ text: string; warn?: boolean }> = []
+  const ev = tr.dnsEvidence
+  if (ev) {
+    if (ev.hijacked) notes.push({ text: t('routeTermDnsHijacked', { server: ev.answeredBy }), warn: true })
+    else if (ev.flows) notes.push({ text: t('routeTermDnsAnsweredBy', { server: ev.answeredBy }) })
+    else notes.push({ text: t('routeTermDnsNoFlow'), warn: true })
+  }
+  const f = tr.dnsForward
+  if (f) {
+    if (f.plan === 'all') notes.push({ text: t('routeTermDnsForwardAll') })
+    else if (f.forward === 'kernel') notes.push({ text: t('routeTermDnsForwardKernel', { suffix: f.suffix || '', to: f.to || '' }) })
+    else if (f.forward === 'upstream') notes.push({ text: t('routeTermDnsForwardUpstream') })
+  }
+  const failed = !answers.length && !answers6.length
+  return {
+    kind: 'decision',
+    state: failed ? 'pending' : 'ok',
+    badge: `${d.ms} ms`,
+    tone: failed ? 'pending' : 'good',
+    lan: true, serverLine: `UDP ${d.server}`, tag: '',
+    v4, v6, notes, chain: [], answers, answers6,
+  }
+})
+// ③ 模拟终端的入口:按系统证据判(见 server/system/lan-probe.mjs 的 classifyEntry)
+const reasonKey: Record<string, string> = {
+  'no-conntrack': 'routeTermReasonNoConntrack',
+  'dnat-elsewhere': 'routeTermReasonDnatElsewhere',
+  'no-route': 'routeTermReasonNoRoute',
+  'route-tun': 'routeTermReasonRouteTun',
+  'not-connected': 'routeTermReasonNotConnected',
+  'no-connection': 'routeTermReasonNoConnection',
+  'evidence-failed': 'routeTermReasonEvidenceFailed',
+}
+const reasonText = (e: OpenboxTerminalEntry) => {
+  const key = reasonKey[e.reason || '']
+  return key ? t(key, { to: e.rewrittenTo || '', error: e.error || '' }) : e.reason || ''
+}
+const termEntry = computed(() => {
+  const tr = termResult.value
+  const e = tr?.entry
+  if (!tr || !e) return { state: 'ok' as RouteStageState, value: '', sub: '', badge: undefined as string | undefined, tone: 'muted' as Tone }
+  if (e.kind === 'bypass') return { state: 'ok' as RouteStageState, value: t('routeTermEntryBypass'), sub: t('routeTermEntryBypassSub', { device: e.device || '' }), badge: t('routeTermBypassed'), tone: 'good' as Tone }
+  if (e.kind === 'kernel') {
+    const sub = e.via === 'redirect'
+      ? t('routeTermEntryRedirectSub', { port: e.redirectPort ?? '' })
+      : e.via === 'tun' ? t('routeTermEntryTunSub', { device: e.evidence.tunDevice || 'tun' }) : t('routeTermEntrySeenSub')
+    return { state: 'ok' as RouteStageState, value: t('routeEntryKernel'), sub, badge: t('routeEntryEntered'), tone: 'good' as Tone }
+  }
+  return { state: 'pending' as RouteStageState, value: t('routeTermEntryUnknown'), sub: reasonText(e), badge: t('routeEntryUnknown'), tone: 'pending' as Tone }
+})
+const entryEvidence = computed<DetailLine[]>(() => {
+  const tr = termResult.value
+  const e = tr?.entry
+  if (!tr || !e) return []
+  const ev = e.evidence || {}
+  const out: DetailLine[] = []
+  if (ev.autoRedirect !== undefined) out.push({ text: t(ev.autoRedirect ? 'routeTermEvAutoRedirect' : 'routeTermEvTunOnly') })
+  if (ev.conntrack) out.push({ label: 'conntrack', text: ev.conntrack, mono: true })
+  else out.push({ text: t('routeTermReasonNoConntrack'), warn: true })
+  if (ev.route) out.push({ label: t('routeTermEvRoute'), text: ev.route, mono: true })
+  if (e.kind === 'bypass') out.push({ text: e.masquerade ? t('routeTermEvMasq', { device: e.device || '', address: tr.exit?.forward?.address || '' }) : t('routeTermEvNoMasq') })
+  const ip = tr.exit?.connectTo || ''
+  if (ev.set) out.push({ text: t(ev.setHit ? 'routeTermEvSetHit' : 'routeTermEvSetMiss', { ip, set: ev.set }), warn: e.kind === 'bypass' && !ev.setHit })
+  else out.push({ text: t('routeTermEvNoSet') })
+  out.push({ text: ev.kernelConn ? t('routeTermEvKernelSeen', { inbound: tr.kernel?.inbound || '' }) : t('routeTermEvKernelNone') })
+  if (ev.kernelError) out.push({ text: ev.kernelError, warn: true })
+  if (e.kind === 'unknown') out.push({ text: reasonText(e), warn: true })
+  return out
+})
+
+// ---------- 右列:按当前测法选一份 ----------
+const actualDns = computed<DnsView>(() => (mode.value === 'terminal' ? termDns.value : kernelDns.value))
+const actualEntry = computed(() => (mode.value === 'terminal' ? termEntry.value : kernelEntry.value))
+// ④:旁路命中 → 跳过;进了内核 → 连接表里的归属和规则原文;进了内核却没找到 → 说明
+const ruleView = computed(() => {
+  if (mode.value === 'terminal') {
+    const tr = termResult.value
+    const e = tr?.entry
+    if (!tr || !e) return { skipped: false, notSeen: false, owner: '', rule: '' }
+    if (e.kind === 'bypass') return { skipped: true, notSeen: false, owner: '', rule: '' }
+    const k = tr.kernel
+    if (e.kind === 'kernel' && !k?.seen) return { skipped: false, notSeen: true, owner: '', rule: '' }
+    return { skipped: false, notSeen: false, owner: k?.chains?.[0] || '', rule: k?.rule || '' }
+  }
+  const e = actual.value?.exit
+  return { skipped: false, notSeen: false, owner: e?.chains?.[0] || '', rule: e?.rule || '' }
+})
+const actualRule = computed<{ state: RouteStageState; badge?: string; tone: Tone }>(() => {
+  if (!hasResult.value || actualError.value) return { state: 'ok', tone: 'muted' }
+  const v = ruleView.value
+  if (v.skipped) return { state: 'skip', badge: t('routeTermRuleSkipped'), tone: 'muted' }
+  if (v.notSeen) return { state: 'pending', badge: t('routeEntryUnknown'), tone: 'pending' }
+  if (v.rule || v.owner) return { state: 'ok', badge: t('routeRuleRecord'), tone: 'muted' }
+  return { state: 'pending', badge: t('routeEntryUnknown'), tone: 'pending' }
+})
+// ⑤:旁路 → "系统转发,经 WAN 设备直接出去";进内核 → 内核记录的链路;都带 HTTP 结果
+const exitView = computed(() => {
+  if (mode.value === 'terminal') {
+    const tr = termResult.value
+    const x = tr?.exit
+    if (!tr || !x) return { chains: [] as string[], status: undefined as number | undefined, error: '', ms: undefined as number | undefined, forward: null as { device: string; gateway: string } | null }
+    const forward = tr.entry?.kind === 'bypass' ? { device: x.forward?.device || tr.entry.device || '', gateway: x.forward?.gateway || tr.entry.gateway || '' } : null
+    return { chains: tr.kernel?.chains || [], status: x.status, error: x.error || '', ms: x.ms, forward }
+  }
+  const e = actual.value?.exit
+  return { chains: e?.chains || [], status: e?.status, error: e?.error || '', ms: e?.ms, forward: null }
+})
+const actualExit = computed<{ state: RouteStageState; badge?: string; tone: Tone }>(() => {
+  if (!hasResult.value || actualError.value) return { state: 'ok', tone: 'muted' }
+  const v = exitView.value
+  const badge = v.ms !== undefined ? `${v.ms} ms` : undefined
+  if (v.error) return { state: 'pending', badge, tone: 'error' }
+  if (v.status !== undefined && v.status >= 400) return { state: 'ok', badge, tone: 'pending' }
+  return { state: 'ok', badge, tone: 'good' }
+})
+const exitDetails = computed<DetailLine[]>(() => {
+  const out: DetailLine[] = []
+  if (mode.value === 'terminal') {
+    const tr = termResult.value
+    const x = tr?.exit
+    if (!tr || !x) return out
+    if (x.connectTo) out.push({ text: t('routeExitTarget', { ip: x.connectTo }), mono: true })
+    if (tr.source && x.localPort) out.push({ text: t('routeTermExitLocalPort', { ip: tr.source.ip, port: x.localPort }), mono: true })
+    if (x.forward) out.push({ text: t('routeTermExitForwardAddress', { device: x.forward.device, address: x.forward.address || '—' }), mono: true })
+    if (tr.kernel?.seen && tr.kernel.viaProxy && x.connectTo) out.push({ text: t('routeTestExitByIpDirectDns', { ip: x.connectTo }), warn: true })
+    return out
+  }
+  const a = actual.value
+  if (!a) return out
+  if (actualExitIp.value) out.push({ text: t('routeExitTarget', { ip: actualExitIp.value }), mono: true })
+  if (a.exit6) out.push({ text: `IPv6 ${a.exit6.connectTo}: ${a.exit6.ok ? `HTTP ${a.exit6.status} · ${a.exit6.ms}ms` : t('routeTestRequestFailed', { message: errorText(a.exit6.error || '') })}`, warn: !a.exit6.ok })
+  if (exitNodeNote.value) out.push({ text: exitNodeNote.value.text, warn: exitNodeNote.value.warn })
+  return out
 })
 </script>
 

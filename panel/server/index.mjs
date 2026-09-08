@@ -15,6 +15,8 @@ import { registerServiceRoutes } from './api/service.mjs'
 import { registerRulesetRoutes } from './api/rulesets.mjs'
 import { registerUpdateRoutes } from './api/updates.mjs'
 import { registerRouteTestRoutes } from './api/route-test.mjs'
+import { registerTerminalTestRoutes } from './api/terminal-test.mjs'
+import { teardownProbeNetns } from './system/lan-probe.mjs'
 import { registerTrafficRoutes } from './api/traffic.mjs'
 import { registerLatencyHistoryRoutes } from './api/latency-history.mjs'
 import { createLatencyHistory } from './system/latency-history.mjs'
@@ -1087,6 +1089,7 @@ registerNodeLatencyRoutes(app, { ctx: obCtx, paths: obPaths, fetchImpl: globalTh
 registerGroupRoutes(app, { store })
 registerUpdateRoutes(app, { store, ctx: obCtx, paths: obPaths, fetchImpl: globalThis.fetch })
 registerRouteTestRoutes(app, { store, ctx: obCtx, paths: obPaths, fetchImpl: globalThis.fetch })
+registerTerminalTestRoutes(app, { store, ctx: obCtx, paths: obPaths, fetchImpl: globalThis.fetch })
 // 每日流量:面板常驻读内核连接表,按天/节点/域名把字节数记进 cache.db(system/traffic-collector.mjs);
 // 采集在 startServer 里才启动,单独 import 本模块(测试)不会去碰内核
 const trafficCollector = createTrafficCollector({
@@ -1233,6 +1236,8 @@ websocketServer.on('connection', relayControllerWebSocket)
 const startServer = async () => {
   trafficCollector.start()
   latencyScheduler.start()
+  // 上一个面板进程留下的虚拟终端(模拟 LAN 终端测试用的网络命名空间)先拆掉,不留孤儿接口挂在网桥上
+  teardownProbeNetns(obCtx).catch(() => {})
   if (server.listening) {
     return server
   }
