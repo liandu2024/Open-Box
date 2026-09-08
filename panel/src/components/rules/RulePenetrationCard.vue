@@ -31,10 +31,17 @@
               <NoSymbolIcon class="text-error h-4 w-4" />
               <span class="text-error">{{ $t('penetrationBlockedTitle') }}</span>
             </template>
+            <!-- 只有能往下钻的出站(站点集 / 节点组)才画链路;直连、拒绝和具体节点没有
+                 下级,ProxyGroupNow 对它们什么都不渲染,会留下一行空白 -->
             <ProxyGroupNow
-              v-else-if="outbound && proxyMap[outbound]"
+              v-else-if="outbound && proxyMap[outbound]?.now"
               :name="outbound"
               include-self
+            />
+            <ProxyName
+              v-else-if="outbound && proxyMap[outbound]"
+              :name="outbound"
+              class="text-sm font-medium"
             />
             <span
               v-else-if="outbound"
@@ -86,9 +93,16 @@
             </template>
             <template v-else-if="result.matched">
               <span class="badge badge-sm badge-success badge-soft">{{ $t('ruleLookupMatched', { index: result.matched.index + 1 }) }}</span>
-              <template v-if="outbound && !isReject">
+              <template v-if="(ownerName || outbound) && !isReject">
                 <span class="text-base-content/60">{{ $t('ruleLookupSiteSet') }}</span>
+                <!-- 前置自定义分流不生成 selector,它的名字不是出站名,按纯文本显示;
+                     站点集照旧走 ProxyName(名字就是出站名,能配上图标) -->
+                <span
+                  v-if="ownerName"
+                  class="text-sm font-medium"
+                >{{ ownerName }}</span>
                 <ProxyName
+                  v-else
                   :name="outbound"
                   class="text-sm font-medium"
                 />
@@ -199,6 +213,8 @@ const dnsServerText = computed(() => {
 })
 
 const outbound = computed(() => result.value?.finalOutbound || '')
+// 命中的是哪一条分流条目:站点集的名字就是出站名,前置自定义分流不是,服务端单独给
+const ownerName = computed(() => result.value?.matched?.ownerName || '')
 const isReject = computed(() => result.value?.matched?.action === 'reject')
 const conditionText = computed(() => {
   const rule = (result.value?.matched?.rule || {}) as Record<string, unknown>

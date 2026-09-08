@@ -4,8 +4,26 @@ import { builtinTags } from '../engine/user-groups.mjs'
 import { loadEntries } from './rulesets.mjs'
 import { decideDnsServer } from './route-test.mjs'
 import { buildRoute } from '../engine/routing.mjs'
-import { normalizeRouting } from '../engine/routing-model.mjs'
+import { customOutboundTag, customPolicyActive, customRuleTag, normalizeRouting } from '../engine/routing-model.mjs'
 import { isPrivateOrLoopbackIp } from './net-guard.mjs'
+
+// 命中的这条 route 规则是谁生成的。界面上要据此说清楚是"站点集"还是"前置自定义分流"
+// ——它们长得一样(都是一条带出口的匹配规则),只有来历不同。
+// 按内容认,不按下标算:规则的排列以后还会变,按下标迟早对不上。
+const CUSTOM_CONDITION_KEY = {
+  domain: 'domain', domainSuffix: 'domain_suffix', domainKeyword: 'domain_keyword', ipCidr: 'ip_cidr',
+}
+const isCustomRule = (rule, custom, builtin) => {
+  if (!customPolicyActive(custom)) return false
+  return custom.rules.some((r) => {
+    if (rule.outbound !== customOutboundTag(r, builtin)) return false
+    const tag = customRuleTag(r)
+    // 规则集链接会编成域名 / IP 两份,任一被引用都算这一行
+    if (tag) return Array.isArray(rule.rule_set) && rule.rule_set.some((t) => t === tag || t === `${tag}-ip`)
+    const key = CUSTOM_CONDITION_KEY[r.type]
+    return Boolean(key) && Array.isArray(rule[key]) && rule[key].length === 1 && rule[key][0] === r.value
+  })
+}
 
 // Open-Box 只管理本机唯一的 sing-box,clash_api 固定监听 127.0.0.1:9095(见 engine/config.mjs)。
 export const CLASH_API_BASE = 'http://127.0.0.1:9095'
@@ -298,6 +316,14 @@ export const registerPenetrationRoutes = (app, { store, ctx, paths, fetchImpl = 
     // break,不会再有机会命中)——但这时的 null 和"确认查完所有规则、真的没有命中"的 null
     // 含义不同,finalOutbound 不能再自信地报告 route.final(那条没能确认的规则,如果真的
     // 命中了,结果会完全不同)。
+    // 界面上「站点集」后面显示的是"命中的是哪一条分流条目"。站点集的出站就是它自己的同名
+    // selector,所以那里一直直接拿 outbound 当条目名用;前置自定义分流不生成 selector、
+    // 出站是具体的节点或直连,再拿 outbound 就成了「站点集 直连」,看不出命中的是哪一条。
+    // 这里把条目名单独回传,出站仍由 finalOutbound 表示。
+    if (matched && isCustomRule(matched.rule, routingConf.custom, builtin)) {
+      matched.ownerName = routingConf.custom.name
+    }
+
     const finalOutbound = matchError ? null : matched ? (matched.outbound !== undefined ? matched.outbound : null) : route.final
 
     let chain = finalOutbound !== null && finalOutbound !== undefined ? [finalOutbound] : []

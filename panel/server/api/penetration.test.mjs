@@ -795,3 +795,53 @@ test('订阅和节点站点直连(默认开):目标是某个节点的服务器�
     await close()
   }
 })
+
+// 前置自定义分流命中时,界面上「站点集」后面要显示的是这条条目的名字。它不生成 selector、
+// 出站是具体节点或直连,拿 outbound 当条目名会显示成「站点集 直连」,看不出命中的是哪一条。
+test('命中前置自定义分流:回传条目名 ownerName,出站仍是它自己选的出口', async () => {
+  const store = memStore()
+  store.setProfile({
+    directForNodes: false,
+    routing: {
+      fallbackDefault: 'direct',
+      custom: { name: '前置自定义', rules: [{ type: 'domainSuffix', value: 'wan.family', outbound: 'direct' }] },
+      policies: [{ id: 'a', name: '策略A', rulesets: ['geosite-a'], default: 'NodeA' }],
+    },
+  })
+  const ctx = createMockContext({ files: withSingbox() })
+  const fetchImpl = async () => ({ ok: true, status: 200, json: async () => ({}) })
+  const { baseUrl, close } = await startApp({ ctx, store, fetchImpl })
+  try {
+    const { res, body } = await post(baseUrl, 'os.wan.family')
+    assert.equal(res.status, 200)
+    assert.ok(body.matched, JSON.stringify(body))
+    assert.deepEqual(body.matched.rule.domain_suffix, ['wan.family'])
+    assert.equal(body.matched.ownerName, '前置自定义')
+    // 出站是这一行自己选的出口(内置直连的当前名字)
+    assert.equal(body.finalOutbound, '直连')
+  } finally {
+    await close()
+  }
+})
+
+test('命中站点集时不带 ownerName:它的名字就是出站名,界面直接用 outbound', async () => {
+  const store = memStore()
+  store.setProfile({
+    directForNodes: false,
+    routing: {
+      fallbackDefault: 'direct',
+      custom: { rules: [{ type: 'domainSuffix', value: 'other.example', outbound: 'direct' }] },
+      policies: [{ id: 'a', name: '策略A', domainSuffix: ['a.example.com'], default: 'NodeA' }],
+    },
+  })
+  const ctx = createMockContext({ files: withSingbox() })
+  const fetchImpl = async () => ({ ok: true, status: 200, json: async () => ({ name: 'NodeA' }) })
+  const { baseUrl, close } = await startApp({ ctx, store, fetchImpl })
+  try {
+    const { body } = await post(baseUrl, 'a.example.com')
+    assert.equal(body.matched.outbound, '策略A')
+    assert.equal(body.matched.ownerName, undefined)
+  } finally {
+    await close()
+  }
+})

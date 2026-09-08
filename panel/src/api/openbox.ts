@@ -658,6 +658,9 @@ export interface OpenboxPenetrationMatched {
   // 具体命中的域名/IP 条目(规则集解码后逐条比出来的,或站点集里手写的 'custom');最多 20 条
   entries?: Array<{ type: string; value: string; source: string }>
   entriesTotal?: number
+  // 命中的是哪一条分流条目。站点集的名字就是它的出站名,所以不带这个字段、界面直接用
+  // outbound;前置自定义分流的出站是具体节点或直连,名字对不上,服务端单独给出来。
+  ownerName?: string
 }
 
 export interface OpenboxPenetrationResult {
