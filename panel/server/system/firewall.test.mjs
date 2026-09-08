@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createMockContext } from './context.mjs'
-import { applyPanelLanRule, applyIpv6Block, removeProxyRules, removeOpenBoxRules } from './firewall.mjs'
+import { applyPanelLanRule, applyIpv6Block, commitFirewall, removeProxyRules, removeOpenBoxRules } from './firewall.mjs'
 
 const cmds = (ctx) => ctx.calls.map((c) => [c.cmd, ...c.args].join(' '))
 
@@ -121,4 +121,59 @@ test('commitFirewall:uci commit / firewall reload 失败必须抛错,不能当�
   await assert.rejects(() => applyPanelLanRule(commitFails, { port: 2026 }), /uci commit firewall 失败.*I\/O error/)
   const reloadFails = createMockContext({ execResults: { '/etc/init.d/firewall reload': { code: 1, stderr: 'fw4: syntax error' } } })
   await assert.rejects(() => removeProxyRules(reloadFails), /firewall reload 失败.*syntax error/)
+})
+
+// fw4 会因为别的软件包留下的坏配置段而以非 0 退出(网友实测:装了 passwall,它的 include
+// 段指向的 /var/etc/passwall.include 不存在),可我们的规则其实已经生效了。这时候抛错会把
+// 启动和紧接着的"恢复直连"回滚一起挡下来,用户既起不来也回不到直连。
+const UCI_TWO_RULES = [
+  'firewall.openbox_panel=rule',
+  "firewall.openbox_panel.name='Open-Box Panel (LAN)'",
+  "firewall.openbox_panel.dest_port='2026'",
+  'firewall.openbox_dns=rule',
+  "firewall.openbox_dns.name='Open-Box DNS (LAN)'",
+  "firewall.openbox_dns.dest_port='7853'",
+  // 别人的段不该被当成我们的
+  'firewall.@rule[0]=rule',
+  "firewall.@rule[0].name='Allow-DHCP'",
+].join('\n')
+const nftWith = (panelPort, { dns = true } = {}) => [
+  `\ttcp dport ${panelPort} counter packets 3 bytes 180 accept comment "!fw4: Open-Box Panel (LAN)"`,
+  ...(dns
+    ? [
+        '\ttcp dport 7853 counter packets 0 bytes 0 accept comment "!fw4: Open-Box DNS (LAN)"',
+        '\tudp dport 7853 counter packets 0 bytes 0 accept comment "!fw4: Open-Box DNS (LAN)"',
+      ]
+    : []),
+  '\tudp dport 67 counter packets 9 bytes 700 accept comment "!fw4: Allow-DHCP"',
+].join('\n')
+const PASSWALL_NOISE = [
+  "[!] Section passwall option 'reload' is not supported by fw4",
+  "[!] Section passwall specifies unreachable path '/var/etc/passwall.include', ignoring section",
+].join('\n')
+const reloadFailedCtx = (nft) => createMockContext({
+  execResults: {
+    '/etc/init.d/firewall reload': { code: 1, stderr: PASSWALL_NOISE },
+    'uci show firewall': { code: 0, stdout: UCI_TWO_RULES },
+    ...(nft === null ? {} : { 'nft list ruleset': { code: 0, stdout: nft } }),
+  },
+})
+
+test('reload 报 code 1 但规则已在内核里生效(别的软件包的坏配置段):不抛错,继续走', async () => {
+  await commitFirewall(reloadFailedCtx(nftWith(2026)))
+})
+
+test('reload 报 code 1 且规则确实没生效:照旧抛错', async () => {
+  // 少了 DNS 那条 = 这次 reload 真的没落地
+  await assert.rejects(
+    () => commitFirewall(reloadFailedCtx(nftWith(2026, { dns: false }))),
+    /firewall reload 失败.*passwall/s,
+  )
+  // 端口改了但内核里还是旧端口:只比名字会漏掉这种,必须连值一起比
+  await assert.rejects(
+    () => commitFirewall(reloadFailedCtx(nftWith(2025))),
+    /firewall reload 失败/,
+  )
+  // 读不到 nft(没装 / 输出为空):看不见就按失败处理,不放行
+  await assert.rejects(() => commitFirewall(reloadFailedCtx(null)), /firewall reload 失败/)
 })
