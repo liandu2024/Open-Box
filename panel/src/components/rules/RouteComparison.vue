@@ -4,7 +4,8 @@
        整块是一个网格:桌面两列,每一行是同一站的左右两格,所以展开详情时另一列同一站跟着变高、始终对齐;
        窄屏改成单列,按 --m-order 先排完左列再排右列,各自还是从下往上。没有外层卡片和说明文字,
        两列各自就是一张卡(列头圆角 + 最底下一格圆角)。 -->
-  <div class="route-grid grid grid-cols-1 gap-x-3 md:grid-cols-2">
+  <!-- text-sm:整块的基准字号,大字(font-medium)、ProxyName / ProxyGroupNow 的名字和 16px 图标都按它对齐 -->
+  <div class="route-grid grid grid-cols-1 gap-x-3 text-sm md:grid-cols-2">
         <!-- 列头:左 = 规则路由 · 依据查询条件推算;右 = 真实路由 · 面板自身发起的测试 -->
         <div
           class="route-cell route-head flex items-start gap-2 border-x border-t px-3 pt-3 pb-2.5"
