@@ -389,11 +389,13 @@ test('内核启动:plan=domains 照抄按域名条目、不动用户上游、按
   assert.equal(domains.servers, '9.9.9.9,/youtube.com/127.0.0.1#7853,')
   assert.equal(domains.noresolv, '1')          // 用户原来就是 noresolv=1,状态文件也写了 1 → 保留
   assert.match(domains.log, /dnsmasq-restart/)
+  // 全量接管:上游只剩内核——原上游留在列表里的话 dnsmasq 会挑"最快的"去问,走代理的域名被原上游答了
+  // (开机时 K10 stop 已按备份把原上游放回来,以前 start 只追加我们的条目,重启后两台并存)
   const all = runTakeover({ state: 'plan=all\nserver=127.0.0.1#7853\nnoresolv=1\n', servers: ['9.9.9.9'], noresolv: null })
-  assert.match(all.servers, /127\.0\.0\.1#7853/)
+  assert.equal(all.servers, '127.0.0.1#7853,')
   assert.equal(all.noresolv, '1')
   const legacy = runTakeover({ state: null, servers: ['9.9.9.9'], noresolv: null })
-  assert.match(legacy.servers, /127\.0\.0\.1#7853/)
+  assert.equal(legacy.servers, '127.0.0.1#7853,')
   assert.equal(legacy.noresolv, '1')
   // 已经是目标状态:什么都不动
   const idem = runTakeover({ state: 'plan=all\nserver=127.0.0.1#7853\nnoresolv=1\n', servers: ['127.0.0.1#7853'], noresolv: '1' })

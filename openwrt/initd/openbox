@@ -131,9 +131,16 @@ openbox_apply_takeover() {
 		mkdir -p "$DATA"
 		uci -q show dhcp.@dnsmasq[0] > "$DNSMASQ_BACKUP"
 	fi
-	for _ob_server in $_ob_have; do
-		uci -q del_list dhcp.@dnsmasq[0].server="$_ob_server"
-	done
+	# 全量接管(plan=all / 老版本没记录):上游只能剩内核这一个——留着原上游的话 dnsmasq 会挑"最快的"
+	# 那台去问,走代理的域名就被原上游答了。开机时 K10 stop 已按备份把原上游放回来,这里再删掉,
+	# 备份(上面刚留底)里仍有原上游,下次 stop 照样还原。按域名转发只摘换我们自己的条目,用户上游不动
+	if [ "$_ob_plan" = "domains" ]; then
+		for _ob_server in $_ob_have; do
+			uci -q del_list dhcp.@dnsmasq[0].server="$_ob_server"
+		done
+	else
+		uci -q delete dhcp.@dnsmasq[0].server
+	fi
 	for _ob_server in $_ob_want; do
 		uci -q add_list dhcp.@dnsmasq[0].server="$_ob_server"
 	done
