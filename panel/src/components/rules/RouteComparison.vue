@@ -14,19 +14,22 @@
         >
           <MapIcon class="route-head-icon text-base-content/50" />
           <div class="min-w-0">
-            <div class="font-medium">{{ $t('ruleLookupTitle') }}</div>
+            <!-- 标题后面紧跟状态徽章(推算 / 实测的总体结果) -->
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="font-medium">{{ $t('ruleLookupTitle') }}</span>
+              <span
+                class="badge badge-sm whitespace-nowrap"
+                :class="toneClass(rulePill.tone)"
+              >
+                <span
+                  v-if="ruleLoading"
+                  class="loading loading-spinner loading-xs"
+                />
+                <template v-else>{{ rulePill.text }}</template>
+              </span>
+            </div>
             <div class="text-base-content/50 text-xs">{{ $t('routeCmpRuleSub') }}</div>
           </div>
-          <span
-            class="badge badge-sm ml-auto whitespace-nowrap"
-            :class="toneClass(rulePill.tone)"
-          >
-            <span
-              v-if="ruleLoading"
-              class="loading loading-spinner loading-xs"
-            />
-            <template v-else>{{ rulePill.text }}</template>
-          </span>
         </div>
         <div
           class="route-cell route-head relative mt-2 flex items-start gap-2 border-x border-t pr-3 pl-12 pt-3 pb-2.5 md:mt-0"
@@ -34,20 +37,22 @@
         >
           <BoltIcon class="route-head-icon text-base-content/50" />
           <div class="min-w-0">
-            <div class="font-medium">{{ $t('routeTestTitle') }}</div>
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="font-medium">{{ $t('routeTestTitle') }}</span>
+              <span
+                class="badge badge-sm whitespace-nowrap"
+                :class="toneClass(actualPill.tone)"
+              >
+                <span
+                  v-if="actualLoading"
+                  class="loading loading-spinner loading-xs"
+                />
+                <template v-else>{{ actualPill.text }}</template>
+              </span>
+            </div>
             <div class="text-base-content/50 text-xs">{{ $t('routeCmpActualSub') }}</div>
           </div>
           <div class="ml-auto flex shrink-0 items-center gap-1">
-            <span
-              class="badge badge-sm whitespace-nowrap"
-              :class="toneClass(actualPill.tone)"
-            >
-              <span
-                v-if="actualLoading"
-                class="loading loading-spinner loading-xs"
-              />
-              <template v-else>{{ actualPill.text }}</template>
-            </span>
             <button
               type="button"
               class="btn btn-ghost btn-xs"
