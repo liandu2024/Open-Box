@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { buildServerInbounds, configNeedsTlsKeypair, serverFirewallProto } from './servers.mjs'
+import { buildServerInbounds, configNeedsTlsKeypair, serverFirewallProto, serverWanExposed } from './servers.mjs'
 
 const tls = { certPath: '/c.crt', keyPath: '/c.key' }
 
@@ -26,4 +26,17 @@ test('四种协议各自的入站;停用的不出;TUIC/HY2 带自签 TLS,VLESS �
   assert.equal(serverFirewallProto(servers[0]), 'tcp udp')
   assert.equal(serverFirewallProto(servers[1]), 'tcp')
   assert.equal(serverFirewallProto(servers[4]), 'udp')
+})
+
+test('mixed:SOCKS5 + HTTP 共用一个端口;填了用户名才带认证;只走 TCP、不在 WAN 放行', () => {
+  const inbounds = buildServerInbounds([
+    { id: 'm1', enabled: true, name: 'open', protocol: 'mixed', port: 7080 },
+    { id: 'm2', enabled: true, name: 'auth', protocol: 'mixed', port: 7081, username: 'u', password: 'p' },
+  ], tls)
+  assert.deepEqual(inbounds[0], { type: 'mixed', tag: 'share-m1', listen: '::', listen_port: 7080 })
+  assert.deepEqual(inbounds[1].users, [{ username: 'u', password: 'p' }])
+  assert.ok(!configNeedsTlsKeypair({ inbounds }))
+  assert.equal(serverFirewallProto({ protocol: 'mixed' }), 'tcp')
+  assert.equal(serverWanExposed({ protocol: 'mixed' }), false)
+  assert.equal(serverWanExposed({ protocol: 'shadowsocks' }), true)
 })

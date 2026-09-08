@@ -1,6 +1,7 @@
 <template>
   <!-- 新建 / 编辑一台共享网络的服务器。字段按协议切换:SS 有加密方式和密码,VLESS 有 UUID
-       和 TLS 开关,TUIC 有 UUID + 密码,Hysteria2 有密码 + 可选混淆。凭据都能一键生成。 -->
+       和 TLS 开关,TUIC 有 UUID + 密码,Hysteria2 有密码 + 可选混淆,SOCKS5 / HTTP(mixed)
+       有可选的用户名 + 密码。凭据都能一键生成。 -->
   <DialogWrapper
     v-model="isOpen"
     :title="$t(server ? 'serverEditTitle' : 'serverAddTitle')"
@@ -98,6 +99,21 @@
           </div>
         </div>
 
+        <!-- SOCKS5 / HTTP 的认证是可选的:用户名密码一起填或一起留空 -->
+        <div
+          v-if="form.protocol === 'mixed'"
+          class="flex flex-col gap-1"
+        >
+          <label class="text-xs font-medium">{{ $t('serverUsernameLabel') }}</label>
+          <input
+            v-model="form.username"
+            type="text"
+            class="input input-sm w-full font-mono"
+            :placeholder="$t('serverAuthOptional')"
+            autocomplete="off"
+          />
+        </div>
+
         <div
           v-if="needsPassword"
           class="flex flex-col gap-1"
@@ -108,6 +124,7 @@
               v-model="form.password"
               type="text"
               class="input input-sm join-item w-full font-mono"
+              :placeholder="form.protocol === 'mixed' ? $t('serverAuthOptional') : ''"
               autocomplete="off"
             />
             <button
@@ -162,7 +179,7 @@
         </div>
       </div>
 
-      <p class="text-base-content/60 text-xs">{{ $t(needsTls ? 'serverTlsHint' : 'serverPlainHint') }}</p>
+      <p class="text-base-content/60 text-xs">{{ $t(needsTls ? 'serverTlsHint' : form.protocol === 'mixed' ? 'serverMixedHint' : 'serverPlainHint') }}</p>
 
       <!-- 分享链接(节点 URI)+ 二维码,填了域名/IP 才有 -->
       <div class="flex flex-col gap-1">
@@ -252,9 +269,11 @@ const PROTOCOLS: { value: OpenboxServerProtocol; label: string }[] = [
   { value: 'vless', label: 'VLESS' },
   { value: 'tuic', label: 'TUIC' },
   { value: 'hysteria2', label: 'Hysteria2' },
+  { value: 'mixed', label: 'SOCKS5 / HTTP' },
 ]
 const SS_METHODS = ['aes-256-gcm', 'aes-128-gcm', 'chacha20-ietf-poly1305', '2022-blake3-aes-256-gcm']
-const DEFAULT_PORT: Record<OpenboxServerProtocol, number> = { shadowsocks: 8388, vless: 8443, tuic: 8444, hysteria2: 8445 }
+// mixed 用 7080:Nikki / OpenClash 用户习惯的那个口(GitHub #7)
+const DEFAULT_PORT: Record<OpenboxServerProtocol, number> = { shadowsocks: 8388, vless: 8443, tuic: 8444, hysteria2: 8445, mixed: 7080 }
 
 const isOpen = computed({
   get: () => props.modelValue,
@@ -273,6 +292,7 @@ const blank = (): OpenboxServer => ({
   uuid: randomUuid(),
   tls: true,
   obfs: '',
+  username: '',
 })
 
 const form = reactive<OpenboxServer>(blank())
@@ -285,6 +305,11 @@ watch(
     Object.assign(form, blank(), props.server ? { ...props.server } : {})
     // 老记录没填过地址的,也按当前页面补上默认值
     if (!form.address) form.address = defaultHost()
+    // mixed 的认证默认留空(不认证),不要把 blank() 里随机生成的密码带进去
+    if (form.protocol === 'mixed') {
+      form.username = props.server?.username || ''
+      form.password = props.server?.password || ''
+    }
   },
 )
 
@@ -299,6 +324,12 @@ const onMethodChange = () => {
 const onProtocolChange = () => {
   // 换协议时端口按协议给个默认值(编辑已有的也一样),凭据保留
   form.port = DEFAULT_PORT[form.protocol]
+  if (form.protocol === 'mixed') {
+    // 切到 SOCKS5 / HTTP:认证默认关(密码留空),要认证再自己填
+    form.username = ''
+    form.password = ''
+    return
+  }
   if (form.protocol === 'shadowsocks' && !form.method) form.method = 'aes-256-gcm'
   if (!form.password) form.password = newPassword()
   if (!form.uuid) form.uuid = randomUuid()
@@ -365,6 +396,15 @@ const submit = async () => {
   if (form.protocol === 'hysteria2') {
     out.password = (form.password || '').trim()
     if ((form.obfs || '').trim()) out.obfs = (form.obfs || '').trim()
+  }
+  if (form.protocol === 'mixed') {
+    const username = (form.username || '').trim()
+    const password = (form.password || '').trim()
+    if (Boolean(username) !== Boolean(password)) return fail('serverErrMixedAuth')
+    if (username) {
+      out.username = username
+      out.password = password
+    }
   }
   if ((out.password !== undefined && !out.password) || (out.uuid !== undefined && !out.uuid)) return fail('serverErrCredential')
 

@@ -474,6 +474,11 @@ test('servers 校验:协议/端口/凭据/重复端口/保留端口', async () =
   assert.match(validateServers([{ ...ok[0], password: '' }]), /password/)
   assert.match(validateServers([{ id: 'v', name: 'V', protocol: 'vless', port: 8443, uuid: 'nope' }]), /uuid/)
   assert.match(validateServers([{ id: 'bad id', name: 'x', protocol: 'vless', port: 8443, uuid: '11111111-1111-4111-8111-111111111111' }]), /id/)
+  // mixed:不认证可以,认证要用户名密码成对
+  assert.equal(validateServers([{ id: 'm', name: 'M', protocol: 'mixed', port: 7080 }]), null)
+  assert.equal(validateServers([{ id: 'm', name: 'M', protocol: 'mixed', port: 7080, username: 'u', password: 'p' }]), null)
+  assert.match(validateServers([{ id: 'm', name: 'M', protocol: 'mixed', port: 7080, username: 'u' }]), /set together/)
+  assert.match(validateServers([{ id: 'm', name: 'M', protocol: 'mixed', port: 7080, password: 'p' }]), /set together/)
 })
 
 test('clientRoutes 校验:来源必须是 IP/网段,出口必填,id 不重复', async () => {
@@ -527,4 +532,9 @@ test('validateProfilePatch 校验前置自定义分流(一行一条规则、一�
   assert.match(bad({ rules: [{ type: 'ruleUrl', value: 'ftp://x/y', outbound: 'HK' }] }), /must be an http\(s\) URL/)
   // 规则集名会被拼进 .srs 路径,和站点集同一道路径穿越防线
   assert.match(bad({ rules: [{ type: 'geosite', value: '../x', outbound: 'HK' }] }), /ruleset name must match/)
+  // 端口:单个 / 范围 / 逗号分隔都行,写错的不收
+  assert.equal(validateProfilePatch({ routing: { custom: { rules: [{ type: 'port', value: '51820, 1000-2000', outbound: 'direct' }] } } }), null)
+  assert.match(bad({ rules: [{ type: 'port', value: '70000', outbound: 'HK' }] }), /ports like/)
+  assert.match(bad({ rules: [{ type: 'port', value: '2000-1000', outbound: 'HK' }] }), /ports like/)
+  assert.match(bad({ rules: [{ type: 'port', value: 'abc', outbound: 'HK' }] }), /ports like/)
 })

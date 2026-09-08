@@ -1,4 +1,4 @@
-import { serverFirewallProto } from '../engine/servers.mjs'
+import { serverFirewallProto, serverWanExposed } from '../engine/servers.mjs'
 
 const PANEL_RULE = 'firewall.openbox_panel'
 // 内核 DNS 入站 :7853,只放行 LAN(AdGuard Home / Pi-hole 等把上游指向路由器 IP:7853)
@@ -155,7 +155,8 @@ const deleteServerRules = async (ctx) => {
 // 共享网络:按当前启用的服务器对齐放行规则——多出来的删,缺的加,一样的不动。从 WAN 进来的
 // 对应端口放行。id 只允许 [A-Za-z0-9_-],写进 uci 段名前把 - 换成 _。
 export const applyServerPortRules = async (ctx, servers = [], { commit = true } = {}) => {
-  const desired = new Map(servers.map((s) => [
+  // mixed(SOCKS5 + HTTP)只给局域网用,不放 WAN
+  const desired = new Map(servers.filter(serverWanExposed).map((s) => [
     `${SERVER_RULE_PREFIX}${String(s.id).replace(/-/g, '_')}`,
     { name: `Open-Box Share ${s.name || s.id}`, src: 'wan', proto: serverFirewallProto(s), dest_port: s.port, target: 'ACCEPT' },
   ]))

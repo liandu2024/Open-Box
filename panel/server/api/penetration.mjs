@@ -4,7 +4,7 @@ import { builtinTags } from '../engine/user-groups.mjs'
 import { loadEntries } from './rulesets.mjs'
 import { decideDnsServer } from './route-test.mjs'
 import { buildRoute } from '../engine/routing.mjs'
-import { customOutboundTag, customPolicyActive, customRuleTag, normalizeRouting, routingFingerprint } from '../engine/routing-model.mjs'
+import { customOutboundTag, customPolicyActive, customRuleTag, normalizeRouting, parsePortSpec, routingFingerprint } from '../engine/routing-model.mjs'
 import { configMetaPath } from '../system/deploy.mjs'
 import { isPrivateOrLoopbackIp } from './net-guard.mjs'
 
@@ -21,6 +21,12 @@ const isCustomRule = (rule, custom, builtin) => {
     const tag = customRuleTag(r)
     // 规则集链接会编成域名 / IP 两份,任一被引用都算这一行
     if (tag) return Array.isArray(rule.rule_set) && rule.rule_set.some((t) => t === tag || t === `${tag}-ip`)
+    // 端口行:配置里是 port / port_range 两个字段,和这一行拆出来的对得上才算
+    if (r.type === 'port') {
+      const spec = parsePortSpec(r.value)
+      const same = (a, b) => JSON.stringify(a ?? []) === JSON.stringify(b ?? [])
+      return Boolean(spec) && same(rule.port, spec.port) && same(rule.port_range, spec.port_range)
+    }
     const key = CUSTOM_CONDITION_KEY[r.type]
     return Boolean(key) && Array.isArray(rule[key]) && rule[key].length === 1 && rule[key][0] === r.value
   })

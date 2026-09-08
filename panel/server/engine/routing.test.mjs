@@ -271,6 +271,8 @@ test('四种条件各自对到内核字段;geosite / 规则集链接进 rule_set
     [R({ type: 'domainKeyword', value: 'porn', outbound: 'HK' }), { domain_keyword: ['porn'], outbound: 'HK' }],
     [R({ type: 'ipCidr', value: '1.2.3.0/24', outbound: 'HK' }), { ip_cidr: ['1.2.3.0/24'], outbound: 'HK' }],
     [R({ type: 'geosite', value: 'openai', outbound: 'HK' }), { rule_set: ['geosite-openai'], outbound: 'HK' }],
+    // 端口(放行 WireGuard 之类):单个进 port,范围进 port_range,TCP / UDP 都算
+    [R({ type: 'port', value: '51820, 1000-2000', outbound: 'HK' }), { port: [51820], port_range: ['1000:2000'], outbound: 'HK' }],
   ]
   for (const [rule, expected] of cases) {
     const { route, rulesetTags } = build(customRules(rule), { knownOutbounds: known })

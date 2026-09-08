@@ -1,4 +1,4 @@
-import { customOutboundTag, customPolicyActive, customRuleTag, normalizeRouting, routeRulesetTags } from './routing-model.mjs'
+import { customOutboundTag, customPolicyActive, customRuleTag, normalizeRouting, parsePortSpec, routeRulesetTags } from './routing-model.mjs'
 
 // 一条策略的匹配条件 → 一条 sing-box 路由规则。
 // 同一条规则里的多个字段是「或」的关系(sing-box 规则内部各字段取并集),所以一条策略
@@ -23,6 +23,11 @@ const customRule = (rule, ruleLists, outbound) => {
   if (tag) {
     const tags = routeRulesetTags({ rulesets: [tag] }, ruleLists)
     return tags.length ? { rule_set: tags, outbound } : null
+  }
+  // 端口:TCP / UDP 都算,不限协议——放行 WireGuard 这种 UDP 也就是靠它
+  if (rule.type === 'port') {
+    const spec = parsePortSpec(rule.value)
+    return spec ? { ...spec, outbound } : null
   }
   const field = {
     domain: 'domain', domainSuffix: 'domain_suffix',

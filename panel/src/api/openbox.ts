@@ -38,7 +38,8 @@ export interface OpenboxRoutingPolicy {
 // 和站点集的区别是每一行各带一个出口:站点集整个集共用一条线路、还只能选到节点组,
 // 这里一行一条规则、一行一个出口,而且能选到具体节点。
 export interface OpenboxCustomRule {
-  type: 'domainSuffix' | 'domain' | 'domainKeyword' | 'ipCidr' | 'geosite' | 'geoip' | 'ruleUrl' | 'ruleset'
+  // port:目标端口(「51820」「1000-2000」,逗号分隔多个),只有前置自定义分流有这一档
+  type: 'domainSuffix' | 'domain' | 'domainKeyword' | 'ipCidr' | 'geosite' | 'geoip' | 'ruleUrl' | 'ruleset' | 'port'
   value: string
   // 这一行自己的出口:出站 tag(节点名或节点组名),或 direct / block 占位
   outbound: string
@@ -104,7 +105,8 @@ export interface OpenboxUpdatePlans {
 }
 
 // 「共享网络」里的一台服务器:本机开的一个入站(server/engine/servers.mjs)
-export type OpenboxServerProtocol = 'shadowsocks' | 'vless' | 'tuic' | 'hysteria2'
+// mixed:SOCKS5 + HTTP 共用一个端口,只给局域网用(server/engine/servers.mjs)
+export type OpenboxServerProtocol = 'shadowsocks' | 'vless' | 'tuic' | 'hysteria2' | 'mixed'
 export interface OpenboxServer {
   id: string
   enabled: boolean
@@ -120,6 +122,8 @@ export interface OpenboxServer {
   tls?: boolean
   // 仅 Hysteria2:salamander 混淆密码
   obfs?: string
+  // 仅 mixed:可选的认证用户名(和 password 成对)
+  username?: string
 }
 
 // 「终端分流」里的一条规则:这些来源 IP / 网段的全部流量走 outbound(server/engine/client-routes.mjs)

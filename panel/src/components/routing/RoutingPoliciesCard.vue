@@ -595,6 +595,7 @@ type RuleType =
   | 'geoip'
   | 'ruleUrl'
   | 'ruleset'
+  | 'port'
 const RULE_TYPES: { type: RuleType; labelKey: string; placeholderKey: string }[] = [
   {
     type: 'domainSuffix',
@@ -638,7 +639,16 @@ const RULE_TYPES: { type: RuleType; labelKey: string; placeholderKey: string }[]
     labelKey: 'routingPolicyRulesets',
     placeholderKey: 'routingPolicyRulesetsPlaceholder',
   },
+  // 目标端口:只有前置自定义分流有(放行 WireGuard 的 51820 之类)。站点集是按站点分的,
+  // 端口条件放进去没有意义
+  {
+    type: 'port',
+    labelKey: 'routingPolicyPort',
+    placeholderKey: 'routingPolicyRulePortPlaceholder',
+  },
 ]
+// 和服务端 parsePortSpec 同一套写法:51820 / 1000-2000,逗号或空格分隔
+const PORT_SPEC_PATTERN = /^\d{1,5}(-\d{1,5})?([,\s]+\d{1,5}(-\d{1,5})?)*[,\s]*$/
 const placeholderKey = (type: RuleType) =>
   RULE_TYPES.find((r) => r.type === type)?.placeholderKey || 'routingPolicyRuleDomainPlaceholder'
 
@@ -646,7 +656,10 @@ const placeholderKey = (type: RuleType) =>
 // 已经全覆盖,而且带搜索、带说明、能先看「详情」。它只剩兼容作用——老档案里存过别的
 // 前缀的名字,打开时才让它出现在自己那一行,换成别的类型之后就再也选不回来。
 const ruleTypeOptions = (current: RuleType) =>
-  RULE_TYPES.filter((r) => r.type !== 'ruleset' || current === 'ruleset')
+  RULE_TYPES.filter(
+    (r) =>
+      (r.type !== 'ruleset' || current === 'ruleset') && (r.type !== 'port' || editingCustom.value),
+  )
 
 interface RuleRow {
   // 列表渲染要一个稳定的 key:类型和值都会被改,不能拿它们当 key
@@ -846,6 +859,10 @@ const saveDraft = async () => {
       showNotification({ content: 'routingRulesetInvalidChars', type: 'alert-error' })
       return
     }
+    if (kept.some((r) => r.type === 'port' && !PORT_SPEC_PATTERN.test(r.value.trim()))) {
+      showNotification({ content: 'routingCustomPortInvalid', type: 'alert-error' })
+      return
+    }
     const customRules: OpenboxCustomRule[] = kept.map((r) => ({
       type: r.type as OpenboxCustomRule['type'],
       value: r.value.trim(),
@@ -894,7 +911,8 @@ const saveDraft = async () => {
       collected.rulesets.push(`${row.type}-${value}`)
     else if (row.type === 'ruleset') collected.rulesets.push(value)
     else if (row.type === 'ruleUrl') collected.ruleUrls.push(value)
-    else collected[row.type].push(value)
+    // 端口这一档只有前置自定义分流有(见 ruleTypeOptions),站点集的行里不会出现
+    else if (row.type !== 'port') collected[row.type].push(value)
   }
   // 规则集 tag 会被拼进 .srs 路径,和服务端同一道校验(路径穿越防线,不是排版讲究)
   if (collected.rulesets.some((tag) => !RULESET_TAG_PATTERN.test(tag))) {

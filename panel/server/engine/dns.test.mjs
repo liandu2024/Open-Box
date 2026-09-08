@@ -229,11 +229,12 @@ test('前置自定义分流:只按 IP 匹配的行不进 DNS(解析时还没有 
         rules: [
           { type: 'ipCidr', value: '1.2.3.0/24', outbound: 'VW | 香港-01' },
           { type: 'geoip', value: 'cn', outbound: 'direct' },
+          { type: 'port', value: '51820', outbound: 'VW | 香港-01' },
         ],
       },
     }),
     { groupTags: ['direct'] },
   )
   assert.ok(!dns.servers.some((x) => x.tag.startsWith('dns-custom')))
-  assert.ok(!dns.rules.some((r) => r.ip_cidr))
+  assert.ok(!dns.rules.some((r) => r.ip_cidr || r.port || r.port_range))
 })

@@ -1,7 +1,7 @@
 import express from 'express'
 import { RESERVED_PORTS, SERVER_PROTOCOLS, SS_METHODS } from '../engine/servers.mjs'
 import { isIpOrCidr } from '../engine/client-routes.mjs'
-import { CUSTOM_RULE_TYPES, FALLBACK_TAG, normalizeRouting } from '../engine/routing-model.mjs'
+import { CUSTOM_RULE_TYPES, FALLBACK_TAG, normalizeRouting, parsePortSpec } from '../engine/routing-model.mjs'
 import { ICON_SCALE_LIMIT, builtinTags, normalizeGroups } from '../engine/user-groups.mjs'
 import { DNSMASQ_OUTBOUND_TAG } from '../engine/config.mjs'
 
@@ -240,6 +240,11 @@ export const validateServers = (servers) => {
     if ('address' in s && !isString(s.address)) return 'servers[].address must be a string'
     if ('tls' in s && !isBoolean(s.tls)) return 'servers[].tls must be a boolean'
     if ('obfs' in s && !isString(s.obfs)) return 'servers[].obfs must be a string'
+    if ('username' in s && !isString(s.username)) return 'servers[].username must be a string'
+    // mixed 的认证可选,但用户名和密码要成对:只有其中一个,客户端那边没法填
+    if (s.protocol === 'mixed' && Boolean(s.username) !== Boolean(s.password)) {
+      return 'servers[].username and password must be set together for mixed'
+    }
     const needPassword = s.protocol === 'shadowsocks' || s.protocol === 'tuic' || s.protocol === 'hysteria2'
     if (needPassword && (!isString(s.password) || !s.password)) return `servers[].password is required for ${s.protocol}`
     const needUuid = s.protocol === 'vless' || s.protocol === 'tuic'
@@ -278,6 +283,9 @@ const validateCustomPolicy = (custom) => {
       if (!isString(r.outbound) || !r.outbound.trim()) return 'routing.custom.rules[].outbound is required'
       if (r.type === 'ruleUrl' && !/^https?:\/\//i.test(r.value.trim())) {
         return 'routing.custom.rules[].value must be an http(s) URL when type is ruleUrl'
+      }
+      if (r.type === 'port' && !parsePortSpec(r.value)) {
+        return 'routing.custom.rules[].value must be ports like 51820 or 1000-2000 (comma separated) when type is port'
       }
       if (r.type === 'geosite' || r.type === 'geoip' || r.type === 'ruleset') {
         const tag = r.type === 'ruleset' ? r.value.trim() : `${r.type}-${r.value.trim()}`

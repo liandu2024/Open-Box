@@ -82,9 +82,33 @@ export const CUSTOM_POLICY_ICON = 'misc:pin'
 //   geosite/geoip  官方规则集(值写 cn,存下去是 geosite-cn)
 //   ruleUrl        规则集链接(部署时下回来编译)
 //   ruleset        老档案里可能出现的、不带前缀的规则集名
+//   port           目标端口(只有前置自定义分流有:放行 WireGuard 的 51820 之类,GitHub #2)
 export const CUSTOM_RULE_TYPES = Object.freeze([
-  'domainSuffix', 'domain', 'domainKeyword', 'ipCidr', 'geosite', 'geoip', 'ruleUrl', 'ruleset',
+  'domainSuffix', 'domain', 'domainKeyword', 'ipCidr', 'geosite', 'geoip', 'ruleUrl', 'ruleset', 'port',
 ])
+
+// 端口这一档的值:「51820」「1000-2000」,多个用逗号隔开。拆成 sing-box 的 port / port_range
+// 两个字段(范围写法是 "1000:2000");有一个写错整行不要,返回 null
+export const parsePortSpec = (value) => {
+  const port = []
+  const port_range = []
+  const tokens = String(value || '').split(/[,\s]+/).filter(Boolean)
+  if (!tokens.length) return null
+  const inRange = (n) => Number.isInteger(n) && n >= 1 && n <= 65535
+  for (const token of tokens) {
+    const m = /^(\d{1,5})(?:-(\d{1,5}))?$/.exec(token)
+    if (!m) return null
+    const a = Number(m[1])
+    const b = m[2] === undefined ? a : Number(m[2])
+    if (!inRange(a) || !inRange(b) || a > b) return null
+    if (a === b) port.push(a)
+    else port_range.push(`${a}:${b}`)
+  }
+  const spec = {}
+  if (port.length) spec.port = port
+  if (port_range.length) spec.port_range = port_range
+  return spec
+}
 
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0
 const strList = (v) => (Array.isArray(v) ? v.filter(isNonEmptyString).map((s) => s.trim()) : [])
@@ -173,6 +197,8 @@ const normalizeCustomRule = (raw) => {
   const value = raw.value.trim()
   // 规则集链接必须是个网址,否则部署时按它去下载会直接失败
   if (raw.type === 'ruleUrl' && !/^https?:\/\//i.test(value)) return null
+  // 端口写错的行同样丢掉:进了配置内核起不来
+  if (raw.type === 'port' && !parsePortSpec(value)) return null
   return { type: raw.type, value, outbound: raw.outbound.trim() }
 }
 

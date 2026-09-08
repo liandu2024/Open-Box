@@ -169,6 +169,7 @@ const PROTOCOL_LABEL: Record<OpenboxServerProtocol, string> = {
   vless: 'VLESS',
   tuic: 'TUIC',
   hysteria2: 'Hysteria2',
+  mixed: 'SOCKS5 / HTTP',
 }
 const protocolLabel = (p: OpenboxServerProtocol) => PROTOCOL_LABEL[p] || p
 

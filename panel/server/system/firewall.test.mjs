@@ -63,8 +63,11 @@ test('共享网络放行:先清掉旧的 openbox_srv_*,再按启用的服务器�
   await applyServerPortRules(ctx, [
     { id: 'ab-1', name: 'SS', protocol: 'shadowsocks', port: 8388 },
     { id: 'hy', name: 'HY', protocol: 'hysteria2', port: 8446 },
+    // mixed(SOCKS5 + HTTP)只给局域网用,不放 WAN
+    { id: 'mx', name: 'MX', protocol: 'mixed', port: 7080 },
   ])
   const cmds = ctx.calls.map((c) => [c.cmd, ...c.args].join(' '))
+  assert.ok(!cmds.some((c) => c.includes('firewall.openbox_srv_mx')), cmds.join('\n'))
   assert.ok(cmds.includes('uci -q delete firewall.openbox_srv_old'))
   assert.ok(cmds.includes('uci set firewall.openbox_srv_ab_1=rule'))
   assert.ok(cmds.includes('uci set firewall.openbox_srv_ab_1.proto=tcp udp'))

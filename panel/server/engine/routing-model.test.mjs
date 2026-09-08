@@ -10,6 +10,7 @@ import {
   effectiveOutbound,
   normalizeRouting,
   policyOutboundOptions,
+  parsePortSpec,
 } from './routing-model.mjs'
 
 const GROUPS = ['所有-自动', '香港-自动']
@@ -221,6 +222,7 @@ test('前置自定义分流:默认值、生效条件、坏行丢弃', () => {
         { type: 'domain', value: '', outbound: 'HK' },          // 没填值
         { type: '不认识的类型', value: 'x', outbound: 'HK' },
         { type: 'ruleUrl', value: 'not-a-url', outbound: 'HK' },
+        { type: 'port', value: '99999', outbound: 'HK' },     // 端口写错
       ],
     },
   }).custom
@@ -239,4 +241,15 @@ test('前置自定义分流:一行引用的规则集名', () => {
 test('前置自定义分流里的规则集链接进入待下载名单', () => {
   const routing = { custom: { rules: [{ type: 'ruleUrl', value: 'https://example.com/list.txt', outbound: 'HK' }] }, policies: [] }
   assert.ok(collectRuleListUrls(routing).some((x) => x.url === 'https://example.com/list.txt'))
+})
+
+test('端口这一档的值:单个进 port,范围进 port_range,逗号 / 空格分隔;越界、反向、非数字整体判错', () => {
+  assert.deepEqual(parsePortSpec('51820'), { port: [51820] })
+  assert.deepEqual(parsePortSpec('1000-2000'), { port_range: ['1000:2000'] })
+  assert.deepEqual(parsePortSpec('51820, 443 1000-2000'), { port: [51820, 443], port_range: ['1000:2000'] })
+  assert.deepEqual(parsePortSpec('80-80'), { port: [80] })
+  assert.deepEqual(parsePortSpec('80,'), { port: [80] }) // 末尾多个逗号不较真
+  for (const bad of ['', '0', '65536', '2000-1000', 'abc', '80-', '1-2-3']) {
+    assert.equal(parsePortSpec(bad), null, bad)
+  }
 })

@@ -3,6 +3,7 @@
 //   vless://uuid@host:port?encryption=none&security=tls&sni=…&allowInsecure=1&type=tcp#name
 //   tuic://uuid:password@host:port?congestion_control=bbr&alpn=h3&allow_insecure=1&sni=…#name
 //   hysteria2://password@host:port/?insecure=1&sni=…[&obfs=salamander&obfs-password=…]#name
+//   socks5://[user:pass@]host:port#name(mixed:同一个口也接 HTTP 代理)
 // TLS 是自签的(server/system/tls-keypair.mjs),所以链接里都带上"允许不安全证书"。
 import type { OpenboxServer } from '@/api/openbox'
 
@@ -31,6 +32,10 @@ export const buildShareLink = (s: OpenboxServer): string => {
     case 'hysteria2': {
       const obfs = s.obfs ? `&obfs=salamander&obfs-password=${encodeURIComponent(s.obfs)}` : ''
       return `hysteria2://${encodeURIComponent(s.password || '')}@${host}:${s.port}/?insecure=1&sni=${TLS_SERVER_NAME}${obfs}#${name}`
+    }
+    case 'mixed': {
+      const auth = s.username ? `${encodeURIComponent(s.username)}:${encodeURIComponent(s.password || '')}@` : ''
+      return `socks5://${auth}${host}:${s.port}#${name}`
     }
     default:
       return ''

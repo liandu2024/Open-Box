@@ -34,8 +34,9 @@ const proxyServerFor = (server, tag, detour) => ({ type: 'tcp', tag, server, det
 
 // 前置自定义分流的一行 → 一条 DNS 规则的匹配部分。只按 IP 分流的行(ip_cidr / geoip /
 // 只编出 IP 那份的规则集链接)不进 DNS:解析的时候还没有 IP,拿什么都匹配不上。
+// 端口同理:DNS 查询里没有目标端口。
 const customDnsMatch = (rule, ruleLists) => {
-  if (rule.type === 'ipCidr' || rule.type === 'geoip') return null
+  if (rule.type === 'ipCidr' || rule.type === 'geoip' || rule.type === 'port') return null
   const tag = customRuleTag(rule)
   if (tag) {
     const tags = dnsRulesetTags({ rulesets: [tag] }, ruleLists)
