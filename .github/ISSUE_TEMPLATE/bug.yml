@@ -1,0 +1,74 @@
+name: 问题反馈 / Bug report
+description: 起不来、连不上、显示不对……任何不符合预期的行为
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈。下面带 * 的都是必填:没有版本、固件和日志,绝大多数问题定位不了,只能来回追问。
+        **最省事的办法**:面板 → 设置 → 后端 → 「导出诊断包」,把生成的文件拖进下面的日志框。诊断包已去掉密码、密钥和节点地址。
+  - type: input
+    id: version
+    attributes:
+      label: Open-Box 版本
+      description: 面板左下角或 设置 → 后端 里显示,形如 v0.1.134
+      placeholder: v0.1.134
+    validations:
+      required: true
+  - type: input
+    id: firmware
+    attributes:
+      label: 固件与版本
+      description: OpenWrt / iStoreOS / ImmortalWrt 等,连同版本号;LuCI 概览页第一行就是
+      placeholder: iStoreOS 24.10.8 2026073111
+    validations:
+      required: true
+  - type: dropdown
+    id: arch
+    attributes:
+      label: 架构
+      options:
+        - x86_64
+        - aarch64 / arm64
+        - 不确定(在 SSH 里执行 uname -m)
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: 设备型号
+      placeholder: R68S / ZTE CT340 / Proxmox 虚拟机 ……
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: 发生了什么
+      description: 做了什么操作、期望看到什么、实际看到什么。截图可以直接拖进来。
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志 / 诊断包
+      description: 把「导出诊断包」生成的文件拖进来;或者粘贴 面板 → 日志 页的内容,以及 SSH 里 `logread | grep -iE "sing-box|open-box"` 的输出。请贴文字,不要只贴日志截图。
+      render: text
+    validations:
+      required: true
+  - type: checkboxes
+    id: env
+    attributes:
+      label: 环境情况
+      description: 有就勾上,这几项经常是原因
+      options:
+        - label: 同时装了 OpenClash / PassWall / Nikki / ShellCrash 等其他代理插件
+        - label: 开启了 IPv6
+        - label: 双 WAN / mwan3
+        - label: 路由器上还跑着 Docker
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: 确认
+      options:
+        - label: 我已经升级到最新版本再复现过
+          required: true

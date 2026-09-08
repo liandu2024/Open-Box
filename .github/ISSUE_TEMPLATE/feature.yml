@@ -1,0 +1,18 @@
+name: 功能建议 / Feature request
+description: 想要一个还没有的功能
+labels: [enhancement]
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: 想解决什么问题
+      description: 先说场景,再说想要的做法。现在是怎么绕过去的也可以写。
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 当前使用的 Open-Box 版本
+      placeholder: v0.1.134
+    validations:
+      required: true
