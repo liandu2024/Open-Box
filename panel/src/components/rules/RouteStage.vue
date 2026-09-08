@@ -1,6 +1,6 @@
 <template>
   <!-- 访问路径的一站(RouteComparison 里左右两列各五站,同一站左右在同一行)。
-       站号圆圈在左,主线从圆圈往上接到上一站;顶端那站不画线。待定用虚线 + 琥珀色,跳过用灰色虚线。
+       站号圆圈在左、和第一行大字垂直居中,主线贯穿整格把相邻两站连成一根;待定用虚线 + 琥珀色,跳过用灰色虚线。
        整格是网格的一个单元:左右两列同一站共享一行,展开详情后另一列的同一站会跟着一起变高。 -->
   <div
     class="route-cell relative min-w-0 border-x pl-12 pr-3 pt-2 pb-3"
@@ -96,11 +96,17 @@ const badgeClass = computed(() => {
   border-bottom-left-radius: var(--app-radius-box, 1rem);
   border-bottom-right-radius: var(--app-radius-box, 1rem);
 }
+/* 几何:圆圈中心和主线都在 --route-x 这条竖线上;圆圈垂直居中对齐第一行大字(格子上内边距 0.5rem +
+   小标题行 1.125rem + 标题下边距 0.25rem + 大字行高 1.25rem 的一半 − 圆圈半径 0.875rem = 1.625rem) */
+.route-cell {
+  --route-x: calc(0.9rem + 0.875rem);
+  --route-marker-top: calc(1.625rem + 2px);
+}
 /* 站号:紧凑的小圆圈,实底(主线从它背后穿过) */
 .route-marker {
   position: absolute;
   left: 0.9rem;
-  top: 0.55rem;
+  top: var(--route-marker-top);
   z-index: 1;
   display: grid;
   place-items: center;
@@ -118,7 +124,7 @@ const badgeClass = computed(() => {
    最底下那站只画到圆圈中心为止,最顶上那站从圆圈中心往下画 */
 .route-line {
   position: absolute;
-  left: calc(0.9rem + 0.875rem - 0.5px);
+  left: calc(var(--route-x) - 0.5px);
   top: 0;
   bottom: 0;
   width: 1px;
@@ -126,24 +132,27 @@ const badgeClass = computed(() => {
 }
 .route-cell-first .route-line {
   bottom: auto;
-  height: calc(0.55rem + 0.875rem);
+  height: calc(var(--route-marker-top) + 0.875rem);
 }
 .route-cell-last .route-line {
-  top: calc(0.55rem + 0.875rem);
+  top: calc(var(--route-marker-top) + 0.875rem);
 }
 .route-cell-first.route-cell-last .route-line {
   display: none;
 }
+ /* 向上的箭头:固定宽度的小盒子,中心正好压在主线上,放在本站圆圈正上方 */
 .route-rise {
   position: absolute;
-  left: calc(0.9rem + 0.875rem - 0.35rem);
-  top: -0.6rem;
+  left: var(--route-x);
+  top: calc(var(--route-marker-top) - 1rem);
   z-index: 1;
+  width: 1rem;
+  transform: translateX(-50%);
+  text-align: center;
   font-size: 0.8rem;
   line-height: 1;
   color: color-mix(in srgb, var(--color-success) 70%, transparent);
   background-color: var(--color-base-100);
-  padding: 0 1px;
 }
 .route-pending .route-marker {
   border-color: var(--color-warning);
