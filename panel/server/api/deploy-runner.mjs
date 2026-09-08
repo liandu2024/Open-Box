@@ -116,8 +116,10 @@ export const firstLayerChanged = async (ctx, paths, store, selections) => {
     const sortedSets = (v) => [...(Array.isArray(v) ? v : [])].sort().join('\n')
     if (Boolean(prevBypass.enabled) !== bypass.enabled || sortedSets(prevBypass.sets) !== sortedSets(bypass.sets)) return true
     if (prev.dnsMode === 'dnsmasq') {
+      // 这里只能算到计划阶段(规则集要到部署时才展开),所以和元数据里计划阶段的模式比;老元数据
+      // 没有这个字段时退回和实际模式比
       const forward = dnsmasqForwardPlan(profile.routing, members, builtin, selections || {})
-      if (forward.mode !== prev.dnsForward) return true
+      if (forward.mode !== (prev.dnsForwardPlanned || prev.dnsForward)) return true
     }
     return false
   } catch {

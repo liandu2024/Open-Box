@@ -17,6 +17,10 @@ DNSMASQ_BACKUP="$DATA/dnsmasq-backup.txt"
 # 与 dns-takeover.mjs 的 dnsTakeoverStatePath 一致:面板最近一次接管往 dnsmasq 写了什么
 # (每行 server=<值>,全局接管再加一行 noresolv=1)。开机时照抄,见 openbox_apply_takeover。
 DNSMASQ_TAKEOVER="$DATA/dnsmasq-takeover.txt"
+# 与 dns-takeover.mjs 的 dnsForwardFilePath / DNS_FORWARD_CONF_NAME 一致:按域名转发时的转发文件
+# (server=/域名/127.0.0.1#7853 一行一条)。正本在 data/,开机复制进 dnsmasq 的 conf-dir(在 /tmp,重启就没了)
+DNSMASQ_FORWARD_SRC="$DATA/dnsmasq-forward.conf"
+DNSMASQ_FORWARD_CONF=open-box.conf
 # 与 system/deploy.mjs 的 configMetaPath 一致:面板每次落盘 config.json 时旁边写的元数据,
 # 里面的 dnsMode 说明这份配置是哪种 DNS 模式。
 CONF_META="$OPENBOX_ROOT/etc/config.meta.json"
@@ -35,6 +39,17 @@ openbox_dnsmasq_mode() {
 		return $?
 	fi
 	grep -qE "\"tag\": *\"$DNSMASQ_OUTBOUND_TAG\"" "$CONF" 2>/dev/null
+}
+
+# dnsmasq 读的 conf-dir:uci 设了 confdir 就用它(逗号后面是过滤规则),没设按 dnsmasq 初始化脚本的默认
+# /tmp/dnsmasq.<段名>.d。和 dns-takeover.mjs 的 dnsmasqConfDir 同一个算法
+openbox_dnsmasq_confdir() {
+	_ob_dir="$(uci -q get dhcp.@dnsmasq[0].confdir | cut -d, -f1)"
+	case "$_ob_dir" in
+		/*) echo "$_ob_dir"; return 0 ;;
+	esac
+	_ob_sec="$(uci -q show dhcp.@dnsmasq[0] | sed -n 's/^dhcp\.\([^.=]*\)=dnsmasq.*/\1/p' | head -n 1)"
+	echo "/tmp/dnsmasq${_ob_sec:+.$_ob_sec}.d"
 }
 
 # procd 里内核实例当前的 PID;没在跑(崩了、或重试用完放弃)就是空
@@ -110,20 +125,43 @@ openbox_apply_takeover() {
 	if [ -z "$_ob_plan" ] && [ -f "$CONF_META" ] && grep -qE "\"dnsForward\": *\"none\"" "$CONF_META" 2>/dev/null; then
 		return 0
 	fi
-	if [ -z "$_ob_want" ]; then
-		_ob_want=" $OPENBOX_DNS_UPSTREAM"
-		_ob_want_noresolv=1
-	fi
-	_ob_have=""
-	for _ob_server in $(uci -q get dhcp.@dnsmasq[0].server); do
-		case "$_ob_server" in
-			*"$OPENBOX_DNS_UPSTREAM") _ob_have="$_ob_have $_ob_server" ;;
-		esac
-	done
 	_ob_have_noresolv="$(uci -q get dhcp.@dnsmasq[0].noresolv)"
 	[ "$_ob_have_noresolv" = "1" ] || _ob_have_noresolv=""
+	_ob_confdir="$(openbox_dnsmasq_confdir)"
+	_ob_installed="$_ob_confdir/$DNSMASQ_FORWARD_CONF"
+	# 按域名转发:uci 里是用户自己的上游,一个字不碰;只保证转发文件在 conf-dir 里(那是 /tmp,开机是空的)
+	# 且和正本一致、noresolv 和状态文件一致。都对就不重启 dnsmasq
+	if [ "$_ob_plan" = "domains" ]; then
+		_ob_restart=""
+		if [ -f "$DNSMASQ_FORWARD_SRC" ]; then
+			if [ ! -f "$_ob_installed" ] || [ "$(md5sum < "$DNSMASQ_FORWARD_SRC")" != "$(md5sum < "$_ob_installed")" ]; then
+				mkdir -p "$_ob_confdir"
+				cp "$DNSMASQ_FORWARD_SRC" "$_ob_installed"
+				_ob_restart=1
+			fi
+		fi
+		if [ "$_ob_want_noresolv" != "$_ob_have_noresolv" ]; then
+			if [ -n "$_ob_want_noresolv" ]; then
+				uci -q set dhcp.@dnsmasq[0].noresolv=1
+			else
+				uci -q delete dhcp.@dnsmasq[0].noresolv
+			fi
+			uci -q commit dhcp
+			_ob_restart=1
+		fi
+		[ -n "$_ob_restart" ] && /etc/init.d/dnsmasq restart >/dev/null 2>&1
+		return 0
+	fi
+	# 全量接管(plan=all / 老版本没记录):上游只能剩内核这一个,noresolv=1。比的是完整列表——只看
+	# 我们自己的条目在不在,列表里混着原上游也会被当成"已经到位"而放过(复审 S1):dnsmasq 会挑
+	# "最快的"那台去问,走代理的域名就被原上游答了
+	[ -z "$_ob_want" ] && _ob_want=" $OPENBOX_DNS_UPSTREAM"
+	_ob_want_noresolv=1
+	_ob_have="$(uci -q get dhcp.@dnsmasq[0].server)"
+	_ob_stale=""
+	[ -f "$_ob_installed" ] && _ob_stale=1
 	if [ "$(printf '%s\n' $_ob_want | sort)" = "$(printf '%s\n' $_ob_have | sort)" ] \
-		&& [ "$_ob_want_noresolv" = "$_ob_have_noresolv" ]; then
+		&& [ "$_ob_want_noresolv" = "$_ob_have_noresolv" ] && [ -z "$_ob_stale" ]; then
 		return 0
 	fi
 	# 备份文件是 stop 清理与面板还原的依据:第一次接管前先留底
@@ -131,24 +169,13 @@ openbox_apply_takeover() {
 		mkdir -p "$DATA"
 		uci -q show dhcp.@dnsmasq[0] > "$DNSMASQ_BACKUP"
 	fi
-	# 全量接管(plan=all / 老版本没记录):上游只能剩内核这一个——留着原上游的话 dnsmasq 会挑"最快的"
-	# 那台去问,走代理的域名就被原上游答了。开机时 K10 stop 已按备份把原上游放回来,这里再删掉,
-	# 备份(上面刚留底)里仍有原上游,下次 stop 照样还原。按域名转发只摘换我们自己的条目,用户上游不动
-	if [ "$_ob_plan" = "domains" ]; then
-		for _ob_server in $_ob_have; do
-			uci -q del_list dhcp.@dnsmasq[0].server="$_ob_server"
-		done
-	else
-		uci -q delete dhcp.@dnsmasq[0].server
-	fi
+	# 上一次 domains 留下的转发文件在全量模式下没有意义,一并拿掉
+	[ -n "$_ob_stale" ] && rm -f "$_ob_installed"
+	uci -q delete dhcp.@dnsmasq[0].server
 	for _ob_server in $_ob_want; do
 		uci -q add_list dhcp.@dnsmasq[0].server="$_ob_server"
 	done
-	if [ -n "$_ob_want_noresolv" ]; then
-		uci -q set dhcp.@dnsmasq[0].noresolv=1
-	else
-		uci -q delete dhcp.@dnsmasq[0].noresolv
-	fi
+	uci -q set dhcp.@dnsmasq[0].noresolv=1
 	uci -q commit dhcp
 	/etc/init.d/dnsmasq restart >/dev/null 2>&1
 	echo "openbox: dnsmasq upstream re-pointed to sing-box ($_ob_want )" >&2
@@ -237,6 +264,14 @@ start_service() {
 # 仅在确有变更时才 commit/重启 dnsmasq 与 firewall:默认 hijack 模式从不碰 dnsmasq,
 # 无脑 commit 既会造成一次无意义的全 LAN 解析瞬断,还会顺带提交用户在别处暂存的改动。
 openbox_cleanup() {
+	# 按域名转发的转发文件(在 dnsmasq 的 conf-dir 里)先拿掉:它指向的内核马上就没了。有备份的话下面
+	# 的 uci 还原会一起重启 dnsmasq;没有备份(domains 期间 uci 本来就是用户的)就单独重启一次
+	_ob_installed="$(openbox_dnsmasq_confdir)/$DNSMASQ_FORWARD_CONF"
+	_ob_had_forward=""
+	if [ -f "$_ob_installed" ]; then
+		rm -f "$_ob_installed"
+		_ob_had_forward=1
+	fi
 	# 仅当我们确实接管过 dnsmasq 时才动它:备份文件存在 <=> 接管发生过。
 	# hijack 模式从不碰 dnsmasq,此处必须完全不作为,否则会清掉用户自己设的
 	# noresolv(AdGuard Home / Pi-hole 之类会自行设置)、或者仅因用户自己配置了
@@ -283,7 +318,10 @@ openbox_cleanup() {
 			fi
 		else
 			rm -f "$DNSMASQ_BACKUP"
+			[ -n "$_ob_had_forward" ] && /etc/init.d/dnsmasq restart >/dev/null 2>&1
 		fi
+	elif [ -n "$_ob_had_forward" ]; then
+		/etc/init.d/dnsmasq restart >/dev/null 2>&1
 	fi
 
 	uci -q delete firewall.openbox_v6block

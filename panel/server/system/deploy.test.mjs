@@ -424,3 +424,38 @@ test('config.meta.json 记下第一层的判定:DNS 转发计划、入口原生�
   // 全部直连时 dnsmasq 不被接管:没有 add_list 127.0.0.1#7853
   assert.ok(!cmds(ctx).some((c) => c.includes('add_list') && c.includes('127.0.0.1#7853')))
 })
+
+test('部署时把走代理站点集的 geosite 解码进转发名单:元数据记实际 domains、条目数和超集说明;解不开就 all 并说明(第三轮 阶段 2)', async () => {
+  const withRulesets = (json) => {
+    const ctx = okCtx({ 'uci -q show dhcp.@dnsmasq[0]': { code: 0, stdout: 'dhcp.cfg=dnsmasq\n' } })
+    ctx.files[`${paths.rulesetDir}/geosite-youtube.srs`] = 'srs'
+    ctx.files[`${paths.dataDir}/tmp/geosite-youtube.dns-forward.json`] = JSON.stringify(json)
+    return ctx
+  }
+  const profile = {
+    ipv6: false, dns: { mode: 'dnsmasq' }, tun: { autoRedirect: true },
+    routing: { fallbackDefault: 'direct', policies: [{ id: 'y', name: 'Youtube', default: '香港-自动', rulesets: ['geosite-youtube'] }, { id: 'cn', name: '国内', default: 'direct', rulesets: ['geoip-cn'] }] },
+  }
+  const cfg = { ...config, outbounds: [{ type: 'direct', tag: '直连' }, { type: 'selector', tag: '香港-自动', outbounds: ['直连'] }, { type: 'selector', tag: '其他', outbounds: ['直连', '香港-自动'], default: '直连' }] }
+  const ctx = withRulesets({ rules: [{ domain_suffix: ['youtube.com', 'googlevideo.com'], domain_regex: ['^r+[0-9]+\\.googlevideo\\.com$'] }] })
+  const r = await deployConfig(ctx, paths, { config: cfg, profile })
+  assert.equal(r.ok, true, r.message)
+  const meta = JSON.parse(ctx.writes.filter((w) => w.path === configMetaPath(paths)).pop().content)
+  assert.equal(meta.firstLayer.dnsForwardPlanned, 'domains')
+  assert.equal(meta.firstLayer.dnsForward, 'domains')
+  assert.equal(meta.firstLayer.dnsForwardDomains, 2)
+  assert.deepEqual(meta.firstLayer.dnsForwardExpanded, ['geosite-youtube:2'])
+  assert.deepEqual(meta.firstLayer.dnsForwardSuperset, ['geosite-youtube:googlevideo.com'])
+  // 转发文件写了、装进了 conf-dir;uci 列表没动
+  assert.ok(ctx.writes.some((w) => w.path === '/tmp/dnsmasq.cfg.d/open-box.conf' && /server=\/youtube\.com\/127\.0\.0\.1#7853/.test(w.content)))
+  assert.ok(!cmds(ctx).some((c) => c.includes('add_list dhcp.@dnsmasq[0].server')))
+  // 关键词展不开 → 实际 all,元数据记 all + 原因,计划阶段仍是 domains
+  const ctx2 = withRulesets({ rules: [{ domain_keyword: ['youtube'] }] })
+  const r2 = await deployConfig(ctx2, paths, { config: cfg, profile })
+  assert.equal(r2.ok, true, r2.message)
+  const meta2 = JSON.parse(ctx2.writes.filter((w) => w.path === configMetaPath(paths)).pop().content)
+  assert.equal(meta2.firstLayer.dnsForwardPlanned, 'domains')
+  assert.equal(meta2.firstLayer.dnsForward, 'all')
+  assert.match(meta2.firstLayer.dnsForwardReason, /geosite-youtube.*关键词/)
+  assert.ok(cmds(ctx2).includes('uci add_list dhcp.@dnsmasq[0].server=127.0.0.1#7853'))
+})

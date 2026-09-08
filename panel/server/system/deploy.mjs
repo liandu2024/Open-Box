@@ -2,6 +2,7 @@ import { detectConflicts } from './conflicts.mjs'
 import { validateConfigObject, attributeBadNodes } from './validate.mjs'
 import { restartService, stopService, serviceStatus } from './service.mjs'
 import { applyDnsTakeover, restoreDnsTakeover, dnsTakeoverBackupPath } from './dns-takeover.mjs'
+import { expandDnsForward } from './dns-forward.mjs'
 import { dnsmasqForwardPlan, nativeBypassPlan, normalizeRouting, routingFingerprint } from '../engine/routing-model.mjs'
 import { normalizeClientRoutes } from '../engine/client-routes.mjs'
 import { dnsPolicyClasses } from '../engine/dns.mjs'
@@ -143,7 +144,10 @@ export const deployConfig = async (ctx, paths, { config, profile, userGroups, fe
     // 第一层的两个判定(和 engine/config.mjs 生成 tun 入站、下面的 DNS 接管用的是同一份计算):
     // DNS 转发计划、入口原生旁路。落进元数据,规则页和诊断包都拿它说明"直连到底进没进内核"
     const clientRoutes = normalizeClientRoutes(profile.clientRoutes)
-    const dnsForward = dnsmasqForwardPlan(profile.routing, policyMembers, builtin, selections || {})
+    // 计划阶段(纯函数)→ 展开阶段(把走代理的规则集解码成域名,展不开就降成 all)→ 应用阶段
+    // (可能再降级)。元数据记的是最终实际执行的那份;计划阶段的模式另存一份,选择同步时按同口径比
+    const dnsPlanned = dnsmasqForwardPlan(profile.routing, policyMembers, builtin, selections || {})
+    let dnsForward = dnsMode === 'dnsmasq' ? await expandDnsForward(ctx, paths, dnsPlanned) : dnsPlanned
     const nativeBypass = nativeBypassPlan(profile.routing, { members: policyMembers, builtin, selections: selections || {}, clientRoutes })
     // 配置 + 元数据一起写;auto_redirect 降级重试时再写一遍
     const writeConfigAndMeta = async (cfg) => {
@@ -166,6 +170,13 @@ export const deployConfig = async (ctx, paths, { config, profile, userGroups, fe
             dnsMode,
             dnsForward: dnsMode === 'dnsmasq' ? dnsForward.mode : dnsMode === 'hijack' ? 'all' : 'none',
             dnsForwardReason: dnsMode === 'dnsmasq' ? dnsForward.reason : '',
+            // 计划阶段的模式(规则集还没展开):api/deploy-runner.mjs 的 firstLayerChanged 只能算到这一步,
+            // 要和它比,不能和展开 / 应用后的实际模式比
+            dnsForwardPlanned: dnsMode === 'dnsmasq' ? dnsPlanned.mode : dnsMode === 'hijack' ? 'all' : 'none',
+            // 转发名单的规模和超集说明(正则只能按字面后缀整段交给内核)
+            dnsForwardDomains: dnsMode === 'dnsmasq' && dnsForward.mode === 'domains' ? dnsForward.domains.length : 0,
+            dnsForwardExpanded: (dnsForward.expanded || []).map((x) => `${x.tag}:${x.count}`),
+            dnsForwardSuperset: (dnsForward.superset || []).map((x) => `${x.tag}:${x.suffix}`),
             // 开 auto_redirect 时内核把集合写成 nft 集合在入口 return;纯 tun 模式下等价于加进路由表的排除项
             nativeBypass: nativeBypass.enabled ? { ...nativeBypass, via: autoRedirect ? 'nft' : 'route' } : nativeBypass,
             dnsSourceRules: dnsMode === 'hijack' && clientRoutes.length > 0,
@@ -185,7 +196,12 @@ export const deployConfig = async (ctx, paths, { config, profile, userGroups, fe
     // 代理面能被逐条列出来时,只把那几个域名转给内核,其余交回路由器自己解析——
     // 直连的 DNS 就真的不经过 Open-Box 了。列不出来就照旧全局转发。
     // 成员表从刚生成的配置里取(兜底 selector 的成员就是那一份),不另算一遍。
-    await applyDnsTakeover(ctx, paths, { mode: dnsMode, forward: dnsForward })
+    const applied = await applyDnsTakeover(ctx, paths, { mode: dnsMode, forward: dnsForward })
+    // 应用阶段又降级了(计划阶段本该拦住,这是最后一道):元数据必须记实际执行的,重写一遍
+    if (dnsMode === 'dnsmasq' && applied.effective && applied.effective.mode !== dnsForward.mode) {
+      dnsForward = { ...dnsForward, ...applied.effective, expanded: [], superset: [] }
+      await writeConfigAndMeta(config)
+    }
     mark('DNS 接管')
 
     // 6. 防火墙:四条规则各自对齐到目标状态,只要有一条真变了才 commit + reload,且只一次。

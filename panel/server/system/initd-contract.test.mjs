@@ -39,7 +39,8 @@ test('两个脚本都启用 procd(status/enable/disable 依赖它)', () => {
 test('内核停止清理:摘除的上游值与 P3 写入的值一致', () => {
   // P3 dns-takeover 写入 dhcp.@dnsmasq[0].server=127.0.0.1#7853
   assert.ok(core.includes('127.0.0.1#7853'), 'dnsmasq 上游值与 P3 不一致')
-  assert.match(core, /del_list dhcp\.@dnsmasq\[0\]\.server/)
+  // 接管写的上游值就是这个常量;停止时按备份整段还原(不再逐条 del_list)
+  assert.match(core, /add_list dhcp\.@dnsmasq\[0\]\.server="\$_ob_server"/)
 })
 
 test('内核停止清理:dnsmasq 清理仅在接管标记(备份文件)存在时执行', async () => {
@@ -61,8 +62,9 @@ test('内核停止清理:dnsmasq 清理仅在接管标记(备份文件)存在时
 
 // 审查第 3 项:停止时要按备份把 dnsmasq 还原到接管前,而不是只摘掉自己写的条目。
 // 把脚本里的 openbox_cleanup 原样抽出来,uci / dnsmasq / firewall 换成记录状态的桩,真的跑一遍。
-const runCleanup = ({ backup, servers, noresolv, commitFails = false }) => {
+const runCleanup = ({ backup, servers, noresolv, commitFails = false, installedForward = null }) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'openbox-initd-'))
+  if (installedForward !== null) { fs.mkdirSync(path.join(dir, 'confdir')); fs.writeFileSync(path.join(dir, 'confdir', 'open-box.conf'), installedForward) }
   const fn = core.match(/^openbox_cleanup\(\) \{[^]*?^\}/m)
   assert.ok(fn, '抽不出 openbox_cleanup')
   const body = fn[0]
@@ -93,11 +95,14 @@ uci() {
 }
 stub_dnsmasq() { echo "dnsmasq-$1" >> "$LOG"; }
 stub_firewall() { echo "firewall-$1" >> "$LOG"; }
+DNSMASQ_FORWARD_CONF=open-box.conf
+openbox_dnsmasq_confdir() { echo "$D/confdir"; }
 ${body}
 openbox_cleanup
 echo "servers=$(tr '\\n' ',' < "$SV")"
 echo "noresolv=$(cat "$NR" 2>/dev/null)"
 echo "backup=$([ -f "$DNSMASQ_BACKUP" ] && echo yes || echo no)"
+echo "forward=$([ -f "$D/confdir/open-box.conf" ] && echo yes || echo no)"
 echo "log=$(tr '\\n' ',' < "$LOG" 2>/dev/null)"
 `
   const out = execFileSync('sh', ['-c', harness], { encoding: 'utf8' })
@@ -326,8 +331,10 @@ test('起内核前先确保 /dev/net/tun 存在(没有就 modprobe tun),且排�
 // 复审 R1:把 openbox_apply_takeover 原样抽出来,uci / dnsmasq 换成记录状态的桩,按状态文件的
 // 三种计划真的跑一遍。以前"没有 server 条目"一律当成全量接管兜底,面板写的 none 在下一次
 // start / restart 时就被重新接管了。
-const runTakeover = ({ state, servers, noresolv, meta = '{"dnsMode": "dnsmasq"}' }) => {
+const runTakeover = ({ state, servers, noresolv, meta = '{"dnsMode": "dnsmasq"}', forwardSrc = null, installedForward = null }) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'openbox-initd-'))
+  if (forwardSrc !== null) fs.writeFileSync(path.join(dir, 'dnsmasq-forward.conf'), forwardSrc)
+  if (installedForward !== null) { fs.mkdirSync(path.join(dir, 'confdir')); fs.writeFileSync(path.join(dir, 'confdir', 'open-box.conf'), installedForward) }
   const fn = core.match(/^openbox_apply_takeover\(\) \{[^]*?^\}/m)
   assert.ok(fn, '抽不出 openbox_apply_takeover')
   const mode = core.match(/^openbox_dnsmasq_mode\(\) \{[^]*?^\}/m)
@@ -341,6 +348,7 @@ const runTakeover = ({ state, servers, noresolv, meta = '{"dnsMode": "dnsmasq"}'
 set -u
 D='${dir}'
 DATA="$D"; DNSMASQ_BACKUP="$D/dnsmasq-backup.txt"; DNSMASQ_TAKEOVER="$D/dnsmasq-takeover.txt"; CONF_META="$D/meta.json"; CONF="$D/absent.json"
+DNSMASQ_FORWARD_SRC="$D/dnsmasq-forward.conf"; DNSMASQ_FORWARD_CONF=open-box.conf
 OPENBOX_DNS_UPSTREAM='127.0.0.1#7853'; DNSMASQ_OUTBOUND_TAG=dnsmasq
 SV="$D/servers"; NR="$D/noresolv"; LOG="$D/log"
 uci() {
@@ -358,11 +366,13 @@ uci() {
   return 0
 }
 stub_dnsmasq() { echo "dnsmasq-$1" >> "$LOG"; }
+openbox_dnsmasq_confdir() { echo "$D/confdir"; }
 ${mode[0]}
 ${body}
 openbox_apply_takeover 2>/dev/null
 echo "servers=$(tr '\\n' ',' < "$SV")"
 echo "noresolv=$(cat "$NR" 2>/dev/null)"
+echo "forward=$(cat "$D/confdir/open-box.conf" 2>/dev/null | tr '\\n' ',')"
 echo "log=$(tr '\\n' ',' < "$LOG" 2>/dev/null)"
 `
   const out = execFileSync('sh', ['-c', harness], { encoding: 'utf8' })
@@ -384,13 +394,16 @@ test('内核启动:状态文件 plan=none(全部直连)→ 一个字不动,原�
   assert.equal(meta.log, '')
 })
 
-test('内核启动:plan=domains 照抄按域名条目、不动用户上游、按状态文件决定 noresolv;plan=all 全量接管;没有状态文件(老版本)才全量兜底', () => {
-  const domains = runTakeover({ state: 'plan=domains\nserver=/youtube.com/127.0.0.1#7853\nnoresolv=1\n', servers: ['9.9.9.9', '/old.com/127.0.0.1#7853'], noresolv: '1' })
-  assert.equal(domains.servers, '9.9.9.9,/youtube.com/127.0.0.1#7853,')
-  assert.equal(domains.noresolv, '1')          // 用户原来就是 noresolv=1,状态文件也写了 1 → 保留
+test('内核启动:plan=domains 只把转发文件放进 conf-dir(正本在 data/),uci 里用户的上游不动,noresolv 按状态文件;文件一致就不重启;plan=all 全量;没有状态文件(老版本)才全量兜底', () => {
+  const domains = runTakeover({ state: 'plan=domains\nforward=/x/open-box.conf\nnoresolv=1\n', servers: ['9.9.9.9'], noresolv: '1', forwardSrc: 'server=/youtube.com/127.0.0.1#7853\n' })
+  assert.equal(domains.servers, '9.9.9.9,')
+  assert.equal(domains.noresolv, '1')
+  assert.equal(domains.forward, 'server=/youtube.com/127.0.0.1#7853,')
   assert.match(domains.log, /dnsmasq-restart/)
-  // 全量接管:上游只剩内核——原上游留在列表里的话 dnsmasq 会挑"最快的"去问,走代理的域名被原上游答了
-  // (开机时 K10 stop 已按备份把原上游放回来,以前 start 只追加我们的条目,重启后两台并存)
+  assert.ok(!/add_list|delete/.test(domains.log), 'domains 不碰 uci 的 server 列表')
+  // 已经装好、内容一致:什么都不做
+  const idem = runTakeover({ state: 'plan=domains\nforward=/x/open-box.conf\n', servers: ['9.9.9.9'], noresolv: null, forwardSrc: 'server=/youtube.com/127.0.0.1#7853\n', installedForward: 'server=/youtube.com/127.0.0.1#7853\n' })
+  assert.equal(idem.log, '')
   const all = runTakeover({ state: 'plan=all\nserver=127.0.0.1#7853\nnoresolv=1\n', servers: ['9.9.9.9'], noresolv: null })
   assert.equal(all.servers, '127.0.0.1#7853,')
   assert.equal(all.noresolv, '1')
@@ -398,6 +411,26 @@ test('内核启动:plan=domains 照抄按域名条目、不动用户上游、按
   assert.equal(legacy.servers, '127.0.0.1#7853,')
   assert.equal(legacy.noresolv, '1')
   // 已经是目标状态:什么都不动
-  const idem = runTakeover({ state: 'plan=all\nserver=127.0.0.1#7853\nnoresolv=1\n', servers: ['127.0.0.1#7853'], noresolv: '1' })
-  assert.equal(idem.log, '')
+  const idemAll = runTakeover({ state: 'plan=all\nserver=127.0.0.1#7853\nnoresolv=1\n', servers: ['127.0.0.1#7853'], noresolv: '1' })
+  assert.equal(idemAll.log, '')
+})
+
+test('内核启动:plan=all 而 uci 里混着原上游 + 内核(老版本残留 / 接管期间加的)→ 不能当成"已经到位",要清成只剩内核(第三轮 S1)', () => {
+  const r = runTakeover({ state: 'plan=all\nserver=127.0.0.1#7853\nnoresolv=1\n', servers: ['9.9.9.9', '127.0.0.1#7853'], noresolv: '1' })
+  assert.equal(r.servers, '127.0.0.1#7853,')
+  assert.equal(r.noresolv, '1')
+  assert.match(r.log, /delete dhcp\.@dnsmasq\[0\]\.server.*add_list 127\.0\.0\.1#7853.*committed.*dnsmasq-restart/)
+  // 备份先留底(接管前的现场,init 的 stop 按它还原)
+  const withForward = runTakeover({ state: 'plan=all\nserver=127.0.0.1#7853\nnoresolv=1\n', servers: ['127.0.0.1#7853'], noresolv: '1', installedForward: 'server=/old/127.0.0.1#7853\n' })
+  assert.equal(withForward.forward, '', 'all 模式下上一次 domains 留下的转发文件要拿掉')
+  assert.match(withForward.log, /dnsmasq-restart/)
+})
+
+test('内核停止清理:conf-dir 里的转发文件要拿掉;没有备份(domains 期间 uci 就是用户的)也要重启一次 dnsmasq', () => {
+  const r = runCleanup({ backup: null, servers: ['9.9.9.9'], noresolv: null, installedForward: 'server=/youtube.com/127.0.0.1#7853\n' })
+  assert.equal(r.forward, 'no')
+  assert.equal(r.servers, '9.9.9.9,')
+  assert.match(r.log, /dnsmasq-restart/)
+  const none = runCleanup({ backup: null, servers: ['9.9.9.9'], noresolv: null })
+  assert.equal(none.log, '')
 })

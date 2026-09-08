@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { dnsmasqSafeDomain } from './dns-names.mjs'
 import { isRuleListTag, listTagForUrl, ruleListIpTag } from './rule-list.mjs'
 // 分流模型的归一化与老档案迁移。
 //
@@ -489,38 +490,58 @@ export const policyGoesDirect = (name, policyDefault, members, builtin, selectio
 
 // 第一层 · DNS:哪些域名的查询要交给内核(其余留给路由器原有的 dnsmasq 和它的上游)。
 //   none     代理面是空的(全部直连):一个都不转发,原 DNS 原样——不再"全量转发更简单"
-//   domains  代理面能逐条列出(只用了域名 / 域名后缀):只转发这些域名
-//   all      代理面列不出来(兜底走代理、用了规则集 / 关键词 / 规则集链接):只能全量转发,内核里再分
-// 三种情况以前都用 [] 表示,调用方把 [] 当"全量转发",全部直连也被整个接管(审核 B2);
-// 前置自定义分流里走代理的域名也没进名单,DNS 和连接走不同出口(审核 B1)。
-const CUSTOM_TYPE_LABEL = { domainKeyword: '域名关键词', geosite: 'geosite 规则集', ruleUrl: '规则集链接', ruleset: '规则集' }
+//   domains  代理面能逐条列出:只转发这些域名。规则集(geosite / 规则集链接)不再自动等于 all——
+//            它们被记在 expand 里,部署时由 system/dns-forward.mjs 解码成域名并入名单;解码后
+//            发现关键词 / 逻辑规则这种 dnsmasq 表达不了的,那时才降成 all(第三轮 阶段 2)
+//   all      代理面列不出来(兜底走代理、广告拦截、手写的关键词):只能全量转发,内核里再分
+// 域名在这里就按 dnsmasq 能接受的形态规范化(IDNA → punycode),写不进去的域名直接判 all 并说明,
+// 不留到应用阶段再悄悄降级(复审 S3)。三种情况以前都用 [] 表示(审核 B2);前置分流里走代理的
+// 域名也没进名单(审核 B1)。
+const CUSTOM_TYPE_LABEL = { domainKeyword: '域名关键词', ruleset: '规则集' }
 export const dnsmasqForwardPlan = (routing, members = ['direct'], builtin = DEFAULT_BUILTIN, selections = {}) => {
   const conf = normalizeRouting(routing)
-  const all = (reason) => ({ mode: 'all', domains: [], reason })
+  const all = (reason) => ({ mode: 'all', domains: [], expand: [], reason })
   if (!policyGoesDirect(conf.fallback.name, conf.fallback.default, members, builtin, selections)) return all(`兜底「${conf.fallback.name}」走代理`)
-  // 广告拦截是规则集,dnsmasq 展不开;拦截又必须在 DNS 入口就生效(否则查询交给原上游,内核里的
-  // 拒绝规则根本碰不到),只能全量交给内核(复审 R7)
+  // 广告拦截是规则集,拦截又必须在 DNS 入口就生效(否则查询交给原上游,内核里的拒绝规则根本碰
+  // 不到);广告规则集里关键词 / 正则很多,只能全量交给内核(复审 R7)
   if (conf.adBlock) return all('广告拦截开着,拦截规则集 dnsmasq 展不开,拒绝只能在内核里做')
   const domains = new Set()
+  const expand = []
+  const addDomain = (value, owner) => {
+    const safe = dnsmasqSafeDomain(value)
+    if (!safe) return `${owner}的域名「${value}」写不进 dnsmasq(非法字符 / 标签超长)`
+    domains.add(safe)
+    return ''
+  }
   // 前置自定义分流:走代理和要拒绝的域名行都要进名单——拒绝的交给内核,内核的 DNS 规则会拒
   // (留在原上游它就被正常解析了);按 IP / 端口分流的行在解析阶段用不上,跳过
   if (customPolicyActive(conf.custom)) {
     for (const rule of conf.custom.rules) {
       const target = customOutboundTag(rule, builtin)
       if (target === builtin.direct) continue
-      const what = target === builtin.block ? '要拒绝的' : ''
-      if (rule.type === 'domain' || rule.type === 'domainSuffix') domains.add(rule.value)
-      else if (CUSTOM_TYPE_LABEL[rule.type]) return all(`前置自定义分流${what}「${rule.value}」是${CUSTOM_TYPE_LABEL[rule.type]},dnsmasq 展不开`)
+      const owner = `前置自定义分流${target === builtin.block ? '要拒绝的' : ''}`
+      if (rule.type === 'domain' || rule.type === 'domainSuffix') {
+        const bad = addDomain(rule.value, owner)
+        if (bad) return all(bad)
+      } else if (rule.type === 'geosite' || rule.type === 'ruleUrl') {
+        expand.push({ tag: customRuleTag(rule), owner: `${owner}「${rule.value}」` })
+      } else if (CUSTOM_TYPE_LABEL[rule.type]) {
+        return all(`${owner}「${rule.value}」是${CUSTOM_TYPE_LABEL[rule.type]},dnsmasq 展不开`)
+      }
     }
   }
   for (const p of conf.activePolicies) {
     if (policyGoesDirect(p.name, p.default, members, builtin, selections)) continue
-    // 这个集合要走代理,但它的规则 dnsmasq 展不开 → 只能全量转发
-    if (p.rulesets.length || p.domainKeyword.length || p.ruleUrls.length) return all(`站点集「${p.name}」用了规则集 / 关键词 / 规则集链接,dnsmasq 展不开`)
-    for (const d of [...p.domain, ...p.domainSuffix]) domains.add(d)
+    if (p.domainKeyword.length) return all(`站点集「${p.name}」用了域名关键词,dnsmasq 展不开`)
+    for (const d of [...p.domain, ...p.domainSuffix]) {
+      const bad = addDomain(d, `站点集「${p.name}」`)
+      if (bad) return all(bad)
+    }
+    // geoip 只按 IP 分,解析阶段用不上;geosite / 规则集链接(rulesets 里已经含链接对应的 tag)交给部署时展开
+    for (const tag of p.rulesets) if (!/^geoip-/.test(tag)) expand.push({ tag, owner: `站点集「${p.name}」` })
   }
-  if (!domains.size) return { mode: 'none', domains: [], reason: '没有走代理的域名,DNS 全部由路由器原有上游解析' }
-  return { mode: 'domains', domains: [...domains], reason: '' }
+  if (!domains.size && !expand.length) return { mode: 'none', domains: [], expand: [], reason: '没有走代理的域名,DNS 全部由路由器原有上游解析' }
+  return { mode: 'domains', domains: [...domains], expand, reason: '' }
 }
 // 老接口:只回名单。none / all 都是空数组——只给还没改到计划形状的调用方过渡用
 export const dnsmasqForwardDomains = (routing, members = ['direct'], builtin = DEFAULT_BUILTIN, selections = {}) => {
