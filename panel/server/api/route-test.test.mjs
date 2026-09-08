@@ -222,7 +222,7 @@ test('fake-ip:代理侧解析回 198.18.x.x 就标出是 detour 此刻落到的�
   assert.equal(direct.cached, undefined)
 })
 
-test('POST /route-test:只有 fresh 才先清内核 DNS 缓存,而且清在解析之前', async () => {
+test('POST /route-test:每次查询都先清内核 DNS 缓存,而且清在解析之前', async () => {
   const ctx = createMockContext({ files: { [paths.configPath]: JSON.stringify(config), [paths.singbox]: 'x', [`${paths.rulesetDir}/geosite-openai.srs`]: 'x' } })
   const run = async (body) => {
     const calls = []
@@ -246,14 +246,15 @@ test('POST /route-test:只有 fresh 才先清内核 DNS 缓存,而且清在解�
     }
   }
 
-  // 打字触发的那次:不清缓存
-  const plain = await run({ target: 'www.baidu.com' })
-  assert.ok(!plain.some((c) => c.includes('/cache/dns/flush')), plain.join(' | '))
+  // 打字触发的那次也清:这一页的意义就是看真实路由,拿缓存答案没有意义
+  const calls = await run({ target: 'www.baidu.com' })
+  const iFlush = calls.findIndex((c) => c.includes('/cache/dns/flush'))
+  const iQuery = calls.findIndex((c) => c.includes('/dns/query'))
+  assert.ok(iFlush >= 0, `没有清缓存:${calls.join(' | ')}`)
+  assert.ok(iFlush < iQuery, `清缓存必须在解析之前:${calls.join(' | ')}`)
+  assert.ok(calls[iFlush].startsWith('POST '), calls[iFlush])
 
-  // 点「重新测试」:先 flush,再问 /dns/query
-  const fresh = await run({ target: 'www.baidu.com', fresh: true })
-  const iFlush = fresh.findIndex((c) => c.includes('/cache/dns/flush'))
-  const iQuery = fresh.findIndex((c) => c.includes('/dns/query'))
-  assert.ok(iFlush >= 0 && iQuery >= 0 && iFlush < iQuery, fresh.join(' | '))
-  assert.ok(fresh[iFlush].startsWith('POST '), fresh[iFlush])
+  // 目标是 IP 时没有解析这一步,也就不必清
+  const ipCalls = await run({ target: '8.8.8.8' })
+  assert.ok(!ipCalls.some((c) => c.includes('/cache/dns/flush')), ipCalls.join(' | '))
 })

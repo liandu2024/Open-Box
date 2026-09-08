@@ -129,10 +129,6 @@ export const registerRouteTestRoutes = (app, { store, ctx, paths, fetchImpl = gl
   router.post('/route-test', async (req, res) => {
     const target = String((req.body || {}).target || '').trim().toLowerCase()
     if (!isValidTarget(target)) return res.status(400).json({ message: 'target must be a domain or IP' })
-    // fresh:用户点了「重新测试」。先清掉内核 DNS 缓存,这一趟才是真的经当前线路问出来的,
-    // 否则拿到的可能是换线路之前那次的答案(界面上只能标一句"命中缓存",看不到真实答案)。
-    // 输入框打字触发的那次不带 fresh:清缓存是全局的,不该被每次输入牵动。
-    const fresh = (req.body || {}).fresh === true
     let config
     try {
       config = JSON.parse(await ctx.readFile(paths.configPath))
@@ -194,7 +190,11 @@ export const registerRouteTestRoutes = (app, { store, ctx, paths, fetchImpl = gl
 
     // 2. 内核解析
     if (!isIp(target)) {
-      if (fresh) await flushDnsCache(fetchImpl, secret)
+      // 每次查询都先清掉内核 DNS 缓存:这一页的全部意义就是"看真实路由",拿一份之前
+      // 别的线路问出来的缓存答案没有意义(界面上只能标一句"命中缓存",看不到真实答案)。
+      // 打字触发的那次也清——输入停下 600ms 才发一次请求,一次查询就是一次,不会被每个
+      // 按键牵动。代价是这一趟慢几十到几百毫秒,以及局域网里别的域名要重新解析一次。
+      await flushDnsCache(fetchImpl, secret)
       const t0 = Date.now()
       try {
         const r = await fetchWithTimeout(fetchImpl, `${CLASH_API_BASE}/dns/query?name=${encodeURIComponent(target)}&type=A`, { headers: clashHeaders(secret) }, 8000)
