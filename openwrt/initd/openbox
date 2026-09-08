@@ -189,6 +189,10 @@ start_service() {
 		return 1
 	fi
 
+	# 没加载 tun 模块的固件上内核起不来(open /dev/net/tun: no such file),开机自启这条路
+	# 不经过面板的预检,这里也试着加载一次;真没有这个模块就交给内核自己报错
+	[ -e /dev/net/tun ] || modprobe tun >/dev/null 2>&1
+
 	openbox_clean_stale_nft
 	openbox_apply_takeover
 	openbox_apply_dns_mark

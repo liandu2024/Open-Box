@@ -5,6 +5,7 @@ import { registerServiceRoutes } from './service.mjs'
 import { createStore } from '../store/openbox-store.mjs'
 import { createMockContext } from '../system/context.mjs'
 import { createPaths } from '../system/paths.mjs'
+import { TUN_DEVICE } from '../system/deploy.mjs'
 
 const memStore = () => {
   const m = new Map()
@@ -22,7 +23,7 @@ const cmds = (ctx) => ctx.calls.map((c) => [c.cmd, ...c.args].join(' '))
 // 启动/重启会走完整条部署流水线,所以这里的 mock 要备齐它依赖的东西:
 // sing-box 二进制存在(重启前的预检),status 视为 running(启动后的验证)。
 const okCtx = (over = {}) => createMockContext({
-  files: { [paths.singbox]: '#!/bin/sh\n' },
+  files: { [paths.singbox]: '#!/bin/sh\n', [TUN_DEVICE]: '' },
   execResults: {
     '/etc/init.d/openbox status': { code: 0, stdout: 'running' },
     '/etc/init.d/openbox-panel status': { code: 1, stdout: 'inactive' },

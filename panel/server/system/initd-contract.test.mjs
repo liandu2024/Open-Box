@@ -312,3 +312,12 @@ test('清理排在起内核之前(顺序反了就白清)', () => {
   const iProcd = start[0].indexOf('procd_open_instance')
   assert.ok(iClean >= 0 && iProcd >= 0 && iClean < iProcd, start[0])
 })
+
+// 开机自启不经过面板的预检,init 脚本自己也要在起内核前试着加载 tun 模块(GitHub #12)
+test('起内核前先确保 /dev/net/tun 存在(没有就 modprobe tun),且排在 procd 之前', () => {
+  const start = core.match(/^start_service\(\) \{[^]*?^\}/m)
+  assert.ok(start, '抽不出 start_service')
+  const body = start[0]
+  assert.match(body, /\[ -e \/dev\/net\/tun \] \|\| modprobe tun/, '缺少 tun 模块加载')
+  assert.ok(body.indexOf('modprobe tun') < body.indexOf('procd_open_instance'), '必须排在起内核之前')
+})

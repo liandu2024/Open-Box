@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createMockContext } from './context.mjs'
 import { createPaths } from './paths.mjs'
-import { deployConfig, rollbackToDirect, configMetaPath } from './deploy.mjs'
+import { deployConfig, rollbackToDirect, configMetaPath, TUN_DEVICE } from './deploy.mjs'
 import { routingFingerprint } from '../engine/routing-model.mjs'
 import { dnsTakeoverBackupPath } from './dns-takeover.mjs'
 
@@ -12,7 +12,7 @@ const profile = { ipv6: true, dns: { mode: 'hijack' } }
 const cmds = (ctx) => ctx.calls.map((c) => [c.cmd, ...c.args].join(' '))
 
 const okCtx = (over = {}) => createMockContext({
-  files: { [paths.singbox]: '#!/bin/sh\n' },
+  files: { [paths.singbox]: '#!/bin/sh\n', [TUN_DEVICE]: '' },
   execResults: {
     '/etc/init.d/openbox status': { code: 0, stdout: 'running' },
     ...over,
@@ -97,7 +97,7 @@ test('内核二进制缺失 → 重启前预检拦截,精确归因而不依赖 p
 
 test('重启失败 → 回滚恢复直连', async () => {
   const ctx = createMockContext({
-    files: { [paths.singbox]: '#!/bin/sh\n' },
+    files: { [paths.singbox]: '#!/bin/sh\n', [TUN_DEVICE]: '' },
     execResults: {
       '/etc/init.d/openbox restart': { code: 1, stderr: 'start failed' },
     },
@@ -112,7 +112,7 @@ test('重启失败 → 回滚恢复直连', async () => {
 
 test('启动后未 running → 回滚', async () => {
   const ctx = createMockContext({
-    files: { [paths.singbox]: '#!/bin/sh\n' },
+    files: { [paths.singbox]: '#!/bin/sh\n', [TUN_DEVICE]: '' },
     execResults: { '/etc/init.d/openbox status': { code: 1, stdout: 'inactive' } },
   })
   const r = await deployConfig(ctx, paths, { config, profile })
@@ -124,8 +124,9 @@ test('启动后未 running → 回滚', async () => {
 test('模式切换:切回 hijack 但上次 dnsmasq 接管的备份仍在 → 部署时先还原 dnsmasq 上游', async () => {
   const ctx = createMockContext({
     files: {
+      [TUN_DEVICE]: '',
       [dnsTakeoverBackupPath(paths)]: "dhcp.cfg01411c.server='223.5.5.5'\ndhcp.cfg01411c.noresolv='0'\n",
-      [paths.singbox]: '#!/bin/sh\n',
+      [paths.singbox]: '#!/bin/sh\n', [TUN_DEVICE]: '',
     },
     execResults: { '/etc/init.d/openbox status': { code: 0, stdout: 'running' } },
   })
@@ -171,7 +172,7 @@ test('重启失败且回滚也没成 → 提示写明恢复直连未完成、哪
   // firewall reload 部署那次(第 6 步)成功,回滚撤规则那次才失败
   let reloads = 0
   const ctx = createMockContext({
-    files: { [paths.singbox]: '#!/bin/sh\n' },
+    files: { [paths.singbox]: '#!/bin/sh\n', [TUN_DEVICE]: '' },
     execResults: {
       '/etc/init.d/openbox restart': { code: 1, stderr: 'start failed' },
       '/etc/init.d/firewall reload': () => (++reloads === 1 ? { code: 0 } : { code: 1, stderr: 'fw4 broken' }),
@@ -183,7 +184,7 @@ test('重启失败且回滚也没成 → 提示写明恢复直连未完成、哪
   assert.match(r.message, /start failed,恢复直连未完成\(remove-firewall: firewall reload 失败.*fw4 broken\)/)
   assert.equal(r.rollback.ok, false)
   // 回滚全成功时照旧说"已恢复直连"
-  const fine = await deployConfig(createMockContext({ files: { [paths.singbox]: '#!/bin/sh\n' }, execResults: { '/etc/init.d/openbox restart': { code: 1, stderr: 'start failed' } } }), paths, { config, profile })
+  const fine = await deployConfig(createMockContext({ files: { [paths.singbox]: '#!/bin/sh\n', [TUN_DEVICE]: '' }, execResults: { '/etc/init.d/openbox restart': { code: 1, stderr: 'start failed' } } }), paths, { config, profile })
   assert.match(fine.message, /start failed,已恢复直连$/)
   assert.equal(fine.rollback.ok, true)
 })
@@ -288,4 +289,39 @@ test('isCancelled 在落盘前为真 → 直接退出、什么都不动;在 DNS 
   assert.equal(r3.stage, 'cancelled')
   assert.equal(r3.ok, false)
   assert.ok(!cmds(late).includes('/etc/init.d/openbox stop'))
+})
+
+// 没加载 tun 模块的固件上内核直接 FATAL "open /dev/net/tun: no such file"(GitHub #12)。
+// 部署前先试着 modprobe 一次;还是没有就用人话说清要装 kmod-tun,并回滚到直连。
+test('tun 设备不存在:先 modprobe,还没有就明说要装 kmod-tun 并回滚直连', async () => {
+  const ctx = createMockContext({
+    files: { [paths.singbox]: '#!/bin/sh\n' }, // 没有 /dev/net/tun
+    execResults: { '/etc/init.d/openbox status': { code: 0, stdout: 'running' } },
+  })
+  const r = await deployConfig(ctx, paths, { config, profile })
+  assert.equal(r.ok, false)
+  assert.equal(r.stage, 'start')
+  assert.match(r.message, /kmod-tun/)
+  assert.match(r.message, /\/dev\/net\/tun/)
+  const c = cmds(ctx)
+  assert.ok(c.includes('modprobe tun'), '应该先试着加载模块')
+  assert.ok(!c.some((x) => /openbox restart/.test(x)), '没有 tun 设备就不该去重启内核')
+  assert.ok(r.rollback, '要回滚到直连')
+})
+
+test('tun 设备一开始没有、modprobe 之后出现了:继续部署', async () => {
+  const ctx = createMockContext({
+    files: { [paths.singbox]: '#!/bin/sh\n' },
+    execResults: { '/etc/init.d/openbox status': { code: 0, stdout: 'running' } },
+  })
+  // modprobe 成功后设备文件出现:桩里在 exec 到 modprobe 时把它加进 files
+  const origExec = ctx.exec.bind(ctx)
+  ctx.exec = async (cmd, args) => {
+    const r = await origExec(cmd, args)
+    if (cmd === 'modprobe') await ctx.writeFile(TUN_DEVICE, '')
+    return r
+  }
+  const r = await deployConfig(ctx, paths, { config, profile })
+  assert.equal(r.ok, true, JSON.stringify(r))
+  assert.ok(cmds(ctx).includes('modprobe tun'))
 })

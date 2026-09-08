@@ -39,6 +39,10 @@ export const insecureFetch = (url, init = {}) => new Promise((resolve, reject) =
     headers,
     signal: init.signal,
     rejectUnauthorized: false,
+    // Node 的 HTTP 解析器默认只收 16KB 响应头,有的机场一个响应头就超过这个数(带很长的
+    // subscription-userinfo / 一堆 set-cookie),整个订阅直接 HPE_HEADER_OVERFLOW 拉不下来
+    // (GitHub #3)。放宽到 64KB;这是订阅专用的 fetch,不影响别处。
+    maxHeaderSize: 64 * 1024,
   }
   // 调用方校验过地址就按校验过的连(见 api/net-guard.mjs 的 pinnedLookup),不再解析一次
   if (typeof init.lookup === 'function') options.lookup = init.lookup

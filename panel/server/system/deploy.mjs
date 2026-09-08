@@ -12,6 +12,8 @@ import { ensureRulesets } from './rulesets.mjs'
 
 // 与 openwrt/initd/openbox 的 CONF_META 一致
 export const configMetaPath = (paths) => `${paths.etc}/config.meta.json`
+// 内核的 tun 入站要这个设备文件;没有 tun 内核模块的固件上它不存在
+export const TUN_DEVICE = '/dev/net/tun'
 
 // 回滚到直连:停内核、还原 dnsmasq、撤代理侧的防火墙规则。每一步各自尽力(一步失败不拦着
 // 后面的),但失败要如实汇总——以前一律返回 ok:true 且把失败的步骤也记成"已执行",界面显示
@@ -182,6 +184,19 @@ export const deployConfig = async (ctx, paths, { config, profile, userGroups, fe
     if (!(await ctx.exists(paths.singbox)) || !(await ctx.exists(paths.configPath))) {
       const rb = await rollbackToDirect(ctx, paths)
       return { ok: false, stage: 'start', message: `sing-box 二进制或配置文件缺失,${rollbackSummary(rb)}`, rollback: rb }
+    }
+    // tun 设备:有的固件没装 / 没加载 tun 模块(GitHub #12,内核 FATAL "open /dev/net/tun:
+    // no such file or directory")。先试着加载一次,还没有就明说要装 kmod-tun,别让用户
+    // 对着内核的英文报错猜。
+    if (!(await ctx.exists(TUN_DEVICE))) {
+      await ctx.exec('modprobe', ['tun'])
+      if (!(await ctx.exists(TUN_DEVICE))) {
+        const rb = await rollbackToDirect(ctx, paths)
+        return {
+          ok: false, stage: 'start', rollback: rb,
+          message: `系统没有 tun 设备(${TUN_DEVICE} 不存在),内核起不来。请安装 kmod-tun(opkg install kmod-tun)后重试。${rollbackSummary(rb)}`,
+        }
+      }
     }
 
     // 8. 重启内核

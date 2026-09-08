@@ -91,3 +91,22 @@ test('insecureFetch:带 init.lookup 时按它给的地址建连,不再解析域�
     await new Promise((r) => server.close(r))
   }
 })
+
+// 有的机场一个响应头就超过 Node 默认的 16KB 上限(很长的 subscription-userinfo、一堆
+// set-cookie),整个订阅 HPE_HEADER_OVERFLOW 拉不下来(GitHub #3)。订阅专用的 fetch 放宽到 64KB。
+test('subscriptionFetch:响应头超过 16KB 也能拉(机场的超长响应头)', async () => {
+  const big = 'x'.repeat(40 * 1024)
+  const server = http.createServer((req, res) => {
+    res.setHeader('subscription-userinfo', big)
+    res.end('nodes')
+  })
+  const port = await listen(server)
+  try {
+    const r = await subscriptionFetch(`http://127.0.0.1:${port}/sub`)
+    assert.equal(r.status, 200)
+    assert.equal(r.headers.get('subscription-userinfo')?.length, big.length)
+    assert.equal(await r.text(), 'nodes')
+  } finally {
+    await close(server)
+  }
+})
