@@ -193,7 +193,7 @@
           :state="ruleMatch.state"
           :badge="ruleMatch.badge"
           :badge-tone="ruleMatch.tone"
-          :details-title="ruleMatch.state === 'pending' ? $t('routeRuleWhy') : $t('routeRuleEntries')"
+          :details-title="ruleMatch.state === 'pending' ? $t('routeRuleWhy') : $t('routeRuleDetail')"
         >
           <template v-if="!rule || ruleError">
             <span class="text-base-content/50 text-xs">{{ ruleError ? '—' : $t('routeCmpWaiting') }}</span>
@@ -223,7 +223,12 @@
                 class="badge badge-sm badge-error badge-soft"
               >{{ $t('penetrationBlockedTitle') }}</span>
             </div>
-            <span class="text-base-content/50 font-mono text-[11px] break-all">{{ conditionText }}</span>
+            <!-- 具体命中的第一条条目跟在站点集后面;完整条件和全部条目在「规则详情」里 -->
+            <template v-if="firstEntry">
+              <span class="badge badge-sm badge-ghost font-mono">{{ typeLabel(firstEntry.type) }}</span>
+              <span class="text-main font-mono text-xs">{{ firstEntry.value }}</span>
+              <span class="text-base-content/50 text-xs">{{ firstEntry.source === 'custom' ? $t('ruleSourceCustom') : firstEntry.source }}</span>
+            </template>
             <span
               v-if="rule.routingStale"
               class="text-warning basis-full text-xs"
@@ -237,11 +242,12 @@
             >{{ $t('ruleLookupRoutingStale') }}</span>
           </template>
           <template
-            v-if="rule && ((rule.matchError && rule.undetermined) || rule.matched?.entries?.length)"
+            v-if="rule && ((rule.matchError && rule.undetermined) || rule.matched)"
             #details
           >
             <p v-if="rule.matchError && rule.undetermined">{{ $t('routeRuleWhyBody', { needs: needsText }) }}</p>
             <template v-else>
+              <p class="text-base-content/50 font-mono text-[11px] break-all">{{ conditionText }}</p>
               <div
                 v-for="(e, i) in (rule.matched?.entries || []).slice(0, 8)"
                 :key="`${e.source}-${e.type}-${e.value}-${i}`"
@@ -263,12 +269,12 @@
           :state="actualRule.state"
           :badge="actualRule.badge"
           :badge-tone="actualRule.tone"
-          :details-title="$t('routeRuleDiff')"
+          :details-title="$t('routeRuleDetail')"
         >
           <template v-if="!actual || actualError">
             <span class="text-base-content/50 text-xs">{{ actualError ? '—' : actualLoading ? $t('routeExitStatusTesting') : $t('routeCmpWaiting') }}</span>
           </template>
-          <!-- 和左列同一个结构:第一行"连接归属 + 站点集名"(对应左列的"站点集 + 名字"),第二行小号等宽的规则原文 -->
+          <!-- 和左列同一个结构:第一行"连接归属 + 站点集名"(对应左列的"站点集 + 名字"),内核的规则原文在「规则详情」里 -->
           <template v-else-if="actualOwner || actual.exit.rule">
             <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
               <span class="text-base-content/60 text-xs">{{ $t('routeRuleOwnerLabel') }}</span>
@@ -286,14 +292,6 @@
                 class="text-base-content/50 text-xs"
               >{{ $t('routeEntryUnknown') }}</span>
             </div>
-            <span
-              v-if="actual.exit.rule"
-              class="text-base-content/50 font-mono text-[11px] break-all"
-            >{{ actual.exit.rule }}</span>
-            <span
-              v-else
-              class="text-base-content/60 text-xs"
-            >{{ $t('routeRuleNoIndex') }}</span>
           </template>
           <template v-else>
             <span class="text-base-content/50 text-xs">{{ $t('routeTestRuleUnknown') }}</span>
@@ -302,6 +300,11 @@
             v-if="actual && !actualError"
             #details
           >
+            <p
+              v-if="actual.exit.rule"
+              class="text-base-content/50 font-mono text-[11px] break-all"
+            >{{ actual.exit.rule }}</p>
+            <p v-else>{{ $t('routeRuleNoIndex') }}</p>
             <p>{{ $t('routeRuleDiffBody') }}</p>
           </template>
         </RouteStage>
@@ -707,6 +710,8 @@ const errorText = (raw: string) => {
 // ---------- 左列:规则路由 ----------
 const ruleOutbound = computed(() => rule.value?.finalOutbound || '')
 const ruleOwner = computed(() => rule.value?.matched?.ownerName || '')
+// 具体命中的第一条条目(规则集解码出来的,或站点集里手写的),跟在站点集名后面显示
+const firstEntry = computed(() => rule.value?.matched?.entries?.[0] || null)
 const ruleReject = computed(() => rule.value?.matched?.action === 'reject')
 const needsText = computed(() => {
   const needs = rule.value?.undetermined?.needs || []
