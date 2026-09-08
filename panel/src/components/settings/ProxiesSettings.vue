@@ -62,6 +62,31 @@
         </div>
       </div>
     </template>
+    <!-- 布局:代理组分几列(GitHub #10) -->
+    <template v-if="isVisibleProxyGroupColumns">
+      <div class="settings-title">
+        {{ $t('proxyGroupLayout') }}
+      </div>
+      <div class="settings-grid">
+        <div class="setting-item">
+          <div class="setting-item-label">
+            {{ $t('proxyGroupColumns') }}
+          </div>
+          <select
+            class="select select-sm w-28"
+            v-model.number="proxyGroupColumns"
+          >
+            <option
+              v-for="n in [1, 2, 3]"
+              :key="n"
+              :value="n"
+            >
+              {{ $t(`proxyGroupColumns${n}`) }}
+            </option>
+          </select>
+        </div>
+      </div>
+    </template>
   </div>
 </template>
 
@@ -72,6 +97,7 @@ import {
   IPv6test,
   lowLatency,
   mediumLatency,
+  proxyGroupColumns,
   speedtestTimeout,
 } from '@/store/settings'
 import { computed } from 'vue'
@@ -81,6 +107,7 @@ const isVisibleSpeedtestTimeout = useIsSettingVisible(k.speedtestTimeout)
 const isVisibleLowLatency = useIsSettingVisible(k.lowLatencyDesc)
 const isVisibleMediumLatency = useIsSettingVisible(k.mediumLatencyDesc)
 const isVisibleIpv6Test = useIsSettingVisible(k.ipv6Test)
+const isVisibleProxyGroupColumns = useIsSettingVisible(k.proxyGroupColumns)
 
 const hasVisibleLatencyItems = computed(() => {
   return (

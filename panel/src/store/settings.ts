@@ -135,7 +135,13 @@ if (missingCards.length > 0) {
 
 // proxies
 export const collapseGroupMap = useStorage<Record<string, boolean>>('config/collapse-group-map', {})
-export const twoColumnProxyGroup = useStorage('config/two-columns', true)
+// 代理组分几列(1 / 2 / 3,GitHub #10:策略组多了单列要翻很久)。老设置 config/two-columns 是个
+// 开关,第一次读到时按它换算,老用户的布局不会突然变
+const legacyTwoColumnProxyGroup = useStorage('config/two-columns', true)
+export const proxyGroupColumns = useStorage<number>(
+  'config/proxy-group-columns',
+  legacyTwoColumnProxyGroup.value ? 2 : 1,
+)
 export const speedtestUrl = useStorage<string>('config/speedtest-url', TEST_URL)
 // 内置直连出站用的测速地址(见 constant/index.ts 的说明)
 export const directTestUrl = useStorage<string>('config/direct-test-url', DIRECT_TEST_URL)

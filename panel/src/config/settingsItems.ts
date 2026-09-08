@@ -136,10 +136,7 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
         label: 'independentLatencyTest',
       },
       { key: `${SETTINGS_MENU_KEY.proxies}.groupTestUrls`, label: 'groupTestUrls' },
-      {
-        key: `${SETTINGS_MENU_KEY.proxies}.twoColumnProxyGroup`,
-        label: 'twoColumnProxyGroup',
-      },
+      { key: `${SETTINGS_MENU_KEY.proxies}.proxyGroupColumns`, label: 'proxyGroupColumns' },
       { key: `${SETTINGS_MENU_KEY.proxies}.truncateProxyName`, label: 'truncateProxyName' },
       {
         key: `${SETTINGS_MENU_KEY.proxies}.displayGlobalByMode`,

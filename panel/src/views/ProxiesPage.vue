@@ -25,17 +25,21 @@
           {{ $t('proxiesGoToKernel') }}
         </RouterLink>
       </div>
-      <template v-else-if="displayTwoColumns && proxiesTabShow !== PROXY_TAB_TYPE.PROVIDER">
-        <div class="grid grid-cols-2 gap-2 p-2">
+      <!-- 分列:设置里选的列数,组按 index % 列数 轮流落到各列 -->
+      <template v-else-if="displayColumns > 1 && proxiesTabShow !== PROXY_TAB_TYPE.PROVIDER">
+        <div
+          class="grid gap-2 p-2"
+          :class="displayColumns === 3 ? 'grid-cols-3' : 'grid-cols-2'"
+        >
           <div
-            v-for="idx in [0, 1]"
+            v-for="idx in displayColumns"
             :key="idx"
             class="flex flex-1 flex-col gap-2"
           >
             <component
               v-for="name in filterContent(
                 proxiesTabShow === PROXY_TAB_TYPE.NODE ? nodeGroups : renderGroups,
-                idx,
+                idx - 1,
               )"
               :is="renderComponent"
               :key="name"
@@ -130,7 +134,7 @@ import {
   getProxyAutoRefreshSchedule,
   proxiesTabShow,
 } from '@/store/proxies'
-import { twoColumnProxyGroup } from '@/store/settings'
+import { proxyGroupColumns } from '@/store/settings'
 import { useDocumentVisibility, useIntervalFn, useSessionStorage } from '@vueuse/core'
 import { pollLatencyHistoryVersion } from '@/store/latencyHistory'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
@@ -356,22 +360,23 @@ const renderComponent = computed(() => {
     return ProxyProvider
   }
 
-  if (isMiddleScreen.value && displayTwoColumns.value) {
+  if (isMiddleScreen.value && displayColumns.value > 1) {
     return ProxyGroupForMobile
   }
 
   return ProxyGroup
 })
 
-const displayTwoColumns = computed(() => {
-  if (proxiesTabShow.value !== PROXY_TAB_TYPE.POLICY) {
-    return false
+// 实际摆几列:设置里的列数,窄屏最多两列(三列摆不下),组不够多也不硬拆
+const displayColumns = computed(() => {
+  if (proxiesTabShow.value !== PROXY_TAB_TYPE.POLICY || renderGroups.value.length < 2) {
+    return 1
   }
-
-  return twoColumnProxyGroup.value && renderGroups.value.length > 1
+  const wanted = Math.min(Math.max(Math.trunc(proxyGroupColumns.value) || 1, 1), 3)
+  return Math.min(wanted, isMiddleScreen.value ? 2 : 3, renderGroups.value.length)
 })
 
 const filterContent: <T>(all: T[], target: number) => T[] = (all, target) => {
-  return all.filter((_, index: number) => index % 2 === target)
+  return all.filter((_, index: number) => index % displayColumns.value === target)
 }
 </script>
