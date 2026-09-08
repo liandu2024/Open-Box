@@ -22,11 +22,12 @@
       aria-hidden="true"
     >↑</span>
     <span class="route-marker">{{ index }}</span>
-    <div class="text-base-content/60 mb-1 flex min-h-[1.125rem] items-center justify-between gap-2 text-[11px]">
+    <!-- 小标题行:站名后面紧跟一个小号状态徽章(不靠右) -->
+    <div class="text-base-content/60 mb-1 flex min-h-[1.125rem] flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px]">
       <strong class="font-medium">{{ label }}</strong>
       <span
         v-if="badge"
-        class="badge badge-sm whitespace-nowrap"
+        class="badge badge-xs whitespace-nowrap"
         :class="badgeClass"
       >{{ badge }}</span>
     </div>
