@@ -167,8 +167,9 @@ test('内核启动:dnsmasq 模式先把 dnsmasq 上游重新指向内核,再拉�
   const procdAt = body.indexOf('procd_open_instance')
   assert.ok(takeoverAt !== -1 && markAt !== -1 && procdAt !== -1, 'start_service 必须调用 openbox_apply_takeover 与 openbox_apply_dns_mark')
   assert.ok(takeoverAt < procdAt && markAt < procdAt, '接管与防环标记必须在 procd_open_instance 之前完成')
-  // 照抄的目标值就是 P3 写入的上游;没有状态文件时全局接管兜底
-  assert.match(core, /openbox_apply_takeover\(\)\s*\{[^]*?_ob_want=" \$OPENBOX_DNS_UPSTREAM"[^]*?_ob_want_noresolv=1/, '没有状态文件时必须回落到全局接管')
+  // 照抄的目标值就是 P3 写入的上游;没有状态文件(老版本没记录)时全局接管兜底——但状态文件
+  // 明确写着 plan=none 时必须什么都不动(复审 R1),判断要在兜底之前
+  assert.match(core, /openbox_apply_takeover\(\)\s*\{[^]*?plan=\*\) _ob_plan=[^]*?\[ "\$_ob_plan" = "none" \] && return 0[^]*?_ob_want=" \$OPENBOX_DNS_UPSTREAM"[^]*?_ob_want_noresolv=1/, 'plan=none 必须在"没有条目就全量接管兜底"之前返回')
   // 幂等:先比对再改,避免面板 deploy 之后的 restart 再重启一次 dnsmasq
   assert.match(core, /openbox_apply_takeover\(\)\s*\{[^]*?sort\)" \][^]*?return 0[^]*?uci -q commit dhcp/, 'openbox_apply_takeover 必须先比对当前值、一致就直接返回')
 })
@@ -320,4 +321,81 @@ test('起内核前先确保 /dev/net/tun 存在(没有就 modprobe tun),且排�
   const body = start[0]
   assert.match(body, /\[ -e \/dev\/net\/tun \] \|\| modprobe tun/, '缺少 tun 模块加载')
   assert.ok(body.indexOf('modprobe tun') < body.indexOf('procd_open_instance'), '必须排在起内核之前')
+})
+
+// 复审 R1:把 openbox_apply_takeover 原样抽出来,uci / dnsmasq 换成记录状态的桩,按状态文件的
+// 三种计划真的跑一遍。以前"没有 server 条目"一律当成全量接管兜底,面板写的 none 在下一次
+// start / restart 时就被重新接管了。
+const runTakeover = ({ state, servers, noresolv, meta = '{"dnsMode": "dnsmasq"}' }) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'openbox-initd-'))
+  const fn = core.match(/^openbox_apply_takeover\(\) \{[^]*?^\}/m)
+  assert.ok(fn, '抽不出 openbox_apply_takeover')
+  const mode = core.match(/^openbox_dnsmasq_mode\(\) \{[^]*?^\}/m)
+  assert.ok(mode, '抽不出 openbox_dnsmasq_mode')
+  const body = fn[0].replace(/\/etc\/init\.d\/dnsmasq restart/g, 'stub_dnsmasq restart')
+  if (state !== null) fs.writeFileSync(path.join(dir, 'dnsmasq-takeover.txt'), state)
+  fs.writeFileSync(path.join(dir, 'meta.json'), meta)
+  fs.writeFileSync(path.join(dir, 'servers'), servers.map((s) => `${s}\n`).join(''))
+  if (noresolv !== null) fs.writeFileSync(path.join(dir, 'noresolv'), `${noresolv}\n`)
+  const harness = `
+set -u
+D='${dir}'
+DATA="$D"; DNSMASQ_BACKUP="$D/dnsmasq-backup.txt"; DNSMASQ_TAKEOVER="$D/dnsmasq-takeover.txt"; CONF_META="$D/meta.json"; CONF="$D/absent.json"
+OPENBOX_DNS_UPSTREAM='127.0.0.1#7853'; DNSMASQ_OUTBOUND_TAG=dnsmasq
+SV="$D/servers"; NR="$D/noresolv"; LOG="$D/log"
+uci() {
+  [ "$1" = "-q" ] && shift
+  cmd=$1; shift
+  case "$cmd" in
+    get) case "$1" in *.server) tr '\\n' ' ' < "$SV" 2>/dev/null ;; *.noresolv) cat "$NR" 2>/dev/null ;; esac ;;
+    show) printf "dhcp.cfg.server=%s\\n" "$(tr '\\n' ' ' < "$SV")" ;;
+    delete) case "$1" in *.server) : > "$SV" ;; *.noresolv) rm -f "$NR" ;; esac; echo "delete $1" >> "$LOG" ;;
+    del_list) v="\${1#*=}"; grep -vxF -- "$v" "$SV" > "$SV.n" 2>/dev/null; mv "$SV.n" "$SV"; echo "del_list $v" >> "$LOG" ;;
+    add_list) echo "\${1#*=}" >> "$SV"; echo "add_list \${1#*=}" >> "$LOG" ;;
+    set) case "$1" in *.noresolv=*) echo "\${1#*=}" > "$NR" ;; esac; echo "set $1" >> "$LOG" ;;
+    commit) echo committed >> "$LOG" ;;
+  esac
+  return 0
+}
+stub_dnsmasq() { echo "dnsmasq-$1" >> "$LOG"; }
+${mode[0]}
+${body}
+openbox_apply_takeover 2>/dev/null
+echo "servers=$(tr '\\n' ',' < "$SV")"
+echo "noresolv=$(cat "$NR" 2>/dev/null)"
+echo "log=$(tr '\\n' ',' < "$LOG" 2>/dev/null)"
+`
+  const out = execFileSync('sh', ['-c', harness], { encoding: 'utf8' })
+  fs.rmSync(dir, { recursive: true, force: true })
+  const result = {}
+  for (const line of out.trim().split('\n')) { const i = line.indexOf('='); result[line.slice(0, i)] = line.slice(i + 1) }
+  return result
+}
+
+test('内核启动:状态文件 plan=none(全部直连)→ 一个字不动,原上游留着,不重启 dnsmasq(复审 R1)', () => {
+  const r = runTakeover({ state: 'plan=none\n', servers: ['192.168.3.1', '/corp.example/192.168.3.5'], noresolv: null })
+  assert.equal(r.servers, '192.168.3.1,/corp.example/192.168.3.5,')
+  assert.equal(r.noresolv, '')
+  assert.equal(r.log, '')
+  // 状态文件不在(回滚删掉了)但元数据写着 dnsForward=none:同样不动——这正是复审用的复现场景
+  const meta = runTakeover({ state: null, servers: ['9.9.9.9'], noresolv: '0', meta: JSON.stringify({ dnsMode: 'dnsmasq', firstLayer: { dnsForward: 'none' } }) })
+  assert.equal(meta.servers, '9.9.9.9,')
+  assert.equal(meta.noresolv, '0')
+  assert.equal(meta.log, '')
+})
+
+test('内核启动:plan=domains 照抄按域名条目、不动用户上游、按状态文件决定 noresolv;plan=all 全量接管;没有状态文件(老版本)才全量兜底', () => {
+  const domains = runTakeover({ state: 'plan=domains\nserver=/youtube.com/127.0.0.1#7853\nnoresolv=1\n', servers: ['9.9.9.9', '/old.com/127.0.0.1#7853'], noresolv: '1' })
+  assert.equal(domains.servers, '9.9.9.9,/youtube.com/127.0.0.1#7853,')
+  assert.equal(domains.noresolv, '1')          // 用户原来就是 noresolv=1,状态文件也写了 1 → 保留
+  assert.match(domains.log, /dnsmasq-restart/)
+  const all = runTakeover({ state: 'plan=all\nserver=127.0.0.1#7853\nnoresolv=1\n', servers: ['9.9.9.9'], noresolv: null })
+  assert.match(all.servers, /127\.0\.0\.1#7853/)
+  assert.equal(all.noresolv, '1')
+  const legacy = runTakeover({ state: null, servers: ['9.9.9.9'], noresolv: null })
+  assert.match(legacy.servers, /127\.0\.0\.1#7853/)
+  assert.equal(legacy.noresolv, '1')
+  // 已经是目标状态:什么都不动
+  const idem = runTakeover({ state: 'plan=all\nserver=127.0.0.1#7853\nnoresolv=1\n', servers: ['127.0.0.1#7853'], noresolv: '1' })
+  assert.equal(idem.log, '')
 })

@@ -84,19 +84,31 @@ openbox_watch_start() {
 # 开机 S99 只用 procd 拉起内核、没人重新接管——dnsmasq 走运营商上游,被内核 nft 的
 # output 链 DNAT 回 172.19.0.2,内核再按规则回送给 dnsmasq,打环到全 LAN 超时、内核内存
 # 冲到几百 MB(2026-09-04 正式路由器)。有面板写的状态文件就照抄,没有就全局接管兜底。
+# 状态文件第一行 plan=none|domains|all(dns-takeover.mjs 写):none 是面板明确要求"一个都不转发,
+# 原 DNS 原样"——那就什么都不动,不能再拿"没有上游条目"当成"全量接管兜底"(全部直连的档案
+# 每次启动都会被重新接管,面板显示 none、实际 dnsmasq 又指回内核)。没有状态文件才是老版本
+# 没记录,照旧全量接管兜底。
 # 幂等:已经是目标状态就一个字不动,面板 deploy 之后的 restart 不会多重启一次 dnsmasq。
 openbox_apply_takeover() {
 	openbox_dnsmasq_mode || return 0
 	command -v uci >/dev/null 2>&1 || return 0
 	_ob_want=""
 	_ob_want_noresolv=""
+	_ob_plan=""
 	if [ -f "$DNSMASQ_TAKEOVER" ]; then
 		while IFS= read -r _ob_line || [ -n "$_ob_line" ]; do
 			case "$_ob_line" in
+				plan=*) _ob_plan="${_ob_line#plan=}" ;;
 				server=*) _ob_want="$_ob_want ${_ob_line#server=}" ;;
 				noresolv=1) _ob_want_noresolv=1 ;;
 			esac
 		done < "$DNSMASQ_TAKEOVER"
+	fi
+	[ "$_ob_plan" = "none" ] && return 0
+	# 状态文件不在(部署失败回滚时会被删掉)但元数据写着这份配置的 DNS 计划是 none:同样什么都不动。
+	# 只有两边都没有记录才是老版本留下的现场
+	if [ -z "$_ob_plan" ] && [ -f "$CONF_META" ] && grep -qE "\"dnsForward\": *\"none\"" "$CONF_META" 2>/dev/null; then
+		return 0
 	fi
 	if [ -z "$_ob_want" ]; then
 		_ob_want=" $OPENBOX_DNS_UPSTREAM"

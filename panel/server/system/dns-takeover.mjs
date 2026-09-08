@@ -56,10 +56,55 @@ const must = async (ctx, cmd, args, what) => {
   return r
 }
 
-const listOurEntries = async (ctx) => {
+const isOurs = (v) => typeof v === 'string' && v.endsWith(SINGBOX_DNS_UPSTREAM)
+
+// uci 里此刻的 dnsmasq 上游列表和 noresolv
+const readCurrent = async (ctx) => {
   const { stdout } = await ctx.exec('uci', ['-q', 'get', 'dhcp.@dnsmasq[0].server'])
-  return String(stdout || '').split(/\s+/).filter((v) => v && v.endsWith(SINGBOX_DNS_UPSTREAM))
+  const servers = String(stdout || '').split(/\s+/).filter(Boolean)
+  const nr = String((await ctx.exec('uci', ['-q', 'get', 'dhcp.@dnsmasq[0].noresolv'])).stdout || '').trim()
+  return { servers, noresolv: nr === '1' ? '1' : nr === '' ? null : nr }
 }
+
+// 接管前的"原 DNS 基线":有备份按备份,没有就按此刻 uci 里除去我们自己条目的那些。
+// 备份里可能残留老版本全量接管留下的东西(上游只剩 127.0.0.1#7853、noresolv=1),那不是用户
+// 的设置:我们的条目一律剔掉;剔掉之后一个上游都不剩而 noresolv=1,这个 noresolv 也是接管留下的
+const readBaseline = async (ctx, paths) => {
+  const bp = backupPath(paths)
+  let parsed
+  if (await ctx.exists(bp)) parsed = parseBackup(await ctx.readFile(bp))
+  else parsed = await readCurrent(ctx)
+  const ours = parsed.servers.filter(isOurs)
+  const servers = parsed.servers.filter((v) => !isOurs(v))
+  let noresolv = parsed.noresolv === null || parsed.noresolv === undefined ? null : String(parsed.noresolv)
+  if (ours.length && !servers.length && noresolv === '1') noresolv = null
+  return { servers, noresolv }
+}
+
+// 备份写盘前把我们自己的条目剔掉:备份的意义是"接管前用户的设置",老版本全量接管留下的现场
+// (上游只剩 127.0.0.1#7853、noresolv=1)不是用户的;留在备份里,还原 / 停止时会把它们重新写回去
+const sanitizeBackup = (text) => {
+  const lines = []
+  let hadOurs = false
+  let servers = []
+  for (const line of String(text || '').split('\n')) {
+    const idx = line.indexOf('.server=')
+    if (idx === -1) { lines.push(line); continue }
+    const prefix = line.slice(0, idx + '.server='.length)
+    const values = [...line.slice(idx + '.server='.length).matchAll(/'([^']*)'/g)].map((m) => m[1])
+    const kept = values.filter((v) => !isOurs(v))
+    if (kept.length !== values.length) hadOurs = true
+    servers = kept
+    if (kept.length) lines.push(`${prefix}${kept.map((v) => `'${v}'`).join(' ')}`)
+  }
+  // 上游全是我们的、noresolv=1:这个 noresolv 也是接管留下的
+  return (hadOurs && !servers.length ? lines.filter((l) => !/\.noresolv='1'/.test(l)) : lines).join('\n')
+}
+
+// 状态文件:第一行写这次的计划(none / domains / all),init 脚本开机照抄时靠它分辨"面板明确
+// 要求什么都别动"和"老版本没有记录"(复审 R1);后面是我们写进 uci 的上游条目、以及目标 noresolv
+const stateTextFor = (plan, ours, noresolv) =>
+  [`plan=${plan}`, ...ours.map((s) => `server=${s}`), ...(noresolv === '1' ? ['noresolv=1'] : [])].join('\n') + '\n'
 
 export const applyDnsTakeover = async (ctx, paths, { mode, forwardDomains = [], forward } = {}) => {
   if (mode !== 'dnsmasq') return { changed: false, actions: [] }
@@ -69,23 +114,24 @@ export const applyDnsTakeover = async (ctx, paths, { mode, forwardDomains = [], 
     : { mode: Array.isArray(forwardDomains) && forwardDomains.length ? 'domains' : 'all', domains: forwardDomains }
 
   // 全部直连:DNS 一个都不用转给内核,路由器原有的上游 / AdGuard 链条原样保留。
-  // 之前接管过(有备份)就还原回接管前的状态;没接管过就什么都不动
+  // 之前接管过(有备份)就还原回接管前的状态;没接管过就什么都不动。状态文件写 plan=none,
+  // 开机时 init 脚本看到它就不再"没有状态文件 → 全量接管兜底"(复审 R1)
   if (plan.mode === 'none') {
-    if (await ctx.exists(backupPath(paths))) {
-      await restoreDnsTakeover(ctx, paths)
-      return { changed: true, actions: ['restore:none'] }
-    }
-    const sp = dnsTakeoverStatePath(paths)
-    if (await ctx.exists(sp)) await ctx.remove(sp)
-    return { changed: false, actions: ['none'] }
+    const hadBackup = await ctx.exists(backupPath(paths))
+    if (hadBackup) await restoreDnsTakeover(ctx, paths)
+    await ctx.mkdirp(paths.dataDir)
+    await ctx.writeFile(dnsTakeoverStatePath(paths), stateTextFor('none', [], null))
+    return { changed: hadBackup, actions: [hadBackup ? 'restore:none' : 'none'] }
   }
   forwardDomains = plan.mode === 'domains' ? plan.domains : []
 
+  const current = await readCurrent(ctx)
   if (!(await ctx.exists(backupPath(paths)))) {
     const { stdout } = await ctx.exec('uci', ['show', 'dhcp.@dnsmasq[0]'])
     await ctx.mkdirp(paths.dataDir)
-    await ctx.writeFile(backupPath(paths), stdout)
+    await ctx.writeFile(backupPath(paths), sanitizeBackup(stdout))
   }
+  const baseline = await readBaseline(ctx, paths)
 
   const wanted = Array.isArray(forwardDomains) ? forwardDomains : []
   const safeDomains = [...new Set(wanted.map(dnsmasqSafeDomain).filter(Boolean))]
@@ -93,34 +139,38 @@ export const applyDnsTakeover = async (ctx, paths, { mode, forwardDomains = [], 
   // 解析(拿到污染 IP),比起让 dnsmasq 起不来仍是小得多的代价
   const badDomain = wanted.length > 0 && wanted.some((d) => !dnsmasqSafeDomain(d))
   const perDomain = wanted.length > 0 && !badDomain
-  const servers = perDomain
-    ? safeDomains.map((domain) => `/${domain}/${SINGBOX_DNS_UPSTREAM}`)
-    : [SINGBOX_DNS_UPSTREAM]
-  const stateText = [...servers.map((s) => `server=${s}`), ...(perDomain ? [] : ['noresolv=1'])].join('\n') + '\n'
+  const ours = perDomain ? safeDomains.map((domain) => `/${domain}/${SINGBOX_DNS_UPSTREAM}`) : [SINGBOX_DNS_UPSTREAM]
+  // 目标状态(复审 R4):
+  //   all      上游只剩内核,noresolv=1——所有查询都进内核再分
+  //   domains  原 DNS 基线原样(用户的上游、定向域名上游、noresolv 都保留)+ 我们的按域名条目。
+  //            以前只在"此刻的列表"上追加,从 all 切过来时原上游早被删光了,而且无条件删 noresolv
+  // 接管期间用户在 dnsmasq 里新加的上游(此刻列表里有、基线里没有)也算进基线,并把备份跟着刷新,
+  // 不拿老备份盖掉用户后来改的设置
+  const userNow = current.servers.filter((v) => !isOurs(v))
+  const userAdded = userNow.filter((v) => !baseline.servers.includes(v))
+  const baseServers = [...baseline.servers, ...userAdded]
+  const targetServers = perDomain ? [...baseServers, ...ours] : [SINGBOX_DNS_UPSTREAM]
+  const targetNoresolv = perDomain ? baseline.noresolv : '1'
+  const stateText = stateTextFor(plan.mode, ours, targetNoresolv)
 
   // 已经是目标状态就一个字不动:每次部署都 commit + 重启 dnsmasq,是一次全 LAN 解析瞬断外加
-  // 三秒多的等待(实测),而绝大多数部署 DNS 这块根本没变。和 init 脚本里的幂等判断一样,
-  // 只看我们自己写的条目和 noresolv。
-  const ours = await listOurEntries(ctx)
-  const currentNoresolv = String((await ctx.exec('uci', ['-q', 'get', 'dhcp.@dnsmasq[0].noresolv'])).stdout || '').trim() === '1'
-  const sameServers = ours.length === servers.length && [...ours].sort().join('\n') === [...servers].sort().join('\n')
-  if (sameServers && currentNoresolv === !perDomain) {
+  // 三秒多的等待(实测),而绝大多数部署 DNS 这块根本没变
+  const same = (a, b) => a.length === b.length && [...a].sort().join('\n') === [...b].sort().join('\n')
+  if (same(current.servers, targetServers) && (current.noresolv === '1') === (targetNoresolv === '1')) {
     await ctx.writeFile(dnsTakeoverStatePath(paths), stateText)
     return { changed: false, actions: ['unchanged'] }
   }
-  if (perDomain) {
-    // 只摘掉我们自己上一次写的条目,用户的上游(AdGuard / 223.5.5.5 …)原样保留——
-    // "其余域名交回路由器自己的上游"说的就是它们。也不设 noresolv,反而要把可能残留的
-    // 那条删掉,否则上一次全局接管留下的 noresolv=1 会让"没被转发的域名"彻底无解析。
-    for (const entry of await listOurEntries(ctx)) {
-      await ctx.exec('uci', ['-q', 'del_list', `dhcp.@dnsmasq[0].server=${entry}`])
-    }
-    await ctx.exec('uci', ['-q', 'delete', 'dhcp.@dnsmasq[0].noresolv'])
-  } else {
-    await ctx.exec('uci', ['-q', 'delete', 'dhcp.@dnsmasq[0].server'])
-    await must(ctx, 'uci', ['set', 'dhcp.@dnsmasq[0].noresolv=1'], 'uci set noresolv')
+  if (userAdded.length && perDomain) {
+    // 基线变了(用户加了上游),备份也跟着记,还原时才能还原到用户最新的设置
+    const { stdout } = await ctx.exec('uci', ['show', 'dhcp.@dnsmasq[0]'])
+    await ctx.writeFile(backupPath(paths), sanitizeBackup(stdout))
   }
-  for (const s of servers) await must(ctx, 'uci', ['add_list', `dhcp.@dnsmasq[0].server=${s}`], `uci add_list server=${s}`)
+  // 整段按目标状态重建:删掉整个列表再逐条加。以前 domains 分支只摘我们自己的条目,从 all 过来
+  // 时原上游已经不在列表里,摘完等于只剩我们的按域名条目
+  await ctx.exec('uci', ['-q', 'delete', 'dhcp.@dnsmasq[0].server'])
+  for (const s of targetServers) await must(ctx, 'uci', ['add_list', `dhcp.@dnsmasq[0].server=${s}`], `uci add_list server=${s}`)
+  if (targetNoresolv === '1') await must(ctx, 'uci', ['set', 'dhcp.@dnsmasq[0].noresolv=1'], 'uci set noresolv')
+  else await ctx.exec('uci', ['-q', 'delete', 'dhcp.@dnsmasq[0].noresolv'])
   // 闪存写满时 commit 静默失败,dnsmasq 重启后还是旧配置;dnsmasq 起不来 LAN 就没 DNS——
   // 两种都不能报"部署成功"
   await must(ctx, 'uci', ['commit', 'dhcp'], 'uci commit dhcp')
