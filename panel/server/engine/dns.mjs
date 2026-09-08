@@ -32,6 +32,17 @@ const directServerFor = (profile, options) => {
 // 截断/丢包,TCP 的可靠性正好抵掉它多出来的那次握手。端口不写就是 53。
 const proxyServerFor = (server, tag, detour) => ({ type: 'tcp', tag, server, detour })
 
+// 仅代理域名 FakeIP(原型,档案开关 dns.fakeIpForProxy):走代理的域名 A / AAAA 查询由内核返回
+// 占位地址,真实解析完全不在本地发生——连接进内核时按占位地址找回域名,把域名交给选中的节点,
+// 由节点那头解析并连接。于是 (1) 代理域名的解析和连接天然在同一个实际节点上(不再是"DNS detour
+// 到组、连接又落到组里另一个叶子");(2) 客户端拿到的是占位地址,永远不会落进 geoip-cn 这种
+// 直连集合,入口旁路就不会被"域名规则解析出来的 IP"误放行。直连域名照旧真实解析。
+// 占位段用 sing-box 默认:198.18.0.0/15(RFC 2544 保留段)、fc00::/18。
+export const FAKEIP_V4 = '198.18.0.0/15'
+export const FAKEIP_V6 = 'fc00::/18'
+export const FAKEIP_TAG = 'dns-fakeip'
+export const dnsFakeIpEnabled = (profile) => Boolean(profile && profile.dns && profile.dns.split !== false && profile.dns.fakeIpForProxy === true)
+
 // 前置自定义分流的一行 → 一条 DNS 规则的匹配部分。只按 IP 分流的行(ip_cidr / geoip /
 // 只编出 IP 那份的规则集链接)不进 DNS:解析的时候还没有 IP,拿什么都匹配不上。
 // 端口同理:DNS 查询里没有目标端口。
@@ -60,7 +71,7 @@ const localServer = { type: 'local', tag: 'dns-local' }
 // 规则集同理,只收纯域名的那些(geosite-*、规则集链接的域名那份):含 IP 的规则集进了 DNS 规则
 // 不是"不命中",而是更糟的"每个域名都先按这条查一遍再扔掉"——见 routing-model.mjs 的 dnsRulesetTags。
 const policyDnsRule = (policy, server, ruleLists) => {
-  const rule = { server }
+  const rule = server ? { server } : {}
   const rulesets = dnsRulesetTags(policy, ruleLists)
   if (rulesets.length) rule.rule_set = rulesets
   if (policy.domain.length) rule.domain = policy.domain
@@ -119,6 +130,13 @@ export const buildDns = (profile, options = {}) => {
   // 前置自定义分流的解析跟着每一行自己的出口走:出口是设置里定死的,不随代理页的点选变化。
   // 少了这段,被强制送到某个节点的域名仍会在本地解析,拿到的是本地就近的 CDN 地址。
   // 每个用到的代理出口开一台解析器,同一个出口的多行共用一台。
+  // 走代理的匹配:开了 FakeIP 就先给 A / AAAA 一条占位地址规则,其它查询类型(HTTPS / TXT …)仍走
+  // 代理侧真实解析器
+  const fakeIp = dnsFakeIpEnabled(profile)
+  const pushProxyRule = (match, tag) => {
+    if (fakeIp) rules.push({ ...match, query_type: ['A', 'AAAA'], server: FAKEIP_TAG })
+    rules.push({ ...match, server: tag })
+  }
   const custom = conf.custom
   if (customPolicyActive(custom)) {
     const serverByTarget = new Map()
@@ -141,7 +159,7 @@ export const buildDns = (profile, options = {}) => {
         serverByTarget.set(target, tag)
         servers.push(proxyServerFor(proxyHost, tag, target))
       }
-      rules.push({ ...match, server: tag })
+      pushProxyRule(match, tag)
     }
   }
 
@@ -176,7 +194,7 @@ export const buildDns = (profile, options = {}) => {
         serverByTarget.set(cr.outbound, tag)
         servers.push(proxyServerFor(proxyHost, tag, cr.outbound))
       }
-      rules.push({ source_ip_cidr: cr.sources, server: tag })
+      pushProxyRule({ source_ip_cidr: cr.sources }, tag)
       sourceRules = true
     }
   }
@@ -193,15 +211,21 @@ export const buildDns = (profile, options = {}) => {
     }
     const tag = `dns-policy-${index}`
     servers.push(proxyServerFor(proxyHost, tag, policy.name))
-    rules.push(policyDnsRule(policy, tag, ruleLists))
+    pushProxyRule(policyDnsRule(policy, '', ruleLists), tag)
   })
 
+  const fallbackDirect = goesDirect(conf.fallback.name, conf.fallback.default)
+  if (fakeIp) {
+    servers.push({ type: 'fakeip', tag: FAKEIP_TAG, inet4_range: FAKEIP_V4, ...(profile.ipv6 ? { inet6_range: FAKEIP_V6 } : {}) })
+    // 兜底走代理:上面都没命中的域名 A / AAAA 也发占位地址
+    if (!fallbackDirect) rules.push({ query_type: ['A', 'AAAA'], server: FAKEIP_TAG })
+  }
   servers.push(...localServers)
   const dns = {
     servers,
     rules,
     // 兜底:上面都没命中的域名,按兜底站点集此刻走哪来定用哪边解析
-    final: goesDirect(conf.fallback.name, conf.fallback.default) ? 'dns-direct' : 'dns-proxy',
+    final: fallbackDirect ? 'dns-direct' : 'dns-proxy',
     strategy,
     reverse_mapping: true,
   }

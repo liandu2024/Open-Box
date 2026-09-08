@@ -175,3 +175,27 @@ test('firstLayerChanged:只按 IP 分流的站点集从直连切到代理,DNS �
   assert.equal(await firstLayerChanged(createMockContext({}), paths, store, { 国内: '香港-自动' }), false)
   assert.equal(await firstLayerChanged(createMockContext({ files: { [configMetaPath(paths)]: JSON.stringify({ ...meta, firstLayer: undefined }) } }), paths, store, { 国内: '香港-自动' }), false)
 })
+
+test('firstLayerChanged / currentBypassPlan:FakeIP 下旁路结论按计划阶段(含 pending)比,不按部署核对后的结果比', async () => {
+  const { currentBypassPlan } = await import('./deploy-runner.mjs')
+  const paths = createPaths('/opt/open-box')
+  const routing = { fallbackDefault: 'direct', policies: [
+    { name: '电报', default: '香港-自动', rulesets: ['geoip-telegram'] },
+    { name: '国内', default: 'direct', rulesets: ['geoip-cn'] },
+  ] }
+  const store = { getProfile: () => ({ routing, clientRoutes: [], dns: { split: true, fakeIpForProxy: true } }), getGroups: () => [{ id: 'g', name: '香港-自动', type: 'urltest', mode: 'dynamic', keywords: [] }], getNodes: () => [] }
+  const plan = currentBypassPlan(store, {})
+  assert.deepEqual(plan.sets, [])
+  assert.deepEqual(plan.pending.map((x) => x.policy), ['国内'])
+  // 部署时核对通过:实际 nativeBypass 开了 geoip-cn,但计划阶段记的是 pending → 选择没变就不重生成
+  const meta = {
+    dnsMode: 'dnsmasq', dnsPolicyMembers: ['直连', '香港-自动', '拒绝'], dnsPolicyClasses: { 其他: 'direct' },
+    firstLayer: { dnsMode: 'dnsmasq', dnsForward: 'none', nativeBypass: { enabled: true, sets: ['geoip-cn'], reason: '', via: 'nft' }, nativeBypassPlanned: { sets: [], pending: ['国内'] }, dnsSourceRules: false },
+  }
+  const ctx = createMockContext({ files: { [configMetaPath(paths)]: JSON.stringify(meta) } })
+  assert.equal(await firstLayerChanged(ctx, paths, store, {}), false)
+  // 「电报」切到直连:前面没有带 IP 条件的代理站点集了,geoip-cn 不再 pending → 变了
+  assert.equal(await firstLayerChanged(ctx, paths, store, { 电报: '直连' }), true)
+  // 「国内」切到代理:候选没了 → 变了
+  assert.equal(await firstLayerChanged(ctx, paths, store, { 国内: '香港-自动' }), true)
+})

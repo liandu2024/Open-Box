@@ -5,7 +5,7 @@ import { customOutboundTag, customPolicyActive, effectiveOutbound, nativeBypassP
 import { buildRoute } from './routing.mjs'
 import { buildServerInbounds } from './servers.mjs'
 import { normalizeClientRoutes } from './client-routes.mjs'
-import { buildDns } from './dns.mjs'
+import { buildDns, dnsFakeIpEnabled, FAKEIP_V6 } from './dns.mjs'
 import { collectDirectHosts } from './direct-hosts.mjs'
 import { cidrsOverlap, parseCidr, subtractCidrs } from '../system/local-subnets.mjs'
 
@@ -58,7 +58,7 @@ export const DNSMASQ_OUTBOUND_TAG = 'dnsmasq'
 // 系统解析器,会绕回 dnsmasq 形成死循环。预览/测试不传就回落到档案里填的那台。
 // regionGroups 参数已经退役(以前按国家自动分的 urltest 组 + 一个 PROXY 聚合 selector,
 // 那是节点组功能出现之前的东西);留着这个参数名只是让老调用方不报错。
-export const buildConfig = ({ nodes, profile, userGroups, systemDns, localSubnets = [], directHostCidrs = [], subscriptions = [], ruleLists = {}, cacheFilePath = '/opt/open-box/data/cache.db', selections = {}, tlsCert = { certPath: '/opt/open-box/etc/certs/server.crt', keyPath: '/opt/open-box/etc/certs/server.key' } }) => {
+export const buildConfig = ({ nodes, profile, userGroups, systemDns, localSubnets = [], directHostCidrs = [], subscriptions = [], ruleLists = {}, cacheFilePath = '/opt/open-box/data/cache.db', selections = {}, tlsCert = { certPath: '/opt/open-box/etc/certs/server.crt', keyPath: '/opt/open-box/etc/certs/server.key' }, nativeBypass }) => {
   // 订阅和节点站点直连(默认开):见 engine/direct-hosts.mjs
   // directHostCidrs:部署时把节点域名解析出来的 IP(见 system/resolve-hosts.mjs),让按裸 IP
   // 直连节点服务器的客户端(SSH 等)也能命中直连规则;预览接口没有这份,只按域名匹配。
@@ -151,6 +151,10 @@ export const buildConfig = ({ nodes, profile, userGroups, systemDns, localSubnet
   // 依据——挖掉之后路由器回给局域网的每个包都被路由进 tun 吞掉,LuCI / 面板 / DNS 全部失联,
   // 重启后内核自启立刻复现(v0.1.65–v0.1.70 的「禁用」模式,正式路由器和开发路由器都实测)。
   const holes = autoRedirect && dnsMode === 'hijack' ? [...localSubnets, TUN_V4_NET, TUN_V6_NET] : [TUN_V4_NET, TUN_V6_NET]
+  // FakeIP 的 v6 占位段 fc00::/18 落在排除表的 fc00::/7 里,不挖出来的话走代理域名的 v6 连接在入口就被
+  // 放走了(v4 的 198.18.0.0/15 不在排除表里,不用挖)
+  const fakeIp = dnsFakeIpEnabled(profile)
+  if (fakeIp && profile.ipv6) holes.push(FAKEIP_V6)
   // 用户明确要送去节点的私网段(前置自定义分流的 ip_cidr 行,出口不是直连 / 拒绝)也要挖出来:
   // 不然 10.77.0.0/16 → 节点 这种规则被排除表的 10.0.0.0/8 在入口先放走,永远到不了那条规则
   // (审核 B5,经 WireGuard 访问对端局域网的典型写法)。和排除表有交集的都算——规则比排除段
@@ -180,8 +184,12 @@ export const buildConfig = ({ nodes, profile, userGroups, systemDns, localSubnet
   // route_exclude_address_set——命中的目标在系统入口就旁路,不进内核。开 auto_redirect 时
   // 内核把它们写成 nft 集合;不开时等价于加进 route_exclude_address(1.11 起)。条件和
   // 原因见 routing-model.mjs 的 nativeBypassPlan;不满足时直连目标进内核由 direct 出站连(兼容路径)
-  const bypass = nativeBypassPlan(profile.routing, { members: policyMemberTags, builtin, selections, clientRoutes })
-  if (bypass.enabled) tunInbound.route_exclude_address_set = bypass.sets
+  // 部署时会带一份已经做过 IP 集合重叠核对的结果(system/native-bypass.mjs);没带(预览 / 测试)就按纯函数
+  // 的保守结论——待核对的集合一律不开
+  const bypass = nativeBypass && typeof nativeBypass === 'object'
+    ? nativeBypass
+    : nativeBypassPlan(profile.routing, { members: policyMemberTags, builtin, selections, clientRoutes, fakeIp })
+  if (bypass.enabled && bypass.sets.length) tunInbound.route_exclude_address_set = bypass.sets
 
   // 面板「真实路由」测试用的回环入站:面板进程经它发请求,请求才会真的走内核的分流
   // (路由器自身发出的流量不一定进 tun)。只听 127.0.0.1,外面碰不到。
@@ -207,7 +215,8 @@ export const buildConfig = ({ nodes, profile, userGroups, systemDns, localSubnet
       // 记住每个 selector 的选择:没有它,内核每次重启(包括面板里的「重启」)都会把站点集
       // 和手动组重置回配置里的默认项,用户在代理页选好的线路全部丢掉。文件放在 data/ 下,
       // 重新部署面板不会碰它。
-      cache_file: { enabled: true, path: cacheFilePath, store_fakeip: false },
+      // FakeIP 开着时占位地址 ↔ 域名的映射也要落盘:重启后客户端缓存里的占位地址还能找回域名
+      cache_file: { enabled: true, path: cacheFilePath, store_fakeip: dnsFakeIpEnabled(profile) },
     },
   }
   if (endpoints.length) config.endpoints = endpoints

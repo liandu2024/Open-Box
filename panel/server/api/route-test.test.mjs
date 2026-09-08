@@ -350,3 +350,54 @@ test('S4:指定终端来源时,响应明确标出 DNS 判定是按终端预测�
     await new Promise((r) => server.close(r))
   }
 })
+
+test('decideDnsServer:内核自己的 fakeip 规则先命中时记成 fakeIpRule,判定继续找真解析器;探测到占位地址标 fakeIpLocal 而不是"对端截下了查询"(第三轮 阶段 3)', async () => {
+  const paths = createPaths('/opt/open-box')
+  const config = {
+    dns: {
+      servers: [
+        { type: 'udp', tag: 'dns-direct', server: '192.168.3.5' },
+        { type: 'tcp', tag: 'dns-policy-0', server: '1.1.1.1', detour: 'Google' },
+        { type: 'fakeip', tag: 'dns-fakeip', inet4_range: '198.18.0.0/15' },
+      ],
+      rules: [
+        { domain_suffix: ['google.com'], query_type: ['A', 'AAAA'], server: 'dns-fakeip' },
+        { domain_suffix: ['google.com'], server: 'dns-policy-0' },
+        { domain_suffix: ['baidu.com'], server: 'dns-direct' },
+      ],
+      final: 'dns-direct',
+    },
+    route: { rule_set: [] },
+  }
+  const ctx = createMockContext({ files: { [paths.configPath]: JSON.stringify(config), [paths.singbox]: 'x' } })
+  const g = await decideDnsServer(ctx, paths, config, 'www.google.com')
+  assert.equal(g.fakeIpRule, 0)
+  assert.equal(g.ruleIndex, 1)
+  assert.equal(g.server.tag, 'dns-policy-0')
+  assert.equal(g.viaProxy, true)
+  const b = await decideDnsServer(ctx, paths, config, 'www.baidu.com')
+  assert.equal(b.fakeIpRule, undefined)
+  assert.equal(b.server.tag, 'dns-direct')
+
+  const store = { getClashSecret: () => 's', getGroups: () => [], getProfile: () => ({ routing: {} }) }
+  const fetchImpl = async (url) => {
+    if (url.includes('/proxies')) return { ok: true, status: 200, json: async () => ({ proxies: { Google: { now: 'HK-01' } } }) }
+    if (url.includes('/dns/query')) return { ok: true, status: 200, json: async () => ({ Answer: [{ data: '198.18.0.9', TTL: 1 }] }) }
+    if (url.includes('/connections')) return { ok: true, status: 200, json: async () => ({ connections: [] }) }
+    throw new Error('unexpected fetch ' + url)
+  }
+  const app = express()
+  registerRouteTestRoutes(app, { store, ctx, paths, fetchImpl, probe: async () => ({ ok: true, status: 200, ms: 1 }) })
+  const server = app.listen(0)
+  await new Promise((r) => server.once('listening', r))
+  try {
+    const res = await fetch(`http://127.0.0.1:${server.address().port}/api/openbox/route-test`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ target: 'www.google.com' }) })
+    const body = await res.json()
+    assert.equal(body.dns.fakeIpRule, 0)
+    assert.equal(body.resolve.fakeIp, true)
+    assert.equal(body.resolve.fakeIpLocal, true)
+    assert.equal(body.resolve.fakeIpFrom, undefined)
+  } finally {
+    await new Promise((r) => server.close(r))
+  }
+})

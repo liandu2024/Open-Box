@@ -419,7 +419,10 @@ test('config.meta.json 记下第一层的判定:DNS 转发计划、入口原生�
   assert.equal(meta.firstLayer.dnsMode, 'dnsmasq')
   assert.equal(meta.firstLayer.dnsForward, 'none')             // 全部直连:一个域名都不转发
   assert.match(meta.firstLayer.dnsForwardReason, /原有上游/)
-  assert.deepEqual(meta.firstLayer.nativeBypass, { enabled: true, sets: ['geoip-cn'], reason: '', via: 'nft' })
+  assert.deepEqual(meta.firstLayer.nativeBypass, { enabled: true, sets: ['geoip-cn'], pending: [], reason: '', via: 'nft' })
+  // 计划阶段(纯函数)的结论也记下来:选择同步时按同口径比;FakeIP 原型没开
+  assert.deepEqual(meta.firstLayer.nativeBypassPlanned, { sets: ['geoip-cn'], pending: [] })
+  assert.equal(meta.firstLayer.fakeIp, false)
   assert.equal(meta.firstLayer.dnsSourceRules, false)
   // 全部直连时 dnsmasq 不被接管:没有 add_list 127.0.0.1#7853
   assert.ok(!cmds(ctx).some((c) => c.includes('add_list') && c.includes('127.0.0.1#7853')))

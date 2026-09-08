@@ -5,6 +5,7 @@ import { applyDnsTakeover, restoreDnsTakeover, dnsTakeoverBackupPath } from './d
 import { expandDnsForward } from './dns-forward.mjs'
 import { dnsmasqForwardPlan, nativeBypassPlan, normalizeRouting, routingFingerprint } from '../engine/routing-model.mjs'
 import { normalizeClientRoutes } from '../engine/client-routes.mjs'
+import { dnsFakeIpEnabled } from '../engine/dns.mjs'
 import { dnsPolicyClasses } from '../engine/dns.mjs'
 import { builtinTags } from '../engine/user-groups.mjs'
 import { applyPanelLanRule, applyDnsLanRule, applyIpv6Block, removeProxyRules, applyServerPortRules, commitFirewall } from './firewall.mjs'
@@ -76,7 +77,7 @@ export const autoRedirectFallbackWarning = (fatal) =>
 
 // rebuild(profilePatch):按改过的档案重新生成一份配置(见 api/deploy-runner.mjs)。只在 auto_redirect
 // 起不来要降级重试时用;不传就不降级,照旧回滚直连。
-export const deployConfig = async (ctx, paths, { config, profile, userGroups, fetchImpl, selections = {}, isCancelled = () => false, rebuild } = {}) => {
+export const deployConfig = async (ctx, paths, { config, profile, userGroups, fetchImpl, selections = {}, isCancelled = () => false, rebuild, nativeBypass: bypassGiven } = {}) => {
   // 每一步花了多久:随结果一起带回去写进日志,"重启要一分钟"这种反馈能直接看到卡在哪
   const timings = {}
   let stepStart = Date.now()
@@ -148,7 +149,9 @@ export const deployConfig = async (ctx, paths, { config, profile, userGroups, fe
     // (可能再降级)。元数据记的是最终实际执行的那份;计划阶段的模式另存一份,选择同步时按同口径比
     const dnsPlanned = dnsmasqForwardPlan(profile.routing, policyMembers, builtin, selections || {})
     let dnsForward = dnsMode === 'dnsmasq' ? await expandDnsForward(ctx, paths, dnsPlanned) : dnsPlanned
-    const nativeBypass = nativeBypassPlan(profile.routing, { members: policyMembers, builtin, selections: selections || {}, clientRoutes })
+    const bypassPlanned = nativeBypassPlan(profile.routing, { members: policyMembers, builtin, selections: selections || {}, clientRoutes, fakeIp: dnsFakeIpEnabled(profile) })
+    // 部署入口(api/deploy-runner.mjs)会带一份做过重叠核对的结论;没带就按纯函数的保守结论
+    const nativeBypass = bypassGiven && typeof bypassGiven === 'object' ? bypassGiven : { ...bypassPlanned, pending: [] }
     // 配置 + 元数据一起写;auto_redirect 降级重试时再写一遍
     const writeConfigAndMeta = async (cfg) => {
       await ctx.writeFile(paths.configPath, JSON.stringify(cfg, null, 2))
@@ -179,6 +182,9 @@ export const deployConfig = async (ctx, paths, { config, profile, userGroups, fe
             dnsForwardSuperset: (dnsForward.superset || []).map((x) => `${x.tag}:${x.suffix}`),
             // 开 auto_redirect 时内核把集合写成 nft 集合在入口 return;纯 tun 模式下等价于加进路由表的排除项
             nativeBypass: nativeBypass.enabled ? { ...nativeBypass, via: autoRedirect ? 'nft' : 'route' } : nativeBypass,
+            // 计划阶段(纯函数)的结论:选择同步时按同口径比
+            nativeBypassPlanned: { sets: bypassPlanned.sets, pending: bypassPlanned.pending.map((x) => x.policy) },
+            fakeIp: dnsFakeIpEnabled(profile),
             dnsSourceRules: dnsMode === 'hijack' && clientRoutes.length > 0,
           },
         }, null, 2),

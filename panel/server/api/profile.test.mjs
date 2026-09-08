@@ -538,3 +538,9 @@ test('validateProfilePatch 校验前置自定义分流(一行一条规则、一�
   assert.match(bad({ rules: [{ type: 'port', value: '2000-1000', outbound: 'HK' }] }), /ports like/)
   assert.match(bad({ rules: [{ type: 'port', value: 'abc', outbound: 'HK' }] }), /ports like/)
 })
+
+test('validateProfilePatch dns.fakeIpForProxy 必须是布尔', () => {
+  assert.equal(validateProfilePatch({ dns: { fakeIpForProxy: true } }), null)
+  assert.equal(validateProfilePatch({ dns: { fakeIpForProxy: false } }), null)
+  assert.match(validateProfilePatch({ dns: { fakeIpForProxy: 'yes' } }), /fakeIpForProxy/)
+})

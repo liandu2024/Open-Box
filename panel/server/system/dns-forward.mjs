@@ -63,7 +63,7 @@ export const ruleSetToForwardEntries = (json) => {
 }
 
 // 解码一份 .srs:交给内核 decompile 到临时文件再读。文件不在 / 解不开都当"这份规则集不可用"
-const decodeRuleSet = async (ctx, paths, tag) => {
+export const decodeRuleSetJson = async (ctx, paths, tag) => {
   const srsPath = `${paths.rulesetDir}/${tag}.srs`
   if (!(await ctx.exists(srsPath))) return { error: '本地没有这份规则集文件' }
   const jsonPath = `${paths.dataDir}/tmp/${tag}.dns-forward.json`
@@ -93,7 +93,7 @@ export const expandDnsForward = async (ctx, paths, plan) => {
   for (const { tag, owner } of plan.expand) {
     if (seen.has(tag)) continue
     seen.add(tag)
-    const decoded = await decodeRuleSet(ctx, paths, tag)
+    const decoded = await decodeRuleSetJson(ctx, paths, tag)
     if (decoded.error) return { mode: 'all', domains: [], expand: [], expanded, superset, reason: `${owner}的规则集「${tag}」${decoded.error},dnsmasq 名单展不开` }
     const r = ruleSetToForwardEntries(decoded.json)
     if (r.unsupported) return { mode: 'all', domains: [], expand: [], expanded, superset, reason: `${owner}的规则集「${tag}」${r.unsupported},dnsmasq 展不开` }

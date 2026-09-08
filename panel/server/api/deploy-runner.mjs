@@ -4,12 +4,16 @@ import { readLocalSubnets } from '../system/local-subnets.mjs'
 import { resolveHostsToCidrs } from '../system/resolve-hosts.mjs'
 import { collectDirectHosts } from '../engine/direct-hosts.mjs'
 import { dnsmasqForwardPlan, nativeBypassPlan, normalizeRouting } from '../engine/routing-model.mjs'
+import { emitUserGroups } from '../engine/user-groups.mjs'
 import { normalizeClientRoutes } from '../engine/client-routes.mjs'
 import { builtinTags } from '../engine/user-groups.mjs'
 import { buildConfig } from '../engine/config.mjs'
 import { dnsPolicyClasses } from '../engine/dns.mjs'
 import { deployConfig, configMetaPath } from '../system/deploy.mjs'
 import { ensureRuleLists } from '../system/rule-lists.mjs'
+import { resolveNativeBypass } from '../system/native-bypass.mjs'
+import { dnsFakeIpEnabled } from '../engine/dns.mjs'
+import { policyOutboundOptions } from '../engine/routing-model.mjs'
 import { enableService, disableService, serviceStatus } from '../system/service.mjs'
 import { CLASH_API_BASE } from './penetration.mjs'
 
@@ -111,10 +115,12 @@ export const firstLayerChanged = async (ctx, paths, store, selections) => {
     if (!prev || typeof prev !== 'object' || !members.length) return false
     const profile = store.getProfile() || {}
     const builtin = builtinTags(typeof store.getGroups === 'function' ? store.getGroups() : [])
-    const bypass = nativeBypassPlan(profile.routing, { members, builtin, selections: selections || {}, clientRoutes: normalizeClientRoutes(profile.clientRoutes) })
-    const prevBypass = prev.nativeBypass || {}
+    const bypass = nativeBypassPlan(profile.routing, { members, builtin, selections: selections || {}, clientRoutes: normalizeClientRoutes(profile.clientRoutes), fakeIp: dnsFakeIpEnabled(profile) })
     const sortedSets = (v) => [...(Array.isArray(v) ? v : [])].sort().join('\n')
-    if (Boolean(prevBypass.enabled) !== bypass.enabled || sortedSets(prevBypass.sets) !== sortedSets(bypass.sets)) return true
+    // 和元数据里计划阶段的结论比(FakeIP 下 pending 的核对要到部署时才做);老元数据没有就退回和实际比
+    const planned = prev.nativeBypassPlanned || { sets: (prev.nativeBypass || {}).sets, pending: [] }
+    const pendingNames = (v) => [...(Array.isArray(v) ? v : [])].map((x) => (typeof x === 'string' ? x : x.policy)).sort().join('\n')
+    if (sortedSets(planned.sets) !== sortedSets(bypass.sets) || pendingNames(planned.pending) !== pendingNames(bypass.pending)) return true
     if (prev.dnsMode === 'dnsmasq') {
       // 这里只能算到计划阶段(规则集要到部署时才展开),所以和元数据里计划阶段的模式比;老元数据
       // 没有这个字段时退回和实际模式比
@@ -166,7 +172,17 @@ export const STATUS_BY_STAGE = {
 // 的上游又是 sing-box,一问就死循环。预览接口没有 ctx 也照样能出配置,回落到档案里的值。
 // profilePatch:在当前档案上临时盖一层再生成(不落库)。部署时 auto_redirect 起不来要降级
 // 重试就靠它把 tun.autoRedirect 关掉重生成一份(见 system/deploy.mjs)。
-export const buildCurrentConfig = (store, systemDns, { cacheFilePath, selections, tlsCert, localSubnets = [], directHostCidrs = [], ruleLists = {}, profilePatch } = {}) => {
+// 当前档案 + 此刻的选择 → 旁路计划(纯函数那一步)。部署前和选择同步时都用它,口径一致
+export const currentBypassPlan = (store, selections) => {
+  const profile = store.getProfile() || {}
+  const groups = typeof store.getGroups === 'function' ? store.getGroups() : []
+  const builtin = builtinTags(groups)
+  const { outbounds } = emitUserGroups(groups, store.getNodes ? store.getNodes() : [], {})
+  const members = policyOutboundOptions(normalizeRouting(profile.routing).outboundOptions, outbounds.map((o) => o.tag), builtin)
+  return nativeBypassPlan(profile.routing, { members, builtin, selections: selections || {}, clientRoutes: normalizeClientRoutes(profile.clientRoutes), fakeIp: dnsFakeIpEnabled(profile) })
+}
+
+export const buildCurrentConfig = (store, systemDns, { cacheFilePath, selections, tlsCert, localSubnets = [], directHostCidrs = [], ruleLists = {}, profilePatch, nativeBypass } = {}) => {
   const profile = profilePatch ? { ...store.getProfile(), ...profilePatch } : store.getProfile()
   const nodes = store.getNodes()
   const clashApiSecret = store.getClashSecret()
@@ -185,6 +201,7 @@ export const buildCurrentConfig = (store, systemDns, { cacheFilePath, selections
     directHostCidrs,
     // 规则集链接的形状表:每条链接编成了域名 / IP 哪几份 .srs(见 system/rule-lists.mjs)
     ruleLists,
+    nativeBypass,
   })
   return { config, profile }
 }
@@ -309,14 +326,17 @@ const runDeployInner = async ({ store, ctx, paths, fetchImpl = globalThis.fetch,
     if (!ruleLists.ok) {
       result = { ok: false, stage: 'rulesets', message: ruleLists.message }
     } else {
+      // 入口原生旁路:纯函数先算,FakeIP 下留下的 pending 在这里解码两边的集合核对重叠(system/native-bypass.mjs),
+      // 生成配置和元数据用同一份结论
+      const nativeBypass = await resolveNativeBypass(ctx, paths, currentBypassPlan(store, selections))
       const buildOptions = {
         cacheFilePath: paths.cacheDb, selections, tlsCert: { certPath: paths.tlsCert, keyPath: paths.tlsKey }, localSubnets, directHostCidrs,
-        ruleLists: ruleLists.lists,
+        ruleLists: ruleLists.lists, nativeBypass,
       }
       const { config, profile } = buildCurrentConfig(store, systemDns, buildOptions)
       const prepMs = Date.now() - startedAt
       result = await deployConfig(ctx, paths, {
-        config, profile, userGroups: store.getGroups(), selections, isCancelled,
+        config, profile, userGroups: store.getGroups(), selections, isCancelled, nativeBypass,
         rebuild: (profilePatch) => buildCurrentConfig(store, systemDns, { ...buildOptions, profilePatch }).config,
       })
       if (result.warning) console.warn(`[deploy] ${result.warning}`)

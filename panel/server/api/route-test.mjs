@@ -49,12 +49,18 @@ export const decideDnsServer = async (ctx, paths, config, target, { sourceIp = '
   const servers = new Map((dns.servers || []).map((s) => [s.tag, s]))
   const srsPathByTag = new Map(((config.route || {}).rule_set || []).map((r) => [r.tag, r.path]))
   const rules = dns.rules || []
+  // 内核自己的 fakeip 规则(engine/dns.mjs 的 FakeIP 原型):A / AAAA 先拿占位地址,真正的解析发生在
+  // 连接时选中的节点那头。判定时把它记成 fakeIpRule 后继续往下找同一个匹配的真解析器(其它查询
+  // 类型仍走它),两边一起给前端画
+  let fakeIpRule
+  const withFake = (r) => (fakeIpRule === undefined ? r : { ...r, fakeIpRule })
   for (let i = 0; i < rules.length; i++) {
     const rule = rules[i]
     if (!rule || typeof rule !== 'object') continue
     const hasDest = hasDestinationCondition(rule)
     const hasSource = Object.prototype.hasOwnProperty.call(rule, 'source_ip_cidr')
-    if (!hasDest && !hasSource) continue
+    const fake = rule.server && (servers.get(rule.server) || {}).type === 'fakeip'
+    if (!hasDest && !hasSource && !fake) continue
     if (hasSource) {
       if (!sourceIp) return { ruleIndex: i, undetermined: 'sourceIp' }
       const list = Array.isArray(rule.source_ip_cidr) ? rule.source_ip_cidr : [rule.source_ip_cidr]
@@ -68,12 +74,16 @@ export const decideDnsServer = async (ctx, paths, config, target, { sourceIp = '
       hit = r.hit
     }
     if (!hit) continue
-    if (rule.action === 'reject') return { ruleIndex: i, rejected: true }
+    if (rule.action === 'reject') return withFake({ ruleIndex: i, rejected: true })
+    if (fake) {
+      if (fakeIpRule === undefined) fakeIpRule = i
+      continue
+    }
     const server = servers.get(rule.server) || { tag: rule.server }
-    return { ruleIndex: i, server, viaProxy: Boolean(server.detour) }
+    return withFake({ ruleIndex: i, server, viaProxy: Boolean(server.detour) })
   }
   const server = servers.get(dns.final) || { tag: dns.final || '' }
-  return { ruleIndex: null, server, viaProxy: Boolean(server.detour) }
+  return withFake({ ruleIndex: null, server, viaProxy: Boolean(server.detour) })
 }
 
 const clashHeaders = (secret) => (secret ? { Authorization: `Bearer ${secret}` } : {})
@@ -258,8 +268,14 @@ export const registerRouteTestRoutes = (app, { store, ctx, paths, fetchImpl = gl
       //     detour 本身),前端把它画成单独一环;直连解析回 fake-ip 则是上游 DNS 自己在做 fake-ip。
       if (out.resolve.answers.length && out.resolve.answers.every(isFakeIp)) {
         out.resolve.fakeIp = true
-        const detour = out.dns && out.dns.server && out.dns.server.detour
-        if (detour) out.resolve.fakeIpFrom = out.dns.runtimeLeaf || detour
+        // 内核自己配了 fakeip 服务器(engine/dns.mjs 的 FakeIP 原型):走代理域名的占位地址是内核发的,
+        // 不是线路对端截下来答的;连接进内核时会按占位地址找回域名再分流
+        if (out.dns && out.dns.fakeIpRule !== undefined) {
+          out.resolve.fakeIpLocal = true
+        } else {
+          const detour = out.dns && out.dns.server && out.dns.server.detour
+          if (detour) out.resolve.fakeIpFrom = out.dns.runtimeLeaf || detour
+        }
       }
     }
 

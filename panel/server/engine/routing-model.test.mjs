@@ -219,7 +219,7 @@ test('原生旁路计划:走直连的站点集里的 geoip 集合进入口旁路
   }
   const on = nativeBypassPlan(routing, { members: MEMBERS })
   // geoip-private 不进集合:它的 240.0.0.0/4 会让 sing-tun 建 nft 集合时 EEXIST(开发路由器实测),私网段静态排除表已经覆盖
-  assert.deepEqual(on, { enabled: true, sets: ['geoip-cn'], reason: '' })
+  assert.deepEqual(on, { enabled: true, sets: ['geoip-cn'], pending: [], reason: '' })
   // 代理页把「国内」切到代理:它的集合就不能旁路了
   assert.equal(nativeBypassPlan(routing, { members: MEMBERS, selections: { '国内': '香港-自动' } }).enabled, false)
   const custom = nativeBypassPlan({ ...routing, custom: { rules: [{ type: 'domainSuffix', value: 'a.cn', outbound: '香港-自动' }] } }, { members: MEMBERS })
@@ -368,4 +368,37 @@ test('转发计划把要拒绝的域名也交给内核(留在原上游会被正�
   const ad = dnsmasqForwardPlan({ fallbackDefault: 'direct', adBlock: true, policies: [] }, MEMBERS)
   assert.equal(ad.mode, 'all')
   assert.match(ad.reason, /广告拦截/)
+})
+
+test('原生旁路 + FakeIP:较早的纯域名代理站点集不再挡路(客户端拿到的是占位地址);带 IP 条件的较早规则留成 pending 交部署时核对;端口 / 规则集链接的前置分流直接不开', () => {
+  const domainFirst = { fallbackDefault: 'direct', policies: [
+    { id: 'g', name: 'Google', default: '香港-自动', rulesets: ['geosite-google'] },
+    { id: 'b', name: '国内', default: 'direct', rulesets: ['geoip-cn', 'geosite-cn'] },
+  ] }
+  assert.equal(nativeBypassPlan(domainFirst, { members: MEMBERS }).enabled, false)
+  const fake = nativeBypassPlan(domainFirst, { members: MEMBERS, fakeIp: true })
+  assert.deepEqual(fake, { enabled: true, sets: ['geoip-cn'], pending: [], reason: '' })
+  // 前面有 geoip / ip_cidr 条件的代理站点集:候选集合留成 pending,带上要核对的对象
+  const ipFirst = { fallbackDefault: 'direct', policies: [
+    { id: 't', name: '电报', default: '香港-自动', rulesets: ['geoip-telegram'], ipCidr: ['1.2.3.0/24'] },
+    { id: 'b', name: '国内', default: 'direct', rulesets: ['geoip-cn'] },
+  ] }
+  const p = nativeBypassPlan(ipFirst, { members: MEMBERS, fakeIp: true })
+  assert.equal(p.enabled, false)
+  assert.deepEqual(p.sets, [])
+  assert.deepEqual(p.pending, [{ policy: '国内', sets: ['geoip-cn'], against: [{ name: '电报', geoip: ['geoip-telegram'], cidrs: ['1.2.3.0/24'], lists: [] }] }])
+  assert.match(p.reason, /国内.*核对重叠/)
+  // 前置自定义分流:域名行不挡;ip_cidr 行留 pending;端口行直接不开
+  const customDomain = nativeBypassPlan({ ...domainFirst, custom: { rules: [{ type: 'domainSuffix', value: 'a.cn', outbound: '香港-自动' }] } }, { members: MEMBERS, fakeIp: true })
+  assert.deepEqual(customDomain.sets, ['geoip-cn'])
+  const customCidr = nativeBypassPlan({ ...domainFirst, custom: { rules: [{ type: 'ipCidr', value: '10.9.0.0/16', outbound: '香港-自动' }] } }, { members: MEMBERS, fakeIp: true })
+  assert.equal(customCidr.enabled, false)
+  assert.deepEqual(customCidr.pending[0].against, [{ name: '前置自定义分流', geoip: [], cidrs: ['10.9.0.0/16'] }])
+  const customPort = nativeBypassPlan({ ...domainFirst, custom: { rules: [{ type: 'port', value: '443', outbound: '香港-自动' }] } }, { members: MEMBERS, fakeIp: true })
+  assert.equal(customPort.enabled, false)
+  assert.match(customPort.reason, /端口/)
+  assert.deepEqual(customPort.pending, [])
+  // 走代理的终端 / 广告拦截仍然不开(它们不按目标分)
+  assert.equal(nativeBypassPlan(domainFirst, { members: MEMBERS, fakeIp: true, clientRoutes: [{ sources: ['192.168.3.9/32'], outbound: '香港-自动' }] }).enabled, false)
+  assert.equal(nativeBypassPlan({ ...domainFirst, adBlock: true }, { members: MEMBERS, fakeIp: true }).enabled, false)
 })

@@ -299,3 +299,50 @@ test('终端分流(dnsmasq 转发模式):内核看不到终端来源,不生成�
   assert.ok(!dns.rules.some((r) => r.source_ip_cidr))
   assert.equal(dns.independent_cache, undefined)
 })
+
+test('FakeIP 原型(dns.fakeIpForProxy):走代理的匹配先给 A / AAAA 一条占位地址规则,其它类型仍走代理侧解析器;直连和拒绝不变;兜底走代理时收尾也发占位地址', () => {
+  const routing = {
+    policies: [
+      { id: 'g', name: '谷歌', default: '所有-自动', rulesets: ['geosite-google'] },
+      { id: 'cn', name: '国内', default: 'direct', rulesets: ['geosite-cn'] },
+    ],
+    custom: { rules: [{ type: 'domainSuffix', value: 'x.test', outbound: '所有-自动' }, { type: 'domainSuffix', value: 'ad.test', outbound: 'block' }] },
+    fallbackDefault: 'proxy',
+  }
+  const on = buildDns({ ...withRouting(routing), dns: { ...base.dns, fakeIpForProxy: true } }, GROUPS)
+  const fake = on.servers.find((s) => s.type === 'fakeip')
+  assert.deepEqual(fake, { type: 'fakeip', tag: 'dns-fakeip', inet4_range: '198.18.0.0/15', inet6_range: 'fc00::/18' })
+  // 自定义代理行:占位规则在真解析器规则前面,且只管 A / AAAA
+  assert.deepEqual(on.rules[0], { domain_suffix: ['x.test'], query_type: ['A', 'AAAA'], server: 'dns-fakeip' })
+  assert.deepEqual(on.rules[1], { domain_suffix: ['x.test'], server: 'dns-custom-0' })
+  // 拒绝行照旧拒绝,不发占位地址
+  assert.deepEqual(on.rules[2], { domain_suffix: ['ad.test'], action: 'reject' })
+  // 站点集:走代理的先占位,直连的照旧真实解析
+  assert.deepEqual(on.rules[3], { rule_set: ['geosite-google'], query_type: ['A', 'AAAA'], server: 'dns-fakeip' })
+  assert.deepEqual(on.rules[4], { server: 'dns-policy-0', rule_set: ['geosite-google'] })
+  assert.deepEqual(on.rules[5], { server: 'dns-direct', rule_set: ['geosite-cn'] })
+  // 兜底走代理:没命中的域名 A / AAAA 也占位;final 仍是代理侧解析器(其它查询类型)
+  assert.deepEqual(on.rules[6], { query_type: ['A', 'AAAA'], server: 'dns-fakeip' })
+  assert.equal(on.final, 'dns-proxy')
+  // 没开 IPv6 就不给 v6 占位段
+  const v4 = buildDns({ ...withRouting(routing), ipv6: false, dns: { ...base.dns, fakeIpForProxy: true } }, GROUPS)
+  assert.deepEqual(v4.servers.find((s) => s.type === 'fakeip'), { type: 'fakeip', tag: 'dns-fakeip', inet4_range: '198.18.0.0/15' })
+  // 兜底直连:收尾不占位
+  const fbDirect = buildDns({ ...withRouting({ ...routing, fallbackDefault: 'direct' }), dns: { ...base.dns, fakeIpForProxy: true } }, GROUPS)
+  assert.ok(!fbDirect.rules.some((r) => r.server === 'dns-fakeip' && !r.rule_set && !r.domain_suffix))
+  // 关着(默认):一条占位规则、一台 fakeip 服务器都没有
+  const off = buildDns(withRouting(routing), GROUPS)
+  assert.ok(!off.servers.some((s) => s.type === 'fakeip'))
+  assert.ok(!off.rules.some((r) => r.server === 'dns-fakeip'))
+})
+
+test('FakeIP 原型:指定终端走代理的来源规则(hijack 模式)也先占位', () => {
+  const dns = buildDns(
+    { ...withRouting({ fallbackDefault: 'direct' }), dns: { ...base.dns, mode: 'hijack', fakeIpForProxy: true }, clientRoutes: [{ id: 'a', name: 'a', sources: ['192.168.1.9'], outbound: '所有-自动' }] },
+    { ...GROUPS, clientRoutes: [{ sources: ['192.168.1.9/32'], outbound: '所有-自动' }] },
+  )
+  const i = dns.rules.findIndex((r) => r.source_ip_cidr && r.server === 'dns-fakeip')
+  assert.ok(i >= 0)
+  assert.deepEqual(dns.rules[i].query_type, ['A', 'AAAA'])
+  assert.equal(dns.rules[i + 1].server, 'dns-client-0')
+})

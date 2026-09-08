@@ -370,3 +370,20 @@ test('例外规则比排除段还大(10.0.0.0/7 盖住 10/8)也要挖:看的是�
   assert.ok(ex.some((x) => cidrContains(x, '192.168.3.9')), 'LAN 照旧排除')
   assert.ok(ex.some((x) => cidrContains(x, '172.20.0.1')), '别的私网段照旧排除')
 })
+
+test('FakeIP 原型:cache_file 存占位映射;开了 IPv6 时把 fc00::/18 从 tun 排除表挖出来;部署给的旁路结论优先于纯函数(第三轮 阶段 3)', () => {
+  const on = buildConfig({ nodes, regionGroups, userGroups: firstLayerGroups, localSubnets: subnets, profile: firstLayerProfile({ dns: { split: true, mode: 'dnsmasq', direct: '223.5.5.5', proxy: '1.1.1.1', fakeIpForProxy: true } }) })
+  assert.equal(on.experimental.cache_file.store_fakeip, true)
+  assert.ok(on.dns.servers.some((s) => s.type === 'fakeip'))
+  const ex6 = on.inbounds[0].route_exclude_address
+  assert.ok(!ex6.some((x) => cidrContains(x, 'fc00::1')), 'v6 占位段要挖出来,不然走代理域名的 v6 连接在入口就被放走')
+  assert.ok(ex6.some((x) => cidrContains(x, 'fd00::1')), 'fc00::/7 剩下的部分还在排除表里')
+  const off = buildConfig({ nodes, regionGroups, userGroups: firstLayerGroups, localSubnets: subnets, profile: firstLayerProfile() })
+  assert.equal(off.experimental.cache_file.store_fakeip, false)
+  assert.ok(off.inbounds[0].route_exclude_address.some((x) => cidrContains(x, 'fc00::1')))
+  // 部署时带来的结论(做过重叠核对)直接用;空集合就不写字段
+  const given = buildConfig({ nodes, regionGroups, userGroups: firstLayerGroups, localSubnets: subnets, profile: firstLayerProfile(), nativeBypass: { enabled: true, sets: ['geoip-cn', 'geoip-hk'], reason: '' } })
+  assert.deepEqual(given.inbounds[0].route_exclude_address_set, ['geoip-cn', 'geoip-hk'])
+  const none = buildConfig({ nodes, regionGroups, userGroups: firstLayerGroups, localSubnets: subnets, profile: firstLayerProfile(), nativeBypass: { enabled: false, sets: [], reason: 'x' } })
+  assert.equal(none.inbounds[0].route_exclude_address_set, undefined)
+})

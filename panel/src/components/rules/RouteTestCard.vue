@@ -161,7 +161,11 @@
                 class="badge badge-sm badge-ghost font-mono"
               >{{ ip }}</span>
               <span
-                v-if="result.resolve.fakeIp && !fakeIpHop"
+                v-if="result.resolve.fakeIpLocal"
+                class="text-info text-xs"
+              >{{ $t('routeTestFakeIpLocal') }}</span>
+              <span
+                v-else-if="result.resolve.fakeIp && !fakeIpHop"
                 class="text-warning text-xs"
               >{{ $t('routeTestFakeIpUpstream') }}</span>
             </template>
@@ -283,7 +287,7 @@ const exitNote = computed(() => {
 // 目标是 IP 时没有解析,DNS 整个不画(画出来只能写"不用解析",是噪音)。
 const dnsSkipped = computed(() => Boolean(result.value && result.value.dns && 'skipped' in result.value.dns))
 // 本地这次解析的答案是线路对端的 fake-ip:应答者就是 detour 此刻落到的那个节点,它那头还要再解析一次
-const fakeIpHop = computed(() => (result.value?.resolve?.fakeIp && result.value.resolve.fakeIpFrom) || '')
+const fakeIpHop = computed(() => (result.value?.resolve?.fakeIp && !result.value.resolve.fakeIpLocal && result.value.resolve.fakeIpFrom) || '')
 const firstAnswer = computed(() => result.value?.resolve?.answers?.[0] || '')
 // 代理侧解析实际经过的线路:站点集 → 节点组 → 节点;拿不到内核状态时只有 detour 那一个名字
 const dnsChain = computed(() => {

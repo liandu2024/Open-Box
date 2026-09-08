@@ -93,6 +93,8 @@ export interface OpenboxProfileDns {
   mode?: OpenboxDnsMode
   direct?: string
   proxy?: string
+  // 走代理的域名由内核发占位地址(FakeIP 原型):域名交给选中的节点解析,解析和连接落在同一个节点
+  fakeIpForProxy?: boolean
 }
 
 // The backend deep-merges patches onto this shape (see server/store/openbox-store.mjs), so a
@@ -807,12 +809,14 @@ export interface OpenboxRouteTest {
     | { skipped: true }
     | { error: string }
     // runtimeChain:代理侧解析时查询实际经过的线路,detour 的站点集 → 节点组 → 节点(按内核此刻的选择);runtimeLeaf 是它的末尾
-    | { ruleIndex: number | null; rejected?: boolean; server?: { tag: string; type?: string; server?: string; detour?: string }; viaProxy?: boolean; stale?: 'direct' | 'proxy'; runtimeLeaf?: string; runtimeChain?: string[] }
+    // fakeIpRule:内核自己的 fakeip 规则(FakeIP 原型)先命中,A / AAAA 拿占位地址;server 是其它查询类型走的真解析器
+    | { ruleIndex: number | null; rejected?: boolean; server?: { tag: string; type?: string; server?: string; detour?: string }; viaProxy?: boolean; stale?: 'direct' | 'proxy'; runtimeLeaf?: string; runtimeChain?: string[]; fakeIpRule?: number }
   // fakeIp:答案落在 fake-ip 段(198.18.0.0/15),不是配置里那台 DNS 答的;fakeIpFrom 是代理侧解析时
-  // 截下查询并应答的那个节点(detour 此刻落到的节点),直连解析回 fake-ip 时没有这个字段
+  // 截下查询并应答的那个节点(detour 此刻落到的节点),直连解析回 fake-ip 时没有这个字段;
+  // fakeIpLocal:占位地址是内核自己发的(FakeIP 原型),连接时按它找回域名交给选中的节点解析
   // ttl:答案的剩余 TTL(秒);cached:代理侧解析几毫秒就回来了,是内核缓存里的答案,这次没有经线路去问
   // answers 是 A 记录;档案开了 IPv6 时再查一次 AAAA 放 answers6(没开就没有这个字段)
-  resolve?: { ok: boolean; status?: number; answers: string[]; answers6?: string[]; ok6?: boolean; status6?: number; error6?: string; ms: number; error?: string; fakeIp?: boolean; fakeIpFrom?: string; ttl?: number; cached?: boolean }
+  resolve?: { ok: boolean; status?: number; answers: string[]; answers6?: string[]; ok6?: boolean; status6?: number; error6?: string; ms: number; error?: string; fakeIp?: boolean; fakeIpFrom?: string; fakeIpLocal?: boolean; ttl?: number; cached?: boolean }
   // 有 AAAA 记录时按第一个 v6 地址再访问一次的结果(只有探测结果,没有连接表信息)
   exit6?: { connectTo: string; ok?: boolean; status?: number; ms?: number; error?: string }
   // 查询时指定了终端来源:上面的 DNS 判定是按该终端预测的;解析和访问仍是面板自己发起、没有该终端

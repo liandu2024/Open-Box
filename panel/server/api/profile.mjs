@@ -122,6 +122,7 @@ export const validateProfilePatch = (patch, { reservedNames = [] } = {}) => {
     if ('mode' in dns && !DNS_MODES.has(dns.mode)) {
       return 'dns.mode must be one of off, hijack, dnsmasq'
     }
+    if ('fakeIpForProxy' in dns && !isBoolean(dns.fakeIpForProxy)) return 'dns.fakeIpForProxy must be a boolean'
   }
 
   if ('routing' in patch) {
