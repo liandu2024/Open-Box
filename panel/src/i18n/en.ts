@@ -668,7 +668,7 @@ const en = {
   routingCustomNoDelete: 'The pre-route rule is built in and cannot be deleted; disable it if you do not need it.',
   routingCustomEditTitle: 'Edit pre-route rule',
   routingCustomOutboundRequired: 'Every rule needs an exit.',
-  routingCustomRulesHint: 'One rule per line, each with its own exit, and you can pick a single node here (site sets can only pick a node group). Matched top to bottom; the first hit wins.',
+  routingCustomRulesHint: 'One rule per line, each with its own exit, and you can pick a single node here (site sets can only pick a node group). These rules have the highest priority, ahead of client routing, node-host direct, LAN direct and every site set. Matched top to bottom; the first hit wins.',
   routingCustomNoRule: 'No rules yet (inactive)',
   routingFallbackBadge: 'Built-in',
   routingFallbackHint: 'Whatever no site set above claims goes here. Pick its line on the Proxies page.',

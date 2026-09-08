@@ -37,6 +37,10 @@ export const buildRoute = (routing, rulesetDir, options = {}) => {
   const addTag = (tag) => { if (tag) rulesetTags.add(tag) }
 
   const dnsMode = options.dnsMode || 'hijack'
+  // 出口必须是配置里真有的 outbound(内核 outbound not found 会起不来),前置自定义分流和
+  // 终端分流都按这张表筛;规则集链接的形状表决定引用域名那份还是 IP 那份
+  const known = options.knownOutbounds instanceof Set ? options.knownOutbounds : null
+  const ruleLists = options.ruleLists || {}
   const rules = [{ action: 'sniff' }]
   // off:Open-Box 不劫持任何 DNS——不改写、不回交,局域网的 53 端口流量当普通 UDP 按规则走
   // (配合 config.mjs 里关掉 auto_redirect,它自带 nft 层的 DNS 劫持,关不掉)。但内核 DNS 入站
@@ -74,6 +78,26 @@ export const buildRoute = (routing, rulesetDir, options = {}) => {
   if (Array.isArray(options.tunCidrs) && options.tunCidrs.length) {
     rules.push({ ip_cidr: options.tunCidrs, action: 'reject' })
   }
+  // 前置自定义分流:用户手写的强制通道,"不管别的规则怎么写,这些目标就走这个出口"。
+  // 所以它排在所有规则最前面,只让上面那条 tun 防回环走在它前头——那条挡的是内核自己
+  // 喂自己(真机上出现过几十秒把整机吃死),不是分流,不能被任何规则盖过。
+  // 排在 ip_is_private 之前是有意的:否则"把某个内网段送到某个节点"(比如经 WireGuard
+  // 访问对端局域网)永远写不出来,会被局域网直连那条先接走。
+  // 一行一条规则、一行一个出口,按行的先后进配置(内核首条命中生效)。
+  // 出口必须是配置里真有的 outbound,指向已删掉的节点的那一行跳过,其余行照常生效。
+  const custom = conf.custom
+  if (customPolicyActive(custom)) {
+    const builtinTags = { direct: options.directTag || 'direct', block: options.blockTag || 'block' }
+    for (const rule of custom.rules) {
+      const target = customOutboundTag(rule, builtinTags)
+      if (known && !known.has(target)) continue
+      const emitted = customRule(rule, ruleLists, target)
+      if (!emitted) continue
+      for (const tag of emitted.rule_set || []) addTag(tag)
+      rules.push(emitted)
+    }
+  }
+
   // 内置的直连出站可以改名,tag 从调用方传进来
   rules.push({ ip_is_private: true, outbound: options.directTag || 'direct' })
 
@@ -87,33 +111,12 @@ export const buildRoute = (routing, rulesetDir, options = {}) => {
   }
 
   // 终端分流:指定来源 IP / 网段的全部流量走某个出口,排在站点集之前(优先级高于按目标
-  // 分流),但在 ip_is_private / 直连站点之后(局域网目标、订阅站点照旧直连)。
+  // 分流),但在前置自定义分流 / ip_is_private / 直连站点之后。
   // 出口必须是配置里真有的 outbound,否则内核 outbound not found 起不来,这种规则直接丢掉。
-  const known = options.knownOutbounds instanceof Set ? options.knownOutbounds : null
   for (const cr of Array.isArray(options.clientRoutes) ? options.clientRoutes : []) {
     if (!cr || !Array.isArray(cr.sources) || !cr.sources.length || !cr.outbound) continue
     if (known && !known.has(cr.outbound)) continue
     rules.push({ source_ip_cidr: cr.sources, outbound: cr.outbound })
-  }
-
-  const ruleLists = options.ruleLists || {}
-
-  // 前置自定义分流:固定置顶,排在广告拦截和所有站点集之前——它是"不管别的规则怎么写,
-  // 这些目标就走这个出口"的强制通道,被后面任何一条盖住都不算数,所以必须最先。
-  // 一行一条规则、一行一个出口,按行的先后进配置(内核首条命中生效)。
-  // 和终端分流同一道防线:出口必须是配置里真有的 outbound,否则内核 outbound not found
-  // 起不来;指向已删掉的节点的那一行跳过,其余行照常生效。
-  const custom = conf.custom
-  if (customPolicyActive(custom)) {
-    const builtinTags = { direct: options.directTag || 'direct', block: options.blockTag || 'block' }
-    for (const rule of custom.rules) {
-      const target = customOutboundTag(rule, builtinTags)
-      if (known && !known.has(target)) continue
-      const emitted = customRule(rule, ruleLists, target)
-      if (!emitted) continue
-      for (const tag of emitted.rule_set || []) addTag(tag)
-      rules.push(emitted)
-    }
   }
 
   if (conf.adBlock) {

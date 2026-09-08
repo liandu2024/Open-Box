@@ -663,7 +663,7 @@ const zh: LANG_MESSAGE = {
   routingCustomNoDelete: '前置自定义分流是固定的一条,不能删除;不用时可以停用。',
   routingCustomEditTitle: '修改前置自定义分流',
   routingCustomOutboundRequired: '每条规则都要选一个出口。',
-  routingCustomRulesHint: '一行一条规则,每行自己选出口,能直接选到某个节点(站点集只能选到节点组)。按从上到下的顺序匹配,先命中的先生效。',
+  routingCustomRulesHint: '一行一条规则,每行自己选出口,能直接选到某个节点(站点集只能选到节点组)。这里的规则优先级最高,排在终端分流、订阅节点直连、局域网直连和所有站点集之前。按从上到下的顺序匹配,先命中的先生效。',
   routingCustomNoRule: '还没有规则(这条不生效)',
   routingFallbackBadge: '系统兜底',
   routingFallbackHint: '上面都没命中的流量走它。在「代理」页选它走哪条线路。',

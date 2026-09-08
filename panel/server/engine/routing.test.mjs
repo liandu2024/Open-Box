@@ -228,15 +228,40 @@ test('每行各走各的出口,按行的先后进配置', () => {
   ])
 })
 
-test('整块排在广告拦截和所有站点集之前', () => {
+test('优先级最高:只让 tun 防回环走在前面,内网直连 / 直连站点 / 终端分流 / 广告拦截 / 站点集全在它之后', () => {
   const { route } = build(
     { ...customRules(R()), policies: [policy()], adBlock: true },
-    { knownOutbounds: new Set(['VW | 香港-01']) },
+    {
+      knownOutbounds: new Set(['VW | 香港-01', 'direct']),
+      tunCidrs: ['172.19.0.0/30'],
+      directHosts: { domains: ['node.example.com'], cidrs: [] },
+      clientRoutes: [{ sources: ['192.168.3.9/32'], outbound: 'direct' }],
+    },
   )
-  const mine = route.rules.findIndex((r) => r.domain_suffix)
-  const ad = route.rules.findIndex((r) => r.action === 'reject' && r.rule_set)
-  const site = route.rules.findIndex((r) => r.outbound === '谷歌')
-  assert.ok(mine > 0 && mine < ad && ad < site, JSON.stringify(route.rules))
+  const at = (pred) => route.rules.findIndex(pred)
+  const loop = at((r) => r.action === 'reject' && r.ip_cidr)
+  const mine = at((r) => r.domain_suffix && r.domain_suffix[0] === 'openai.com')
+  const priv = at((r) => r.ip_is_private)
+  const hosts = at((r) => r.domain && r.domain.includes('node.example.com'))
+  const client = at((r) => r.source_ip_cidr)
+  const ad = at((r) => r.action === 'reject' && r.rule_set)
+  const site = at((r) => r.outbound === '谷歌')
+  assert.ok(loop >= 0 && loop < mine, `防回环必须在最前:${JSON.stringify(route.rules)}`)
+  assert.ok(
+    mine < priv && priv < hosts && hosts < client && client < ad && ad < site,
+    JSON.stringify(route.rules.map((r) => JSON.stringify(r))),
+  )
+})
+
+test('排在 ip_is_private 之前:内网段也能被强制送到某个节点(经 WireGuard 访问对端局域网)', () => {
+  const { route } = build(
+    customRules(R({ type: 'ipCidr', value: '10.8.0.0/24', outbound: 'wg-peer' })),
+    { knownOutbounds: new Set(['wg-peer']), tunCidrs: ['172.19.0.0/30'] },
+  )
+  const mine = route.rules.findIndex((r) => r.ip_cidr && r.ip_cidr[0] === '10.8.0.0/24')
+  const priv = route.rules.findIndex((r) => r.ip_is_private)
+  assert.ok(mine >= 0 && mine < priv, JSON.stringify(route.rules))
+  assert.equal(route.rules[mine].outbound, 'wg-peer')
 })
 
 test('四种条件各自对到内核字段;geosite / 规则集链接进 rule_set 并登记下载', () => {
