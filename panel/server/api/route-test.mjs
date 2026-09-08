@@ -55,9 +55,12 @@ export const decideDnsServer = async (ctx, paths, config, target, { sourceIp = '
   // 类型仍走它),两边一起给前端画
   let fakeIpRule
   const assumed = []
+  // 返回时给每条前提标 sameOutcome:它命中时用的解析器 / 拒绝,和这里判出来的结果是不是一样(一样的前端不提示)
   const withFake = (r) => {
     const out = fakeIpRule === undefined ? r : { ...r, fakeIpRule }
-    return assumed.length ? { ...out, assumed } : out
+    if (!assumed.length) return out
+    const finalized = assumed.map((a) => ({ ...a, sameOutcome: a.action === 'reject' ? Boolean(r.rejected) : Boolean(r.server && a.server === r.server.tag) }))
+    return { ...out, assumed: finalized }
   }
   for (let i = 0; i < rules.length; i++) {
     const rule = rules[i]

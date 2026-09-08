@@ -407,6 +407,25 @@ export const registerPenetrationRoutes = (app, { store, ctx, paths, fetchImpl = 
       chain = result.chain
       chainError = result.chainError
     }
+    // 每条前提都标一下"它命中时的去向和这里推算出的结果是不是同一个出口":一样的(比如终端分流让某几台设备
+    // 全部直连,而查的目标本来就归国内直连)对这次查询没有影响,前端不当提示放主行;只有会改变出口的才提示
+    if (assumed.length && !matchError) {
+      const secret = store.getClashSecret()
+      const finalLeaf = chain.length ? chain[chain.length - 1] : finalOutbound
+      for (const a of assumed) {
+        if (a.action === 'reject') { a.sameOutcome = Boolean(matched && matched.action === 'reject'); continue }
+        if (!a.outbound) { a.sameOutcome = false; continue }
+        let leaf = a.outbound
+        if (groupTags.has(a.outbound)) {
+          try {
+            const r = await resolveChain({ tag: a.outbound, fetchImpl, secret })
+            if (!r.chainError && r.chain && r.chain.length) leaf = r.chain[r.chain.length - 1]
+          } catch { /* 拿不到就按名字比 */ }
+        }
+        a.leaf = leaf
+        a.sameOutcome = Boolean(finalLeaf) && leaf === finalLeaf
+      }
+    }
 
     // 内核跑的还是不是当前这份分流设置。不一样时「规则路由」(按当前设置推算)和下面的
     // 「真实路由」(内核此刻的实际行为)本来就会对不上——比如刚删掉一条前置分流还没重启,

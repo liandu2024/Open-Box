@@ -929,14 +929,16 @@ const en = {
   routeNeedIpVersion: 'the connection address family',
   routeNeedJoin: ' and ',
   routeCmpPillAssumed: 'Predicted with a premise',
-  routeRuleAssumed: 'Rule #{index} only applies when {scope} ({outcome}); the query gave no {needs}, so the prediction assumes it does not apply',
+  routeRuleAssumed: 'Rule #{index} splits by {needs}: when {scope} it goes {outcome}; the query gave no {needs}, so the other case is assumed',
+  routeDnsAssumedSame: 'DNS rule #{index} also uses {outcome} for source {cidrs}, the same result as here',
+  routeRuleAssumedSame: 'Rule #{index} also goes {outcome} when {scope}, the same result as here',
   routeAssumeSource: 'the source is {cidrs}',
   routeAssumePort: 'the target port is {ports}',
   routeAssumeIpVersion: 'the connection uses IPv{v}',
   routeAssumeOutbound: 'via {outbound}',
   routeAssumeReject: 'reject',
   routeAssumeDnsServer: 'resolver {server}',
-  routeDnsAssumed: 'DNS rule #{index} only applies to source {cidrs} ({outcome}); no client source was given, so other clients are assumed',
+  routeDnsAssumed: 'DNS rule #{index} splits by client source: when the source is {cidrs} it uses {outcome}; no client source was given, so other clients are assumed',
 
   // --- Rules page · two ways to run the actual route: simulated LAN client (default) / kernel diagnostic (loopback inbound) ---
   routeCmpTerminalSub: 'A visit made by a simulated LAN client',

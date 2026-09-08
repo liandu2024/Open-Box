@@ -680,6 +680,9 @@ export interface OpenboxRuleAssumption {
   needs: ('sourceIp' | 'port' | 'ipVersion')[]
   outbound?: string
   action?: string
+  // 它命中时下钻到的叶子出站;sameOutcome:和这次推算的结果是同一个出站(那它对这次查询没有影响)
+  leaf?: string
+  sameOutcome?: boolean
 }
 // DNS 规则里按来源分的那几条,没给来源时同样记成前提
 export interface OpenboxDnsAssumption {
@@ -688,6 +691,7 @@ export interface OpenboxDnsAssumption {
   sourceIpCidr: string[]
   server?: string
   action?: string
+  sameOutcome?: boolean
 }
 export interface OpenboxPenetrationResult {
   matched: OpenboxPenetrationMatched | null

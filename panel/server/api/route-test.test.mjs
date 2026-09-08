@@ -311,7 +311,7 @@ test('decideDnsServer:带来源条件的 DNS 规则——没给来源 IP 判不�
   const none = await decideDnsServer(ctx, paths, cfg, 'www.baidu.com')
   assert.equal(none.ruleIndex, 2)
   assert.equal(none.server.tag, 'dns-direct')
-  assert.deepEqual(none.assumed, [{ ruleIndex: 0, needs: ['sourceIp'], sourceIpCidr: ['192.168.3.9/32'], server: 'dns-client-0' }])
+  assert.deepEqual(none.assumed, [{ ruleIndex: 0, needs: ['sourceIp'], sourceIpCidr: ['192.168.3.9/32'], server: 'dns-client-0', sameOutcome: false }])
   const hit = await decideDnsServer(ctx, paths, cfg, 'www.baidu.com', { sourceIp: '192.168.3.9' })
   assert.equal(hit.server.tag, 'dns-client-0'); assert.equal(hit.viaProxy, true)
   const other = await decideDnsServer(ctx, paths, cfg, 'www.baidu.com', { sourceIp: '192.168.3.10' })

@@ -883,6 +883,11 @@ const r5Store = (profilePatch) => {
   return store
 }
 const noClash = async () => ({ ok: true, status: 200, json: async () => ({ now: '直连' }) })
+// 按组名给不同的 now(noClash 把所有组都答成直连,比不出"前提的去向和结果不同")
+const clashNow = (map) => async (url) => {
+  const tag = decodeURIComponent(String(url).split('/proxies/')[1] || '')
+  return { ok: true, status: 200, json: async () => (map[tag] ? { now: map[tag] } : {}) }
+}
 
 test('R5a:前置自定义分流写了 IPv6 网段,查 v6 地址要命中它,不能落到兜底', async () => {
   const store = r5Store({ routing: { policies: [], fallbackDefault: 'direct', custom: { rules: [{ type: 'ipCidr', value: '2001:db8:1234::/48', outbound: '香港-自动' }] } } })
@@ -901,16 +906,20 @@ test('R5a:前置自定义分流写了 IPv6 网段,查 v6 地址要命中它,不�
 
 test('R5b:终端分流的来源条件——没给来源 IP 时把那条记成前提(按不在该来源的终端)继续推算,不中断;给了就按来源判', async () => {
   const store = r5Store({ clientRoutes: [{ id: 'tv', enabled: true, name: 'TV', sources: ['192.168.3.9'], outbound: '香港-自动' }] })
-  const { baseUrl, close } = await startApp({ ctx: createMockContext({}), store, fetchImpl: noClash })
+  const { baseUrl, close } = await startApp({ ctx: createMockContext({}), store, fetchImpl: clashNow({ '香港-自动': 'HK-1', '其他': '直连' }) })
   try {
     const none = await post(baseUrl, 'example.com')
     assert.equal(none.body.matched, null)
     assert.equal(none.body.finalOutbound, '其他')
+    assert.deepEqual(none.body.chain, ['其他', '直连'])
     assert.equal(none.body.matchError, undefined)
     assert.equal(none.body.assumed.length, 1)
     assert.deepEqual(none.body.assumed[0].needs, ['sourceIp'])
     assert.deepEqual(none.body.assumed[0].rule.source_ip_cidr, ['192.168.3.9/32'])
     assert.equal(none.body.assumed[0].outbound, '香港-自动')
+    // 那条终端分流命中时落到 HK-1,这里推算落到直连:去向不同,前提要提示
+    assert.equal(none.body.assumed[0].leaf, 'HK-1')
+    assert.equal(none.body.assumed[0].sameOutcome, false)
     const hit = await post(baseUrl, 'example.com', { sourceIp: '192.168.3.9' })
     assert.deepEqual(hit.body.matched.rule.source_ip_cidr, ['192.168.3.9/32'])
     assert.equal(hit.body.matched.outbound, '香港-自动')
@@ -920,6 +929,32 @@ test('R5b:终端分流的来源条件——没给来源 IP 时把那条记成前
     assert.equal(other.body.assumed, undefined)
     const bad = await post(baseUrl, 'example.com', { sourceIp: 'not-an-ip' })
     assert.equal(bad.res.status, 400)
+  } finally {
+    await close()
+  }
+})
+
+test('R5b2:前提的去向和推算结果是同一个出口时标 sameOutcome=true(终端分流让某设备全直连,查的目标本来就直连)', async () => {
+  const store = r5Store({ routing: { policies: [], fallbackDefault: 'direct' }, clientRoutes: [{ id: 'dev', enabled: true, name: 'Dev', sources: ['192.168.3.35'], outbound: '直连' }] })
+  const { baseUrl, close } = await startApp({ ctx: createMockContext({}), store, fetchImpl: noClash })
+  try {
+    const { body } = await post(baseUrl, 'example.com')
+    assert.equal(body.assumed.length, 1)
+    assert.equal(body.assumed[0].outbound, '直连')
+    assert.equal(body.finalOutbound, '其他')
+    assert.deepEqual(body.chain, ['其他', '直连'])
+    assert.equal(body.assumed[0].leaf, '直连')
+    assert.equal(body.assumed[0].sameOutcome, true)
+    // clash API 拿不到时下钻不到叶子,只能按名字比:其他 ≠ 直连,不敢说一样
+    const dead = async () => { throw new Error('ECONNREFUSED') }
+    const { baseUrl: base2, close: close2 } = await startApp({ ctx: createMockContext({}), store, fetchImpl: dead })
+    try {
+      const r2 = (await post(base2, 'example.com')).body
+      assert.deepEqual(r2.chain, ['其他'])
+      assert.equal(r2.assumed[0].sameOutcome, false)
+    } finally {
+      await close2()
+    }
   } finally {
     await close()
   }
@@ -941,6 +976,7 @@ test('R5c:目标 + 端口是"与"的关系——查 172.19.0.2:443 不能命中�
     assert.deepEqual(unknown.body.assumed.map((a) => a.needs), [['port']])
     assert.deepEqual(unknown.body.assumed[0].rule.port, [53])
     assert.equal(unknown.body.assumed[0].outbound, 'dnsmasq')
+    assert.equal(unknown.body.assumed[0].sameOutcome, false)
     const bad = await post(baseUrl, '172.19.0.2', { port: 70000 })
     assert.equal(bad.res.status, 400)
   } finally {

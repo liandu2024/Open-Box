@@ -251,40 +251,44 @@
             </template>
             <span
               v-if="rule.routingStale"
-              class="text-warning basis-full text-xs"
+              class="route-note basis-full text-xs"
             >{{ $t('ruleLookupRoutingStale') }}</span>
           </template>
           <template v-else>
             <span class="font-medium">{{ $t('routeRuleNoMatchFallback') }}</span>
             <span
               v-if="rule.routingStale"
-              class="text-warning basis-full text-xs"
+              class="route-note basis-full text-xs"
             >{{ $t('ruleLookupRoutingStale') }}</span>
           </template>
-          <!-- 推算时按"不满足它"跳过的规则(要看终端来源 / 端口 / 地址族而查询没给):前提照实列出 -->
-          <template v-if="rule && !ruleError && !rule.matchError">
-            <span
-              v-for="line in ruleAssumptions"
-              :key="line"
-              class="text-warning basis-full text-xs"
-            >{{ line }}</span>
-          </template>
           <template
-            v-if="rule && rule.matched"
+            v-if="rule && !ruleError && !rule.matchError && (rule.matched || ruleAssumptions.relevant.length || ruleAssumptions.same.length)"
             #details
           >
-            <p class="text-base-content/50 font-mono text-[11px] break-all">{{ conditionText }}</p>
-            <!-- 第一条已经跟在站点集后面显示了,这里只列其余的 -->
-            <div
-              v-for="(e, i) in (rule.matched?.entries || []).slice(1, 9)"
-              :key="`${e.source}-${e.type}-${e.value}-${i}`"
-              class="flex flex-wrap items-center gap-x-2"
-            >
-              <span class="badge badge-sm badge-ghost font-mono">{{ typeLabel(e.type) }}</span>
-              <span class="text-main font-mono">{{ e.value }}</span>
-              <span class="text-base-content/50">{{ e.source === 'custom' ? $t('ruleSourceCustom') : e.source }}</span>
-            </div>
-            <p v-if="(rule.matched?.entriesTotal || 0) > 9">{{ $t('ruleLookupMoreEntries', { count: (rule.matched?.entriesTotal || 0) - 9 }) }}</p>
+            <template v-if="rule.matched">
+              <p class="text-base-content/50 font-mono text-[11px] break-all">{{ conditionText }}</p>
+              <!-- 第一条已经跟在站点集后面显示了,这里只列其余的 -->
+              <div
+                v-for="(e, i) in (rule.matched?.entries || []).slice(1, 9)"
+                :key="`${e.source}-${e.type}-${e.value}-${i}`"
+                class="flex flex-wrap items-center gap-x-2"
+              >
+                <span class="badge badge-sm badge-ghost font-mono">{{ typeLabel(e.type) }}</span>
+                <span class="text-main font-mono">{{ e.value }}</span>
+                <span class="text-base-content/50">{{ e.source === 'custom' ? $t('ruleSourceCustom') : e.source }}</span>
+              </div>
+              <p v-if="(rule.matched?.entriesTotal || 0) > 9">{{ $t('ruleLookupMoreEntries', { count: (rule.matched?.entriesTotal || 0) - 9 }) }}</p>
+            </template>
+            <!-- 推算时按"不满足它"跳过的规则(要看终端来源 / 端口 / 地址族而查询没给):会改变出口的用提示框,和结果一样的一句带过 -->
+            <p
+              v-for="line in ruleAssumptions.relevant"
+              :key="line"
+              class="route-note"
+            >{{ line }}</p>
+            <p
+              v-for="line in ruleAssumptions.same"
+              :key="line"
+            >{{ line }}</p>
           </template>
         </RouteStage>
         <RouteStage
@@ -437,11 +441,6 @@
           <template v-else>
             <span class="font-medium">{{ ruleDns.viaProxy ? $t('routeTestDnsProxy') : $t('routeTestDnsDirect') }}</span>
             <span class="text-base-content/60 font-mono text-xs">{{ ruleDns.serverLine }}</span>
-            <span
-              v-for="line in ruleDns.assumptions || []"
-              :key="line"
-              class="text-warning basis-full text-xs"
-            >{{ line }}</span>
           </template>
           <template
             v-if="ruleDns.kind === 'decision'"
@@ -456,6 +455,15 @@
               <ProxyName :name="ruleDns.detour" />
             </div>
             <p>{{ $t('routeDnsTerminalNote') }}</p>
+            <p
+              v-for="line in ruleDns.assumptions || []"
+              :key="line"
+              class="route-note"
+            >{{ line }}</p>
+            <p
+              v-for="line in ruleDns.assumptionsSame || []"
+              :key="line"
+            >{{ line }}</p>
           </template>
         </RouteStage>
         <RouteStage
@@ -505,13 +513,8 @@
             >· {{ actualDns.v6.text }}</span>
             <span
               v-if="actualDns.stale"
-              class="text-warning basis-full text-xs"
+              class="route-note basis-full text-xs"
             >{{ actualDns.stale }}</span>
-            <span
-              v-for="line in actualDns.assumptions || []"
-              :key="line"
-              class="text-warning basis-full text-xs"
-            >{{ line }}</span>
           </template>
           <template
             v-if="actualDns.kind === 'decision'"
@@ -540,6 +543,15 @@
               :key="note.text"
               :class="note.warn ? 'text-warning' : ''"
             >{{ note.text }}</p>
+            <p
+              v-for="line in actualDns.assumptions || []"
+              :key="line"
+              class="route-note"
+            >{{ line }}</p>
+            <p
+              v-for="line in actualDns.assumptionsSame || []"
+              :key="line"
+            >{{ line }}</p>
             <div
               v-if="actualDns.answers?.length"
               class="flex flex-wrap items-center gap-1"
@@ -792,8 +804,9 @@ interface DnsView {
   answers?: string[]
   answers6?: string[]
   stale?: string
-  // 没给来源时按"不在该来源"跳过的 DNS 规则,前提照实列出
+  // 没给来源时按"不在该来源"跳过的 DNS 规则:assumptions 是会改变解析器的(提示),assumptionsSame 是结果一样的(一句带过)
   assumptions?: string[]
+  assumptionsSame?: string[]
 }
 interface DetailLine { text: string; mono?: boolean; warn?: boolean; label?: string }
 const toneClass = (tone: Tone | undefined) => {
@@ -848,22 +861,32 @@ const firstEntry = computed(() => rule.value?.matched?.entries?.[0] || null)
 const ruleReject = computed(() => rule.value?.matched?.action === 'reject')
 // 推算里按"不满足它"跳过的规则,写成一行人话:第 N 条只在<条件>时生效(<去向>);查询没给<信息>,按不满足它的情况推算
 const needWord = (n: string) => t(n === 'sourceIp' ? 'routeNeedSourceIp' : n === 'port' ? 'routeNeedPort' : 'routeNeedIpVersion')
+// 单个地址的 /32、/128 不显示,多个用顿号连
+const hostList = (list: string[]) => list.map((c) => c.replace(/\/(32|128)$/, '')).join(t('routeListJoin'))
 const assumptionLine = (a: OpenboxRuleAssumption) => {
   const r = a.rule
   const scope = a.needs.map((n) => {
-    if (n === 'sourceIp') return t('routeAssumeSource', { cidrs: listOf(r.source_ip_cidr).join(' ') })
-    if (n === 'port') return t('routeAssumePort', { ports: [...listOf(r.port), ...listOf(r.port_range)].join(' ') })
+    if (n === 'sourceIp') return t('routeAssumeSource', { cidrs: hostList(listOf(r.source_ip_cidr)) })
+    if (n === 'port') return t('routeAssumePort', { ports: [...listOf(r.port), ...listOf(r.port_range)].join(t('routeListJoin')) })
     return t('routeAssumeIpVersion', { v: String(r.ip_version ?? '') })
   }).join(t('routeNeedJoin'))
   const outcome = a.action === 'reject' ? t('routeAssumeReject') : a.outbound ? t('routeAssumeOutbound', { outbound: a.outbound }) : a.action || ''
-  return t('routeRuleAssumed', { index: a.index + 1, scope, outcome, needs: a.needs.map(needWord).join(t('routeNeedJoin')) })
+  const needs = a.needs.map(needWord).join(t('routeNeedJoin'))
+  return a.sameOutcome ? t('routeRuleAssumedSame', { index: a.index + 1, scope, outcome }) : t('routeRuleAssumed', { index: a.index + 1, scope, outcome, needs })
 }
-const ruleAssumptions = computed(() => (rule.value?.assumed || []).map(assumptionLine))
-const dnsAssumptionLines = (list?: OpenboxDnsAssumption[]) => (list || []).map((a) => t('routeDnsAssumed', {
-  index: a.ruleIndex + 1,
-  cidrs: (a.sourceIpCidr || []).join(' '),
-  outcome: a.action === 'reject' ? t('routeAssumeReject') : a.server ? t('routeAssumeDnsServer', { server: a.server }) : '',
-}))
+// 会改变出口的前提(relevant)才影响这次推算的结论;去向和结果一样的(same)只在详情里一句带过
+const ruleAssumptions = computed(() => {
+  const list = rule.value?.assumed || []
+  return { relevant: list.filter((a) => !a.sameOutcome).map(assumptionLine), same: list.filter((a) => a.sameOutcome).map(assumptionLine) }
+})
+const dnsAssumptionLines = (list?: OpenboxDnsAssumption[]) => {
+  const line = (a: OpenboxDnsAssumption) => {
+    const outcome = a.action === 'reject' ? t('routeAssumeReject') : a.server ? t('routeAssumeDnsServer', { server: a.server }) : ''
+    const cidrs = hostList(a.sourceIpCidr || [])
+    return a.sameOutcome ? t('routeDnsAssumedSame', { index: a.ruleIndex + 1, cidrs, outcome }) : t('routeDnsAssumed', { index: a.ruleIndex + 1, cidrs, outcome })
+  }
+  return { relevant: (list || []).filter((a) => !a.sameOutcome).map(line), same: (list || []).filter((a) => a.sameOutcome).map(line) }
+}
 const conditionText = computed(() => {
   const r = (rule.value?.matched?.rule || {}) as Record<string, unknown>
   if (r.ip_is_private) return t('penetrationRulePrivateIp')
@@ -876,7 +899,7 @@ const rulePill = computed<{ text: string; tone: Tone }>(() => {
   if (ruleError.value) return { text: t('routeCmpPillFailed'), tone: 'error' }
   if (!rule.value) return { text: '…', tone: 'muted' }
   if (rule.value.matchError) return { text: t('routeCmpPillUnknown'), tone: 'pending' }
-  if (ruleAssumptions.value.length) return { text: t('routeCmpPillAssumed'), tone: 'pending' }
+  if (ruleAssumptions.value.relevant.length) return { text: t('routeCmpPillAssumed'), tone: 'pending' }
   return { text: t('routeCmpPillPredicted'), tone: 'good' }
 })
 const ruleDns = computed<DnsView>(() => {
@@ -888,7 +911,7 @@ const ruleDns = computed<DnsView>(() => {
   return {
     kind: 'decision', state: 'ok', badge: t('routeDnsPredicted'), tone: 'muted',
     viaProxy: Boolean(d.viaProxy), serverLine: serverLineOf(d.server) || d.server?.tag || '', tag: d.server?.tag || '', detour: d.server?.detour || '',
-    assumptions: dnsAssumptionLines(d.assumed),
+    assumptions: dnsAssumptionLines(d.assumed).relevant, assumptionsSame: dnsAssumptionLines(d.assumed).same,
   }
 })
 // ③ 左:入口是配置状态,不是本目标的观测——只有目标是 IP、且命中的规则集正好在旁路集合里,才能说它会在入口旁路
@@ -1002,7 +1025,7 @@ const kernelDns = computed<DnsView>(() => {
     viaProxy: Boolean(d.viaProxy), serverLine: serverLineOf(d.server) || d.server?.tag || '', tag: d.server?.tag || '',
     v4, v6, notes, chain, answers, answers6,
     stale: d.stale ? t(d.stale === 'direct' ? 'routeTestDnsStaleDirect' : 'routeTestDnsStaleProxy') : '',
-    assumptions: dnsAssumptionLines(d.assumed),
+    assumptions: dnsAssumptionLines(d.assumed).relevant, assumptionsSame: dnsAssumptionLines(d.assumed).same,
   }
 })
 // ③ 右(内核诊断):只有连接表里认出了这条连接,才能说"经过了内核"
@@ -1182,6 +1205,15 @@ const exitDetails = computed<DetailLine[]>(() => {
 .route-cell {
   order: var(--m-order);
   border-color: color-mix(in srgb, var(--color-base-300) 60%, transparent);
+}
+/* 需要留意的长句:不用黄字(浅色主题上看不清),用淡黄底 + 左侧色条,正文仍是正常文字色 */
+.route-note {
+  display: block;
+  border-left: 2px solid var(--color-warning);
+  background-color: color-mix(in srgb, var(--color-warning) 12%, transparent);
+  border-radius: 0 0.375rem 0.375rem 0;
+  padding: 0.125rem 0.5rem;
+  color: color-mix(in srgb, var(--color-base-content) 85%, transparent);
 }
 /* 列头图标:和各站的圆圈同一列(left 0.9rem)、同样 1.75rem 大;垂直居中于标题 + 副标题那两行(pt 0.75rem + (2.25rem − 1.75rem)/2) */
 .route-head-icon {
