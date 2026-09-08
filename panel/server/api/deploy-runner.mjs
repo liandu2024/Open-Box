@@ -341,9 +341,13 @@ export const runDeploy = (args) => {
 
 const CANCELLED = { ok: false, stage: 'cancelled', message: '部署被「停止」取消,没有改动系统', badTags: [] }
 
-const runDeployInner = async ({ store, ctx, paths, fetchImpl = globalThis.fetch, lookup, isCancelled = () => false }) => {
+// 每次部署一个序号:后台盯晚崩溃的那段发现已经有新的部署开始就退出,不和它抢
+let deploySerial = 0
+
+const runDeployInner = async ({ store, ctx, paths, fetchImpl = globalThis.fetch, lookup, isCancelled = () => false, lateWatch = true }) => {
   let result
   const startedAt = Date.now()
+  const serial = ++deploySerial
   try {
     if (isCancelled()) {
       store.setDeployState({ stage: CANCELLED.stage, message: CANCELLED.message, at: Date.now(), badTags: [] })
@@ -386,6 +390,17 @@ const runDeployInner = async ({ store, ctx, paths, fetchImpl = globalThis.fetch,
     // 部署多久,日志里直接能看到——用户反馈「重启要一分钟」时不用猜
     const steps = Object.entries(result.timings || {}).map(([k, v]) => `${k} ${(v / 1000).toFixed(1)}`).join(' · ')
     console.log(`[deploy] ${result.ok ? '完成' : `失败(${result.stage})`},耗时 ${((Date.now() - startedAt) / 1000).toFixed(1)}s${steps ? `(${steps})` : ''}`)
+    // 确认在跑之后再在后台盯两眼(GitHub #4:nft 那步在第 5 秒才崩,确认时还活着):崩了就降级 / 回滚并把结果写进部署状态
+    if (result.ok && lateWatch && typeof result.lateCrashWatch === 'function') {
+      const watch = result.lateCrashWatch
+      watch({ isStale: () => serial !== deploySerial }).then(async (late) => {
+        if (!late) return
+        store.setDeployState({ stage: late.stage, message: late.message || late.warning || '', at: Date.now(), badTags: [] })
+        console[late.ok ? 'warn' : 'error'](`[deploy] 内核在确认后崩溃:${late.message || late.warning}`)
+        if (!late.ok) await disableService(ctx, paths.initd.core).catch(() => {})
+      }).catch((err) => console.warn('[deploy] late crash watch failed:', err instanceof Error ? err.message : err))
+    }
+    delete result.lateCrashWatch
   } catch (error) {
     // deployConfig 只在"落盘"之后的步骤自行 try/catch;冲突检测(detectConflicts)、
     // mkdirp、validateConfigObject 这些落盘之前的步骤抛出的异常会冒泡到这里。不兜底的话

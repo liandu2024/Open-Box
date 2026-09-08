@@ -244,10 +244,17 @@ export interface OpenboxNodeGroup {
   nodeTags: string[]
 }
 
+// 订阅里没能导入的条目:reason 说明为什么(类型不认识 / 插件内核没有 / 字段不合法),detail 是插件名或报错原文
+export interface OpenboxSkippedNode {
+  name: string
+  type: string
+  reason?: 'unsupported-type' | 'unsupported-plugin' | 'invalid'
+  detail?: string
+}
 export interface OpenboxSubscriptionPreview {
   format: string
   nodes: OpenboxNodeSummary[]
-  skipped: Array<{ name: string; type: string }>
+  skipped: OpenboxSkippedNode[]
   // 被过滤关键词剔除的条目
   excluded?: Array<{ name: string }>
   // 被逐条禁用的条目
@@ -260,7 +267,7 @@ export interface OpenboxSubscriptionSaveResult {
   id: string
   name: string
   nodeCount: number
-  skipped: Array<{ name: string; type: string }>
+  skipped: OpenboxSkippedNode[]
   // 节点池变没变:变了面板提示"重启内核生效"(订阅的动作从不自动重启内核)
   changed?: boolean
 }
@@ -817,6 +824,8 @@ export interface OpenboxRulesetsRefreshResult {
   restarted: boolean
   restartMessage?: string
   message?: string
+  // 一个规则集都没有可更新(内核还没成功部署过),message 里说明
+  nothing?: boolean
 }
 export const refreshRulesets = (channel: OpenboxUpdateChannel = 'auto') =>
   requestJson<OpenboxRulesetsRefreshResult>('/api/openbox/rulesets/refresh', { method: 'POST', body: JSON.stringify({ channel }) })

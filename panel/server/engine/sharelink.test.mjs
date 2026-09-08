@@ -256,3 +256,21 @@ test('分享链接没写 sni:vless / trojan 按 ws 的 host 兜底,vmess 按 hos
   const vmessSni = parseShareLink(`vmess://${Buffer.from(JSON.stringify({ v: '2', ps: 'VM', add: '104.16.1.2', port: '443', id: '22222222-2222-2222-2222-222222222222', aid: '0', net: 'ws', host: 'cdn.vm.com', sni: 'real.vm.com', tls: 'tls' })).toString('base64')}`)
   assert.equal(vmessSni.fields.tls.server_name, 'real.vm.com')
 })
+
+test('ss:// 带 SIP003 插件:obfs-local / v2ray-plugin 带过去,内核没有的插件返回 null', () => {
+  const n = parseShareLink('ss://YWVzLTI1Ni1nY206c2VjcmV0cHc=@example.com:8388?plugin=obfs-local%3Bobfs%3Dhttp%3Bobfs-host%3Dwww.bing.com#混淆')
+  assert.equal(n.fields.plugin, 'obfs-local')
+  assert.equal(n.fields.plugin_opts, 'obfs=http;obfs-host=www.bing.com')
+  assert.equal(n.server, 'example.com')
+  const v = parseShareLink('ss://YWVzLTI1Ni1nY206c2VjcmV0cHc=@example.com:8388?plugin=v2ray-plugin%3Btls%3Bhost%3Dcdn.example.com#v2')
+  assert.equal(v.fields.plugin, 'v2ray-plugin')
+  assert.equal(v.fields.plugin_opts, 'tls;host=cdn.example.com')
+  assert.equal(parseShareLink('ss://YWVzLTI1Ni1nY206c2VjcmV0cHc=@example.com:8388?plugin=shadow-tls%3Bhost%3Dx#st'), null)
+})
+
+test('vless:// 的 flow=xtls-rprx-vision-udp443 归一成 vision,sid 为空不写 short_id', () => {
+  const n = parseShareLink('vless://22222222-2222-2222-2222-222222222222@v.example.com:443?encryption=none&security=reality&sni=v.example.com&pbk=PK&sid=&flow=xtls-rprx-vision-udp443&type=tcp#R')
+  assert.equal(n.fields.flow, 'xtls-rprx-vision')
+  assert.equal(n.fields.tls.reality.short_id, undefined)
+  assert.equal(n.fields.tls.reality.public_key, 'PK')
+})

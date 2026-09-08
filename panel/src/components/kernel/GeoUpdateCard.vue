@@ -210,7 +210,9 @@ const refresh = async () => {
   refreshing.value = true
   try {
     const r = await refreshRulesets(channel.value)
-    if (r.ok) {
+    if (r.ok && r.nothing) {
+      showNotification({ content: 'geoUpdateNothing', params: { message: r.message || '' }, type: 'alert-info', timeout: 8000 })
+    } else if (r.ok) {
       showNotification({ content: r.restarted ? 'geoUpdateDoneRestarted' : 'geoUpdateDone', params: { count: String(r.updated.length) }, type: 'alert-success' })
     } else {
       const detail = r.restartMessage || r.failed.map((f) => `${f.tag}: ${f.message}`).join('; ') || r.message || ''

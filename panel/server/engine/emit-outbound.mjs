@@ -1,3 +1,4 @@
+import { normalizeRealityShortId, normalizeVlessFlow } from './node-fields.mjs'
 // sing-box 1.13 各传输层的字段互不相同:ws 有 path/headers/early data,http 是 host 列表 +
 // path,grpc 只有 service_name,httpupgrade 是单个 host + path。分享链接 / Clash 的字段
 // 原样照搬(比如 grpc 带 path、http 带 headers.Host)会被内核以 unknown field 拒收,
@@ -89,7 +90,9 @@ export const buildTls = (tls, options = {}) => {
   if (tls.reality && tls.reality.enabled) {
     out.reality = { enabled: true }
     if (tls.reality.public_key) out.reality.public_key = tls.reality.public_key
-    if (tls.reality.short_id !== undefined) out.reality.short_id = tls.reality.short_id
+    // 库里存的老节点也可能带着 "null" 这种 short_id(GitHub #19),生成时再过一遍
+    const sid = normalizeRealityShortId(tls.reality.short_id)
+    if (sid !== undefined) out.reality.short_id = sid
     // reality 硬约束:必须有 utls
     out.utls = tls.utls && tls.utls.enabled
       ? { enabled: true, fingerprint: tls.utls.fingerprint || 'chrome' }
@@ -109,11 +112,20 @@ const withTls = (o, f, options) => { const t = buildTls(f.tls, options); if (t) 
 const QUIC = { quic: true }
 
 const EMITTERS = {
-  shadowsocks: (n) => ({ type: 'shadowsocks', ...base(n), method: n.fields.method, password: n.fields.password }),
+  shadowsocks: (n) => {
+    const o = { type: 'shadowsocks', ...base(n), method: n.fields.method, password: n.fields.password }
+    if (n.fields.plugin) {
+      o.plugin = n.fields.plugin
+      if (n.fields.plugin_opts) o.plugin_opts = n.fields.plugin_opts
+    }
+    return o
+  },
   vmess: (n) => withTls(withTransport({ type: 'vmess', ...base(n), uuid: n.fields.uuid, alter_id: n.fields.alter_id ?? 0, security: n.fields.security || 'auto' }, n.fields), n.fields),
   vless: (n) => {
     const o = { type: 'vless', ...base(n), uuid: n.fields.uuid }
-    if (n.fields.flow) o.flow = n.fields.flow
+    // 老订阅存下来的 xtls-rprx-vision-udp443 这类 flow 内核不认(GitHub #23),生成时归一
+    const flow = normalizeVlessFlow(n.fields.flow)
+    if (flow) o.flow = flow
     return withTls(withTransport(o, n.fields), n.fields)
   },
   trojan: (n) => withTls(withTransport({ type: 'trojan', ...base(n), password: n.fields.password }, n.fields), n.fields),

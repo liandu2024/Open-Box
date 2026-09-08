@@ -385,6 +385,69 @@ test('降级之后还是起不来 → 只试一次,按普通崩溃回滚直连�
   assert.ok(cmds(ctx).includes('/etc/init.d/openbox stop'))
 })
 
+// 确认在跑之后才崩(GitHub #4:nft 那步排在 DNS 解析后面,第 5 秒才 FATAL):两眼确认时活着,后台再看时死了
+const lateCtx = (fatal = REDIRECT_FATAL) => {
+  const state = { crashed: false }
+  const ctx = createMockContext({
+    files: { [paths.singbox]: '#!/bin/sh\n', [TUN_DEVICE]: '' },
+    execResults: {
+      '/etc/init.d/openbox status': () => {
+        const written = ctx.writes.filter((w) => w.path === paths.configPath).pop()
+        const redirect = written ? JSON.parse(written.content).inbounds[0].auto_redirect : true
+        return state.crashed && redirect ? { code: 1, stdout: 'inactive' } : { code: 0, stdout: 'running' }
+      },
+      'logread -e sing-box': { code: 0, stdout: `Tue Sep  8 15:18:47 2026 daemon.err sing-box[10798]: \x1b[31m${fatal}\x1b[0m\n` },
+    },
+  })
+  return { ctx, state }
+}
+const noSleep = async () => {}
+
+test('确认在跑之后才崩、且是 auto_redirect 那类 → 后台盯到后降级重来一次,降级说明从 lateCrashWatch 回来', async () => {
+  const { ctx, state } = lateCtx()
+  const patches = []
+  const r = await deployConfig(ctx, paths, { config: withRedirect, profile: tunProfile, rebuild: (patch) => { patches.push(patch); return withoutRedirect } })
+  assert.equal(r.ok, true, r.message)
+  assert.equal(r.warning, '')
+  assert.equal(typeof r.lateCrashWatch, 'function')
+  assert.equal(cmds(ctx).filter((c) => c === '/etc/init.d/openbox restart').length, 1)
+  state.crashed = true
+  const late = await r.lateCrashWatch({ sleep: noSleep })
+  assert.equal(late.ok, true)
+  assert.equal(late.stage, 'running')
+  assert.match(late.warning, /auto_redirect/)
+  assert.match(late.warning, /DNS 重定向/)
+  assert.deepEqual(patches, [{ tun: { autoRedirect: false } }])
+  const lastConfig = ctx.writes.filter((w) => w.path === paths.configPath).pop()
+  assert.equal(JSON.parse(lastConfig.content).inbounds[0].auto_redirect, undefined)
+  assert.equal(cmds(ctx).filter((c) => c === '/etc/init.d/openbox restart').length, 2)
+  assert.ok(!cmds(ctx).includes('/etc/init.d/openbox stop'))
+})
+
+test('确认在跑之后才崩、不是 auto_redirect 那类 → 回滚直连,带内核原话;一直在跑 / 又有新部署时后台什么都不做', async () => {
+  const other = 'FATAL[0005] start service: initialize outbound/hysteria2[x]: bad config'
+  const { ctx, state } = lateCtx(other)
+  const r = await deployConfig(ctx, paths, { config: withRedirect, profile: tunProfile, rebuild: () => withoutRedirect })
+  assert.equal(r.ok, true)
+  state.crashed = true
+  const late = await r.lateCrashWatch({ sleep: noSleep })
+  assert.equal(late.ok, false)
+  assert.equal(late.stage, 'verify')
+  assert.match(late.message, /bad config/)
+  assert.ok(cmds(ctx).includes('/etc/init.d/openbox stop'))
+  // 一直在跑:两眼都没事就回 null
+  const alive = lateCtx()
+  const r2 = await deployConfig(alive.ctx, paths, { config: withRedirect, profile: tunProfile, rebuild: () => withoutRedirect })
+  assert.equal(await r2.lateCrashWatch({ sleep: noSleep }), null)
+  // 已经有新的部署开始:不看、不动
+  const stale = lateCtx()
+  const r3 = await deployConfig(stale.ctx, paths, { config: withRedirect, profile: tunProfile, rebuild: () => withoutRedirect })
+  stale.state.crashed = true
+  const before = cmds(stale.ctx).length
+  assert.equal(await r3.lateCrashWatch({ sleep: noSleep, isStale: () => true }), null)
+  assert.equal(cmds(stale.ctx).length, before)
+})
+
 test('不是 auto_redirect 那类崩溃、或没开 auto_redirect、或没给 rebuild → 不降级,照旧回滚', async () => {
   const other = 'FATAL[0000] start service: initialize outbound/hysteria2[x]: bad config'
   for (const [ctx, profile, rebuild] of [

@@ -6,6 +6,8 @@ import { createNode } from './node-model.mjs'
 test('shadowsocks emit', () => {
   const n = createNode({ tag: '美国-01', type: 'shadowsocks', server: 'a.com', server_port: 8388, fields: { method: 'aes-256-gcm', password: 'pw' }, source: 'clash' })
   assert.deepEqual(emitOutbound(n), { type: 'shadowsocks', tag: '美国-01', server: 'a.com', server_port: 8388, method: 'aes-256-gcm', password: 'pw' })
+  const withPlugin = createNode({ tag: '美国-02', type: 'shadowsocks', server: 'a.com', server_port: 8388, fields: { method: 'aes-256-gcm', password: 'pw', plugin: 'obfs-local', plugin_opts: 'obfs=http;obfs-host=www.bing.com' }, source: 'clash' })
+  assert.deepEqual(emitOutbound(withPlugin), { type: 'shadowsocks', tag: '美国-02', server: 'a.com', server_port: 8388, method: 'aes-256-gcm', password: 'pw', plugin: 'obfs-local', plugin_opts: 'obfs=http;obfs-host=www.bing.com' })
 })
 
 test('vmess emit 带 ws + tls', () => {
@@ -70,4 +72,14 @@ test('socks emit:只出版本 / 账号 / 密码,没有 tls 与 transport', () =>
   assert.equal(emitOutbound(v4).version, '4')
   const v5 = createNode({ tag: 'V5', type: 'socks', server: '1.2.3.4', server_port: 1080, fields: { version: '5' }, source: 'sharelink' })
   assert.equal(emitOutbound(v5).version, undefined)
+})
+
+test('库里存的老节点:short_id "null" 不写、flow -udp443 归一成 vision(GitHub #19 #23)', () => {
+  const n = createNode({ tag: 'R-old', type: 'vless', server: 'a.com', server_port: 443, fields: { uuid: 'u', flow: 'xtls-rprx-vision-udp443', tls: { enabled: true, server_name: 'a.com', reality: { enabled: true, public_key: 'PK', short_id: 'null' } } }, source: 'clash' })
+  const o = emitOutbound(n)
+  assert.equal(o.flow, 'xtls-rprx-vision')
+  assert.equal(o.tls.reality.short_id, undefined)
+  assert.equal(o.tls.reality.public_key, 'PK')
+  const d = createNode({ tag: 'R-direct', type: 'vless', server: 'a.com', server_port: 443, fields: { uuid: 'u', flow: 'xtls-rprx-direct' }, source: 'clash' })
+  assert.equal(emitOutbound(d).flow, undefined)
 })

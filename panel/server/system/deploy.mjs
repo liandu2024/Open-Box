@@ -47,6 +47,10 @@ export const rollbackSummary = (rb) => (rb.ok
   : `恢复直连未完成(${rb.failures.map((f) => `${f.step}: ${f.message}`).join('; ')})`)
 
 const VERIFY_SETTLE_MS = 3000
+// 确认在跑之后再在后台看两眼:post-start 排在 DNS 解析之后,节点域名解析超时时 nft 那步会拖到第 5 秒才
+// 跑(GitHub #4 的 FATAL[0005]),两眼确认时进程还活着。默认用真定时器且不拖住进程退出;测试注入自己的 sleep
+const LATE_WATCH_MS = [6000, 6000]
+const detachedSleep = (ms) => new Promise((resolve) => { const t = setTimeout(resolve, ms); if (typeof t.unref === 'function') t.unref() })
 
 // 内核起来又死了的时候,把它最后一句 FATAL 带回界面——"内核启动后未在运行"这句话
 // 本身什么都说明不了,用户还得自己去翻 logread。读不到就是空串。
@@ -73,7 +77,7 @@ const crashMessage = (fatal, rb) => (fatal
 // 自动降级再试一次,并把原话和常见原因一起告诉用户(GitHub #12 #15)。
 export const AUTO_REDIRECT_FATAL = /auto-redirect: setup nftables/i
 export const autoRedirectFallbackWarning = (fatal) =>
-  `auto_redirect(nftables 转发)起不来,已改用纯 tun 模式启动(兼容模式):分流规则不受影响,直连目标的入口旁路改由系统路由表实现,吞吐略低。内核原话:${fatal}。常见原因:固件缺 kmod-nft-nat 等 nftables 模块,或 PassWall / OpenClash 等插件的 nftables 规则冲突——处理好之后重启内核会自动恢复 auto_redirect。`
+  `auto_redirect(nftables 转发)起不来,已改用纯 tun 模式启动(兼容模式):分流规则不受影响,直连目标的入口旁路改由系统路由表实现,吞吐略低。内核原话:${fatal}。常见原因:固件缺 kmod-nft-nat 等 nftables 模块,或 PassWall / OpenClash 等插件的 nftables 规则冲突——处理好之后重启内核会自动恢复 auto_redirect。旁路由请注意:纯 tun 模式不改写终端的 DNS,终端的 DNS 若不指向本机,请在 网络 → DHCP/DNS 里打开「DNS 重定向」(把终端的 DNS 请求引到本机 dnsmasq),否则会解析不了域名。`
 
 // rebuild(profilePatch):按改过的档案重新生成一份配置(见 api/deploy-runner.mjs)。只在 auto_redirect
 // 起不来要降级重试时用;不传就不降级,照旧回滚直连。
@@ -300,7 +304,33 @@ export const deployConfig = async (ctx, paths, { config, profile, userGroups, fe
     }
     mark('确认在跑')
 
-    return withTimings({ ok: true, stage: 'running', message: '', warning })
+    // 9b. 晚发生的崩溃交给调用方在后台盯:死了且是 auto_redirect 那类就照样降级重来一次,别的崩溃回滚直连。
+    //     返回 null 表示一直在跑;isStale() 为真(又有新的部署开始了)就什么都不做
+    const lateCrashWatch = async ({ sleep = detachedSleep, isStale = () => false } = {}) => {
+      for (const wait of LATE_WATCH_MS) {
+        await sleep(wait)
+        if (isStale() || isCancelled()) return null
+        if ((await serviceStatus(ctx, paths.initd.core)).running) continue
+        const fatal = await readLastKernelFatal(ctx)
+        if (autoRedirect && !redirectFallbackTried && typeof rebuild === 'function' && AUTO_REDIRECT_FATAL.test(fatal)) {
+          redirectFallbackTried = true
+          autoRedirect = false
+          config = rebuild({ tun: { ...(profile.tun || {}), autoRedirect: false } })
+          await writeConfigAndMeta(config)
+          const restart = await restartService(ctx, paths.initd.core)
+          if (restart.ok) {
+            await sleep(VERIFY_SETTLE_MS)
+            if ((await serviceStatus(ctx, paths.initd.core)).running) return { ok: true, stage: 'running', message: '', warning: autoRedirectFallbackWarning(fatal) }
+          }
+          const rb2 = await rollbackToDirect(ctx, paths)
+          return { ok: false, stage: 'verify', message: crashMessage(await readLastKernelFatal(ctx), rb2), rollback: rb2 }
+        }
+        const rb = await rollbackToDirect(ctx, paths)
+        return { ok: false, stage: 'verify', message: crashMessage(fatal, rb), rollback: rb }
+      }
+      return null
+    }
+    return withTimings({ ok: true, stage: 'running', message: '', warning, lateCrashWatch })
   } catch (error) {
     // 落盘之后任一步骤抛出异常(闪存写满、uci 调用失败等)都不能让部署直接 reject——
     // 必须尽力回滚到直连状态,不留半接管的死配置。

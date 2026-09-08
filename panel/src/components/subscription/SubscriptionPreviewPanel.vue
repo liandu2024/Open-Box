@@ -62,7 +62,7 @@
               :key="`${item.name}-${index}`"
               class="truncate"
             >
-              {{ $t('subscriptionSkippedReason', { name: item.name, type: item.type }) }}
+              {{ skippedText(item) }}
             </li>
           </ul>
         </div>
@@ -264,7 +264,7 @@
 </template>
 
 <script setup lang="ts">
-import type { OpenboxLatencyResult, OpenboxRenameOptions, OpenboxSubscriptionPreview } from '@/api/openbox'
+import type { OpenboxLatencyResult, OpenboxRenameOptions, OpenboxSubscriptionPreview, OpenboxSkippedNode } from '@/api/openbox'
 import { testNodeLatency } from '@/api/openbox'
 import CountryFlag from '@/components/common/CountryFlag.vue'
 import {
@@ -298,6 +298,12 @@ const emit = defineEmits<{
 const overrideCount = computed(() => Object.keys(props.overrides || {}).length)
 
 const { t } = useI18n()
+// 跳过的条目按原因写:插件内核没有 / 字段不合法 / 类型不认识
+const skippedText = (item: OpenboxSkippedNode) => {
+  if (item.reason === 'unsupported-plugin') return t('subscriptionSkippedPlugin', { name: item.name, plugin: item.detail || '' })
+  if (item.reason === 'invalid') return t('subscriptionSkippedInvalid', { name: item.name, type: item.type, detail: item.detail || '' })
+  return t('subscriptionSkippedReason', { name: item.name, type: item.type })
+}
 
 const listTab = ref<'kept' | 'excluded' | 'disabled'>('kept')
 

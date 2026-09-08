@@ -88,7 +88,10 @@ export const registerUpdateRoutes = (app, { store, ctx, paths, fetchImpl = globa
       // source 记的是规则集来源(sagernet / metacubex),换来源后旧版本号不再可比;trigger 才是"谁发起的"
       const record = { lastAt: new Date().toISOString(), updated: result.updated, failed: result.failed, restarted, trigger: 'manual', channel, versions, source: result.source }
       await writeJsonFile(ctx, paths.geoUpdateStatePath, record)
-      res.json({ ok: result.failed.length === 0 && !restartMessage, ...result, versions, restarted, restartMessage })
+      // 一个规则集都没有(新装机内核还没成功部署过、或第一次启动被回滚成了无规则的直连配置):说清楚,别报"已更新 0 个"(GitHub #20)
+      const nothing = !result.updated.length && !result.failed.length
+      const message = result.message || (nothing ? '当前配置里没有 Geo 规则集:内核还没成功部署过。先启动一次内核,规则集会随第一次成功启动自动下载' : '')
+      res.json({ ok: result.failed.length === 0 && !restartMessage, ...result, ...(message ? { message } : {}), nothing, versions, restarted, restartMessage })
     } catch (error) {
       res.status(503).json({ message: error instanceof Error ? error.message : String(error) })
     }

@@ -1,4 +1,5 @@
 import { createNode } from './node-model.mjs'
+import { normalizeRealityShortId, normalizeVlessFlow, sip003Plugin } from './node-fields.mjs'
 import { decodeBase64, parseUri } from './codec.mjs'
 
 export const SHARELINK_SCHEMES = ['ss', 'vmess', 'vless', 'trojan', 'hysteria2', 'tuic', 'anytls', 'socks', 'socks5']
@@ -38,8 +39,17 @@ const parseSs = (uri) => {
     fragment = decodeURIComponent(rest.slice(hashIdx + 1))
     rest = rest.slice(0, hashIdx)
   }
+  // SIP002 的 plugin= 参数(obfs-local / v2ray-plugin 内核支持);内核没有的插件返回 null 当作认不出
+  let plugin
   const qIdx = rest.indexOf('?')
-  if (qIdx >= 0) rest = rest.slice(0, qIdx) // 忽略 plugin 参数(P2a 不做插件)
+  if (qIdx >= 0) {
+    try {
+      plugin = sip003Plugin(new URLSearchParams(rest.slice(qIdx + 1)).get('plugin'))
+    } catch {
+      return null
+    }
+    rest = rest.slice(0, qIdx)
+  }
 
   let method, password, server, port
   if (rest.includes('@')) {
@@ -75,7 +85,7 @@ const parseSs = (uri) => {
   }
   return createNode({
     tag: fragment, type: 'shadowsocks', server, server_port: port,
-    fields: { method, password }, source: 'sharelink',
+    fields: { method, password, ...(plugin || {}) }, source: 'sharelink',
   })
 }
 
@@ -149,8 +159,8 @@ const buildTlsFromQuery = (query, fallbackSni) => {
     tls.reality = { enabled: true }
     const pbk = query.get('pbk')
     if (pbk) tls.reality.public_key = pbk
-    const sid = query.get('sid')
-    if (sid) tls.reality.short_id = sid
+    const sid = normalizeRealityShortId(query.get('sid'))
+    if (sid !== undefined) tls.reality.short_id = sid
     if (!tls.utls) tls.utls = { enabled: true, fingerprint: 'chrome' }  // reality 需要 utls
   }
   return tls
@@ -159,7 +169,7 @@ const buildTlsFromQuery = (query, fallbackSni) => {
 const parseVless = (uri) => {
   const u = parseUri(uri)
   const fields = { uuid: safeDecode(u.userinfo) }
-  const flow = u.query.get('flow')
+  const flow = normalizeVlessFlow(u.query.get('flow'))
   if (flow) fields.flow = flow
   const transport = buildTransportFromQuery(u.query)
   if (transport) fields.transport = transport

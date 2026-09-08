@@ -86,6 +86,23 @@ test('POST /update/run:已有更新在跑 → 409', async () => {
   }
 })
 
+test('POST /rulesets/refresh:配置里一个 Geo 规则集都没有(新装机内核没成功部署过)→ nothing + 说明,不报"已更新 0 个"(GitHub #20)', async () => {
+  const ctx = createMockContext({
+    files: { [paths.configPath]: JSON.stringify({ route: { rule_set: [] } }) },
+    execResults: { '/etc/init.d/openbox status': { code: 1, stdout: 'inactive' } },
+  })
+  const { base, close } = await startApp(ctx, { getProfile: () => ({}) }, async () => ({ ok: true, status: 200, arrayBuffer: async () => new Uint8Array([1]).buffer }))
+  try {
+    const r = await (await fetch(`${base}/api/openbox/rulesets/refresh`, { method: 'POST' })).json()
+    assert.equal(r.ok, true)
+    assert.equal(r.nothing, true)
+    assert.deepEqual(r.updated, [])
+    assert.match(r.message, /没有 Geo 规则集/)
+  } finally {
+    await close()
+  }
+})
+
 test('POST /rulesets/refresh:按配置里的本地规则集重新下载,记录到 geo-update.json', async () => {
   const config = { route: { rule_set: [
     { type: 'local', tag: 'geosite-cn', path: `${paths.rulesetDir}/geosite-cn.srs` },

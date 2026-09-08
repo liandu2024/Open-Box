@@ -1,4 +1,5 @@
 import YAML from 'yaml'
+import { clashSsPlugin, normalizeRealityShortId, normalizeVlessFlow } from './node-fields.mjs'
 import { createNode } from './node-model.mjs'
 
 const toArray = (v) => (Array.isArray(v) ? v : v == null ? [] : [v])
@@ -43,7 +44,8 @@ const buildClashTls = (p, transport) => {
     const ro = p['reality-opts']
     tls.reality = { enabled: true }
     if (ro['public-key']) tls.reality.public_key = ro['public-key']
-    if (ro['short-id'] !== undefined) tls.reality.short_id = String(ro['short-id'])
+    const sid = normalizeRealityShortId(ro['short-id'])
+    if (sid !== undefined) tls.reality.short_id = sid
     if (!tls.utls) tls.utls = { enabled: true, fingerprint: 'chrome' }
   }
   if (!tls.enabled) return undefined
@@ -52,8 +54,10 @@ const buildClashTls = (p, transport) => {
 
 const MAPPERS = {
   ss: (p) => {
-    if (p.plugin) throw new Error('ss plugin unsupported')
-    return { type: 'shadowsocks', fields: { method: p.cipher, password: p.password } }
+    const fields = { method: p.cipher, password: p.password }
+    // obfs / v2ray-plugin 内核支持,按 SIP003 写法带过去;别的插件抛 UnsupportedPluginError 记进 skipped
+    if (p.plugin) Object.assign(fields, clashSsPlugin(p.plugin, p['plugin-opts']))
+    return { type: 'shadowsocks', fields }
   },
   vmess: (p) => {
     const transport = buildClashTransport(p)
@@ -73,7 +77,7 @@ const MAPPERS = {
     return {
       type: 'vless',
       fields: {
-        uuid: p.uuid, ...(p.flow ? { flow: p.flow } : {}),
+        uuid: p.uuid, ...(normalizeVlessFlow(p.flow) ? { flow: normalizeVlessFlow(p.flow) } : {}),
         ...(transport ? { transport } : {}),
         ...(tls ? { tls } : {}),
       },
@@ -167,14 +171,16 @@ export const parseClashProxies = (yamlText) => {
     if (!p || typeof p !== 'object') continue
     const mapper = MAPPERS[p.type]
     if (!mapper) {
-      skipped.push({ name: p.name, type: p.type })
+      skipped.push({ name: p.name, type: p.type, reason: 'unsupported-type' })
       continue
     }
     try {
       const { type, fields } = mapper(normalizeProxy(p))
       nodes.push(createNode({ tag: p.name, type, server: p.server, server_port: p.port, fields, source: 'clash' }))
-    } catch {
-      skipped.push({ name: p.name, type: p.type })
+    } catch (err) {
+      // 跳过要说清为什么:不支持的插件(shadow-tls 这类)/ 字段不合法,界面照原因显示
+      const code = err && err.code === 'unsupported-plugin' ? 'unsupported-plugin' : 'invalid'
+      skipped.push({ name: p.name, type: p.type, reason: code, detail: (err && (err.detail || err.message)) || '' })
     }
   }
   return { nodes, skipped }
