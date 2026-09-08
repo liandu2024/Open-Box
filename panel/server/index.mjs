@@ -21,6 +21,7 @@ import { createLatencyHistory } from './system/latency-history.mjs'
 import { createLatencyScheduler } from './system/latency-scheduler.mjs'
 import { registerServerRoutes } from './api/servers.mjs'
 import { registerBackupRoutes } from './api/backup.mjs'
+import { registerDiagnosticsRoutes } from './api/diagnostics.mjs'
 import { readMeta } from './system/updater.mjs'
 import { seedDefaultStorage } from './system/seed-defaults.mjs'
 import { runDeploy, fetchSelections, resolveSelections, dnsClassesFlipped } from './api/deploy-runner.mjs'
@@ -1105,6 +1106,8 @@ const latencyHistory = createLatencyHistory({ store })
 const latencyScheduler = createLatencyScheduler({ store, ctx: obCtx, paths: obPaths, history: latencyHistory, fetchImpl: globalThis.fetch, log: (m) => console.log(m) })
 registerLatencyHistoryRoutes(app, { history: latencyHistory, scheduler: latencyScheduler })
 registerServerRoutes(app, { store, ctx: obCtx })
+// 导出诊断包(后端设置那张卡片):版本、固件、内核状态、脱敏配置、最近日志,给 issue 用
+registerDiagnosticsRoutes(app, { store, ctx: obCtx, paths: obPaths })
 // 导出 / 导入(后端设置那张卡片):档案 + 节点组,可选订阅和节点
 registerBackupRoutes(app, {
   store,

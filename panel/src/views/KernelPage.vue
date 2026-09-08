@@ -46,6 +46,8 @@
             :profile="profile"
             @imported="onImported"
           />
+          <!-- 导出诊断包:反馈问题用,和备份放一起 -->
+          <DiagnosticsCard />
         </template>
 
         <!-- Open-Box 自身更新 / Geo 规则集更新(各带自动更新计划) -->
@@ -75,6 +77,7 @@ import NodeDirectCard from '@/components/kernel/NodeDirectCard.vue'
 import OpenboxUpdateCard from '@/components/kernel/OpenboxUpdateCard.vue'
 import BackupCard from '@/components/kernel/BackupCard.vue'
 import TrafficRetentionCard from '@/components/kernel/TrafficRetentionCard.vue'
+import DiagnosticsCard from '@/components/kernel/DiagnosticsCard.vue'
 import Ipv6Card from '@/components/routing/Ipv6Card.vue'
 import TestUrlCard from '@/components/routing/TestUrlCard.vue'
 import { usePaddingForViews } from '@/composables/paddingViews'

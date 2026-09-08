@@ -960,6 +960,9 @@ export interface OpenboxBackupImportResult {
     backgroundImage?: boolean
   }
 }
+// 诊断包(server/api/diagnostics.mjs):版本、固件、内核状态、脱敏配置、最近日志,给 issue 用
+export const fetchDiagnostics = () => requestJson<Record<string, unknown>>('/api/openbox/diagnostics')
+
 export const fetchBackup = (opts: OpenboxBackupOptions) =>
   requestJson<OpenboxBackup>(
     `/api/openbox/backup?subscriptions=${opts.subscriptions ? 1 : 0}&clientRoutes=${opts.clientRoutes ? 1 : 0}&servers=${opts.servers ? 1 : 0}`,
