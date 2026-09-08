@@ -843,7 +843,6 @@ const zh: LANG_MESSAGE = {
   routeTestRequestFailed: '访问失败:{message}',
   routeTestSourceNotProbed: 'DNS 判定按终端 {ip} 预测;下面的解析和访问是面板自己发起的,没有该终端的来源,不代表该终端实测。',
   routeTestDomainTargetNote: '这次访问是面板以域名进内核的回环入站发起的,内核在分流时没有它的真实目标 IP:排在前面的按目标 IP 判的规则(前置自定义分流的 IP 行、站点集的 GeoIP / IP 段)对它不会命中,直接按域名规则判。终端先解析、再按 IP 连接的 tun 路径会命中这些 IP 规则,实际访问以终端自己拿到的地址为准。',
-  serverDomainTargetNote: '经这里的 SOCKS5 / HTTP 代理以域名发起的连接,内核收到的目标是域名而不是 IP,分流时没有真实目标 IP:排在前面的按目标 IP 判的规则(前置自定义分流的 IP 行、站点集的 GeoIP / IP 段)对这类连接不会命中,只按域名规则判。这和终端先解析、再按 IP 连接的 tun 路径不同;以 IP 发起的连接照常按 IP 规则判。',
   routeTestNotSeen: '访问完成,但在内核连接表里没找到这条连接(可能没经过内核)',
   routeTestNotSeenFailed: '没能从内核连接表里认出这条连接,不知道是从哪个节点出去的',
   routeTestRule: '命中规则',

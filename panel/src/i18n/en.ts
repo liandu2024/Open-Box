@@ -848,7 +848,6 @@ const en = {
   routeTestRequestFailed: 'Request failed: {message}',
   routeTestSourceNotProbed: 'DNS decision predicted for client {ip}; the resolve and probe below were issued by the panel itself without that client\'s source, so they are not a measurement of that client.',
   routeTestDomainTargetNote: 'This probe entered the kernel by domain through the loopback inbound, so the kernel has no real destination IP while routing it: rules that match by destination IP (custom IP rows, GeoIP / IP ranges in policies) placed earlier do not match it, and it is routed by the domain rules only. On the tun path a client resolves first and connects by IP, so those IP rules do apply; real access follows the address the client obtained.',
-  serverDomainTargetNote: 'Connections made by domain through these SOCKS5 / HTTP proxies reach the kernel with a domain target rather than an IP, so no real destination IP is available while routing: earlier rules that match by destination IP (custom IP rows, GeoIP / IP ranges in policies) do not match such connections, which follow the domain rules only. This differs from the tun path, where the client resolves first and connects by IP; connections made by IP are matched by the IP rules as usual.',
   routeTestNotSeen: 'Request finished but no matching connection in the kernel (may have bypassed it)',
   routeTestNotSeenFailed: 'Could not find this connection in the kernel connection table, so the exit node is unknown',
   routeTestRule: 'Rule',

@@ -843,7 +843,6 @@ const zhTW: LANG_MESSAGE = {
   routeTestRequestFailed: '訪問失敗:{message}',
   routeTestSourceNotProbed: 'DNS 判定按終端 {ip} 預測;下面的解析和訪問是面板自己發起的,沒有該終端的來源,不代表該終端實測。',
   routeTestDomainTargetNote: '這次訪問是面板以網域進核心的回環入站發起的,核心在分流時沒有它的真實目標 IP:排在前面的按目標 IP 判的規則(前置自訂分流的 IP 行、站點集的 GeoIP / IP 段)對它不會命中,直接按網域規則判。終端先解析、再按 IP 連線的 tun 路徑會命中這些 IP 規則,實際訪問以終端自己拿到的位址為準。',
-  serverDomainTargetNote: '經這裡的 SOCKS5 / HTTP 代理以網域發起的連線,核心收到的目標是網域而不是 IP,分流時沒有真實目標 IP:排在前面的按目標 IP 判的規則(前置自訂分流的 IP 行、站點集的 GeoIP / IP 段)對這類連線不會命中,只按網域規則判。這和終端先解析、再按 IP 連線的 tun 路徑不同;以 IP 發起的連線照常按 IP 規則判。',
   routeTestNotSeen: '訪問完成,但在核心連線表裡沒找到這條連線(可能沒經過核心)',
   routeTestNotSeenFailed: '沒能從核心連線表裡認出這條連線,不知道是從哪個節點出去的',
   routeTestRule: '命中規則',
