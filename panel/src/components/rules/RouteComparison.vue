@@ -249,8 +249,9 @@
             <p v-if="rule.matchError && rule.undetermined">{{ $t('routeRuleWhyBody', { needs: needsText }) }}</p>
             <template v-else>
               <p class="text-base-content/50 font-mono text-[11px] break-all">{{ conditionText }}</p>
+              <!-- 第一条已经跟在站点集后面显示了,这里只列其余的 -->
               <div
-                v-for="(e, i) in (rule.matched?.entries || []).slice(0, 8)"
+                v-for="(e, i) in (rule.matched?.entries || []).slice(1, 9)"
                 :key="`${e.source}-${e.type}-${e.value}-${i}`"
                 class="flex flex-wrap items-center gap-x-2"
               >
@@ -258,7 +259,7 @@
                 <span class="text-main font-mono">{{ e.value }}</span>
                 <span class="text-base-content/50">{{ e.source === 'custom' ? $t('ruleSourceCustom') : e.source }}</span>
               </div>
-              <p v-if="(rule.matched?.entriesTotal || 0) > 8">{{ $t('ruleLookupMoreEntries', { count: (rule.matched?.entriesTotal || 0) - 8 }) }}</p>
+              <p v-if="(rule.matched?.entriesTotal || 0) > 9">{{ $t('ruleLookupMoreEntries', { count: (rule.matched?.entriesTotal || 0) - 9 }) }}</p>
             </template>
           </template>
         </RouteStage>
