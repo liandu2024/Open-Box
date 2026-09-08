@@ -827,6 +827,7 @@ const zh: LANG_MESSAGE = {
   routeTestFakeIpUpstream: '这台 DNS 回的是 fake-ip(198.18.0.0/15 保留段),真正的解析在它那边',
   routeTestExit: '出站',
   routeTestRequestFailed: '访问失败:{message}',
+  routeTestSourceNotProbed: 'DNS 判定按终端 {ip} 预测;下面的解析和访问是面板自己发起的,没有该终端的来源,不代表该终端实测。',
   routeTestNotSeen: '访问完成,但在内核连接表里没找到这条连接(可能没经过内核)',
   routeTestNotSeenFailed: '没能从内核连接表里认出这条连接,不知道是从哪个节点出去的',
   routeTestRule: '命中规则',

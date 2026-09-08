@@ -815,6 +815,9 @@ export interface OpenboxRouteTest {
   resolve?: { ok: boolean; status?: number; answers: string[]; answers6?: string[]; ok6?: boolean; status6?: number; error6?: string; ms: number; error?: string; fakeIp?: boolean; fakeIpFrom?: string; ttl?: number; cached?: boolean }
   // 有 AAAA 记录时按第一个 v6 地址再访问一次的结果(只有探测结果,没有连接表信息)
   exit6?: { connectTo: string; ok?: boolean; status?: number; ms?: number; error?: string }
+  // 查询时指定了终端来源:上面的 DNS 判定是按该终端预测的;解析和访问仍是面板自己发起、没有该终端
+  // 的来源,sourceVerified 恒为 false——终端的实际路径要在终端上观测
+  context?: { sourceIp: string; predictedFor: 'terminal'; probeOrigin: 'panel'; sourceVerified: false }
   exit: {
     url: string
     ok?: boolean

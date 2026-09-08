@@ -317,3 +317,36 @@ test('decideDnsServer:带来源条件的 DNS 规则——没给来源 IP 判不�
   const rejected = await decideDnsServer(ctx, paths, cfg, 'x.ads.example', { sourceIp: '192.168.3.10' })
   assert.equal(rejected.rejected, true)
 })
+
+test('S4:指定终端来源时,响应明确标出 DNS 判定是按终端预测的、解析和访问是面板自己发起的,没有该终端的来源(不冒充该终端实测)', async () => {
+  const cfg = { ...config, dns: { ...config.dns, rules: [{ source_ip_cidr: ['192.168.3.9/32'], server: 'dns-policy-0' }, ...config.dns.rules] } }
+  const ctx = createMockContext({ files: { [paths.configPath]: JSON.stringify(cfg), [paths.singbox]: 'x', [`${paths.rulesetDir}/geosite-openai.srs`]: 'x' } })
+  const calls = []
+  const fetchImpl = async (url) => {
+    calls.push(String(url))
+    if (url.includes('/dns/query')) return { ok: true, status: 200, json: async () => ({ Answer: [{ data: '1.2.3.4' }] }) }
+    if (url.includes('/connections')) return { ok: true, status: 200, json: async () => ({ connections: [] }) }
+    if (url.includes('/cache/dns/flush')) return { ok: true, status: 204, json: async () => ({}) }
+    throw new Error('unexpected fetch ' + url)
+  }
+  const probes = []
+  const probe = async (host, opts) => { probes.push({ host, ...opts }); return { ok: true, status: 200, ms: 1 } }
+  const app = express()
+  registerRouteTestRoutes(app, { store: { getClashSecret: () => 's', getProfile: () => ({ ipv6: false }) }, ctx, paths, fetchImpl, probe })
+  const server = app.listen(0)
+  await new Promise((r) => server.once('listening', r))
+  try {
+    const res = await fetch(`http://127.0.0.1:${server.address().port}/api/openbox/route-test`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ target: 'example.com', sourceIp: '192.168.3.9' }) })
+    const body = await res.json()
+    assert.equal(body.dns.server.detour, 'AI')
+    assert.deepEqual(body.context, { sourceIp: '192.168.3.9', predictedFor: 'terminal', probeOrigin: 'panel', sourceVerified: false })
+    // 内核的查询接口和回环探测都没有办法带上终端来源
+    assert.ok(!calls.some((u) => u.includes('192.168.3.9')))
+    assert.ok(!JSON.stringify(probes).includes('192.168.3.9'))
+    // 不给来源就没有这段
+    const res2 = await fetch(`http://127.0.0.1:${server.address().port}/api/openbox/route-test`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ target: 'example.com' }) })
+    assert.equal((await res2.json()).context, undefined)
+  } finally {
+    await new Promise((r) => server.close(r))
+  }
+})

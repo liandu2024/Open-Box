@@ -25,6 +25,12 @@
         >{{ error }}</span>
       </div>
 
+      <!-- 指定了终端来源时:上面 DNS 那一站是按该终端预测的,解析和访问却是面板自己发起的——不是该终端的实测 -->
+      <div
+        v-if="result?.context && !loading"
+        class="text-warning text-xs"
+      >{{ $t('routeTestSourceNotProbed', { ip: result.context.sourceIp }) }}</div>
+
       <RouteFlow
         v-if="result && !loading"
         :nodes="flowNodes"

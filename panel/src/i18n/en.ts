@@ -832,6 +832,7 @@ const en = {
   routeTestFakeIpUpstream: 'This DNS server answered with a fake IP (reserved 198.18.0.0/15); the real lookup happens on its side',
   routeTestExit: 'Exit',
   routeTestRequestFailed: 'Request failed: {message}',
+  routeTestSourceNotProbed: 'DNS decision predicted for client {ip}; the resolve and probe below were issued by the panel itself without that client\'s source, so they are not a measurement of that client.',
   routeTestNotSeen: 'Request finished but no matching connection in the kernel (may have bypassed it)',
   routeTestNotSeenFailed: 'Could not find this connection in the kernel connection table, so the exit node is unknown',
   routeTestRule: 'Rule',
