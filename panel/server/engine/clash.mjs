@@ -28,10 +28,13 @@ const buildClashTransport = (p) => {
   return transport
 }
 
-const buildClashTls = (p) => {
+// SNI 没写时按 ws / h2 的 Host 头兜底:CF 优选这类 server 填的是 IP、只在 Host 里写域名的节点,
+// Clash / mihomo 就是这么连的;sing-box 遇到 IP 不发 SNI,CF 直接拒绝握手(GitHub #3 #9)
+const hostHeader = (transport) => (transport && transport.headers && transport.headers.Host) || ''
+const buildClashTls = (p, transport) => {
   if (!p.tls && !p.sni && !p.servername && !p['reality-opts']) return undefined
   const tls = { enabled: p.tls === true || !!p['reality-opts'] }
-  const sni = p.servername || p.sni
+  const sni = p.servername || p.sni || hostHeader(transport)
   if (sni) tls.server_name = sni
   if (p.alpn) tls.alpn = toArray(p.alpn)
   if (p['skip-cert-verify'] === true) tls.insecure = true
@@ -52,30 +55,42 @@ const MAPPERS = {
     if (p.plugin) throw new Error('ss plugin unsupported')
     return { type: 'shadowsocks', fields: { method: p.cipher, password: p.password } }
   },
-  vmess: (p) => ({
-    type: 'vmess',
-    fields: {
-      uuid: p.uuid, alter_id: Number.parseInt(p.alterId ?? 0, 10) || 0, security: p.cipher || 'auto',
-      ...(buildClashTransport(p) ? { transport: buildClashTransport(p) } : {}),
-      ...(buildClashTls(p) ? { tls: buildClashTls(p) } : {}),
-    },
-  }),
-  vless: (p) => ({
-    type: 'vless',
-    fields: {
-      uuid: p.uuid, ...(p.flow ? { flow: p.flow } : {}),
-      ...(buildClashTransport(p) ? { transport: buildClashTransport(p) } : {}),
-      ...(buildClashTls(p) ? { tls: buildClashTls(p) } : {}),
-    },
-  }),
-  trojan: (p) => ({
-    type: 'trojan',
-    fields: {
-      password: p.password,
-      ...(buildClashTransport(p) ? { transport: buildClashTransport(p) } : {}),
-      tls: buildClashTls(p) || { enabled: true, ...(p.sni ? { server_name: p.sni } : {}) },
-    },
-  }),
+  vmess: (p) => {
+    const transport = buildClashTransport(p)
+    const tls = buildClashTls(p, transport)
+    return {
+      type: 'vmess',
+      fields: {
+        uuid: p.uuid, alter_id: Number.parseInt(p.alterId ?? 0, 10) || 0, security: p.cipher || 'auto',
+        ...(transport ? { transport } : {}),
+        ...(tls ? { tls } : {}),
+      },
+    }
+  },
+  vless: (p) => {
+    const transport = buildClashTransport(p)
+    const tls = buildClashTls(p, transport)
+    return {
+      type: 'vless',
+      fields: {
+        uuid: p.uuid, ...(p.flow ? { flow: p.flow } : {}),
+        ...(transport ? { transport } : {}),
+        ...(tls ? { tls } : {}),
+      },
+    }
+  },
+  trojan: (p) => {
+    const transport = buildClashTransport(p)
+    const sni = p.sni || hostHeader(transport)
+    return {
+      type: 'trojan',
+      fields: {
+        password: p.password,
+        ...(transport ? { transport } : {}),
+        tls: buildClashTls(p, transport) || { enabled: true, ...(sni ? { server_name: sni } : {}) },
+      },
+    }
+  },
   hysteria2: (p) => ({
     type: 'hysteria2',
     fields: {

@@ -103,7 +103,9 @@ const parseVmess = (uri) => {
   }
   if (conf.tls === 'tls' || conf.tls === 'reality') {
     fields.tls = { enabled: true }
-    if (conf.sni) fields.tls.server_name = conf.sni
+    // sni 没写按 ws / h2 的 host 兜底(v2rayN 也这么做):CF 优选的 add 是 IP,域名只在 host 里
+    const sni = conf.sni || (net !== 'tcp' && conf.host) || ''
+    if (sni) fields.tls.server_name = sni
   }
   return createNode({
     tag: conf.ps || '', type: 'vmess', server: conf.add, server_port: conf.port,
@@ -128,6 +130,9 @@ const buildTransportFromQuery = (query) => {
   if (serviceName) transport.service_name = serviceName
   return transport
 }
+
+// SNI 的兜底顺序:ws / h2 的 Host 头 → 服务器地址。只有 Host 是域名时才用它
+const sniFallback = (transport, host) => (transport && transport.headers && transport.headers.Host) || host
 
 const buildTlsFromQuery = (query, fallbackSni) => {
   const security = query.get('security')
@@ -158,7 +163,8 @@ const parseVless = (uri) => {
   if (flow) fields.flow = flow
   const transport = buildTransportFromQuery(u.query)
   if (transport) fields.transport = transport
-  const tls = buildTlsFromQuery(u.query, u.host)
+  // sni 没写时先按 ws / h2 的 host 兜底,再退到服务器地址:CF 优选的服务器是 IP,域名只在 host 里
+  const tls = buildTlsFromQuery(u.query, sniFallback(transport, u.host))
   if (tls) fields.tls = tls
   return createNode({ tag: u.fragment, type: 'vless', server: u.host, server_port: u.port, fields, source: 'sharelink' })
 }
@@ -170,7 +176,8 @@ const parseTrojan = (uri) => {
   if (transport) fields.transport = transport
   // trojan 默认走 TLS;security 缺省也视为 tls,以便 insecure/reality/utls 等 tls 字段仍被采集
   if (!u.query.get('security')) u.query.set('security', 'tls')
-  const tls = buildTlsFromQuery(u.query, u.host) || { enabled: true, ...(u.host ? { server_name: u.host } : {}) }
+  const fallback = sniFallback(transport, u.host)
+  const tls = buildTlsFromQuery(u.query, fallback) || { enabled: true, ...(fallback ? { server_name: fallback } : {}) }
   fields.tls = tls
   return createNode({ tag: u.fragment, type: 'trojan', server: u.host, server_port: u.port, fields, source: 'sharelink' })
 }

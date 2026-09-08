@@ -217,3 +217,20 @@ test('Clash socks5 收进来;带 tls 的记为 skipped(内核的 socks 出站没
   assert.equal(byName.SKANON.fields.username, undefined)
   assert.deepEqual(skipped.map((s) => s.name), ['SKTLS'])
 })
+
+test('vless / vmess / trojan 套 ws、h2 没写 servername 时 SNI 按 Host 头兜底(CF 优选:server 是 IP,域名只在 Host 里)', () => {
+  const yaml = `proxies:
+  - { name: cf-vless, type: vless, server: 104.16.1.1, port: 443, uuid: 22222222-2222-2222-2222-222222222222, tls: true, network: ws, ws-opts: { path: /vl, headers: { Host: cdn.example.com } } }
+  - { name: cf-vless-sni, type: vless, server: 104.16.1.1, port: 443, uuid: 22222222-2222-2222-2222-222222222222, tls: true, servername: sni.example.com, network: ws, ws-opts: { headers: { Host: cdn.example.com } } }
+  - { name: cf-vmess-h2, type: vmess, server: 104.16.1.2, port: 443, uuid: 22222222-2222-2222-2222-222222222222, alterId: 0, cipher: auto, tls: true, network: h2, h2-opts: { host: [h2.example.com], path: /h2 } }
+  - { name: cf-trojan, type: trojan, server: 104.16.1.3, port: 443, password: pw, network: ws, ws-opts: { headers: { Host: tj.example.com } } }
+  - { name: plain-vless, type: vless, server: 104.16.1.4, port: 443, uuid: 22222222-2222-2222-2222-222222222222, tls: true, network: ws, ws-opts: { path: /x } }
+`
+  const { nodes } = parseClashProxies(yaml)
+  const by = Object.fromEntries(nodes.map((n) => [n.originalTag, n]))
+  assert.equal(by['cf-vless'].fields.tls.server_name, 'cdn.example.com')
+  assert.equal(by['cf-vless-sni'].fields.tls.server_name, 'sni.example.com')   // 写了 servername 就用它
+  assert.equal(by['cf-vmess-h2'].fields.tls.server_name, 'h2.example.com')
+  assert.equal(by['cf-trojan'].fields.tls.server_name, 'tj.example.com')
+  assert.equal(by['plain-vless'].fields.tls.server_name, undefined)          // 没 Host 就不猜
+})
