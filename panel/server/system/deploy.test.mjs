@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createMockContext } from './context.mjs'
 import { createPaths } from './paths.mjs'
-import { deployConfig, rollbackToDirect, configMetaPath, TUN_DEVICE } from './deploy.mjs'
+import { deployConfig, rollbackToDirect, configMetaPath, TUN_DEVICE, AUTO_REDIRECT_FATAL } from './deploy.mjs'
 import { routingFingerprint } from '../engine/routing-model.mjs'
 import { dnsTakeoverBackupPath } from './dns-takeover.mjs'
 
@@ -324,4 +324,81 @@ test('tun 设备一开始没有、modprobe 之后出现了:继续部署', async 
   const r = await deployConfig(ctx, paths, { config, profile })
   assert.equal(r.ok, true, JSON.stringify(r))
   assert.ok(cmds(ctx).includes('modprobe tun'))
+})
+
+// ---------- auto_redirect 起不来:降级成纯 tun 再试一次(GitHub #12 #15) ----------
+const REDIRECT_FATAL = 'FATAL[0002] start service: post-start inbound/tun[tun-in]: auto-redirect: setup nftables: flush nftables: conn.Receive: netlink receive: no such file or directory'
+const tunProfile = { ipv6: false, dns: { mode: 'dnsmasq' }, tun: { autoRedirect: true } }
+const withRedirect = { ...config, inbounds: [{ type: 'tun', tag: 'tun-in', auto_route: true, auto_redirect: true }] }
+const withoutRedirect = { ...config, inbounds: [{ type: 'tun', tag: 'tun-in', auto_route: true }] }
+// 内核状态跟着落盘的配置走:配置里还有 auto_redirect 就"起来又死",去掉就一直在跑
+const redirectCtx = (fatal = REDIRECT_FATAL) => {
+  const ctx = createMockContext({
+    files: { [paths.singbox]: '#!/bin/sh\n', [TUN_DEVICE]: '' },
+    execResults: {
+      '/etc/init.d/openbox status': () => {
+        const written = ctx.writes.filter((w) => w.path === paths.configPath).pop()
+        const redirect = written ? JSON.parse(written.content).inbounds[0].auto_redirect : true
+        return redirect ? { code: 1, stdout: 'inactive' } : { code: 0, stdout: 'running' }
+      },
+      'logread -e sing-box': { code: 0, stdout: `Tue Sep  8 13:48:11 2026 daemon.err sing-box[32332]: \x1b[31m${fatal}\x1b[0m\n` },
+    },
+  })
+  return ctx
+}
+
+test('auto_redirect 在 nftables 层起不来 → 关掉 auto_redirect 重新生成配置再起一次,成功但带降级说明', async () => {
+  const ctx = redirectCtx()
+  const patches = []
+  const r = await deployConfig(ctx, paths, {
+    config: withRedirect, profile: tunProfile,
+    rebuild: (patch) => { patches.push(patch); return withoutRedirect },
+  })
+  assert.equal(r.ok, true, r.message)
+  assert.equal(r.stage, 'running')
+  assert.match(r.warning, /auto_redirect/)
+  assert.match(r.warning, /netlink receive: no such file or directory/)
+  assert.match(r.warning, /kmod-nft-nat|PassWall/)
+  // 重生成时把 tun.autoRedirect 关掉,别的档案字段不动
+  assert.deepEqual(patches, [{ tun: { autoRedirect: false } }])
+  // 落盘的是不带 auto_redirect 的那份;元数据也如实记 autoRedirect:false
+  const lastConfig = ctx.writes.filter((w) => w.path === paths.configPath).pop()
+  assert.equal(JSON.parse(lastConfig.content).inbounds[0].auto_redirect, undefined)
+  const lastMeta = ctx.writes.filter((w) => w.path === configMetaPath(paths)).pop()
+  assert.equal(JSON.parse(lastMeta.content).autoRedirect, false)
+  // 起了两次,没有回滚直连
+  assert.equal(cmds(ctx).filter((c) => c === '/etc/init.d/openbox restart').length, 2)
+  assert.ok(!cmds(ctx).includes('/etc/init.d/openbox stop'))
+})
+
+test('降级之后还是起不来 → 只试一次,按普通崩溃回滚直连、带内核原话', async () => {
+  const ctx = redirectCtx()
+  const r = await deployConfig(ctx, paths, {
+    config: withRedirect, profile: tunProfile,
+    rebuild: () => withRedirect,   // "重生成"的还是带 auto_redirect 的,模拟降级后仍崩
+  })
+  assert.equal(r.ok, false)
+  assert.equal(r.stage, 'verify')
+  assert.match(r.message, /内核启动后崩溃/)
+  assert.match(r.message, /netlink receive/)
+  assert.equal(cmds(ctx).filter((c) => c === '/etc/init.d/openbox restart').length, 2)
+  assert.ok(cmds(ctx).includes('/etc/init.d/openbox stop'))
+})
+
+test('不是 auto_redirect 那类崩溃、或没开 auto_redirect、或没给 rebuild → 不降级,照旧回滚', async () => {
+  const other = 'FATAL[0000] start service: initialize outbound/hysteria2[x]: bad config'
+  for (const [ctx, profile, rebuild] of [
+    [redirectCtx(other), tunProfile, () => withoutRedirect],
+    [redirectCtx(), { ...tunProfile, tun: { autoRedirect: false } }, () => withoutRedirect],
+    [redirectCtx(), tunProfile, undefined],
+  ]) {
+    const r = await deployConfig(ctx, paths, { config: withRedirect, profile, rebuild })
+    assert.equal(r.ok, false)
+    assert.equal(r.stage, 'verify')
+    assert.equal(cmds(ctx).filter((c) => c === '/etc/init.d/openbox restart').length, 1)
+    assert.ok(cmds(ctx).includes('/etc/init.d/openbox stop'))
+  }
+  assert.ok(AUTO_REDIRECT_FATAL.test(REDIRECT_FATAL))
+  assert.ok(AUTO_REDIRECT_FATAL.test('FATAL[0000] start service: post-start inbound/tun[tun-in]: auto-redirect: setup nftables: flush nftables: conn.Receive: netlink receive: file exists'))
+  assert.ok(!AUTO_REDIRECT_FATAL.test(other))
 })

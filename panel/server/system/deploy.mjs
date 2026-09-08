@@ -46,23 +46,35 @@ export const rollbackSummary = (rb) => (rb.ok
 const VERIFY_SETTLE_MS = 3000
 
 // 内核起来又死了的时候,把它最后一句 FATAL 带回界面——"内核启动后未在运行"这句话
-// 本身什么都说明不了,用户还得自己去翻 logread。
-const lastKernelFatal = async (ctx, rb) => {
-  const fallback = `内核启动后未在运行,${rollbackSummary(rb)}`
+// 本身什么都说明不了,用户还得自己去翻 logread。读不到就是空串。
+const readLastKernelFatal = async (ctx) => {
   try {
     const { code, stdout } = await ctx.exec('logread', ['-e', 'sing-box'])
-    if (code !== 0 || !stdout) return fallback
+    if (code !== 0 || !stdout) return ''
     const fatal = stdout.split('\n').filter((line) => /FATAL/.test(line)).pop()
-    if (!fatal) return fallback
+    if (!fatal) return ''
     // 去掉 syslog 前缀和终端色码,只留 sing-box 自己那句话
-    const text = fatal.replace(/\x1b\[[0-9;]*m/g, '').replace(/^.*?sing-box\[\d+\]:\s*/, '')
-    return `内核启动后崩溃,${rollbackSummary(rb)}:${text}`
+    return fatal.replace(/\x1b\[[0-9;]*m/g, '').replace(/^.*?sing-box\[\d+\]:\s*/, '')
   } catch {
-    return fallback
+    return ''
   }
 }
+const crashMessage = (fatal, rb) => (fatal
+  ? `内核启动后崩溃,${rollbackSummary(rb)}:${fatal}`
+  : `内核启动后未在运行,${rollbackSummary(rb)}`)
 
-export const deployConfig = async (ctx, paths, { config, profile, userGroups, fetchImpl, selections = {}, isCancelled = () => false } = {}) => {
+// auto_redirect 在 nftables 这一层起不来的那类 FATAL:内核把 nft 规则批量提交时被内核拒了——
+// EEXIST(上次没清干净的表)、ENOENT(固件缺 nft_redir / nft_nat 之类模块,或 PassWall /
+// OpenClash 把 fw4 的表改得对不上)。这些和节点、分流都没关系,纯 tun 模式(只靠 auto_route
+// 的策略路由)照样能跑,只是少了 nft 转发那点吞吐。与其回滚直连让人对着英文报错猜,不如
+// 自动降级再试一次,并把原话和常见原因一起告诉用户(GitHub #12 #15)。
+export const AUTO_REDIRECT_FATAL = /auto-redirect: setup nftables/i
+export const autoRedirectFallbackWarning = (fatal) =>
+  `auto_redirect(nftables 转发)起不来,已改用纯 tun 模式启动:功能不受影响,吞吐略低。内核原话:${fatal}。常见原因:固件缺 kmod-nft-nat 等 nftables 模块,或 PassWall / OpenClash 等插件的 nftables 规则冲突——处理好之后重启内核会自动恢复 auto_redirect。`
+
+// rebuild(profilePatch):按改过的档案重新生成一份配置(见 api/deploy-runner.mjs)。只在 auto_redirect
+// 起不来要降级重试时用;不传就不降级,照旧回滚直连。
+export const deployConfig = async (ctx, paths, { config, profile, userGroups, fetchImpl, selections = {}, isCancelled = () => false, rebuild } = {}) => {
   // 每一步花了多久:随结果一起带回去写进日志,"重启要一分钟"这种反馈能直接看到卡在哪
   const timings = {}
   let stepStart = Date.now()
@@ -118,29 +130,34 @@ export const deployConfig = async (ctx, paths, { config, profile, userGroups, fe
 
   try {
     // 4. 落盘
-    await ctx.writeFile(paths.configPath, JSON.stringify(config, null, 2))
     // 旁边放一份元数据给 init 脚本:开机时它要知道这份配置是不是 dnsmasq 分流模式
     // (要不要重新接管 dnsmasq)。以前靠在 config.json 里 grep 出站 tag,节点名撞上就误判。
     const dnsMode = (profile.dns && profile.dns.mode) || 'hijack'
+    let autoRedirect = Boolean(profile.tun && profile.tun.autoRedirect && dnsMode !== 'off')
     // 站点集的成员表 = 兜底 selector 的成员(刚生成的这份配置里就有,不另算一遍)
     const fallbackTag = normalizeRouting(profile?.routing).fallback.name
     const fallbackSelector = (config.outbounds || []).find((o) => o.tag === fallbackTag)
     const policyMembers = fallbackSelector ? fallbackSelector.outbounds : []
     const builtin = builtinTags(userGroups || [])
-    await ctx.writeFile(
-      configMetaPath(paths),
-      JSON.stringify({
-        dnsMode,
-        autoRedirect: Boolean(profile.tun && profile.tun.autoRedirect && dnsMode !== 'off'),
-        generatedAt: new Date().toISOString(),
-        // 这份 dns.rules 是按"谁走直连、谁走代理"定死的,把当时的判断和成员表一并存下来:
-        // 代理页改出口后要拿它比对,翻面了才重新生成(见 api/deploy-runner.mjs)
-        dnsPolicyMembers: policyMembers,
-        dnsPolicyClasses: dnsPolicyClasses(profile.routing, policyMembers, builtin, selections || {}),
-        // 这次部署用的是哪份分流设置。规则页拿它和当前档案比,改了没重启就明说
-        routingHash: routingFingerprint(profile.routing),
-      }, null, 2),
-    )
+    // 配置 + 元数据一起写;auto_redirect 降级重试时再写一遍
+    const writeConfigAndMeta = async (cfg) => {
+      await ctx.writeFile(paths.configPath, JSON.stringify(cfg, null, 2))
+      await ctx.writeFile(
+        configMetaPath(paths),
+        JSON.stringify({
+          dnsMode,
+          autoRedirect,
+          generatedAt: new Date().toISOString(),
+          // 这份 dns.rules 是按"谁走直连、谁走代理"定死的,把当时的判断和成员表一并存下来:
+          // 代理页改出口后要拿它比对,翻面了才重新生成(见 api/deploy-runner.mjs)
+          dnsPolicyMembers: policyMembers,
+          dnsPolicyClasses: dnsPolicyClasses(profile.routing, policyMembers, builtin, selections || {}),
+          // 这次部署用的是哪份分流设置。规则页拿它和当前档案比,改了没重启就明说
+          routingHash: routingFingerprint(profile.routing),
+        }, null, 2),
+      )
+    }
+    await writeConfigAndMeta(config)
 
     // 5. DNS 接管
     if (dnsMode !== 'dnsmasq' && (await ctx.exists(dnsTakeoverBackupPath(paths)))) {
@@ -199,31 +216,51 @@ export const deployConfig = async (ctx, paths, { config, profile, userGroups, fe
       }
     }
 
-    // 8. 重启内核
-    const restart = await restartService(ctx, paths.initd.core)
-    mark('重启')
-    if (!restart.ok) {
-      const rb = await rollbackToDirect(ctx, paths)
-      return withTimings({ ok: false, stage: 'start', message: `${String(restart.stderr || '').trim() || '内核启动失败'},${rollbackSummary(rb)}`, rollback: rb })
-    }
-
-    // 9. 验证运行。看两眼而不是一眼:有一类错误 `sing-box check` 查不出来、进程起来
-    // 之后才 FATAL(比如 DNS 服务器的 detour 写法),procd 会立刻重启它形成死循环——
-    // 只看第一眼正好撞上"刚起来还没死"的那个瞬间,面板就会报"启动成功",刷新一看
-    // 又是停止。等几秒再看一次,死循环里的进程这时多半正处在两次崩溃之间。
-    for (const wait of [0, VERIFY_SETTLE_MS]) {
-      if (wait) await ctx.sleep(wait)
-      // 内核已经起了:取消的话交给排在后面的停止动作去停,这里只要别报成功、别开自启
-      if (isCancelled()) return withTimings({ ok: false, stage: 'cancelled', message: '部署被「停止」取消,内核由随后的停止动作处理' })
-      const status = await serviceStatus(ctx, paths.initd.core)
-      if (!status.running) {
+    // 8. 重启内核;9. 验证运行。auto_redirect 起不来的那种崩溃会降级成纯 tun 再来一轮,所以套一层循环
+    let warning = ''
+    let redirectFallbackTried = false
+    for (;;) {
+      const restart = await restartService(ctx, paths.initd.core)
+      mark('重启')
+      if (!restart.ok) {
         const rb = await rollbackToDirect(ctx, paths)
-        return withTimings({ ok: false, stage: 'verify', message: await lastKernelFatal(ctx, rb), rollback: rb })
+        return withTimings({ ok: false, stage: 'start', message: `${String(restart.stderr || '').trim() || '内核启动失败'},${rollbackSummary(rb)}`, rollback: rb })
       }
+
+      // 验证运行。看两眼而不是一眼:有一类错误 `sing-box check` 查不出来、进程起来
+      // 之后才 FATAL(比如 DNS 服务器的 detour 写法),procd 会立刻重启它形成死循环——
+      // 只看第一眼正好撞上"刚起来还没死"的那个瞬间,面板就会报"启动成功",刷新一看
+      // 又是停止。等几秒再看一次,死循环里的进程这时多半正处在两次崩溃之间。
+      let crashed = false
+      for (const wait of [0, VERIFY_SETTLE_MS]) {
+        if (wait) await ctx.sleep(wait)
+        // 内核已经起了:取消的话交给排在后面的停止动作去停,这里只要别报成功、别开自启
+        if (isCancelled()) return withTimings({ ok: false, stage: 'cancelled', message: '部署被「停止」取消,内核由随后的停止动作处理' })
+        const status = await serviceStatus(ctx, paths.initd.core)
+        if (!status.running) {
+          crashed = true
+          break
+        }
+      }
+      if (!crashed) break
+
+      const fatal = await readLastKernelFatal(ctx)
+      if (autoRedirect && !redirectFallbackTried && typeof rebuild === 'function' && AUTO_REDIRECT_FATAL.test(fatal)) {
+        // nftables 那层起不来:关掉 auto_redirect 重新生成配置(排除表、DNS 改写都跟着变,
+        // 不能只把字段删掉),再起一次。只试一次,再崩就按普通崩溃处理
+        redirectFallbackTried = true
+        autoRedirect = false
+        config = rebuild({ tun: { ...(profile.tun || {}), autoRedirect: false } })
+        await writeConfigAndMeta(config)
+        warning = autoRedirectFallbackWarning(fatal)
+        continue
+      }
+      const rb = await rollbackToDirect(ctx, paths)
+      return withTimings({ ok: false, stage: 'verify', message: crashMessage(fatal, rb), rollback: rb })
     }
     mark('确认在跑')
 
-    return withTimings({ ok: true, stage: 'running', message: '' })
+    return withTimings({ ok: true, stage: 'running', message: '', warning })
   } catch (error) {
     // 落盘之后任一步骤抛出异常(闪存写满、uci 调用失败等)都不能让部署直接 reject——
     // 必须尽力回滚到直连状态,不留半接管的死配置。

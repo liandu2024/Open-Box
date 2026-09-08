@@ -136,8 +136,10 @@ export const STATUS_BY_STAGE = {
 // systemDns 是路由器 WAN 下发的 DNS 上游(见 system/resolv.mjs):dnsmasq 接管模式下
 // 直连侧要用它,不能让 sing-box 去问系统解析器——那时系统解析器就是 dnsmasq,而 dnsmasq
 // 的上游又是 sing-box,一问就死循环。预览接口没有 ctx 也照样能出配置,回落到档案里的值。
-export const buildCurrentConfig = (store, systemDns, { cacheFilePath, selections, tlsCert, localSubnets = [], directHostCidrs = [], ruleLists = {} } = {}) => {
-  const profile = store.getProfile()
+// profilePatch:在当前档案上临时盖一层再生成(不落库)。部署时 auto_redirect 起不来要降级
+// 重试就靠它把 tun.autoRedirect 关掉重生成一份(见 system/deploy.mjs)。
+export const buildCurrentConfig = (store, systemDns, { cacheFilePath, selections, tlsCert, localSubnets = [], directHostCidrs = [], ruleLists = {}, profilePatch } = {}) => {
+  const profile = profilePatch ? { ...store.getProfile(), ...profilePatch } : store.getProfile()
   const nodes = store.getNodes()
   const clashApiSecret = store.getClashSecret()
   const config = buildConfig({
@@ -279,18 +281,24 @@ const runDeployInner = async ({ store, ctx, paths, fetchImpl = globalThis.fetch,
     if (!ruleLists.ok) {
       result = { ok: false, stage: 'rulesets', message: ruleLists.message }
     } else {
-      const { config, profile } = buildCurrentConfig(store, systemDns, {
+      const buildOptions = {
         cacheFilePath: paths.cacheDb, selections, tlsCert: { certPath: paths.tlsCert, keyPath: paths.tlsKey }, localSubnets, directHostCidrs,
         ruleLists: ruleLists.lists,
-      })
+      }
+      const { config, profile } = buildCurrentConfig(store, systemDns, buildOptions)
       const prepMs = Date.now() - startedAt
-      result = await deployConfig(ctx, paths, { config, profile, userGroups: store.getGroups(), selections, isCancelled })
+      result = await deployConfig(ctx, paths, {
+        config, profile, userGroups: store.getGroups(), selections, isCancelled,
+        rebuild: (profilePatch) => buildCurrentConfig(store, systemDns, { ...buildOptions, profilePatch }).config,
+      })
+      if (result.warning) console.warn(`[deploy] ${result.warning}`)
       // 准备阶段 = 读系统 DNS / 解析节点域名 / 拉当前选择 / 规则集链接 / 生成配置
       result.timings = { 准备: prepMs, ...(result.timings || {}) }
     }
     store.setDeployState({
       stage: result.stage,
-      message: result.message || '',
+      // 成功但降过级(auto_redirect 起不来改纯 tun)的,把降级原因当消息存着,诊断包里能看到
+      message: result.message || result.warning || '',
       at: Date.now(),
       badTags: result.badTags || [],
     })

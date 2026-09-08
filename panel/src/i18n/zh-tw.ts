@@ -776,6 +776,7 @@ const zhTW: LANG_MESSAGE = {
   kernelAutostartOff: '關閉',
   kernelActionSucceeded: '{action}\u6210\u529f\u3002',
   kernelActionSucceededIn: '{action}成功,耗時 {seconds} 秒。',
+  kernelActionWarning: '{detail}',
   kernelActionFailed: '{action}\u5931\u6557:{detail}',
   kernelActionNoDetail: '\u7d50\u675f\u4ee3\u78bc {code},\u6c92\u6709\u66f4\u591a\u7d30\u7bc0',
   kernelActionRequestFailed: '\u6c92\u9023\u4e0a\u4f3a\u670d\u5668:{message}',

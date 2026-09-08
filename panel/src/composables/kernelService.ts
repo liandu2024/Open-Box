@@ -92,6 +92,10 @@ export const useKernelActions = () => {
         } else {
           showNotification({ content: 'kernelActionSucceeded', params: { action: actionLabel }, type: 'alert-success' })
         }
+        // 起来了但降过级(auto_redirect 起不来改纯 tun):单独一条黄色提示,多留一会儿让人看完
+        if (result.warning) {
+          showNotification({ content: 'kernelActionWarning', params: { detail: result.warning }, type: 'alert-warning', timeout: 20000 })
+        }
       } else {
         // 这台开发机没有 /etc/init.d,ok:false 且 stderr 为空是常态:没细节时至少给个退出码
         const detail = result.stderr.trim() || t('kernelActionNoDetail', { code: String(result.code) })

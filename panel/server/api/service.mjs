@@ -43,7 +43,7 @@ export const registerServiceRoutes = (app, { store, ctx, paths, stopWaitMs = 800
       // 内核日志,面板自己的部署日志只在 logread 里,用户在界面上看不到,就把数字直接放进提示。
       const durationMs = Date.now() - startedAt
       result = deployed.ok
-        ? { ok: true, code: 0, stderr: '', durationMs }
+        ? { ok: true, code: 0, stderr: '', durationMs, ...(deployed.warning ? { warning: deployed.warning } : {}) }
         : { ok: false, code: 1, stderr: failureDetail(deployed), durationMs }
     } else if (action === 'stop') {
       // 停止和部署走同一条队列、同一把锁,并把正在跑 / 排队中的部署标成取消:以前停止绕过队列
@@ -86,7 +86,8 @@ export const registerServiceRoutes = (app, { store, ctx, paths, stopWaitMs = 800
       result = await disableService(ctx, paths.initd.core)
     }
 
-    res.json({ ok: result.ok, code: result.code, stderr: result.stderr })
+    // warning:内核起来了但有降级(auto_redirect 起不来改成纯 tun),前端另弹一条黄色提示
+    res.json({ ok: result.ok, code: result.code, stderr: result.stderr, ...(result.warning ? { warning: result.warning } : {}) })
   })
 
   // GET /api/openbox/kernel/version

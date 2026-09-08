@@ -605,6 +605,8 @@ export interface OpenboxServiceStatus {
 export type OpenboxServiceAction = 'start' | 'stop' | 'restart' | 'enable' | 'disable'
 
 export interface OpenboxServiceActionResult {
+  // 内核起来了但有降级(auto_redirect 起不来改成纯 tun)时的说明,见 server/system/deploy.mjs
+  warning?: string
   ok: boolean
   code: number
   stderr: string
