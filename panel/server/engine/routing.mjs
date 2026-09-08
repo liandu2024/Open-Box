@@ -82,11 +82,13 @@ export const preResolveRules = (conf, ruleLists, resolvers, options = {}) => {
     if (ipSeen && cr && cr.sources && cr.sources.length && cr.server) out.push({ source_ip_cidr: cr.sources, action: 'resolve', server: cr.server })
   }
   for (const policy of conf.activePolicies) {
-    if (policyNeedsIp(policy, ruleLists)) ipSeen = true
+    // 一条站点集自己的 IP 条件不算它自己域名条件的"前面的 IP 规则":同一条规则里域名 / IP 是"或",域名命中就够了
     const server = resolvers.policies && resolvers.policies[policy.name]
-    if (!ipSeen || !server) continue
-    const match = policyDomainMatch(policy, ruleLists)
-    if (match) out.push({ ...match, action: 'resolve', server })
+    if (ipSeen && server) {
+      const match = policyDomainMatch(policy, ruleLists)
+      if (match) out.push({ ...match, action: 'resolve', server })
+    }
+    if (policyNeedsIp(policy, ruleLists)) ipSeen = true
   }
   // 兜底:前面有 IP 规则时,没命中任何域名规则的域名目标也先解析(否则它们在 IP 规则处同样没有真实 IP)
   if (ipSeen && resolvers.fallback) out.push({ action: 'resolve', server: resolvers.fallback })
