@@ -812,8 +812,6 @@ const en = {
   dnsRewriteKindIp: 'Fixed IPs',
   dnsRewriteDomainHint: 'The target is resolved live through the current DNS policy; the answer carries the CNAME and the target addresses.',
   dnsRewriteIpHint: 'One per line, IPv4 and IPv6 may be mixed; A returns IPv4 only, AAAA returns IPv6 only (empty while IPv6 is off).',
-  dnsRewriteNoteLabel: 'Note',
-  dnsRewriteEnabled: 'Enabled',
   dnsRewriteSaved: 'DNS rewrites saved; restart the kernel if a source domain changed.',
   dnsRewriteBadSource: 'Invalid queried domain: use an exact domain or *.example.com.',
   dnsRewriteBadDomain: 'Invalid target domain, and it must differ from the queried domain.',

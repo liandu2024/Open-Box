@@ -32,14 +32,15 @@
         v-if="!rules.length"
         class="text-base-content/50 text-xs"
       >{{ $t('dnsRewriteEmpty') }}</p>
+      <!-- 规则一行一条,分割线分开,不再套一层卡片 -->
       <div
         v-else
-        class="border-base-content/10 divide-base-content/10 divide-y rounded-lg border"
+        class="divide-base-content/10 divide-y"
       >
         <div
           v-for="rule in rules"
           :key="rule.id"
-          class="flex items-center gap-2 px-3 py-2"
+          class="flex items-center gap-2 py-2"
           :class="rule.enabled === false && 'opacity-50'"
         >
           <input
@@ -133,22 +134,6 @@
           />
           <p class="text-base-content/50 text-xs">{{ $t(draft.kind === 'domain' ? 'dnsRewriteDomainHint' : 'dnsRewriteIpHint') }}</p>
         </div>
-        <div class="flex flex-col gap-1">
-          <label class="text-xs font-medium">{{ $t('dnsRewriteNoteLabel') }}</label>
-          <input
-            v-model="draft.note"
-            type="text"
-            class="input input-sm w-full"
-          />
-        </div>
-        <label class="flex cursor-pointer items-center gap-2">
-          <input
-            v-model="draft.enabled"
-            type="checkbox"
-            class="toggle toggle-sm"
-          />
-          <span class="text-xs">{{ $t('dnsRewriteEnabled') }}</span>
-        </label>
         <div class="flex justify-end gap-2">
           <button
             type="button"
@@ -243,15 +228,16 @@ const toggleRule = (rule: OpenboxDnsRewriteRule, enabled: boolean) =>
   persist(rules.value.map((r) => (r.id === rule.id ? { ...r, enabled } : r)))
 
 // ---- 编辑弹窗 ----
-interface Draft { id: string; enabled: boolean; source: string; kind: 'domain' | 'ip'; domain: string; addressesText: string; note: string }
+// 弹窗只定义规则本身(源 / 目标);启用与否在列表的开关上,备注不在这里改
+interface Draft { id: string; source: string; kind: 'domain' | 'ip'; domain: string; addressesText: string }
 const showEditor = ref(false)
 const editing = ref<OpenboxDnsRewriteRule | null>(null)
 const draft = ref<Draft | null>(null)
 const openEditor = (rule: OpenboxDnsRewriteRule | null) => {
   editing.value = rule
   draft.value = rule
-    ? { id: rule.id, enabled: rule.enabled !== false, source: rule.source, kind: rule.domain ? 'domain' : 'ip', domain: rule.domain || '', addressesText: (rule.addresses ?? []).join('\n'), note: rule.note || '' }
-    : { id: '', enabled: true, source: '', kind: 'domain', domain: '', addressesText: '', note: '' }
+    ? { id: rule.id, source: rule.source, kind: rule.domain ? 'domain' : 'ip', domain: rule.domain || '', addressesText: (rule.addresses ?? []).join('\n') }
+    : { id: '', source: '', kind: 'domain', domain: '', addressesText: '' }
   showEditor.value = true
 }
 
@@ -272,7 +258,12 @@ const saveDraft = async () => {
     showNotification({ content: 'dnsRewriteDuplicate', params: { source }, type: 'alert-error' })
     return
   }
-  const rule: OpenboxDnsRewriteRule = { id: d.id || `rw-${Date.now().toString(36)}`, enabled: d.enabled, source, domain: '', addresses: [], note: d.note.trim() }
+  const rule: OpenboxDnsRewriteRule = {
+    id: d.id || `rw-${Date.now().toString(36)}`,
+    enabled: editing.value ? editing.value.enabled !== false : true,
+    source, domain: '', addresses: [],
+    note: editing.value?.note || '',
+  }
   if (d.kind === 'domain') {
     const domain = normalizeDomain(d.domain)
     if (!domain || !DOMAIN_RE.test(domain) || domain.includes('*') || domain === source) {

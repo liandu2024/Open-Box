@@ -808,8 +808,6 @@ const zhTW: LANG_MESSAGE = {
   dnsRewriteKindIp: '固定 IP',
   dnsRewriteDomainHint: '目標網域按現有分流策略動態解析,應答裡帶 CNAME 和目標的位址。',
   dnsRewriteIpHint: '一行一個,IPv4 / IPv6 可以混填;A 查詢只回 IPv4,AAAA 只回 IPv6(IPv6 關著時回空)。',
-  dnsRewriteNoteLabel: '備註',
-  dnsRewriteEnabled: '啟用',
   dnsRewriteSaved: 'DNS 重寫已儲存;改了來源網域要重啟核心生效。',
   dnsRewriteBadSource: '查詢網域不合法:寫精確網域或 *.example.com。',
   dnsRewriteBadDomain: '目標網域不合法,且不能和查詢網域相同。',
