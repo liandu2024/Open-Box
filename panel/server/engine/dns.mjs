@@ -45,11 +45,16 @@ export const FAKEIP_TAG = 'dns-fakeip'
 export const dnsFakeIpEnabled = (profile) => Boolean(profile && profile.dns && profile.dns.split !== false && profile.dns.fakeIpForProxy === true)
 
 // IPv6 分层(第三轮 阶段 5):
-//   off  —— 档案 ipv6 关着:老语义原样保留,DNS 只解析 A、tun 不给 v6、防火墙 REJECT 局域网→WAN 的 v6
-//   node —— ipv6 开着、走代理的 v6 目标和 v4 一样交给节点(老"开启"语义)
-//   ipv4 —— ipv6 开着,但代理线路不管 v6:走代理的域名不给 AAAA(终端自然用 v4 连),裸 v6 目标要走
-//           代理时在内核里明确拒绝(engine/routing.mjs),不悄悄从 WAN 直出;直连的 v6 照常解析、照常走
-export const ipv6ProxyMode = (profile) => (!profile || !profile.ipv6 ? 'off' : profile.ipv6Proxy === 'ipv4' ? 'ipv4' : 'node')
+//   off    —— 档案 ipv6 关着:老语义原样保留,DNS 只解析 A、tun 不给 v6、防火墙 REJECT 局域网→WAN 的 v6
+//   node   —— ipv6 开着、走代理的 v6 目标和 v4 一样交给节点(老"开启"语义)
+//   ipv4   —— ipv6 开着,但代理线路不管 v6:走代理的域名不给 AAAA(终端自然用 v4 连),裸 v6 目标要走
+//             代理时在内核里明确拒绝(engine/routing.mjs),不悄悄从 WAN 直出;直连的 v6 照常解析、照常走
+//   bypass —— ipv6 开着,v6 流量根本不进内核(tun 不给 v6 地址、不劫 v6 路由、防火墙不拦),按系统路由
+//             直接从 WAN 出去——和 OpenClash / DAE 默认行为一样(GitHub #36:用户要的就是 test-ipv6 能过);
+//             DNS 照常给 AAAA,走代理的域名终端会先试 v6 直连、不通再退回 v4 走代理
+export const ipv6ProxyMode = (profile) => (!profile || !profile.ipv6 ? 'off' : profile.ipv6Proxy === 'ipv4' ? 'ipv4' : profile.ipv6Proxy === 'bypass' ? 'bypass' : 'node')
+// v6 要不要进 tun:开着 ipv6 且不是「不进内核」
+export const ipv6InTun = (profile) => Boolean(profile && profile.ipv6) && ipv6ProxyMode(profile) !== 'bypass'
 
 // 前置自定义分流的一行 → 一条 DNS 规则的匹配部分。只按 IP 分流的行(ip_cidr / geoip /
 // 只编出 IP 那份的规则集链接)不进 DNS:解析的时候还没有 IP,拿什么都匹配不上。
@@ -254,7 +259,9 @@ export const buildDnsWithResolvers = (profile, options = {}) => {
   if (!fallbackDirect && proxyV4Only) rules.push(emptyAAAA({}))
   if (fakeIp) {
     // v6 占位段只在"代理也管 v6"时给;降为 IPv4 时 AAAA 已经在上面回空了,占位只管 A
-    servers.push({ type: 'fakeip', tag: FAKEIP_TAG, inet4_range: FAKEIP_V4, ...(profile.ipv6 && !proxyV4Only ? { inet6_range: FAKEIP_V6 } : {}) })
+    // v6 占位段只在「代理也管 v6」(交给节点)时给;降级和不进内核都不给——不进内核时终端拿到占位 v6 会直接
+    // 往 WAN 发,哪都到不了
+    servers.push({ type: 'fakeip', tag: FAKEIP_TAG, inet4_range: FAKEIP_V4, ...(ipv6ProxyMode(profile) === 'node' ? { inet6_range: FAKEIP_V6 } : {}) })
     // 兜底走代理:上面都没命中的域名 A / AAAA 也发占位地址
     if (!fallbackDirect) rules.push({ query_type: proxyV4Only ? ['A'] : ['A', 'AAAA'], server: FAKEIP_TAG })
   }

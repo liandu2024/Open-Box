@@ -494,3 +494,38 @@ test('sing-box 1.14 的 tun DNS 接管(dns_mode):开着 auto_redirect 的劫持 
   assert.equal(pure.dns_mode, 'disabled')
   assert.equal(pure.dns_address, undefined)
 })
+
+test('IPv6「不进内核,直连放行」(ipv6Proxy=bypass):tun 不给 v6 地址、不劫 v6、不插 v6 拒绝;DNS 照常双栈解析;FakeIP 不给 v6 占位段', () => {
+  const p = firstLayerProfile({
+    ipv6: true, ipv6Proxy: 'bypass',
+    routing: { fallbackDefault: 'proxy', policies: [{ id: 'g', name: 'Google', default: '香港-自动', rulesets: ['geosite-google'] }] },
+  })
+  const c = buildConfig({ nodes, regionGroups, userGroups: firstLayerGroups, localSubnets: subnets, profile: p })
+  const tun = c.inbounds[0]
+  assert.deepEqual(tun.address, ['172.19.0.1/30'], 'tun 只有 v4 地址,auto_route 不接管 v6')
+  assert.ok(!tun.route_exclude_address.some((x) => x.includes(':')))
+  assert.deepEqual(tun.dns_address, ['172.19.0.2'])
+  assert.ok(!c.route.rules.some((r) => r.ip_version === 6), '不插 v6 拒绝')
+  assert.equal(c.dns.strategy, 'prefer_ipv4', 'DNS 照常给 AAAA')
+  assert.ok(!c.dns.rules.some((r) => r.action === 'predefined'))
+  // 防回环那条只管 v4 的 tun 网段
+  assert.deepEqual(c.route.rules.find((r) => r.action === 'reject' && r.ip_cidr), { ip_cidr: ['172.19.0.0/30'], action: 'reject' })
+  const fake = buildConfig({ nodes, regionGroups, userGroups: firstLayerGroups, localSubnets: subnets, profile: firstLayerProfile({ ipv6: true, ipv6Proxy: 'bypass', dns: { split: true, mode: 'dnsmasq', direct: '223.5.5.5', proxy: '1.1.1.1', fakeIpForProxy: true }, routing: p.routing }) })
+  assert.equal(fake.dns.servers.find((s) => s.type === 'fakeip').inet6_range, undefined)
+})
+
+test('终端「不进内核」(GitHub #39):开着 auto_redirect 时 tun 写 exclude_mac_address(去重);纯 tun / 没有这类规则时不写;路由里仍有一条直连兜底', () => {
+  const routes = [
+    { id: 'sw', enabled: true, name: 'Switch', sources: ['10.0.0.9'], bypass: true, macs: ['AA:BB:CC:DD:EE:FF'] },
+    { id: 'ps', enabled: true, name: 'PS5', sources: ['10.0.0.10'], bypass: true, macs: ['aa:bb:cc:dd:ee:ff', '00:15:5d:03:0a:28'] },
+    { id: 'tv', enabled: true, name: 'TV', sources: ['10.0.0.8'], outbound: '香港-自动' },
+  ]
+  const on = buildConfig({ nodes, regionGroups, userGroups: firstLayerGroups, localSubnets: subnets, profile: firstLayerProfile({ tun: { autoRedirect: true }, clientRoutes: routes }) })
+  assert.deepEqual(on.inbounds[0].exclude_mac_address, ['aa:bb:cc:dd:ee:ff', '00:15:5d:03:0a:28'])
+  const direct = on.outbounds.find((o) => o.type === 'direct').tag
+  assert.ok(on.route.rules.some((r) => r.source_ip_cidr && r.source_ip_cidr[0] === '10.0.0.9/32' && r.outbound === direct), '兜底一条直连')
+  const off = buildConfig({ nodes, regionGroups, userGroups: firstLayerGroups, localSubnets: subnets, profile: firstLayerProfile({ tun: { autoRedirect: false }, clientRoutes: routes }) })
+  assert.equal(off.inbounds[0].exclude_mac_address, undefined)
+  const none = buildConfig({ nodes, regionGroups, userGroups: firstLayerGroups, localSubnets: subnets, profile: firstLayerProfile({ tun: { autoRedirect: true }, clientRoutes: [routes[2]] }) })
+  assert.equal(none.inbounds[0].exclude_mac_address, undefined)
+})

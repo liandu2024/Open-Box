@@ -26,6 +26,7 @@ export const DEFAULT_PROFILE = {
   //   node:v6 目标和 v4 一样交给节点(老行为);
   //   ipv4:走代理的域名不给 AAAA(终端自然用 v4),裸 v6 目标要走代理时在内核里明确拒绝——
   //        代理线路不支持 v6 时用它,直连的 v6 照常。
+  //   bypass:v6 根本不进内核,按系统路由直接从 WAN 出去(OpenClash / DAE 的默认行为,GitHub #36)。
   ipv6Proxy: 'node',
   // 订阅链接和节点服务器的地址一律直连,不看站点集(engine/direct-hosts.mjs)
   directForNodes: true,

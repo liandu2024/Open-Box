@@ -1,7 +1,7 @@
 import express from 'express'
 import { DNS_REWRITE_DEFAULTS, validateDnsRewrite } from '../engine/dns-rewrite.mjs'
 import { RESERVED_PORTS, SERVER_PROTOCOLS, SS_METHODS } from '../engine/servers.mjs'
-import { isIpOrCidr } from '../engine/client-routes.mjs'
+import { isIpOrCidr, isMac } from '../engine/client-routes.mjs'
 import { CUSTOM_RULE_TYPES, FALLBACK_TAG, normalizeRouting, parsePortSpec } from '../engine/routing-model.mjs'
 import { ICON_SCALE_LIMIT, builtinTags, normalizeGroups } from '../engine/user-groups.mjs'
 import { DNSMASQ_OUTBOUND_TAG } from '../engine/config.mjs'
@@ -50,8 +50,8 @@ export const validateProfilePatch = (patch, { reservedNames = [] } = {}) => {
   if ('ipv6' in patch && !isBoolean(patch.ipv6)) {
     return 'ipv6 must be a boolean'
   }
-  if ('ipv6Proxy' in patch && !['node', 'ipv4'].includes(patch.ipv6Proxy)) {
-    return 'ipv6Proxy must be one of node, ipv4'
+  if ('ipv6Proxy' in patch && !['node', 'ipv4', 'bypass'].includes(patch.ipv6Proxy)) {
+    return 'ipv6Proxy must be one of node, ipv4, bypass'
   }
   if ('directForNodes' in patch && !isBoolean(patch.directForNodes)) {
     return 'directForNodes must be a boolean'
@@ -222,7 +222,16 @@ export const validateClientRoutes = (list) => {
     if (!isStringArray(r.sources) || !r.sources.length) return 'clientRoutes[].sources must be a non-empty array of strings'
     const bad = r.sources.find((x) => !isIpOrCidr(x))
     if (bad !== undefined) return `clientRoutes[].sources contains an invalid IP/CIDR: ${bad}`
-    if (!isString(r.outbound) || !r.outbound.trim()) return 'clientRoutes[].outbound must be a non-empty string'
+    if ('bypass' in r && !isBoolean(r.bypass)) return 'clientRoutes[].bypass must be a boolean'
+    if ('macs' in r && !isStringArray(r.macs)) return 'clientRoutes[].macs must be an array of strings'
+    if (r.bypass === true) {
+      // 不进内核:按 MAC 放行,至少一个合法 MAC;出站不用填
+      if (!Array.isArray(r.macs) || !r.macs.length) return 'clientRoutes[].macs is required when bypass is true'
+      const badMac = r.macs.find((x) => !isMac(x))
+      if (badMac !== undefined) return `clientRoutes[].macs contains an invalid MAC: ${badMac}`
+    } else if (!isString(r.outbound) || !r.outbound.trim()) {
+      return 'clientRoutes[].outbound must be a non-empty string'
+    }
   }
   return null
 }

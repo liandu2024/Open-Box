@@ -5,7 +5,7 @@ import { customOutboundTag, customPolicyActive, effectiveOutbound, nativeBypassP
 import { buildRoute } from './routing.mjs'
 import { buildServerInbounds } from './servers.mjs'
 import { normalizeClientRoutes } from './client-routes.mjs'
-import { buildDnsWithResolvers, dnsFakeIpEnabled, ipv6ProxyMode, FAKEIP_V6 } from './dns.mjs'
+import { buildDnsWithResolvers, dnsFakeIpEnabled, ipv6InTun, ipv6ProxyMode, FAKEIP_V6 } from './dns.mjs'
 import { collectDirectHosts } from './direct-hosts.mjs'
 import { cidrsOverlap, parseCidr, subtractCidrs } from '../system/local-subnets.mjs'
 
@@ -137,7 +137,7 @@ export const buildConfig = ({ nodes, profile, userGroups, systemDns, localSubnet
   }
   // 终端分流(engine/client-routes.mjs);出口只认配置里真有的 outbound。
   // wireguard 是 endpoint 不是 outbound,但路由规则一样能指向它的 tag
-  const clientRoutes = normalizeClientRoutes(profile.clientRoutes)
+  const clientRoutes = normalizeClientRoutes(profile.clientRoutes, { directTag: builtin.direct })
   const knownOutbounds = new Set([...outbounds, ...endpoints].map((o) => o.tag))
   // IPv6 分层 · 代理 v6 降为 IPv4:出口此刻落在代理线路(不是直连 / 拒绝;站点集按此刻的选择判,
   // 节点组 / 节点 / 隧道端点都算代理线路)的规则前面插 v6 拒绝(engine/routing.mjs)
@@ -158,7 +158,7 @@ export const buildConfig = ({ nodes, profile, userGroups, systemDns, localSubnet
   const { dns } = buildDnsWithResolvers(profile, { systemDns, groupTags, builtin, selections, directHosts, ruleLists, clientRoutes, knownOutbounds })
   const { route } = buildRoute(sanitizedRouting, profile.rulesetDir, {
     dnsMode, directTag: builtin.direct, blockTag: builtin.block, directHosts, rejectV6For,
-    tunCidrs: profile.ipv6 ? [TUN_V4_NET, TUN_V6_NET] : [TUN_V4_NET],
+    tunCidrs: ipv6InTun(profile) ? [TUN_V4_NET, TUN_V6_NET] : [TUN_V4_NET],
     dnsmasqTag: dnsMode === 'dnsmasq' ? DNSMASQ_OUTBOUND_TAG : '',
     clientRoutes,
     knownOutbounds,
@@ -166,7 +166,10 @@ export const buildConfig = ({ nodes, profile, userGroups, systemDns, localSubnet
     ruleLists,
   })
 
-  const tunAddress = profile.ipv6 ? [TUN_V4, TUN_V6] : [TUN_V4]
+  // IPv6「不进内核」模式(engine/dns.mjs 的 ipv6ProxyMode = bypass):tun 不给 v6 地址,auto_route 就不接管 v6,
+  // 局域网的 v6 按系统路由直接从 WAN 出去;防火墙那条 v6 拦截只在 ipv6 关着时加(system/deploy.mjs)
+  const v6InTun = ipv6InTun(profile)
+  const tunAddress = v6InTun ? [TUN_V4, TUN_V6] : [TUN_V4]
 
   // auto_redirect 自带 nft 层的 DNS 劫持(局域网发往任何 53 端口的查询都改写进 tun),
   // 关不掉劫持只留 redirect;所以 DNS「禁用」模式只能把它一起关掉,流量靠 auto_route 进 tun。
@@ -183,7 +186,7 @@ export const buildConfig = ({ nodes, profile, userGroups, systemDns, localSubnet
   // FakeIP 的 v6 占位段 fc00::/18 落在排除表的 fc00::/7 里,不挖出来的话走代理域名的 v6 连接在入口就被
   // 放走了(v4 的 198.18.0.0/15 不在排除表里,不用挖)
   const fakeIp = dnsFakeIpEnabled(profile)
-  if (fakeIp && profile.ipv6) holes.push(FAKEIP_V6)
+  if (fakeIp && ipv6ProxyMode(profile) === 'node') holes.push(FAKEIP_V6)
   // 用户明确要送去节点的私网段(前置自定义分流的 ip_cidr 行,出口不是直连 / 拒绝)也要挖出来:
   // 不然 10.77.0.0/16 → 节点 这种规则被排除表的 10.0.0.0/8 在入口先放走,永远到不了那条规则
   // (审核 B5,经 WireGuard 访问对端局域网的典型写法)。和排除表有交集的都算——规则比排除段
@@ -191,7 +194,7 @@ export const buildConfig = ({ nodes, profile, userGroups, systemDns, localSubnet
   // 但本机接口网段、tun 自己的网段、回环、链路本地永远不能被挖走:纯 tun 模式下排除表是唯一的
   // "本机网段不进 tun"依据,10.0.0.0/8 → 节点 这种规则挖掉整个 10/8,路由器回给 10.0.0.x 局域网的
   // 包就全被吞进 tun、面板 / SSH / DNS 失联(复审 R6a)。所以从规则里先扣掉这些保护段,只挖剩下的
-  const excludeBase = profile.ipv6 ? [...TUN_EXCLUDE_V4, ...TUN_EXCLUDE_V6] : TUN_EXCLUDE_V4
+  const excludeBase = v6InTun ? [...TUN_EXCLUDE_V4, ...TUN_EXCLUDE_V6] : TUN_EXCLUDE_V4
   const protectedSubnets = [...localSubnets, TUN_V4_NET, TUN_V6_NET, '127.0.0.0/8', '169.254.0.0/16', '::1/128', 'fe80::/10']
   if (customPolicyActive(routingConf.custom)) {
     for (const rule of routingConf.custom.rules) {
@@ -210,6 +213,11 @@ export const buildConfig = ({ nodes, profile, userGroups, systemDns, localSubnet
     udp_timeout: TUN_UDP_TIMEOUT,
   }
   if (autoRedirect) tunInbound.auto_redirect = true
+  // 「不进内核」的终端(engine/client-routes.mjs 的 bypass):按 MAC 在 nft 入口就排除,流量根本不进 tun——
+  // sing-box 1.14 起的 exclude_mac_address,只在 auto_route + auto_redirect 下有效;纯 tun 兼容模式下这些
+  // 终端按上面已经写成直连的路由规则走
+  const bypassMacs = [...new Set(clientRoutes.filter((r) => r.bypass).flatMap((r) => r.macs || []))]
+  if (autoRedirect && bypassMacs.length) tunInbound.exclude_mac_address = bypassMacs
   // sing-box 1.14 起 tun 自己管 DNS 接管(dns_mode,缺省 hijack):auto_redirect 下 nft 把 53 端口 DNAT 到 dns_address;
   // 没有 auto_redirect 时另加一条 ip rule 把发往直连网段的 53 端口流量强行送进 tun——后者是 1.13 没有的行为,
   // 不写这个字段就会悄悄多出来。所以:开着 auto_redirect 的劫持 / dnsmasq 模式明确写 hijack,DNAT 目标写死成
@@ -219,7 +227,7 @@ export const buildConfig = ({ nodes, profile, userGroups, systemDns, localSubnet
   // (system/deploy.mjs 在 nft 失败时关掉 auto_redirect 重生成)一律 disabled:1.13 在这两种情况下本来就什么都不劫持
   if (autoRedirect && dnsMode !== 'off') {
     tunInbound.dns_mode = 'hijack'
-    tunInbound.dns_address = profile.ipv6 ? [TUN_V4_PEER, TUN_V6_PEER] : [TUN_V4_PEER]
+    tunInbound.dns_address = v6InTun ? [TUN_V4_PEER, TUN_V6_PEER] : [TUN_V4_PEER]
   } else {
     tunInbound.dns_mode = 'disabled'
   }

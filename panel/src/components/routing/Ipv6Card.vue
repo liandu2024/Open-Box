@@ -25,7 +25,7 @@
       >
         <div>
           <p class="text-sm">{{ $t('ipv6ProxyTitle') }}</p>
-          <p class="text-base-content/50 text-xs">{{ $t(proxyMode === 'ipv4' ? 'ipv6ProxyIpv4Note' : 'ipv6ProxyNodeNote') }}</p>
+          <p class="text-base-content/50 text-xs">{{ $t(proxyMode === 'ipv4' ? 'ipv6ProxyIpv4Note' : proxyMode === 'bypass' ? 'ipv6ProxyBypassNote' : 'ipv6ProxyNodeNote') }}</p>
         </div>
         <select
           class="select select-sm w-44 shrink-0"
@@ -34,6 +34,7 @@
         >
           <option value="node">{{ $t('ipv6ProxyNode') }}</option>
           <option value="ipv4">{{ $t('ipv6ProxyIpv4') }}</option>
+          <option value="bypass">{{ $t('ipv6ProxyBypass') }}</option>
         </select>
       </div>
 
@@ -51,7 +52,7 @@ const props = defineProps<{
   patchProfile: (patch: Record<string, unknown>) => Promise<OpenboxProfile>
 }>()
 
-const proxyMode = computed(() => (props.profile.ipv6Proxy === 'ipv4' ? 'ipv4' : 'node'))
+const proxyMode = computed(() => (props.profile.ipv6Proxy === 'ipv4' ? 'ipv4' : props.profile.ipv6Proxy === 'bypass' ? 'bypass' : 'node'))
 
 const onProxyMode = async (event: Event) => {
   try {

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { buildDns, dnsPolicyClasses } from './dns.mjs'
+import { buildDns, dnsPolicyClasses, ipv6ProxyMode } from './dns.mjs'
 
 const base = {
   ipv6: true,
@@ -382,4 +382,15 @@ test('IPv6 分层 · 代理 v6 降为 IPv4(ipv6 开 + ipv6Proxy=ipv4):走代理�
   assert.deepEqual(fake.rules.slice(-2), [{ query_type: ['AAAA'], action: 'predefined', rcode: 'NOERROR' }, { query_type: ['A'], server: 'dns-fakeip' }])
   const fakeNode = buildDns({ ...withRouting(routing), ipv6: true, ipv6Proxy: 'node', dns: { ...base.dns, fakeIpForProxy: true } }, GROUPS)
   assert.equal(fakeNode.servers.find((s) => s.type === 'fakeip').inet6_range, 'fc00::/18')
+})
+
+test('ipv6ProxyMode:关着 off、默认 node、降级 ipv4、不进内核 bypass;bypass 的 DNS 和 node 一样双栈、不回空 AAAA', () => {
+  assert.equal(ipv6ProxyMode({ ipv6: false, ipv6Proxy: 'bypass' }), 'off')
+  assert.equal(ipv6ProxyMode({ ipv6: true }), 'node')
+  assert.equal(ipv6ProxyMode({ ipv6: true, ipv6Proxy: 'ipv4' }), 'ipv4')
+  assert.equal(ipv6ProxyMode({ ipv6: true, ipv6Proxy: 'bypass' }), 'bypass')
+  const routing = { policies: [{ id: 'g', name: '谷歌', default: '所有-自动', rulesets: ['geosite-google'] }], fallbackDefault: 'proxy' }
+  const bypass = buildDns({ ...withRouting(routing), ipv6: true, ipv6Proxy: 'bypass' }, GROUPS)
+  assert.equal(bypass.strategy, 'prefer_ipv4')
+  assert.ok(!bypass.rules.some((r) => r.action === 'predefined' || r.strategy))
 })
