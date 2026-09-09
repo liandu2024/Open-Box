@@ -577,6 +577,7 @@ const en = {
   failoverModeEmpty: 'no valid node',
   failoverModeSingle: 'single node',
   failoverModeUrltest: 'url-test · {count} nodes',
+  failoverModeAuto: 'url-test',
   failoverInvalidCount: '{count} stale',
   failoverInvalid: 'stale',
   failoverFailStreak: '{count} failed rounds in a row',

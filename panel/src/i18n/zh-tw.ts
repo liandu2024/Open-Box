@@ -572,6 +572,7 @@ const zhTW: LANG_MESSAGE = {
   failoverModeEmpty: '沒有有效節點',
   failoverModeSingle: '單節點',
   failoverModeUrltest: '自動擇優 · {count} 個節點',
+  failoverModeAuto: '自動擇優',
   failoverInvalidCount: '失效 {count}',
   failoverInvalid: '失效',
   failoverFailStreak: '連續失敗 {count} 輪',

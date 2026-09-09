@@ -572,6 +572,7 @@ const zh: LANG_MESSAGE = {
   failoverModeEmpty: '没有有效节点',
   failoverModeSingle: '单节点',
   failoverModeUrltest: '自动择优 · {count} 个节点',
+  failoverModeAuto: '自动择优',
   failoverInvalidCount: '失效 {count}',
   failoverInvalid: '失效',
   failoverFailStreak: '连续失败 {count} 轮',

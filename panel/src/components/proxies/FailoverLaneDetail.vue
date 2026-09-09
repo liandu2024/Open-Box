@@ -28,14 +28,6 @@
           <span class="text-base-content/60 min-w-0 truncate text-xs">
             {{ modeText }} ({{ nodeStats.valid }}/{{ nodeStats.total }})
           </span>
-          <span
-            v-if="lane.id === currentLaneId"
-            class="badge badge-xs badge-success shrink-0"
-          >{{ $t('failoverCurrent') }}</span>
-          <span
-            v-if="health"
-            :class="['badge badge-xs shrink-0', healthBadgeClass]"
-          >{{ healthText }}</span>
         </div>
         <div class="text-base-content/80 flex w-full items-center">
           <div class="flex min-w-0 flex-1 items-center gap-1 truncate pr-3 text-sm">
@@ -80,14 +72,6 @@
           <span class="text-base-content/60 ml-1 min-w-0 truncate text-xs">
             {{ modeText }} ({{ nodeStats.valid }}/{{ nodeStats.total }})
           </span>
-          <span
-            v-if="lane.id === currentLaneId"
-            class="badge badge-xs badge-success shrink-0"
-          >{{ $t('failoverCurrent') }}</span>
-          <span
-            v-if="health"
-            :class="['badge badge-xs shrink-0', healthBadgeClass]"
-          >{{ healthText }}</span>
         </div>
         <LatencyTag
           :class="twMerge('bg-base-200/50 hover:bg-base-200 z-10')"
@@ -142,7 +126,7 @@ import { useGroupNodeStats } from '@/composables/groupNodeStats'
 import { iconUrlFor } from '@/helper/iconUrl'
 import { prettyBytesHelper } from '@/helper/utils'
 import { activeConnections } from '@/store/connections'
-import { failoverCurrentLaneId, failoverGroupByTag, failoverLanesOf, watchFailoverStatus } from '@/store/openboxFailover'
+import { failoverLanesOf, watchFailoverStatus } from '@/store/openboxFailover'
 import { getTestUrl, handlerProxySelect, proxyGroupLatencyTest, proxyLatencyTest, proxyMap } from '@/store/proxies'
 import { proxyGroupIconMargin, proxyGroupIconSize, useLargeProxyGroupIcon } from '@/store/settings'
 import { twMerge } from 'tailwind-merge'
@@ -162,31 +146,19 @@ const { t } = useI18n()
 
 const lanes = computed(() => failoverLanesOf(props.groupName, proxyMap.value) ?? [])
 const lane = computed(() => lanes.value.find((l) => l.id === props.laneId) ?? null)
-const currentLaneId = computed(() =>
-  failoverCurrentLaneId(props.groupName, lanes.value, proxyMap.value[props.groupName]?.now),
-)
 const iconUrl = computed(() => iconUrlFor(lane.value?.icon))
 const titleIconSize = computed(() => Math.max(proxyGroupIconSize.value, 46))
+// 类型只写「单节点 / 自动择优」,节点数在后面的 (有效/总数) 里
 const modeText = computed(() => {
   const l = lane.value
   if (!l) return ''
   if (!l.valid.length) return t('failoverModeEmpty')
   if (l.valid.length === 1) return t('failoverModeSingle')
-  return t('failoverModeUrltest', { count: l.valid.length })
+  return t('failoverModeAuto')
 })
 // 标题后的「有效 / 总数」和上一栏同一口径:最近一次延迟测试有结果的算有效
 const validNodes = computed(() => lane.value?.valid ?? [])
 const nodeStats = useGroupNodeStats(validNodes, props.groupName)
-const health = computed(() => {
-  const st = failoverGroupByTag.value.get(props.groupName)?.lanes.find((l) => l.id === props.laneId)
-  return st?.health ?? null
-})
-const healthText = computed(() =>
-  health.value === 'up' ? t('failoverHealthUp') : health.value === 'down' ? t('failoverHealthDown') : t('failoverHealthUnknown'),
-)
-const healthBadgeClass = computed(() =>
-  health.value === 'up' ? 'badge-success' : health.value === 'down' ? 'badge-error' : 'badge-ghost',
-)
 // 经这个页签的连接速率:多节点页签看内部子组,单节点页签看那个节点
 const downloadTotal = computed(() => {
   const key = lane.value?.subTag ?? lane.value?.kernelNow
@@ -209,7 +181,7 @@ const handlerLatencyTest = async () => {
   }
 }
 
-// 策略页签上没有故障转移组自己的卡片在拉运行状态,这里看着穿透时自己拉(健康 / 当前页签按服务端记录来)
+// 策略页签上没有故障转移组自己的卡片在拉运行状态,这里看着穿透时自己拉(页签的有效节点 / 内核选中按服务端记录来)
 let release: (() => void) | null = null
 onMounted(() => {
   release = watchFailoverStatus()
