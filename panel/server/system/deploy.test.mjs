@@ -53,6 +53,26 @@ test('成功路径:写配置 + 防火墙 + 重启 + 验证', async () => {
   assert.ok(c.includes('/etc/init.d/openbox restart'))
 })
 
+test('部署按启用的 DNS 重写源生成 dnsmasq 例外:固定 IPv4 / IPv6、域名目标都支持,停用规则不生成', async () => {
+  const ctx = okCtx()
+  const r = await deployConfig(ctx, paths, {
+    config,
+    profile: { ...profile, dns: { mode: 'dnsmasq', rewrite: { rules: [
+      { source: '*.custom.example', addresses: ['192.168.77.1'] },
+      { source: 'v6.custom.example', addresses: ['fd12::1'] },
+      { source: 'alias.example', domain: 'target.custom.example' },
+      { source: 'disabled.example', enabled: false, addresses: ['10.0.0.1'] },
+    ] } } },
+  })
+  assert.equal(r.ok, true)
+  const text = ctx.files[`${paths.dataDir}/dnsmasq-forward.conf`]
+  assert.match(text, /rebind-domain-ok=\/custom\.example\//)
+  assert.match(text, /rebind-domain-ok=\/v6\.custom\.example\//)
+  assert.match(text, /rebind-domain-ok=\/alias\.example\//)
+  assert.ok(!text.includes('disabled.example'))
+  assert.ok(!cmds(ctx).some((c) => /uci .*rebind/.test(c)))
+})
+
 test('元数据带上"谁走直连、谁走代理"的判断:代理页改完出口靠它判 dns.rules 有没有过期', async () => {
   const ctx = okCtx()
   await deployConfig(ctx, paths, {

@@ -39,6 +39,54 @@ const STATE = '/opt/open-box/data/dnsmasq-takeover.txt'
 const BACKUP = '/opt/open-box/data/dnsmasq-backup.txt'
 const writes = (ctx) => ctx.calls.filter((c) => c.cmd === 'uci' && !['get', 'show'].includes(c.args.filter((v) => v !== '-q')[0])).map((c) => [c.cmd, ...c.args].join(' '))
 
+for (const planMode of ['domains', 'all']) {
+  test(`${planMode}:重写例外随规则增删,幂等,泛域名转成受支持的后缀,保留用户白名单和 rebind 保护`, async () => {
+    const userConf = '/tmp/dnsmasq.cfg.d/user.conf'
+    const uci = statefulUci({ servers: ['9.9.9.9'], files: { [userConf]: 'rebind-domain-ok=/existing.example/\n' } })
+    const apply = (rewriteSources) => applyDnsTakeover(uci.ctx, paths, {
+      mode: 'dnsmasq', forward: { mode: planMode, domains: ['example.test'] }, rewriteSources,
+    })
+    await apply(['*.Example.Test.', 'alias.example.net', '*.example.test', 'bad/#name'])
+    const text = uci.ctx.files[INSTALLED]
+    assert.match(text, /rebind-domain-ok=\/example\.test\//)
+    assert.match(text, /rebind-domain-ok=\/alias\.example\.net\//)
+    assert.equal(text.match(/rebind-domain-ok=/g).length, 2)
+    assert.ok(!text.includes('bad/#name'))
+    assert.equal(uci.ctx.files[FORWARD_SRC], text, '持久正本与运行文件一致,供开机重放')
+    assert.equal((await apply(['alias.example.net', '*.example.test'])).changed, false)
+    assert.equal((await apply(['new.example.org'])).changed, true)
+    assert.ok(!uci.ctx.files[INSTALLED].includes('alias.example.net'))
+    assert.match(uci.ctx.files[INSTALLED], /rebind-domain-ok=\/new\.example\.org\//)
+    await apply([])
+    assert.ok(!(uci.ctx.files[INSTALLED] || '').includes('rebind-domain-ok='))
+    assert.ok(!(uci.ctx.files[FORWARD_SRC] || '').includes('rebind-domain-ok='))
+    assert.equal(uci.ctx.files[userConf], 'rebind-domain-ok=/existing.example/\n')
+    assert.ok(!writes(uci.ctx).some((c) => /rebind/.test(c)), '不能写用户的 UCI 白名单 / 保护开关')
+  })
+}
+
+test('重写例外在 domains ↔ all 之间保留,none 和回滚只移除 Open-Box 的文件', async () => {
+  const uci = statefulUci({ servers: ['9.9.9.9'] })
+  const apply = (mode) => applyDnsTakeover(uci.ctx, paths, {
+    mode: 'dnsmasq', forward: { mode, domains: ['example.test'] }, rewriteSources: ['*.example.test'],
+  })
+  await apply('domains')
+  assert.match(uci.ctx.files[INSTALLED], /server=/)
+  await apply('all')
+  assert.equal(uci.ctx.files[INSTALLED], 'rebind-domain-ok=/example.test/\n')
+  await apply('domains')
+  assert.match(uci.ctx.files[INSTALLED], /server=/)
+  assert.match(uci.ctx.files[INSTALLED], /rebind-domain-ok=/)
+  await apply('none')
+  assert.equal(await uci.ctx.exists(INSTALLED), false)
+  assert.equal(await uci.ctx.exists(FORWARD_SRC), false)
+  await apply('all')
+  await restoreDnsTakeover(uci.ctx, paths)
+  assert.equal(await uci.ctx.exists(INSTALLED), false)
+  assert.equal(await uci.ctx.exists(FORWARD_SRC), false)
+  assert.deepEqual(uci.state.servers, ['9.9.9.9'])
+})
+
 test('hijack 模式不动系统', async () => {
   const ctx = createMockContext()
   const r = await applyDnsTakeover(ctx, paths, { mode: 'hijack' })

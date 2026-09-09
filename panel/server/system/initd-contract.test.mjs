@@ -382,6 +382,25 @@ echo "log=$(tr '\\n' ',' < "$LOG" 2>/dev/null)"
   return result
 }
 
+test('重写 rebind 例外随 domains / all 开机恢复,内容一致不重启,停用内核移除运行文件', () => {
+  const exceptions = 'rebind-domain-ok=/custom.example/\n'
+  for (const mode of ['domains', 'all']) {
+    const text = (mode === 'domains' ? 'server=/custom.example/127.0.0.1#7853\n' : '') + exceptions
+    const opts = {
+      state: `plan=${mode}\n${mode === 'all' ? 'server=127.0.0.1#7853\nnoresolv=1\n' : ''}`,
+      servers: [mode === 'all' ? '127.0.0.1#7853' : '9.9.9.9'],
+      noresolv: mode === 'all' ? '1' : null, forwardSrc: text,
+    }
+    const boot = runTakeover(opts)
+    assert.equal(boot.forward, text.replaceAll('\n', ','))
+    assert.match(boot.log, /dnsmasq-restart/)
+    assert.equal(runTakeover({ ...opts, installedForward: text }).log, '')
+    const stop = runCleanup({ backup: null, servers: ['9.9.9.9'], noresolv: null, installedForward: text })
+    assert.equal(stop.forward, 'no')
+    assert.match(stop.log, /dnsmasq-restart/)
+  }
+})
+
 test('内核启动:状态文件 plan=none(全部直连)→ 一个字不动,原上游留着,不重启 dnsmasq(复审 R1)', () => {
   const r = runTakeover({ state: 'plan=none\n', servers: ['192.168.3.1', '/corp.example/192.168.3.5'], noresolv: null })
   assert.equal(r.servers, '192.168.3.1,/corp.example/192.168.3.5,')

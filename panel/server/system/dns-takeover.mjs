@@ -8,8 +8,9 @@
 // 三个持久化文件(都在 data/ 下):
 //   dnsmasq-backup.txt    接管前用户的 DNS 设置(uci show 形态),还原 / stop 的依据——它是"用户基线"
 //   dnsmasq-takeover.txt  这次写了什么:第一行 plan=,后面 server= / forward= / noresolv=1,init 脚本开机照抄
-//   dnsmasq-forward.conf  domains 形态的转发文件正文,开机由 init 脚本复制进 conf-dir(那是 /tmp,重启就没了)
+//   dnsmasq-forward.conf  domains 的转发条目 + DNS 重写的 rebind 例外(all 也可能有例外),开机重放
 import { dnsmasqSafeDomain } from '../engine/dns-names.mjs'
+import { normalizeDomain } from '../engine/dns-rewrite.mjs'
 import { forwardConfText } from './dns-forward.mjs'
 
 export { dnsmasqSafeDomain }
@@ -150,7 +151,7 @@ const removeInstalledForward = async (ctx) => {
   return had
 }
 
-export const applyDnsTakeover = async (ctx, paths, { mode, forwardDomains = [], forward } = {}) => {
+export const applyDnsTakeover = async (ctx, paths, { mode, forwardDomains = [], forward, rewriteSources = [] } = {}) => {
   if (mode !== 'dnsmasq') return { changed: false, actions: [], effective: { mode: 'none', domains: [], reason: '' } }
   // 计划(engine/routing-model.mjs + system/dns-forward.mjs 展开过的)优先;老调用方只传名单时按老语义折算
   let plan = forward && typeof forward === 'object'
@@ -175,6 +176,13 @@ export const applyDnsTakeover = async (ctx, paths, { mode, forwardDomains = [], 
     else if (!(plan.domains || []).length) plan = { mode: 'none', domains: [], reason: '转发名单是空的,按全部直连处理' }
   }
   const effective = { mode: plan.mode, domains: plan.mode === 'domains' ? plan.domains : [], reason: plan.reason || '' }
+  // 用户显式启用的重写答案应能交回终端:固定地址、以及 CNAME 目标最终都可能是内网地址。
+  // 只豁免这些源域名,不关闭全局 rebind 保护,也不改用户的 uci rebind_domain 列表。
+  // dnsmasq 2.90 的 rebind 例外不支持 *. 通配符,用完整标签后缀;根域也会豁免重绑定检查,
+  // 但不会因此被重写(真正的精确 / 泛域匹配仍由重写服务负责)。不能把 * 原样写进去导致例外失效。
+  // 和转发条目放在同一份受管文件,停止 / 切模式 / 删除规则时沿用同一套清理与开机重放。
+  const rebindText = [...new Set(rewriteSources.map((s) => normalizeDomain(s, { allowWildcard: true }).replace(/^\*\./, '')).filter(Boolean))]
+    .sort().map((s) => `rebind-domain-ok=/${s}/\n`).join('')
 
   // ---------- none:原 DNS 原样。接管过就按(刚刷新过的)基线还原;转发文件拿掉 ----------
   if (plan.mode === 'none') {
@@ -196,7 +204,7 @@ export const applyDnsTakeover = async (ctx, paths, { mode, forwardDomains = [], 
 
   // ---------- domains:uci = 用户基线原样;转发文件进 conf-dir ----------
   if (plan.mode === 'domains') {
-    const text = forwardConfText(plan.domains)
+    const text = forwardConfText(plan.domains) + rebindText
     const installed = await installedForwardPath(ctx)
     const confSame = (await ctx.exists(installed)) && (await ctx.readFile(installed)) === text
     const target = { servers: baseline.servers, noresolv: baseline.noresolv }
@@ -221,13 +229,24 @@ export const applyDnsTakeover = async (ctx, paths, { mode, forwardDomains = [], 
     return { changed: true, actions: ['backup', 'set-per-domain', 'restart-dnsmasq'], effective }
   }
 
-  // ---------- all:上游只剩内核,noresolv=1;转发文件拿掉 ----------
-  const removed = await removeInstalledForward(ctx)
-  if (await ctx.exists(dnsForwardFilePath(paths))) await ctx.remove(dnsForwardFilePath(paths))
+  // ---------- all:上游只剩内核,noresolv=1;受管文件只保留重写的 rebind 例外 ----------
+  const installed = await installedForwardPath(ctx)
+  let confChanged = false
+  if (rebindText) {
+    confChanged = !(await ctx.exists(installed)) || (await ctx.readFile(installed)) !== rebindText
+    await ctx.writeFile(dnsForwardFilePath(paths), rebindText)
+    if (confChanged) {
+      await ctx.mkdirp(installed.slice(0, installed.lastIndexOf('/')))
+      await ctx.writeFile(installed, rebindText)
+    }
+  } else {
+    confChanged = await removeInstalledForward(ctx)
+    if (await ctx.exists(dnsForwardFilePath(paths))) await ctx.remove(dnsForwardFilePath(paths))
+  }
   const target = { servers: [SINGBOX_DNS_UPSTREAM], noresolv: '1' }
   const stateText = stateTextFor('all', { servers: target.servers, noresolv: '1' })
   const uciSame = sameUci(current, target)
-  if (uciSame && !removed) {
+  if (uciSame && !confChanged) {
     await ctx.writeFile(dnsTakeoverStatePath(paths), stateText)
     return { changed: false, actions: ['unchanged'], effective }
   }

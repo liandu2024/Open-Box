@@ -226,7 +226,7 @@ export const deployConfig = async (ctx, paths, { config, profile, userGroups, fe
     // 代理面能被逐条列出来时,只把那几个域名转给内核,其余交回路由器自己解析——
     // 直连的 DNS 就真的不经过 Open-Box 了。列不出来就照旧全局转发。
     // 成员表从刚生成的配置里取(兜底 selector 的成员就是那一份),不另算一遍。
-    const applied = await applyDnsTakeover(ctx, paths, { mode: dnsMode, forward: dnsForward })
+    const applied = await applyDnsTakeover(ctx, paths, { mode: dnsMode, forward: dnsForward, rewriteSources: enabledRewriteSources(dnsRewrite) })
     // 应用阶段又降级了(计划阶段本该拦住,这是最后一道):元数据必须记实际执行的,重写一遍
     if (dnsMode === 'dnsmasq' && applied.effective && applied.effective.mode !== dnsForward.mode) {
       dnsForward = { ...dnsForward, ...applied.effective, expanded: [], superset: [] }
