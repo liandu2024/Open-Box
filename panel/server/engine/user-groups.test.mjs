@@ -46,6 +46,9 @@ test('故障转移:归一化后固定静态、members/keywords 清空、lanes �
   assert.equal(g.interval, '30s')
   assert.equal(g.tolerance, 100)
   assert.deepEqual(g.failover, { timeoutMs: 5000, failureThreshold: 2, restorePrimary: false, recoveryHoldMs: 60000 })
+  // 页签最多 3 个,多出来的读取时丢掉(写入时 API 直接拒)
+  const many = normalizeGroup(failoverGroup({ lanes: [1, 2, 3, 4, 5].map((i) => ({ id: `L${i}`, members: ['香港-01'] })) }))
+  assert.deepEqual(many.lanes.map((l) => l.id), ['L1', 'L2', 'L3'])
 })
 
 test('故障转移:单节点页签直接引用节点,多节点页签生成内部 urltest 子组;父组是 selector,默认主用,末位兜底拒绝', () => {

@@ -565,6 +565,7 @@ const zh: LANG_MESSAGE = {
   failoverBackupN: '备用 {n}',
   failoverLaneFallback: '候选',
   failoverAddLane: '添加备用页签',
+  failoverMaxLanes: '最多 {n} 个页签',
   failoverDeleteLane: '删除页签',
   failoverDeleteLaneConfirm: '确定删除「{lane}」?它里面的 {count} 个节点会从这个页签移除(取消整个弹窗则不保存)。',
   failoverLaneNamePlaceholder: '页签名(可选)',

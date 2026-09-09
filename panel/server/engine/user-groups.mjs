@@ -30,6 +30,8 @@ export const FAILOVER_REJECT_TAG = `${FAILOVER_INTERNAL_PREFIX}reject`
 export const isInternalTag = (tag) => typeof tag === 'string' && tag.startsWith(FAILOVER_INTERNAL_PREFIX)
 // 页签子组的 tag 由稳定的父组 id 和页签 id 派生,不用「主用 / 备用 1」或下标当身份
 export const laneSubTag = (groupId, laneId) => `${FAILOVER_INTERNAL_PREFIX}${groupId}:${laneId}`
+// 主备页签最多 3 个(主用 + 备用 1 + 备用 2):再多没有意义,页签栏也摆不下
+export const FAILOVER_MAX_LANES = 3
 export const FAILOVER_DEFAULTS = Object.freeze({
   interval: '30s',
   tolerance: 100,
@@ -154,7 +156,7 @@ const inRange = (v, [lo, hi], fallback) => {
 // 对齐,重复了就分不清
 export const normalizeLanes = (raw) => {
   const seen = new Set()
-  return (Array.isArray(raw) ? raw : []).map((lane, i) => {
+  return (Array.isArray(raw) ? raw : []).slice(0, FAILOVER_MAX_LANES).map((lane, i) => {
     let id = isNonEmptyString(lane?.id) ? lane.id.trim() : `lane-${i + 1}`
     while (seen.has(id)) id = `${id}~`
     seen.add(id)

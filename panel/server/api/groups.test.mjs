@@ -149,6 +149,7 @@ test('PUT /groups(failover):动态模式、页签 id 重复、成员是组 / 站
     [fo({ mode: 'dynamic' }), /只支持静态/],
     [fo({ lanes: undefined }), /缺少主备页签/],
     [fo({ lanes: [{ id: 'L1', members: ['n1'] }, { id: 'L1', members: ['n2'] }] }), /页签 id 重复/],
+    [fo({ lanes: [{ id: 'L1', members: ['n1'] }, { id: 'L2', members: ['n2'] }, { id: 'L3', members: ['n3'] }, { id: 'L4', members: ['n1'] }] }), /最多 3 个页签/],
     [fo({ lanes: [{ id: 'L1', members: ['A'] }] }), /只能放真实节点/],
     [fo({ lanes: [{ id: 'L1', members: ['Video'] }] }), /只能放真实节点/],
     [fo({ lanes: [{ id: 'L1', members: ['__fo:g-fo:L2'] }] }), /只能放真实节点/],

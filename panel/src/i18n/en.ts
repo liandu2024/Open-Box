@@ -569,6 +569,7 @@ const en = {
   failoverBackupN: 'Backup {n}',
   failoverLaneFallback: 'lane',
   failoverAddLane: 'Add backup lane',
+  failoverMaxLanes: 'At most {n} lanes',
   failoverDeleteLane: 'Delete lane',
   failoverDeleteLaneConfirm: 'Delete "{lane}"? Its {count} nodes are removed from this lane (cancelling the dialog discards everything).',
   failoverLaneNamePlaceholder: 'Lane name (optional)',

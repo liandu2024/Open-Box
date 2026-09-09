@@ -1,6 +1,6 @@
 import { FALLBACK_TAG, normalizeRouting } from '../engine/routing-model.mjs'
 import express from 'express'
-import { normalizeGroups, emitUserGroups, GROUP_TYPES, GROUP_MODES, FAILOVER_INTERNAL_PREFIX, FAILOVER_LIMITS, isInternalTag } from '../engine/user-groups.mjs'
+import { normalizeGroups, emitUserGroups, GROUP_TYPES, GROUP_MODES, FAILOVER_INTERNAL_PREFIX, FAILOVER_LIMITS, FAILOVER_MAX_LANES, isInternalTag } from '../engine/user-groups.mjs'
 import { parseDuration } from '../engine/duration.mjs'
 import { DNSMASQ_OUTBOUND_TAG } from '../engine/config.mjs'
 
@@ -21,6 +21,7 @@ export const validateFailoverGroup = (raw, { nodeTags, otherNames, previous }) =
     return `故障转移「${name}」只支持静态成员,mode 必须是 static`
   }
   if (!Array.isArray(raw.lanes)) return `故障转移「${name}」缺少主备页签(lanes)`
+  if (raw.lanes.length > FAILOVER_MAX_LANES) return `故障转移「${name}」最多 ${FAILOVER_MAX_LANES} 个页签`
   const ids = new Set()
   const prevLaneMembers = new Map((previous?.lanes || []).map((l) => [l.id, new Set(l.members)]))
   for (let i = 0; i < raw.lanes.length; i++) {

@@ -523,11 +523,13 @@
                       </button>
                     </template>
                   </Draggable>
+                  <!-- 最多 3 个页签(主用 + 备用 1 + 备用 2),满了加号置灰 -->
                   <button
                     type="button"
                     class="btn btn-ghost btn-square btn-xs shrink-0"
+                    :disabled="draft.lanes.length >= FAILOVER_MAX_LANES"
                     :aria-label="$t('failoverAddLane')"
-                    v-tip="$t('failoverAddLane')"
+                    v-tip="draft.lanes.length >= FAILOVER_MAX_LANES ? $t('failoverMaxLanes', { n: FAILOVER_MAX_LANES }) : $t('failoverAddLane')"
                     @click="addLane"
                   >
                     <PlusIcon class="h-4 w-4" />
@@ -1050,6 +1052,8 @@ const openEditor = (group: OpenboxUserGroup | null) => {
 // ---------- 故障转移(主备页签) ----------
 const isFailover = computed(() => draft.value?.type === 'failover')
 const FAILOVER_DEFAULTS: OpenboxFailoverSettings = { timeoutMs: 5000, failureThreshold: 2, restorePrimary: true, recoveryHoldMs: 60000 }
+// 主备页签上限,和服务端 engine/user-groups.mjs 的 FAILOVER_MAX_LANES 同一个数
+const FAILOVER_MAX_LANES = 3
 const newLaneId = () => `lane-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
 const makeLane = (members: string[] = []): OpenboxFailoverLane => ({ id: newLaneId(), name: '', icon: '', members })
 // 故障转移草稿必须有的字段:页签(默认「主用」「备用 1」两个)、按秒的检测间隔、容差、高级参数
@@ -1084,7 +1088,7 @@ const selectLane = (id: string) => {
   checkedSelected.value = []
 }
 const addLane = () => {
-  if (!draft.value?.lanes) return
+  if (!draft.value?.lanes || draft.value.lanes.length >= FAILOVER_MAX_LANES) return
   const lane = makeLane()
   draft.value.lanes = [...draft.value.lanes, lane]
   selectLane(lane.id)
