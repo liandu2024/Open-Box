@@ -536,12 +536,14 @@ const latencyTestForSingle = async (proxyName: string, url: string, timeout: num
   return await fetchNodeLatency(independentLatencyTest.value ? proxyName : now, url, timeout)
 }
 
+// 提示里的组名:故障转移的内部页签子组显示成页签名,不露 __fo: 技术 tag
 const getNameForNotification = (name: string, url: string) => {
+  const shown = failoverDisplayName(name)
   if (independentLatencyTest.value) {
-    return `${name}\n@${url}`
+    return `${shown}\n@${url}`
   }
 
-  return name
+  return shown
 }
 
 export const proxyLatencyTest = async (
