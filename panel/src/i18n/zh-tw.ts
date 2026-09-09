@@ -1036,6 +1036,8 @@ const zhTW: LANG_MESSAGE = {
   penetrationChainError: '\u6c92\u80fd\u7e7c\u7e8c\u89e3\u6790:{message}',
   penetrationMatchError: '\u6c92\u80fd\u78ba\u5b9a\u662f\u5426\u547d\u4e2d\u898f\u5247:{message}',
   // 概览 · 每日流量
+  trafficCountDirect: '統計直連流量',
+  trafficCountDirectHint: '關掉後不計入走直連出站的流量(資料庫裡的記錄不變);終端和站點互相下鑽的構成裡分不出直連那份,那裡照舊。',
   dailyTraffic: '每日流量',
   trafficMonthLabel: '{y}年{m}月',
   trafficMonthSummary: '{month}共 {total},{conns} 個連線。',

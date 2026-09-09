@@ -39,6 +39,8 @@ export const theme = computed(() => {
 export const language = useStorage<LANG>('config/language', detectDefaultLanguage(navigator.language))
 // 首次进面板侧边栏默认展开(窄屏仍强制折叠,见下方 isMiddleScreen)
 export const isSidebarCollapsedConfig = useStorage('config/is-sidebar-collapsed', false)
+// 概览「每日流量」的「统计直连流量」开关:关掉后走内置直连出站的流量不计入(服务端查询时扣掉,库里数据不动)
+export const trafficCountDirect = useStorage('config/traffic-count-direct', true)
 export const isSidebarCollapsed = computed({
   get: () => {
     if (isMiddleScreen.value) {

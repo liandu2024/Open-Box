@@ -990,6 +990,8 @@ export interface OpenboxTrafficMonth {
   total: { up: number; down: number; conns: number }
   avg: { up: number; down: number }
   avgDays: number
+  // 「统计直连流量」关掉时 excluded 为真:走内置直连出站(tag)的流量已从数字里扣掉
+  direct?: { excluded: boolean; tag: string }
 }
 export interface OpenboxTrafficDay {
   day: string
@@ -1009,6 +1011,7 @@ export interface OpenboxTrafficDay {
   // 只看某个小时时是那个小时(0~23),整天是 null;小时明细只保留最近这么多天
   hour?: number | null
   hourDetailKeepDays?: number
+  direct?: { excluded: boolean; tag: string }
 }
 export interface OpenboxTrafficHour {
   hour: number
@@ -1028,12 +1031,14 @@ export interface OpenboxTrafficUsage {
 export const fetchTrafficUsage = () =>
   requestJson<OpenboxTrafficUsage>('/api/openbox/traffic/usage')
 
-export const fetchTrafficMonth = (month?: string) =>
-  requestJson<OpenboxTrafficMonth>(`/api/openbox/traffic/month${month ? `?month=${encodeURIComponent(month)}` : ''}`)
+// countDirect=false 时带 direct=0:服务端把走直连出站的流量从数字里扣掉(概览「统计直连流量」开关)
+const directParam = (countDirect: boolean) => (countDirect ? '' : '&direct=0')
+export const fetchTrafficMonth = (month?: string, countDirect = true) =>
+  requestJson<OpenboxTrafficMonth>(`/api/openbox/traffic/month?${month ? `month=${encodeURIComponent(month)}` : ''}${directParam(countDirect)}`)
 // hour 给了就只看那个小时的明细(0~23),不给是整天
-export const fetchTrafficDay = (day: string, limit = 500, hour?: number | null) =>
+export const fetchTrafficDay = (day: string, limit = 500, hour?: number | null, countDirect = true) =>
   requestJson<OpenboxTrafficDay>(
-    `/api/openbox/traffic/day?day=${encodeURIComponent(day)}&limit=${limit}${hour === null || hour === undefined ? '' : `&hour=${hour}`}`,
+    `/api/openbox/traffic/day?day=${encodeURIComponent(day)}&limit=${limit}${hour === null || hour === undefined ? '' : `&hour=${hour}`}${directParam(countDirect)}`,
   )
 // 一条记录的构成:kind/key 定位点开的那条(终端 IP / 节点名 / 域名),by 是拆成哪一维
 export type OpenboxTrafficDim = 'client' | 'node' | 'host'
@@ -1055,9 +1060,10 @@ export const fetchTrafficDrill = (
   by: OpenboxTrafficDim,
   limit = 200,
   hour?: number | null,
+  countDirect = true,
 ) =>
   requestJson<OpenboxTrafficDrill>(
-    `/api/openbox/traffic/drill?day=${encodeURIComponent(day)}&kind=${kind}&key=${encodeURIComponent(key)}&by=${by}&limit=${limit}${hour === null || hour === undefined ? '' : `&hour=${hour}`}`,
+    `/api/openbox/traffic/drill?day=${encodeURIComponent(day)}&kind=${kind}&key=${encodeURIComponent(key)}&by=${by}&limit=${limit}${hour === null || hour === undefined ? '' : `&hour=${hour}`}${directParam(countDirect)}`,
   )
 
 // 导出 / 导入(server/api/backup.mjs):档案 + 节点组,可选订阅和节点

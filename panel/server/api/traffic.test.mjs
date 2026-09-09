@@ -41,8 +41,31 @@ const fakeCollector = () => {
         const rows = data[day]?.[kind] || []
         return { n: rows.length, up: rows.reduce((s, r) => s + r.up, 0), down: rows.reduce((s, r) => s + r.down, 0) }
       },
+      // 「统计直连流量」关掉时用到:直连这一行按天 / 按月 / 按小时
+      nodeRow(day, key) { return (data[day]?.node || []).find((r) => r.key === key) || null },
+      monthNode(month, key) {
+        return Object.entries(data).filter(([d]) => d.startsWith(month) && !d.includes('@')).map(([day, v]) => ({ day, ...(v.node.find((r) => r.key === key) || { up: 0, down: 0, conns: 0 }) }))
+      },
+      nodeHours(day, key) {
+        const m = new Map()
+        for (const [d, v] of Object.entries(data)) {
+          if (!d.startsWith(`${day}@`)) continue
+          const r = (v.node || []).find((x) => x.key === key)
+          if (r) m.set(Number(d.slice(11)), r)
+        }
+        return m
+      },
       drill(day, kind, key, by, limit) {
         drills.push({ day, kind, key, by, limit })
+        // 直连 × 站点 / 终端 的交叉行:直连那 10/100 全落在 a.com 和 10.0.0.7 上
+        if (day === '2026-09-03' && kind === 'node' && key === '直连') {
+          const rows = by === 'host' ? [{ key: 'a.com', up: 10, down: 100, conns: 2 }] : by === 'client' ? [{ key: '10.0.0.7', up: 10, down: 100, conns: 1 }] : []
+          return { rows: rows.slice(0, limit), count: rows.length, sum: { up: 10, down: 100 } }
+        }
+        if (day === '2026-09-03' && kind === 'host' && key === 'a.com' && by === 'node') {
+          const rows = [{ key: 'A', up: 60, down: 500, conns: 4 }, { key: '直连', up: 10, down: 100, conns: 2 }]
+          return { rows: rows.slice(0, limit), count: rows.length, sum: { up: 70, down: 600 } }
+        }
         if (day !== '2026-09-03' || kind !== 'host' || key !== 'a.com') return { rows: [], count: 0 }
         const rows = by === 'client'
           ? [{ key: '10.0.0.209', up: 60, down: 500, conns: 5 }, { key: '10.0.0.7', up: 10, down: 100, conns: 1 }]
@@ -129,7 +152,7 @@ test('GET /traffic/drill:一条记录按另一维拆;按终端拆时带主机名
     assert.equal(byClient.rows[1].name, '')
     assert.equal(collector.flushed(), 1)
     const byNode = await (await q('day=2026-09-03&kind=host&key=a.com&by=node&limit=1')).json()
-    assert.deepEqual(byNode.rows, [{ key: 'A', up: 70, down: 600, conns: 6 }])
+    assert.deepEqual(byNode.rows, [{ key: 'A', up: 60, down: 500, conns: 4 }])
     assert.deepEqual(collector.drills.at(-1), { day: '2026-09-03', kind: 'host', key: 'a.com', by: 'node', limit: 1 })
     // 空 key(来源不明的终端)也能查
     assert.equal((await q('day=2026-09-03&kind=client&key=&by=host')).status, 200)
@@ -192,6 +215,45 @@ test('GET /traffic/day?hour=13:明细换成那个小时的,总量取小时桶;dr
     assert.equal((await fetch(`${base}/api/openbox/traffic/day?day=2026-09-03&hour=24`)).status, 400)
     await fetch(`${base}/api/openbox/traffic/drill?day=2026-09-03&kind=host&key=a.com&by=client&hour=13`)
     assert.equal(collector.drills.at(-1).day, '2026-09-03@13')
+  } finally {
+    await close()
+  }
+})
+
+test('direct=0:「统计直连流量」关掉——月 / 日总量、小时桶、节点 / 站点 / 终端列表都扣掉直连那份,drill 按出站拆时去掉直连行', async () => {
+  const collector = fakeCollector()
+  const { base, close } = await startApp(collector, () => new Date(2026, 8, 3, 10))
+  try {
+    const month = await (await fetch(`${base}/api/openbox/traffic/month?month=2026-09&direct=0`)).json()
+    assert.deepEqual(month.direct, { excluded: true, tag: '直连' })
+    const d3 = month.days.find((d) => d.day === '2026-09-03')
+    assert.deepEqual(d3, { day: '2026-09-03', up: 90, down: 800, conns: 5 })
+    assert.equal(month.total.up, 90)
+    const on = await (await fetch(`${base}/api/openbox/traffic/month?month=2026-09`)).json()
+    assert.equal(on.direct.excluded, false)
+    assert.equal(on.days.find((d) => d.day === '2026-09-03').up, 100)
+
+    const day = await (await fetch(`${base}/api/openbox/traffic/day?day=2026-09-03&direct=0`)).json()
+    assert.deepEqual(day.total, { up: 90, down: 800, conns: 5 })
+    assert.deepEqual(day.nodes.map((r) => r.key), ['A'])
+    assert.deepEqual(day.hosts, [{ key: 'a.com', up: 60, down: 500, conns: 4 }])
+    assert.equal(day.hostsCount, 1)
+    // 10.0.0.7 的量全是直连,扣完为 0 就不列了
+    assert.deepEqual(day.clients.map((r) => r.key), ['10.0.0.209'])
+    assert.equal(day.clientsCount, 1)
+    // 未采样差额不变:总量和节点之和同时扣掉了直连
+    assert.deepEqual(day.other, { up: 30, down: 300 })
+    assert.equal(day.direct.excluded, true)
+    // 小时桶:13 点那格没有直连行,原样
+    assert.deepEqual(day.hours[13], { hour: 13, up: 7, down: 60, conns: 1 })
+
+    const drill = await (await fetch(`${base}/api/openbox/traffic/drill?day=2026-09-03&kind=host&key=a.com&by=node&direct=0`)).json()
+    assert.deepEqual(drill.rows.map((r) => r.key), ['A'])
+    assert.equal(drill.count, 1)
+    assert.deepEqual(drill.sum, { up: 60, down: 500 })
+    const directDrill = await (await fetch(`${base}/api/openbox/traffic/drill?day=2026-09-03&kind=node&key=%E7%9B%B4%E8%BF%9E&by=host&direct=0`)).json()
+    assert.deepEqual(directDrill.rows, [])
+    assert.equal(directDrill.count, 0)
   } finally {
     await close()
   }

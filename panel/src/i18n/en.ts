@@ -1041,6 +1041,8 @@ const en = {
   penetrationChainError: "Couldn't resolve further: {message}",
   penetrationMatchError: "Couldn't check whether a rule matched: {message}",
   // 概览 · 每日流量
+  trafficCountDirect: 'Count direct traffic',
+  trafficCountDirectHint: 'When off, traffic that left through the built-in direct outbound is not counted (stored records are untouched); the client-by-host breakdowns cannot separate the direct share and stay as they are.',
   dailyTraffic: 'Daily traffic',
   trafficMonthLabel: '{y}-{mm}',
   trafficMonthSummary: '{month}: {total} in total, {conns} connections.',

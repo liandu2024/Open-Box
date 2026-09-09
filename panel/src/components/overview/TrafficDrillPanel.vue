@@ -172,6 +172,7 @@ import {
   type OpenboxTrafficRow,
 } from '@/api/openbox'
 import { prettyBytesHelper } from '@/helper/utils'
+import { trafficCountDirect } from '@/store/settings'
 import { ChevronDownIcon, ChevronUpIcon, InformationCircleIcon } from '@heroicons/vue/24/outline'
 import { trafficRowNote } from '@/helper/trafficName'
 import { computed, ref, watch } from 'vue'
@@ -243,7 +244,7 @@ const load = async () => {
   loadingBy.value = { ...loadingBy.value, [dim]: true }
   errorBy.value = { ...errorBy.value, [dim]: '' }
   try {
-    cache.value[dim] = await fetchTrafficDrill(props.day, props.kind, props.itemKey, dim, 200, props.hour ?? null)
+    cache.value[dim] = await fetchTrafficDrill(props.day, props.kind, props.itemKey, dim, 200, props.hour ?? null, trafficCountDirect.value)
   } catch (e) {
     errorBy.value = { ...errorBy.value, [dim]: e instanceof Error ? e.message : String(e) }
   } finally {
@@ -258,4 +259,10 @@ watch(
   },
   { immediate: true },
 )
+
+// 「统计直连流量」开关变了:服务端扣不扣直连的结果不一样,缓存作废、当前这一维重新拉
+watch(trafficCountDirect, () => {
+  cache.value = {}
+  void load()
+})
 </script>

@@ -8,6 +8,18 @@
         v-if="loading"
         class="loading loading-spinner loading-xs"
       />
+      <!-- 统计直连流量:关掉后服务端把走直连出站的那部分从总量 / 曲线 / 列表里扣掉,库里数据不动 -->
+      <label
+        class="text-base-content/70 flex cursor-pointer items-center gap-1.5 text-xs font-normal"
+        :title="$t('trafficCountDirectHint')"
+      >
+        <input
+          v-model="trafficCountDirect"
+          type="checkbox"
+          class="toggle toggle-xs toggle-primary"
+        >
+        <span>{{ $t('trafficCountDirect') }}</span>
+      </label>
       <!-- 月份切换:和明细页签同一套 tabs-box 样式(圆角高亮块),两侧箭头用圆形幽灵按钮 -->
       <div
         v-if="month"
@@ -383,6 +395,7 @@ import {
   InformationCircleIcon,
 } from '@heroicons/vue/24/outline'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { trafficCountDirect } from '@/store/settings'
 import { useI18n } from 'vue-i18n'
 
 // 柱子区高度、柱顶数值行高、底部日期行高(px),日均线的定位要和这几个数对齐
@@ -522,7 +535,7 @@ const loadDay = async (day: string | null) => {
   }
   const hour = selectedHour.value
   try {
-    const data = await fetchTrafficDay(day, 500, hour)
+    const data = await fetchTrafficDay(day, 500, hour, trafficCountDirect.value)
     if (seq !== daySeq || selectedDay.value !== day || selectedHour.value !== hour) return
     detail.value = data
   } catch (e) {
@@ -535,7 +548,7 @@ const loadMonth = async (m?: string, { silent = false } = {}) => {
   const seq = ++monthSeq
   if (!silent) loading.value = true
   try {
-    const data = await fetchTrafficMonth(m)
+    const data = await fetchTrafficMonth(m, trafficCountDirect.value)
     if (seq !== monthSeq) return
     error.value = ''
     monthData.value = data
@@ -637,6 +650,10 @@ const share = (r: { up: number; down: number }) =>
   detailTotal.value > 0 ? Math.round(((r.up + r.down) / detailTotal.value) * 100) : 0
 
 let timer: ReturnType<typeof setInterval> | null = null
+// 开关一变整月和当天都重新拉(服务端按开关扣或不扣直连)
+watch(trafficCountDirect, () => {
+  void loadMonth(month.value || undefined)
+})
 onMounted(() => {
   void loadMonth()
   // 看当月时每 30 秒刷一次,今天那根柱子和明细跟着长

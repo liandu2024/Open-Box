@@ -1100,7 +1100,7 @@ const trafficCollector = createTrafficCollector({
   getKeepMonths: () => ((store.getProfile() || {}).traffic || {}).keepMonths,
   log: (m) => console.log(m),
 })
-registerTrafficRoutes(app, { collector: trafficCollector, ctx: obCtx, paths: obPaths })
+registerTrafficRoutes(app, { collector: trafficCollector, ctx: obCtx, paths: obPaths, store })
 // 延迟历史 + 自动组的硬性定时测速(system/latency-scheduler.mjs):sing-box 的 URLTest 只在有流量时才按
 // interval 测,闲置的组停在启动那一次;这里由面板按 interval 定时调内核测,结果记进 openbox/latency-history,
 // 所有浏览器共享。和流量采集一样只在 startServer 里启动。

@@ -143,6 +143,17 @@ export const createTrafficStore = (db) => {
   `)
   // 24 小时曲线:kind='hour',key 是两位小时,值是内核计数器在那个小时里的增量(和 total 同源)
   const selectHours = db.prepare(`SELECT key AS hour, up, down, conns FROM traffic_daily WHERE day = ? AND kind = 'hour' ORDER BY key`)
+  // 某个出站(比如内置直连)按天 / 按月 / 按小时的量:概览「统计直连流量」关掉时从总量里扣掉它用。
+  // 按月要跳过「天@小时」那些行(它们也是 kind='node'),不然重复计
+  const selectNodeRow = db.prepare(`SELECT up, down, conns FROM traffic_daily WHERE day = ? AND kind = 'node' AND key = ?`)
+  const selectMonthNode = db.prepare(`
+    SELECT day, up, down, conns FROM traffic_daily
+    WHERE kind = 'node' AND key = ? AND day >= ? AND day < ? AND instr(day, '@') = 0 ORDER BY day
+  `)
+  const selectNodeHours = db.prepare(`
+    SELECT day, up, down, conns FROM traffic_daily
+    WHERE kind = 'node' AND key = ? AND day >= ? || '@00' AND day <= ? || '@23'
+  `)
   const deleteBefore = db.prepare(`DELETE FROM traffic_daily WHERE day < ?`)
   // 某一天的小时明细行(day 是「那天@HH」)在主键上紧挨在那天后面:> '那天' 且 < '那天~'
   const deleteHourDetailOfDay = db.prepare(`DELETE FROM traffic_daily WHERE day > ?1 AND day < ?1 || '~'`)
@@ -170,6 +181,19 @@ export const createTrafficStore = (db) => {
     dayTotal(day) {
       const r = selectTotal.get(day)
       return r ? plain(r) : null
+    },
+    // 某个出站这一天(或「天@小时」)的量,没有就 null
+    nodeRow(day, key) {
+      const r = selectNodeRow.get(day, key)
+      return r ? plain(r) : null
+    },
+    // 某个出站整月每天的量(只有按天的行)
+    monthNode(month, key) {
+      return selectMonthNode.all(key, `${month}-01`, `${nextMonthOf(month)}-01`).map(plain)
+    },
+    // 某个出站这一天 24 个小时桶的量:Map<小时, {up, down, conns}>,没记录的小时没有键
+    nodeHours(day, key) {
+      return new Map(selectNodeHours.all(key, day, day).map((r) => [Number(String(r.day).slice(11)), { up: Number(r.up) || 0, down: Number(r.down) || 0, conns: Number(r.conns) || 0 }]))
     },
     // 一天 24 个小时桶,没记录的小时补 0
     hours(day) {
