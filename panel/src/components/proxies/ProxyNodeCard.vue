@@ -55,7 +55,7 @@
 </template>
 
 <script setup lang="ts">
-import { failoverDisplayName } from '@/store/openboxFailover'
+import { failoverDisplayName, isFailoverGroup } from '@/store/openboxFailover'
 import { PROXY_CARD_SIZE, PROXY_SORT_TYPE, PROXY_TYPE } from '@/constant'
 import { checkTruncation } from '@/helper/tooltip'
 import { scrollIntoCenter } from '@/helper/utils'
@@ -153,7 +153,8 @@ const handlerLatencyTest = async () => {
     // 而不是"经这个组出去有多快":后者只从组当前选中的那个节点上跑一次,既不重测其它成员,
     // 也不会重新择优——当前选中的节点已经不通时,点它必然超时,而且线路不会自己换。
     // 走 proxyGroupLatencyTest 就是内核的 /group/<name>/delay:强制重测全部成员并立即重新择优。
-    if (node.value.type?.toLowerCase() === PROXY_TYPE.URLTest) {
+    // 故障转移组同理:整组按页签测,报统一的提示(store/proxies.ts 的 failoverGroupLatencyTest)
+    if (node.value.type?.toLowerCase() === PROXY_TYPE.URLTest || isFailoverGroup(props.name)) {
       await proxyGroupLatencyTest(props.name)
     } else {
       await proxyLatencyTest(props.name, getTestUrl(props.groupName))

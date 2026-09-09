@@ -9,7 +9,7 @@ import {
   isSingBox,
   selectProxyAPI,
 } from '@/api'
-import { failoverDisplayName, isFailoverInternalTag } from '@/store/openboxFailover'
+import { failoverDisplayName, failoverMembersOf, isFailoverGroup, isFailoverInternalTag } from '@/store/openboxFailover'
 import { iconUrlFor } from '@/helper/iconUrl'
 import {
   loadOpenboxNodeGroups,
@@ -661,10 +661,54 @@ export const proxyNodesLatencyTest = async (
   return testLatencyOneByOneWithTip(scopeName, nodes, url, displayName, keyName)
 }
 
+// 故障转移组的整组测速:内核里它是 selector,按 selector 逐个成员测只会测到每个页签当前选中的那一个节点,
+// 兜底拒绝还会算一次超时。这里按页签来——多节点页签走内核的组测速(全员重测 + 组内重选),单节点页签测那个
+// 节点,拒绝不测;最后按各页签里的全部节点报一条统一的「N 成功,M 超时」
+const failoverGroupLatencyTest = async (proxyGroupName: string) => {
+  const url = getTestUrl(proxyGroupName)
+  const timeout = Math.max(5000, speedtestTimeout.value)
+  const members = failoverMembersOf(proxyGroupName, proxyMap.value[proxyGroupName]?.all ?? [])
+  const nodes = new Set<string>()
+  await Promise.allSettled(
+    members.map((member) =>
+      limiter(async () => {
+        const p = proxyMap.value[member]
+        if (p?.type?.toLowerCase() === PROXY_TYPE.URLTest) {
+          for (const n of p.all ?? []) nodes.add(n)
+          await fetchProxyGroupLatencyAPI(member, url, timeout)
+          return
+        }
+        nodes.add(member)
+        const res = await latencyTestForSingle(member, url, timeout)
+        setHistory(member, res.status === 200 ? res.data.delay : NOT_CONNECTED)
+      }),
+    ),
+  )
+  await fetchProxies()
+  const all = [...nodes]
+  const failedNames = all.filter((name) => getLatencyByName(name) === NOT_CONNECTED)
+  void reportLatencyTimeouts(failedNames).then(() => syncLatencyHistory())
+  const testFailed = failedNames.length
+  showNotification({
+    content: 'testFinishedResultTip',
+    key: TIP_KEY + proxyGroupName,
+    params: {
+      name: getNameForNotification(proxyGroupName, url),
+      total: all.length.toString(),
+      success: `${all.length - testFailed}`,
+      failed: `${testFailed}`,
+    },
+    type: testFailed ? 'alert-warning' : 'alert-success',
+    timeout: 3000,
+  })
+}
+
 export const proxyGroupLatencyTest = async (proxyGroupName: string) => {
   const proxyNode = proxyMap.value[proxyGroupName]
   const all = proxyNode.all ?? []
   const url = getTestUrl(proxyGroupName)
+
+  if (isFailoverGroup(proxyGroupName)) return failoverGroupLatencyTest(proxyGroupName)
 
   if (
     [PROXY_TYPE.Selector, PROXY_TYPE.LoadBalance, PROXY_TYPE.Smart].includes(
