@@ -42,9 +42,9 @@ export default defineComponent({
         </>
       )
 
-      // 窄屏上四个按钮换到第二行靠右,不挤搜索框;宽屏跟在搜索框后面靠右
+      // 和搜索框同一行(手机上也是):搜索框 flex-1 让位,四个按钮不换行
       const quickSites = (
-        <div class="ml-auto flex shrink-0 items-center gap-1 max-sm:basis-full max-sm:justify-end">
+        <div class="ml-auto flex shrink-0 items-center gap-1">
           {QUICK_SITES.map((site) => (
             <button
               key={site.id}
@@ -65,7 +65,7 @@ export default defineComponent({
       )
 
       const content = (
-        <div class="app-card-padding flex w-full min-w-0 flex-wrap items-center gap-2">
+        <div class="app-card-padding flex w-full min-w-0 items-center gap-2">
           {searchInput}
           {quickSites}
         </div>
