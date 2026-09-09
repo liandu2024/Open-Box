@@ -12,7 +12,8 @@ import TextInput from '../common/TextInput.vue'
 const QUICK_SITES = [
   { id: 'baidu', name: '百度', host: 'www.baidu.com', icon: 'brand:baidu' },
   { id: 'google', name: 'Google', host: 'www.google.com', icon: 'brand:google' },
-  { id: 'chatgpt', name: 'ChatGPT', host: 'chatgpt.com', icon: 'brand:openai' },
+  // 用绿底白字那版:黑色的 OpenAI 标在暗色主题上看不见
+  { id: 'chatgpt', name: 'ChatGPT', host: 'chatgpt.com', icon: 'brand:openai-green' },
   { id: 'telegram', name: 'Telegram', host: 'web.telegram.org', icon: 'brand:telegram' },
 ]
 
@@ -57,7 +58,7 @@ export default defineComponent({
               <img
                 src={iconUrlFor(site.icon)}
                 alt={site.name}
-                class="h-4 w-4"
+                class="h-5 w-5"
               />
             </button>
           ))}
