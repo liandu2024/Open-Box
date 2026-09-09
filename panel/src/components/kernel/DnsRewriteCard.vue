@@ -50,16 +50,10 @@
             :disabled="saving"
             @change="toggleRule(rule, ($event.target as HTMLInputElement).checked)"
           />
-          <div class="flex min-w-0 flex-1 flex-col">
-            <div class="flex min-w-0 flex-wrap items-center gap-x-1.5 font-mono text-xs">
-              <span class="truncate">{{ rule.source }}</span>
-              <span class="text-base-content/50">→</span>
-              <span class="truncate">{{ targetText(rule) }}</span>
-            </div>
-            <span
-              v-if="rule.note"
-              class="text-base-content/60 truncate text-xs"
-            >{{ rule.note }}</span>
+          <div class="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 font-mono text-xs">
+            <span class="truncate">{{ rule.source }}</span>
+            <span class="text-base-content/50">→</span>
+            <span class="truncate">{{ targetText(rule) }}</span>
           </div>
           <button
             type="button"

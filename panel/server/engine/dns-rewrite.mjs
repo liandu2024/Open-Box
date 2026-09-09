@@ -28,8 +28,8 @@ export const DNS_REWRITE_FIXED_TTL = 60
 export const DNS_REWRITE_INIT_VERSION = 1
 
 export const DNS_REWRITE_DEFAULTS = Object.freeze([
-  Object.freeze({ id: 'default-services-googleapis-cn', enabled: true, source: 'services.googleapis.cn', domain: 'services.googleapis.com', addresses: [], note: 'Google Play' }),
-  Object.freeze({ id: 'default-developers-google-cn', enabled: true, source: 'developers.google.cn', domain: 'developers.google.com', addresses: [], note: 'Google' }),
+  Object.freeze({ id: 'default-services-googleapis-cn', enabled: true, source: 'services.googleapis.cn', domain: 'services.googleapis.com', addresses: [], note: '' }),
+  Object.freeze({ id: 'default-developers-google-cn', enabled: true, source: 'developers.google.cn', domain: 'developers.google.com', addresses: [], note: '' }),
 ])
 
 const DNS_LABEL = /^(?!-)[a-z0-9_-]{1,63}(?<!-)$/i
