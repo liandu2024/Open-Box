@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto'
+import { activeNodes } from './subscriptions.mjs'
 import { readSystemDns } from '../system/resolv.mjs'
 import { normalizeDnsRewrite, rewriteForwardDomains } from '../engine/dns-rewrite.mjs'
 import { readLocalSubnets } from '../system/local-subnets.mjs'
@@ -117,7 +118,7 @@ export const firstLayerChanged = async (ctx, paths, store, selections) => {
     const profile = store.getProfile() || {}
     const builtin = builtinTags(typeof store.getGroups === 'function' ? store.getGroups() : [])
     const dnsMode = (profile.dns && profile.dns.mode) || 'hijack'
-    const bypass = nativeBypassPlan(profile.routing, { members, builtin, selections: selections || {}, clientRoutes: normalizeClientRoutes(profile.clientRoutes), fakeIp: dnsFakeIpEnabled(profile), dnsMode })
+    const bypass = nativeBypassPlan(profile.routing, { members, builtin, selections: selections || {}, clientRoutes: normalizeClientRoutes(profile.clientRoutes, { directTag: builtin.direct }), fakeIp: dnsFakeIpEnabled(profile), dnsMode })
     // 和元数据里计划阶段的结论比(pending 的重叠核对要到部署时才做)。指纹含候选集合、核对对象(名字 + 集合 +
     // CIDR)和 FakeIP 前提——"核对对象从一条变成两条"这种变化只比站点集名字会漏掉(第四轮 T2)。老元数据没有
     // 指纹就退回比集合 / pending 名字
@@ -197,9 +198,9 @@ export const currentBypassPlan = (store, selections) => {
   const profile = store.getProfile() || {}
   const groups = typeof store.getGroups === 'function' ? store.getGroups() : []
   const builtin = builtinTags(groups)
-  const { publicTags } = emitUserGroups(groups, store.getNodes ? store.getNodes() : [], {})
+  const { publicTags } = emitUserGroups(groups, activeNodes(store), {})
   const members = policyOutboundOptions(normalizeRouting(profile.routing).outboundOptions, publicTags, builtin)
-  return nativeBypassPlan(profile.routing, { members, builtin, selections: selections || {}, clientRoutes: normalizeClientRoutes(profile.clientRoutes), fakeIp: dnsFakeIpEnabled(profile), dnsMode: (profile.dns && profile.dns.mode) || 'hijack' })
+  return nativeBypassPlan(profile.routing, { members, builtin, selections: selections || {}, clientRoutes: normalizeClientRoutes(profile.clientRoutes, { directTag: builtin.direct }), fakeIp: dnsFakeIpEnabled(profile), dnsMode: (profile.dns && profile.dns.mode) || 'hijack' })
 }
 
 // 代理页改完出口之后的同步判断 + 执行:DNS 分类翻面、或第一层计划(入口旁路指纹 / DNS 转发三态 / v6 保护
@@ -218,7 +219,8 @@ export const regenerateIfPlanChanged = async ({ store, ctx, paths, selections, l
 
 export const buildCurrentConfig = (store, systemDns, { cacheFilePath, selections, tlsCert, localSubnets = [], directHostCidrs = [], ruleLists = {}, profilePatch, nativeBypass } = {}) => {
   const profile = profilePatch ? { ...store.getProfile(), ...profilePatch } : store.getProfile()
-  const nodes = store.getNodes()
+  // 停用的订阅的节点不进内核(api/subscriptions.mjs 的 activeNodes)
+  const nodes = activeNodes(store)
   const clashApiSecret = store.getClashSecret()
   const config = buildConfig({
     cacheFilePath,
@@ -251,7 +253,7 @@ export const buildCurrentConfig = (store, systemDns, { cacheFilePath, selections
 const resolveDirectHostCidrs = async (store, systemDns, lookup) => {
   const profile = store.getProfile()
   if (profile.directForNodes === false) return []
-  const { domains } = collectDirectHosts(store.getNodes(), store.getSubscriptions ? store.getSubscriptions() : [])
+  const { domains } = collectDirectHosts(activeNodes(store), store.getSubscriptions ? store.getSubscriptions() : [])
   return resolveHostsToCidrs(domains, lookup ? { lookup } : { servers: systemDns })
 }
 

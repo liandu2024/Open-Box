@@ -97,9 +97,11 @@
               :refreshing="refreshingId === sub.id"
               deletable
               sortable
+              toggleable
               @refresh="handleRefresh(sub.id)"
               @delete="requestDelete(sub)"
               @edit="requestEdit(sub)"
+              @toggle="handleToggle(sub, $event)"
             />
           </template>
         </Draggable>
@@ -160,7 +162,7 @@
 import { notifySubscriptionSaved } from '@/store/openboxSubscriptions'
 import MarketLink from '@/components/common/MarketLink.vue'
 import type { OpenboxSubscription } from '@/api/openbox'
-import { deleteSubscription, fetchSubscriptions, refreshSubscription, reorderSubscriptions } from '@/api/openbox'
+import { deleteSubscription, fetchSubscriptions, refreshSubscription, reorderSubscriptions, updateSubscription } from '@/api/openbox'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import AddSubscriptionDialog from '@/components/subscription/AddSubscriptionDialog.vue'
 import NodeGroupsPanel from '@/components/subscription/NodeGroupsPanel.vue'
@@ -249,6 +251,21 @@ const handleEdited = () => {
 }
 
 const refreshingId = ref<string | null>(null)
+
+// 启用 / 停用一条订阅:只改开关不重拉;停用的节点不进内核,服务端按"节点池变了"回 changed,提示重启内核
+const handleToggle = async (sub: OpenboxSubscription, enabled: boolean) => {
+  try {
+    const res = await updateSubscription(sub.id, { enabled })
+    await loadSubscriptions()
+    notifySubscriptionSaved(res.changed, 'saved')
+  } catch (error) {
+    showNotification({
+      content: 'saveFailed',
+      params: { message: error instanceof Error ? error.message : String(error) },
+      type: 'alert-error',
+    })
+  }
+}
 
 const handleRefresh = async (id: string) => {
   if (refreshingId.value) return

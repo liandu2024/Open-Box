@@ -21,19 +21,25 @@ const ipv4InRange = (ipInt, base, bits) => {
 // 需要拒绝的 IPv4 网段:RFC1918 私有段、127.0.0.0/8 回环、169.254.0.0/16 链路本地、
 // 0.0.0.0/8("本网络"/未指定)、100.64.0.0/10(RFC6598 CGNAT,运营商内网,同样不该被面板
 // 当作"外部"目标访问)。后两个是本轮复审新增的缺口。
-const IPV4_DENY_RANGES = [
+// 分两档:allowPrivate 时放行「内网 / 回环 / CGNAT」(自建在局域网或本机的 subconverter 出的订阅
+// 地址,GitHub #42),但未指定地址和链路本地任何时候都不放——它们不可能是一个订阅服务
+const IPV4_PRIVATE_RANGES = [
   ['10.0.0.0', 8],
   ['172.16.0.0', 12],
   ['192.168.0.0', 16],
   ['127.0.0.0', 8],
-  ['169.254.0.0', 16],
-  ['0.0.0.0', 8],
   ['100.64.0.0', 10],
 ]
+const IPV4_NEVER_RANGES = [
+  ['169.254.0.0', 16],
+  ['0.0.0.0', 8],
+]
 
-const isDeniedIPv4 = (ip) => {
+const isDeniedIPv4 = (ip, { allowPrivate = false } = {}) => {
   const ipInt = ipv4ToInt(ip)
-  return IPV4_DENY_RANGES.some(([base, bits]) => ipv4InRange(ipInt, base, bits))
+  if (IPV4_NEVER_RANGES.some(([base, bits]) => ipv4InRange(ipInt, base, bits))) return true
+  if (allowPrivate) return false
+  return IPV4_PRIVATE_RANGES.some(([base, bits]) => ipv4InRange(ipInt, base, bits))
 }
 
 // ---- IPv6 ----
@@ -78,32 +84,33 @@ const groupsToIPv4 = (groups) => {
   return [(last32 >>> 24) & 0xff, (last32 >>> 16) & 0xff, (last32 >>> 8) & 0xff, last32 & 0xff].join('.')
 }
 
-const isDeniedIPv6 = (ip) => {
+const isDeniedIPv6 = (ip, { allowPrivate = false } = {}) => {
   const groups = toIPv6FullGroups(ip.toLowerCase())
   if (groups.length !== 8) return true // 展开失败的畸形地址,保守拒绝(fail closed)
 
   // IPv4-mapped(::ffff:0:0/96):先归一成 IPv4 再套用同一份 IPv4 拒绝名单,
   // 不管原始书写是点分十进制还是十六进制分组。
   if (isIPv4MappedGroups(groups)) {
-    return isDeniedIPv4(groupsToIPv4(groups))
+    return isDeniedIPv4(groupsToIPv4(groups), { allowPrivate })
   }
 
   if (groups.every((g) => g === 0)) return true // "::" 未指定地址(RFC4291)
-  if (groups.slice(0, 7).every((g) => g === 0) && groups[7] === 1) return true // "::1" 回环
-
   const first = groups[0]
-  if ((first & 0xfe00) === 0xfc00) return true // fc00::/7 唯一本地地址
   if ((first & 0xffc0) === 0xfe80) return true // fe80::/10 链路本地
+  if (allowPrivate) return false
+  if (groups.slice(0, 7).every((g) => g === 0) && groups[7] === 1) return true // "::1" 回环
+  if ((first & 0xfe00) === 0xfc00) return true // fc00::/7 唯一本地地址
   return false
 }
 
 // 判定一个"字面 IP"(不做任何域名解析)是否为公网地址。非法/非 IP 输入一律判定为
 // "不是公网地址"——调用方通常只在明确已知是 IP 字面量时才会走到这里。
-export const isPublicAddress = (address) => {
+// allowPrivate:内网 / 回环也算"可以去"(只拒未指定和链路本地),给订阅拉取用
+export const isPublicAddress = (address, { allowPrivate = false } = {}) => {
   const trimmed = String(address).trim()
   const version = net.isIP(trimmed)
-  if (version === 4) return !isDeniedIPv4(trimmed)
-  if (version === 6) return !isDeniedIPv6(trimmed)
+  if (version === 4) return !isDeniedIPv4(trimmed, { allowPrivate })
+  if (version === 6) return !isDeniedIPv6(trimmed, { allowPrivate })
   return false
 }
 
@@ -123,7 +130,8 @@ const stripBrackets = (hostname) => String(hostname).replace(/^\[|\]$/g, '').tri
 // 解析 hostname(用 node:dns/promises 的 lookup + {all:true}),对每一个返回地址都要求
 // 是公网地址——命中任意一个非公网地址就拒绝;解析失败(NXDOMAIN/超时等)同样拒绝,
 // "解析不出来"不等于"安全",不能放行。
-export const assertPublicHost = async (hostname, { lookup = dns.lookup } = {}) => {
+// allowPrivate:放行内网 / 本机地址(订阅可以来自局域网里自建的 subconverter);未指定 / 链路本地照拒
+export const assertPublicHost = async (hostname, { lookup = dns.lookup, allowPrivate = false } = {}) => {
   const trimmed = stripBrackets(hostname)
   if (!trimmed) {
     throw new Error('hostname is required')
@@ -142,8 +150,10 @@ export const assertPublicHost = async (hostname, { lookup = dns.lookup } = {}) =
 
   for (const record of records) {
     const address = record && record.address
-    if (!isPublicAddress(address)) {
-      throw new Error(`host "${trimmed}" resolves to a non-public address (${address})`)
+    if (!isPublicAddress(address, { allowPrivate })) {
+      throw new Error(allowPrivate
+        ? `host "${trimmed}" resolves to an unroutable address (${address})`
+        : `host "${trimmed}" resolves to a non-public address (${address})`)
     }
   }
 

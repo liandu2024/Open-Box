@@ -145,8 +145,11 @@ export interface OpenboxClientRoute {
   enabled: boolean
   name: string
   sources: string[]
-  // 出站名:内置直连 / 拒绝、节点组、站点集
+  // 出站名:内置直连 / 拒绝、节点组、站点集;不进内核(bypass)时可以为空
   outbound: string
+  // 不进内核:按 MAC 在入口就放行(sing-box 1.14 的 exclude_mac_address,需要 auto_redirect),像 OpenClash 的黑名单
+  bypass?: boolean
+  macs?: string[]
 }
 
 export interface OpenboxProfile {
@@ -158,7 +161,7 @@ export interface OpenboxProfile {
   region: string
   ipv6: boolean
   // IPv6 开着时走代理的目标怎么处理:node 交给节点(默认)/ ipv4 降为 IPv4(走代理的域名不给 AAAA,裸 v6 明确拒绝)
-  ipv6Proxy?: 'node' | 'ipv4'
+  ipv6Proxy?: 'node' | 'ipv4' | 'bypass'
   tun?: { autoRedirect?: boolean }
   dns: OpenboxProfileDns
   routing: OpenboxProfileRouting
@@ -224,6 +227,8 @@ export interface OpenboxSubscription {
   id: string
   name: string
   url: string
+  // 停用(false)的订阅节点不进内核,重启内核生效;没有这个字段 = 启用
+  enabled?: boolean
   autoUpdate?: OpenboxSubscriptionAutoUpdate | null
   // 全部订阅地址(可以有多个,节点合在一起);url 是其中第一条,老记录只有 url
   urls?: string[]
@@ -424,7 +429,7 @@ export const createSubscription = async (payload: {
 // so a plain rename works even while the provider is unreachable (see subscriptions.mjs PATCH).
 export const updateSubscription = async (
   id: string,
-  payload: { name?: string; url?: string; urls?: string[]; content?: string; renameOptions?: OpenboxRenameOptions; autoUpdate?: OpenboxSubscriptionAutoUpdate },
+  payload: { name?: string; url?: string; urls?: string[]; content?: string; renameOptions?: OpenboxRenameOptions; autoUpdate?: OpenboxSubscriptionAutoUpdate; enabled?: boolean },
 ): Promise<OpenboxSubscriptionSaveResult> => {
   return requestJson(`/api/openbox/subscriptions/${encodeURIComponent(id)}`, {
     method: 'PATCH',
@@ -1230,4 +1235,4 @@ export const checkServerPort = (port: number, id: string) =>
   requestJson<OpenboxPortCheck>(`/api/openbox/servers/port-check?port=${port}&id=${encodeURIComponent(id)}`)
 
 // 终端分流选来源用:DHCP 租约里的设备 + 今天流量里出现过的来源 IP
-export const fetchKnownClients = () => requestJson<{ clients: Array<{ ip: string; name: string }> }>('/api/openbox/clients')
+export const fetchKnownClients = () => requestJson<{ clients: Array<{ ip: string; name: string; mac?: string }> }>('/api/openbox/clients')

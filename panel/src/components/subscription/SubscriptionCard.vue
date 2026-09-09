@@ -17,8 +17,15 @@
         <div class="min-w-0 flex-1">
           <!-- 字号和「节点」页签里节点组卡片的标题一致:名字 text-base,附注 text-xs -->
           <div class="flex min-w-0 items-center gap-1">
-            <span class="shrink-0 text-base">{{ subscription.name }}</span>
+            <span
+              class="shrink-0 text-base"
+              :class="subscription.enabled === false && 'text-base-content/50'"
+            >{{ subscription.name }}</span>
             <span class="text-base-content/60 truncate text-xs">({{ countText }})</span>
+            <span
+              v-if="subscription.enabled === false"
+              class="badge badge-outline badge-sm shrink-0"
+            >{{ $t('subscriptionDisabledBadge') }}</span>
           </div>
           <div class="text-base-content/60 mt-1 text-left text-sm">
             {{ $t('updated') }} {{ updatedAtText }}
@@ -26,7 +33,17 @@
         </div>
         <!-- 右边:一排按钮,下面一行是定期更新的计划(有的话) -->
         <div class="flex shrink-0 flex-col items-end gap-1">
-        <div class="flex gap-2">
+        <div class="flex items-center gap-2">
+          <!-- 启用 / 停用:停用的订阅节点不进内核(重启内核生效),订阅记录和节点池都留着 -->
+          <input
+            v-if="toggleable"
+            type="checkbox"
+            class="toggle toggle-sm z-30"
+            v-tip="$t('subscriptionEnabledToggle')"
+            :checked="subscription.enabled !== false"
+            @click.stop
+            @change="$emit('toggle', ($event.target as HTMLInputElement).checked)"
+          />
           <button
             type="button"
             class="btn btn-circle btn-sm z-30"
@@ -136,12 +153,15 @@ const props = defineProps<{
   deletable?: boolean
   // 显示拖拽把手(订阅管理页的列表用)
   sortable?: boolean
+  // 显示启用 / 停用开关(订阅管理页)
+  toggleable?: boolean
 }>()
 
 defineEmits<{
   refresh: []
   edit: []
   delete: []
+  toggle: [enabled: boolean]
 }>()
 
 // 这条订阅的节点 = 内核里正在跑的、归属于它的出站。内核没跑就是空的,卡片上只剩订阅

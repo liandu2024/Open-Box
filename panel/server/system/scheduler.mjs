@@ -97,6 +97,8 @@ export const runScheduledTasks = async ({ store, ctx, paths, fetchImpl = globalT
     for (const id of Object.keys(subState)) if (!subs.some((s) => s.id === id)) { delete subState[id]; changed = true }
     let poolChanged = false
     for (const sub of subs) {
+      // 停用的订阅不拉(GitHub #40)
+      if (sub.enabled === false) continue
       const plan = sub.autoUpdate
       if (!plan || plan.enabled !== true || Number(plan.hour) !== hour) continue
       const st = subState[sub.id] || {}

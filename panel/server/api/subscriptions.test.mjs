@@ -29,10 +29,10 @@ const fakePublicLookup = async (hostname) => {
 
 // 起一个绑定临时端口的最小 express app,注册待测路由,返回 baseUrl 供 fetch 打真实 HTTP 请求;
 // close() 必须在 finally 里调用,防止测试遗留监听中的 server。
-const startApp = async (fetchImpl, lookup = fakePublicLookup) => {
+const startApp = async (fetchImpl, lookup = fakePublicLookup, extra = {}) => {
   const store = memStore()
   const app = express()
-  registerSubscriptionRoutes(app, { store, fetchImpl, lookup })
+  registerSubscriptionRoutes(app, { store, fetchImpl, lookup, ...extra })
   const server = app.listen(0)
   await new Promise((resolve, reject) => {
     server.once('listening', resolve)
@@ -254,50 +254,6 @@ test('创建时缺 url 或 name → 400', async () => {
 // 面板本身跑在网关上,拉取订阅是"服务端发起、URL 客户端可控"——不加限制就能拿来当跳板
 // 探测回环/内网端口。校验必须发生在真的调用 fetchImpl 之前,且不能改变已存状态。
 
-test('SSRF 防护:订阅 URL 指向回环地址(127.0.0.1)→ 400,且从未真正调用 fetchImpl', async () => {
-  let called = false
-  const fetchImpl = async () => {
-    called = true
-    return { ok: true, status: 200, text: async () => HK_LINE }
-  }
-  const { baseUrl, store, close } = await startApp(fetchImpl)
-  try {
-    const res = await postJson(baseUrl, '/api/openbox/subscriptions', {
-      url: 'http://127.0.0.1:9095/sub',
-      name: 'Loopback',
-    })
-    assert.equal(res.status, 400)
-    const body = await res.json()
-    assert.ok(body.error)
-    assert.equal(called, false) // 校验在拉取之前就已经拒绝
-    assert.deepEqual(store.getSubscriptions(), [])
-    assert.deepEqual(store.getNodes(), [])
-  } finally {
-    await close()
-  }
-})
-
-test('SSRF 防护:订阅 URL 指向内网地址(192.168.x.x)→ 400,且从未真正调用 fetchImpl', async () => {
-  // 必须显式注入 fetchImpl(而不是让它退化到 globalThis.fetch)——192.168.1.1 是极常见的
-  // 路由器默认地址,真打一次网络请求既慢又环境相关(不同网络下可能真的连得通)。
-  let called = false
-  const fetchImpl = async () => {
-    called = true
-    return { ok: true, status: 200, text: async () => HK_LINE }
-  }
-  const { baseUrl, store, close } = await startApp(fetchImpl)
-  try {
-    const res = await postJson(baseUrl, '/api/openbox/subscriptions', {
-      url: 'http://192.168.1.1/sub',
-      name: 'Private',
-    })
-    assert.equal(res.status, 400)
-    assert.equal(called, false)
-    assert.deepEqual(store.getSubscriptions(), [])
-  } finally {
-    await close()
-  }
-})
 
 test('SSRF 防护:非 http/https 协议(file://)→ 400,且从未真正调用 fetchImpl', async () => {
   let called = false
@@ -314,22 +270,6 @@ test('SSRF 防护:非 http/https 协议(file://)→ 400,且从未真正调用 fe
     assert.equal(res.status, 400)
     const body = await res.json()
     assert.ok(body.error)
-    assert.equal(called, false)
-  } finally {
-    await close()
-  }
-})
-
-test('SSRF 防护:preview 接口同样校验(用 url 而非 content 时),且从未真正调用 fetchImpl', async () => {
-  let called = false
-  const fetchImpl = async () => {
-    called = true
-    return { ok: true, status: 200, text: async () => HK_LINE }
-  }
-  const { baseUrl, close } = await startApp(fetchImpl)
-  try {
-    const res = await postJson(baseUrl, '/api/openbox/subscriptions/preview', { url: 'http://[::1]/sub' })
-    assert.equal(res.status, 400)
     assert.equal(called, false)
   } finally {
     await close()
@@ -425,91 +365,7 @@ test('refresh 成功后只替换该订阅节点,其它订阅节点不受影响',
 // IPv4-mapped 地址漏判、缺失网段(0.0.0.0/::/CGNAT)、重定向不复检。下面每条对应一个用例,
 // 全部断言 400 + fetchImpl 从未真正被调用到"危险目的地"。
 
-test('round2 绕过 1/4:主机名解析后指向回环(localhost → 127.0.0.1)→ 400,且从未真正拉取', async () => {
-  let called = false
-  const fetchImpl = async () => { called = true; return { ok: true, status: 200, text: async () => HK_LINE } }
-  // 模拟真实世界里 "localhost" 会被解析成回环地址(不同平台可能给 ::1 和/或 127.0.0.1)——
-  // 旧实现只看字面量、从不解析,这条 PoC 就是靠这一点直接放行的。
-  const lookup = async (hostname) => {
-    assert.equal(hostname, 'localhost') // 断言：确实是先剥括号再传给 lookup 的裸主机名
-    return [{ address: '127.0.0.1', family: 4 }]
-  }
-  const { baseUrl, close } = await startApp(fetchImpl, lookup)
-  try {
-    const res = await postJson(baseUrl, '/api/openbox/subscriptions/preview', { url: 'http://localhost:9999/sub' })
-    assert.equal(res.status, 400)
-    const body = await res.json()
-    assert.ok(body.error)
-    assert.equal(called, false)
-  } finally {
-    await close()
-  }
-})
 
-test('round2 绕过 2/4:IPv6 十六进制形式的 IPv4-mapped 地址(::ffff:7f00:1 即 127.0.0.1)→ 400', async () => {
-  let called = false
-  const fetchImpl = async () => { called = true; return { ok: true, status: 200, text: async () => HK_LINE } }
-  const { baseUrl, close } = await startApp(fetchImpl) // 默认 fakePublicLookup 对字面 IP 原样透传
-  try {
-    const res = await postJson(baseUrl, '/api/openbox/subscriptions/preview', { url: 'http://[::ffff:7f00:1]:9999/sub' })
-    assert.equal(res.status, 400)
-    const body = await res.json()
-    assert.ok(body.error)
-    assert.equal(called, false)
-  } finally {
-    await close()
-  }
-})
-
-test('round2 绕过 3/4:此前遗漏的网段(0.0.0.0、::、100.64.0.0/10 CGNAT)全部 → 400', async () => {
-  const targets = ['0.0.0.0', '[::]', '100.64.0.1', '100.100.100.100']
-  for (const host of targets) {
-    let called = false
-    const fetchImpl = async () => { called = true; return { ok: true, status: 200, text: async () => HK_LINE } }
-    const { baseUrl, close } = await startApp(fetchImpl)
-    try {
-      const res = await postJson(baseUrl, '/api/openbox/subscriptions/preview', { url: `http://${host}:9999/sub` })
-      assert.equal(res.status, 400, `host=${host} 应被拒绝`)
-      assert.equal(called, false, `host=${host} 不应真正拉取`)
-    } finally {
-      await close()
-    }
-  }
-})
-
-test('round2 绕过 4/4:302 重定向指向回环地址 → 400,从未真正打到重定向目标(zero hits)', async () => {
-  let redirectTargetHit = false
-  // 这个 mock 刻意模拟真实 fetch 的规范行为:只有显式传 redirect:'manual' 时才把原始
-  // 3xx + Location 头原样交回;否则(旧实现没传这个选项,默认值是 'follow')就悄悄跟到
-  // Location、把最终响应直接返回给调用方——回环目标在这种默认行为下从未被重新校验过,
-  // 这正是复审 PoC 利用的点。用这种"条件化"mock 而不是无脑返回 302,才能让这条用例在
-  // 旧代码上真实复现漏洞(得到 200),在新代码上验证修复(得到 400 + zero hits)。
-  const fetchImpl = async (url, options) => {
-    if (url === 'https://public.example.com/sub') {
-      if (options && options.redirect === 'manual') {
-        return {
-          ok: false,
-          status: 302,
-          headers: { get: (name) => (name.toLowerCase() === 'location' ? 'http://127.0.0.1:9095/evil' : null) },
-        }
-      }
-      redirectTargetHit = true
-      return { ok: true, status: 200, text: async () => HK_LINE }
-    }
-    redirectTargetHit = true
-    return { ok: true, status: 200, text: async () => HK_LINE }
-  }
-  const { baseUrl, close } = await startApp(fetchImpl)
-  try {
-    const res = await postJson(baseUrl, '/api/openbox/subscriptions/preview', { url: 'https://public.example.com/sub' })
-    assert.equal(res.status, 400)
-    const body = await res.json()
-    assert.ok(body.error)
-    assert.equal(redirectTargetHit, false) // 从未真正打到重定向目标
-  } finally {
-    await close()
-  }
-})
 
 test('round2:合法的 302 重定向链(公网 → 公网)仍然放行', async () => {
   let hops = 0
@@ -1235,5 +1091,147 @@ test('创建时所有 UA 都被 403 → 400,错误里逐个列出 UA 和状态�
     assert.equal(netCalls, 1, '网络错误和 UA 无关,不该逐个 UA 重试')
   } finally {
     await app2.close()
+  }
+})
+
+// ---------- 订阅地址允许内网 / 本机(GitHub #42):自建 subconverter 就在局域网或路由器上 ----------
+test('#42:内网 / 回环 / CGNAT 的订阅地址正常拉取(127.0.0.1、192.168.x.x、localhost → 127.0.0.1、::ffff:7f00:1、100.64.x)', async () => {
+  const cases = [
+    { url: 'http://127.0.0.1:25500/sub' },
+    { url: 'http://192.168.1.2/sub' },
+    { url: 'http://[::ffff:7f00:1]:9999/sub' },
+    { url: 'http://100.64.0.1:9999/sub' },
+    { url: 'http://localhost:25500/sub', lookup: async () => [{ address: '127.0.0.1', family: 4 }] },
+  ]
+  for (const c of cases) {
+    let called = 0
+    const fetchImpl = async () => { called += 1; return { ok: true, status: 200, text: async () => HK_LINE } }
+    const { baseUrl, close } = await startApp(fetchImpl, c.lookup)
+    try {
+      const res = await postJson(baseUrl, '/api/openbox/subscriptions/preview', { url: c.url })
+      assert.equal(res.status, 200, `${c.url} 应能拉取`)
+      assert.equal(called, 1, `${c.url} 应真正发起拉取`)
+    } finally {
+      await close()
+    }
+  }
+  // 创建也一样能存下
+  let called = false
+  const fetchImpl = async () => { called = true; return { ok: true, status: 200, text: async () => HK_LINE } }
+  const { baseUrl, store, close } = await startApp(fetchImpl)
+  try {
+    const res = await postJson(baseUrl, '/api/openbox/subscriptions', { url: 'http://192.168.198.123:25500/sub?target=clash', name: 'LAN' })
+    assert.equal(res.status, 200)
+    assert.equal(called, true)
+    assert.equal(store.getSubscriptions().length, 1)
+  } finally {
+    await close()
+  }
+})
+
+test('SSRF 防护(仍保留):未指定地址 / 链路本地(0.0.0.0、::、169.254.x、fe80::)→ 400,且从未真正拉取;file:// 照拒', async () => {
+  const targets = ['0.0.0.0', '[::]', '169.254.1.1', '[fe80::1]']
+  for (const host of targets) {
+    let called = false
+    const fetchImpl = async () => { called = true; return { ok: true, status: 200, text: async () => HK_LINE } }
+    const { baseUrl, close } = await startApp(fetchImpl)
+    try {
+      const res = await postJson(baseUrl, '/api/openbox/subscriptions/preview', { url: `http://${host}:9999/sub` })
+      assert.equal(res.status, 400, `host=${host} 应被拒绝`)
+      assert.equal(called, false, `host=${host} 不应真正拉取`)
+    } finally {
+      await close()
+    }
+  }
+})
+
+test('重定向逐跳仍校验:302 到内网地址放行并真的去拉;302 到链路本地 → 400、从未打到目标', async () => {
+  const run = async (location) => {
+    let hit = ''
+    const fetchImpl = async (url, options) => {
+      if (url === 'https://public.example.com/sub' && options && options.redirect === 'manual') {
+        return { ok: false, status: 302, headers: { get: (name) => (name.toLowerCase() === 'location' ? location : null) } }
+      }
+      hit = String(url)
+      return { ok: true, status: 200, text: async () => HK_LINE }
+    }
+    const { baseUrl, close } = await startApp(fetchImpl)
+    try {
+      const res = await postJson(baseUrl, '/api/openbox/subscriptions/preview', { url: 'https://public.example.com/sub' })
+      return { status: res.status, hit }
+    } finally {
+      await close()
+    }
+  }
+  const lan = await run('http://192.168.1.2:25500/real')
+  assert.equal(lan.status, 200)
+  assert.equal(lan.hit, 'http://192.168.1.2:25500/real')
+  const linkLocal = await run('http://169.254.1.1/evil')
+  assert.equal(linkLocal.status, 400)
+  assert.equal(linkLocal.hit, '')
+})
+
+// ---------- GitHub #37:Node fetch 全被拒 → 系统 curl 兜底 ----------
+test('#37:所有 UA 都被 403 时改用 curl 拉(同一个 UA、逐个试),拿到节点就用;没注入 curl 的测试路径不会去跑系统 curl', async () => {
+  const fetchImpl = async () => ({ ok: false, status: 403, text: async () => 'forbidden' })
+  const curlCalls = []
+  const curlFetch = async (url, { userAgent }) => {
+    curlCalls.push(`${userAgent} ${url}`)
+    // 第一个 UA 也被拒,第二个才通:兜底那边同样逐个试
+    if (curlCalls.length === 1) return { status: 403, text: '' }
+    return { status: 200, text: HK_LINE }
+  }
+  const { baseUrl, close } = await startApp(fetchImpl, fakePublicLookup, { curlFetch })
+  try {
+    const res = await postJson(baseUrl, '/api/openbox/subscriptions/preview', { url: 'https://public.example.com/sub' })
+    assert.equal(res.status, 200)
+    const body = await res.json()
+    assert.ok(body.nodes && body.nodes.length >= 1, JSON.stringify(body).slice(0, 200))
+    assert.equal(curlCalls.length, 2)
+    assert.ok(curlCalls[0].startsWith('clash-verge/v2.0.0 https://public.example.com/sub'))
+  } finally {
+    await close()
+  }
+  // 系统没有 curl(available:false)→ 照旧报「拒绝了所有客户端标识」
+  const { baseUrl: b2, close: c2 } = await startApp(fetchImpl, fakePublicLookup, { curlFetch: async () => ({ available: false }) })
+  try {
+    const res = await postJson(b2, '/api/openbox/subscriptions/preview', { url: 'https://public.example.com/sub' })
+    assert.equal(res.status, 400)
+    assert.match((await res.json()).error, /拒绝了所有客户端标识/)
+  } finally {
+    await c2()
+  }
+})
+
+// ---------- GitHub #40:订阅启用 / 停用 ----------
+test('#40:PATCH enabled 只改开关不重拉,开关翻转算节点池变了(changed:true);停用的订阅节点不在 activeNodes 里,记录和节点池原样', async () => {
+  const fetchImpl = async () => ({ ok: true, status: 200, text: async () => HK_LINE })
+  const { baseUrl, store, close } = await startApp(fetchImpl)
+  try {
+    const created = await (await postJson(baseUrl, '/api/openbox/subscriptions', { url: 'https://public.example.com/sub', name: 'A' })).json()
+    const id = created.id
+    const total = store.getNodes().length
+    assert.ok(total >= 1)
+    let calls = 0
+    const counting = async (...a) => { calls += 1; return fetchImpl(...a) }
+    void counting
+    const off = await fetch(`${baseUrl}/api/openbox/subscriptions/${id}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ enabled: false }) })
+    assert.equal(off.status, 200)
+    const offBody = await off.json()
+    assert.equal(offBody.changed, true, '停用 = 节点不进内核,要提示重启')
+    assert.equal(store.getSubscriptions()[0].enabled, false)
+    assert.equal(store.getNodes().length, total, '节点池不动')
+    const { activeNodes } = await import('./subscriptions.mjs')
+    assert.equal(activeNodes(store).length, 0)
+    // 再存一次同样的开关:没变化
+    const same = await (await fetch(`${baseUrl}/api/openbox/subscriptions/${id}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ enabled: false }) })).json()
+    assert.equal(same.changed, false)
+    const on = await (await fetch(`${baseUrl}/api/openbox/subscriptions/${id}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ enabled: true }) })).json()
+    assert.equal(on.changed, true)
+    assert.equal(activeNodes(store).length, total)
+    const bad = await fetch(`${baseUrl}/api/openbox/subscriptions/${id}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ enabled: 'yes' }) })
+    assert.equal(bad.status, 400)
+  } finally {
+    await close()
   }
 })
