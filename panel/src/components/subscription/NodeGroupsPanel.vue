@@ -533,57 +533,35 @@
                     <PlusIcon class="h-4 w-4" />
                   </button>
                 </div>
-                <!-- 当前页签:图标(空 = 继承分组图标)+ 自定义名 + 前移 / 后移 / 删除 -->
+                <!-- 当前页签一行:图标(默认显示分组的图标,单独挑了才存自己的)· 页签名 · 删除。顺序靠拖页签调 -->
                 <div
                   v-if="activeLane"
-                  class="border-base-content/10 flex min-w-0 flex-wrap items-center gap-1 border-b px-2 py-1 text-xs"
+                  class="border-base-content/10 flex min-w-0 items-center gap-1 border-b px-2 py-1 text-xs"
                 >
-                  <div class="w-40">
+                  <div class="w-32 shrink-0">
                     <CountrySelect
-                      v-model="activeLane.icon"
+                      v-model="activeLaneIcon"
                       clearable
                       globes
                       brands
-                      :placeholder="$t('failoverLaneIconInherit')"
+                      :placeholder="$t('groupIconLabel')"
                     />
                   </div>
                   <input
                     v-model="activeLane.name"
                     type="text"
-                    class="input input-xs w-28"
+                    class="input input-sm min-w-0 flex-1"
                     :placeholder="$t('failoverLaneNamePlaceholder')"
                   />
-                  <div class="ml-auto flex items-center gap-0.5">
-                    <button
-                      type="button"
-                      class="btn btn-ghost btn-square btn-xs"
-                      :disabled="activeLaneIndex <= 0"
-                      :aria-label="$t('failoverMoveEarlier')"
-                      v-tip="$t('failoverMoveEarlier')"
-                      @click="moveLane(-1)"
-                    >
-                      <ChevronLeftIcon class="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      class="btn btn-ghost btn-square btn-xs"
-                      :disabled="activeLaneIndex < 0 || activeLaneIndex >= draft.lanes.length - 1"
-                      :aria-label="$t('failoverMoveLater')"
-                      v-tip="$t('failoverMoveLater')"
-                      @click="moveLane(1)"
-                    >
-                      <ChevronRightIcon class="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      class="btn btn-ghost btn-square btn-xs hover:text-error"
-                      :aria-label="$t('failoverDeleteLane')"
-                      v-tip="$t('failoverDeleteLane')"
-                      @click="askDeleteLane(activeLane)"
-                    >
-                      <TrashIcon class="h-3.5 w-3.5" />
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    class="btn btn-ghost btn-square btn-sm shrink-0 hover:text-error"
+                    :aria-label="$t('failoverDeleteLane')"
+                    v-tip="$t('failoverDeleteLane')"
+                    @click="askDeleteLane(activeLane)"
+                  >
+                    <TrashIcon class="h-4 w-4" />
+                  </button>
                 </div>
               </template>
               <div class="border-base-content/10 flex flex-col gap-1 border-b px-2 py-1.5">
@@ -1088,7 +1066,6 @@ const failoverSettings = computed(() => (draft.value?.type === 'failover' ? draf
 const showAdvanced = ref(false)
 const activeLaneId = ref('')
 const activeLane = computed(() => draft.value?.lanes?.find((l) => l.id === activeLaneId.value) ?? null)
-const activeLaneIndex = computed(() => draft.value?.lanes?.findIndex((l) => l.id === activeLaneId.value) ?? -1)
 const nodeNameSet = computed(() => new Set(availableNodes.value.map((n) => n.name)))
 const validCount = (lane: OpenboxFailoverLane) => lane.members.filter((m) => nodeNameSet.value.has(m)).length
 const laneRoleLabel = (index: number) => (index === 0 ? t('failoverPrimary') : t('failoverBackupN', { n: index }))
@@ -1112,16 +1089,14 @@ const addLane = () => {
   draft.value.lanes = [...draft.value.lanes, lane]
   selectLane(lane.id)
 }
-const moveLane = (dir: -1 | 1) => {
-  const lanes = draft.value?.lanes
-  const i = activeLaneIndex.value
-  if (!lanes || i < 0) return
-  const j = i + dir
-  if (j < 0 || j >= lanes.length) return
-  const next = [...lanes]
-  ;[next[i], next[j]] = [next[j]!, next[i]!]
-  draft.value!.lanes = next
-}
+// 当前页签的图标:没单独挑就显示(并继承)分组的图标;挑成和分组一样的就存空,继续跟着分组走
+const activeLaneIcon = computed<string>({
+  get: () => activeLane.value?.icon || draft.value?.icon || '',
+  set: (v: string) => {
+    if (!activeLane.value) return
+    activeLane.value.icon = v && v !== (draft.value?.icon || '') ? v : ''
+  },
+})
 const showLaneDelete = ref(false)
 const pendingLane = ref<OpenboxFailoverLane | null>(null)
 const deleteLane = (id: string) => {

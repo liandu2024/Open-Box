@@ -567,8 +567,6 @@ const zh: LANG_MESSAGE = {
   failoverAddLane: '添加备用页签',
   failoverDeleteLane: '删除页签',
   failoverDeleteLaneConfirm: '确定删除「{lane}」?它里面的 {count} 个节点会从这个页签移除(取消整个弹窗则不保存)。',
-  failoverMoveEarlier: '前移(优先级提高)',
-  failoverMoveLater: '后移(优先级降低)',
   failoverLaneNamePlaceholder: '页签名(可选)',
   failoverLaneIconInherit: '继承分组图标',
   failoverModeEmpty: '没有有效节点',

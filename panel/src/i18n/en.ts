@@ -572,8 +572,6 @@ const en = {
   failoverAddLane: 'Add backup lane',
   failoverDeleteLane: 'Delete lane',
   failoverDeleteLaneConfirm: 'Delete "{lane}"? Its {count} nodes are removed from this lane (cancelling the dialog discards everything).',
-  failoverMoveEarlier: 'Move earlier (higher priority)',
-  failoverMoveLater: 'Move later (lower priority)',
   failoverLaneNamePlaceholder: 'Lane name (optional)',
   failoverLaneIconInherit: 'Inherit group icon',
   failoverModeEmpty: 'no valid node',

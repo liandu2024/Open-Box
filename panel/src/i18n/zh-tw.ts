@@ -567,8 +567,6 @@ const zhTW: LANG_MESSAGE = {
   failoverAddLane: '新增備用頁籤',
   failoverDeleteLane: '刪除頁籤',
   failoverDeleteLaneConfirm: '確定刪除「{lane}」?它裡面的 {count} 個節點會從這個頁籤移除(取消整個對話框則不儲存)。',
-  failoverMoveEarlier: '前移(優先級提高)',
-  failoverMoveLater: '後移(優先級降低)',
   failoverLaneNamePlaceholder: '頁籤名(可選)',
   failoverLaneIconInherit: '繼承分組圖示',
   failoverModeEmpty: '沒有有效節點',
