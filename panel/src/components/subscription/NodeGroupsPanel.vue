@@ -517,7 +517,8 @@
                         :class="['btn btn-xs shrink-0 cursor-move whitespace-nowrap', lane.id === activeLaneId ? 'btn-primary' : 'btn-ghost border-base-content/15 border']"
                         @click="selectLane(lane.id)"
                       >
-                        {{ laneRoleLabel(index) }}<template v-if="lane.name"> · {{ lane.name }}</template>
+                        <!-- 页签栏只标角色和有效节点数;自定义名在下面当前页签那行改,不占页签栏的宽度 -->
+                        {{ laneRoleLabel(index) }}
                         <span class="opacity-70 tabular-nums">· {{ validCount(lane) }}</span>
                       </button>
                     </template>

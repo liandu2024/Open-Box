@@ -14,9 +14,8 @@
 
 <script setup lang="ts">
 import { proxyMap } from '@/store/proxies'
-import { failoverLaneOfTag, isFailoverInternalTag } from '@/store/openboxFailover'
+import { failoverDisplayName } from '@/store/openboxFailover'
 import { computed } from 'vue'
-import { useI18n } from 'vue-i18n'
 import ProxyIcon from './ProxyIcon.vue'
 
 const props = withDefaults(
@@ -32,15 +31,8 @@ const props = withDefaults(
 )
 
 const node = computed(() => proxyMap.value[props.name])
-const { t } = useI18n()
-// 故障转移的内部子组 tag(__fo:组id:页签id)不是产品名称:链路里显示成「主用 / 备用 1」这样的页签角色
-const displayName = computed(() => {
-  if (!isFailoverInternalTag(props.name)) return props.name
-  const hit = failoverLaneOfTag(props.name)
-  if (!hit) return t('failoverLaneFallback')
-  const role = hit.index === 0 ? t('failoverPrimary') : t('failoverBackupN', { n: hit.index })
-  return hit.lane.name ? `${role} · ${hit.lane.name}` : role
-})
+// 故障转移的内部子组 tag(__fo:组id:页签id)不是产品名称:显示成页签名,没起名就显示「主用 / 备用 N」
+const displayName = computed(() => failoverDisplayName(props.name))
 const icon = computed(() => {
   return node.value?.icon
 })

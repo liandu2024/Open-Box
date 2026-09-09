@@ -40,6 +40,7 @@
 </template>
 
 <script setup lang="ts">
+import { isFailoverInternalTag } from '@/store/openboxFailover'
 import { getDescendantProxyGroups, getProxyGroupChains, proxyMap } from '@/store/proxies'
 import { collapseGroupMap } from '@/store/settings'
 import { ChevronDownIcon } from '@heroicons/vue/24/outline'
@@ -59,8 +60,10 @@ const isExpanded = ref(false)
 const groupNameRoot = props.groupName
 const selectedPenetrationGroupMap = ref<Record<string, string>>({})
 
+// 故障转移的内部子组(__fo:…)不单独成一层:父组那一层已经直接列到节点了
 const getActualNextGroupName = (groupName: string) => {
-  return getProxyGroupChains(groupName)[1] ?? ''
+  const next = getProxyGroupChains(groupName)[1] ?? ''
+  return isFailoverInternalTag(next) ? '' : next
 }
 
 const getSelectedNextGroupName = (groupName: string) => {
@@ -68,6 +71,7 @@ const getSelectedNextGroupName = (groupName: string) => {
 
   if (
     selectedName &&
+    !isFailoverInternalTag(selectedName) &&
     (proxyMap.value[groupName]?.all ?? []).includes(selectedName) &&
     proxyMap.value[selectedName]?.all?.length
   ) {

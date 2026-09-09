@@ -24,9 +24,9 @@
         </div>
         <div class="flex min-w-0 flex-1 flex-col gap-1">
           <div class="flex min-w-0 items-center gap-1">
-            <span class="shrink-0 text-base">{{ name }}</span>
+            <span class="shrink-0 text-base">{{ displayName }}</span>
             <span class="text-base-content/60 min-w-0 flex-1 truncate text-xs">
-              {{ proxyGroup.type }} ({{ proxiesCount }})
+              {{ typeText }} ({{ proxiesCount }})
             </span>
             <button
               v-if="manageHiddenGroup"
@@ -75,7 +75,7 @@
             :icon-margin="proxyGroupIconMargin"
           />
           <span class="text-base-content/60 ml-1 text-xs">
-            {{ proxyGroup.type }} ({{ proxiesCount }})
+            {{ typeText }} ({{ proxiesCount }})
           </span>
           <button
             v-if="manageHiddenGroup"
@@ -125,7 +125,7 @@
         <ProxyPreview
           v-else
           :nodes="renderProxies"
-          :now="proxyGroup.now"
+          :now="leafNow"
           :groupName="proxyGroup.name"
           :relaxed-dots-spacing="true"
           @nodeclick="handlePreviewSelect"
@@ -140,7 +140,7 @@
       <Component
         :is="groupProxiesByProvider ? ProxiesByProvider : ProxiesContent"
         :name="name"
-        :now="proxyGroup.now"
+        :now="leafNow"
         :render-proxies="renderProxies"
         :render-all="true"
         @select="handleSelectionChange"
@@ -170,9 +170,11 @@ import {
   proxyGroupIconSize,
   useLargeProxyGroupIcon,
 } from '@/store/settings'
+import { failoverDisplayName, failoverFlatNodes, failoverMembersOf } from '@/store/openboxFailover'
 import { EyeIcon, EyeSlashIcon } from '@heroicons/vue/24/outline'
 import { twMerge } from 'tailwind-merge'
 import { computed, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import LatencyTag from './LatencyTag.vue'
 import ProxiesByProvider from './ProxiesByProvider.vue'
 import ProxiesContent from './ProxiesContent.vue'
@@ -197,7 +199,10 @@ const props = withDefaults(
   },
 )
 
+const { t } = useI18n()
 const proxyGroup = computed(() => proxyMap.value[props.name])
+// 故障转移的内部子组显示成页签名 / 角色
+const displayName = computed(() => failoverDisplayName(props.name))
 const penetrationCollapseKey = computed(
   () => `penetration:${props.rootGroupName || props.name}:level-${props.level}`,
 )
@@ -209,7 +214,19 @@ const showCollapse = computed({
     collapseGroupMap.value[penetrationCollapseKey.value] = value
   },
 })
-const allProxies = computed(() => proxyGroup.value.all ?? [])
+// 故障转移父组:穿透直接到节点——这一层列各页签的真实节点(不列内部子组、不列兜底拒绝),高亮的是内核实际
+// 落到的那个节点(父组选中的可能是内部子组,再往下取它选中的节点)
+const isNode = (name: string) => Boolean(proxyMap.value[name]) && !proxyMap.value[name].all?.length
+const flatNodes = computed(() => failoverFlatNodes(props.name, isNode))
+// 故障转移组在穿透里也叫「故障转移」,不因底层是 selector 就显示成手动组
+const typeText = computed(() => (flatNodes.value ? t('groupType_failover_short') : proxyGroup.value.type))
+const allProxies = computed(() => flatNodes.value ?? failoverMembersOf(props.name, proxyGroup.value.all ?? []))
+const leafNow = computed(() => {
+  const now = proxyGroup.value.now ?? ''
+  if (!flatNodes.value) return now
+  const sub = proxyMap.value[now]
+  return sub?.all?.length ? (sub.now ?? now) : now
+})
 const { proxiesCount, renderProxies } = useRenderProxies(allProxies, props.name)
 const isLatencyTesting = ref(false)
 

@@ -26,11 +26,11 @@
       /><span
         v-if="active"
         class="text-primary-content"
-        >{{ node.name }}</span
+        >{{ displayName }}</span
       ><span
         v-else
         class="text-base-content"
-        >{{ node.name }}</span
+        >{{ displayName }}</span
       >
     </div>
 
@@ -53,6 +53,7 @@
 </template>
 
 <script setup lang="ts">
+import { failoverDisplayName } from '@/store/openboxFailover'
 import { PROXY_CARD_SIZE, PROXY_SORT_TYPE, PROXY_TYPE } from '@/constant'
 import { checkTruncation } from '@/helper/tooltip'
 import { scrollIntoCenter } from '@/helper/utils'
@@ -93,6 +94,8 @@ const props = defineProps<{
 
 const cardRef = ref()
 const node = computed(() => proxyMap.value[props.name])
+// 故障转移的内部子组显示成页签名 / 角色,不露 __fo: 技术 tag
+const displayName = computed(() => failoverDisplayName(node.value.name))
 const isLatencyTesting = ref(false)
 const typeFormatter = (type: string) => {
   type = type.toLowerCase()

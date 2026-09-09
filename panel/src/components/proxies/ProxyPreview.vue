@@ -53,6 +53,7 @@
 </template>
 
 <script setup lang="ts">
+import { failoverDisplayName } from '@/store/openboxFailover'
 import { NOT_CONNECTED, PROXY_PREVIEW_TYPE } from '@/constant'
 import { getColorForLatency } from '@/helper'
 import { useTooltip } from '@/helper/tooltip'
@@ -108,7 +109,7 @@ const makeTippy = (e: Event, node: { name: string; latency: number }) => {
   const tag = document.createElement('div')
   const name = document.createElement('div')
 
-  name.textContent = node.name
+  name.textContent = failoverDisplayName(node.name)
   tag.append(name)
 
   if (node.latency !== NOT_CONNECTED) {

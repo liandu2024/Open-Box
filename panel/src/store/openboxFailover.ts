@@ -1,5 +1,6 @@
 import type { OpenboxFailoverGroupStatus, OpenboxFailoverStatus } from '@/api/openbox'
 import { fetchFailoverStatus } from '@/api/openbox'
+import { i18n } from '@/i18n'
 import { managedOutbounds } from '@/store/openboxSiteSets'
 import { computed, ref } from 'vue'
 
@@ -44,6 +45,45 @@ export const watchFailoverStatus = () => {
       watchers = 0
     }
   }
+}
+
+// 页签的角色名:第一个主用,后面依次备用 1、2……
+export const failoverRoleLabel = (index: number) =>
+  index === 0 ? i18n.global.t('failoverPrimary') : i18n.global.t('failoverBackupN', { n: index })
+
+// 内部子组 tag 在代理页 / 策略穿透里显示成什么:用户给页签起了名就显示名字,没起就显示角色(主用 / 备用 N);
+// 不是内部 tag 就原样返回。__fo:g-xxx:lane-yyy 这种技术 tag 不是产品名称,任何地方都不该露出来
+export const failoverDisplayName = (name: string) => {
+  if (!isFailoverInternalTag(name)) return name
+  const hit = failoverLaneOfTag(name)
+  if (!hit) return i18n.global.t('failoverLaneFallback')
+  return hit.lane.name || failoverRoleLabel(hit.index)
+}
+
+// 故障转移父组成员表里的兜底拒绝(内置「拒绝」或内部 __fo:reject):它是内核配置里的兜底,不是用户能选的候选,
+// 代理页 / 策略穿透列成员时不显示它
+export const isFailoverRejectMember = (groupName: string, member: string) => {
+  const group = managedOutbounds.value.find((g) => g.name === groupName)
+  if (!group || group.type !== 'failover') return false
+  if (member === `${FAILOVER_INTERNAL_PREFIX}reject`) return true
+  const block = managedOutbounds.value.find((g) => g.kind === 'block')
+  return Boolean(block && member === block.name)
+}
+export const failoverMembersOf = (groupName: string, all: string[]) =>
+  all.filter((member) => !isFailoverRejectMember(groupName, member))
+
+// 策略穿透要直接穿到节点:故障转移父组这一层列的不是页签(内部子组),而是各页签的真实节点按页签顺序摊开
+// (去重、只留内核里真有的节点);内部子组不再单独成一层。isNode 由调用方给(store/proxies 里的 proxyMap)
+export const failoverFlatNodes = (groupName: string, isNode: (name: string) => boolean) => {
+  const group = managedOutbounds.value.find((g) => g.name === groupName)
+  if (!group || group.type !== 'failover') return null
+  const out: string[] = []
+  for (const lane of group.lanes ?? []) {
+    for (const member of lane.members) {
+      if (isNode(member) && !out.includes(member)) out.push(member)
+    }
+  }
+  return out
 }
 
 // 内部子组 tag → 它是哪个故障转移组的第几个页签。按节点管理里的定义找(不用等运行状态):
