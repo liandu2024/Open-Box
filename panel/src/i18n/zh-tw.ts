@@ -590,6 +590,7 @@ const zhTW: LANG_MESSAGE = {
   failoverReasonLaneFailed: '頁籤失效',
   failoverReasonRestore: '主用恢復',
   failoverReasonAllFailed: '全部失效',
+  failoverReasonPriority: '按新順序重選',
   failoverReasonRecovered: '候選恢復',
   failoverReasonInitial: '初次選擇',
   groupUnitMs: '毫秒',

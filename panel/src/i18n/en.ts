@@ -594,6 +594,7 @@ const en = {
   failoverReasonLaneFailed: 'lane failed',
   failoverReasonRestore: 'primary recovered',
   failoverReasonAllFailed: 'all failed',
+  failoverReasonPriority: 'Reselected by new order',
   failoverReasonRecovered: 'candidate recovered',
   failoverReasonInitial: 'initial pick',
   groupUnitMs: 'ms',

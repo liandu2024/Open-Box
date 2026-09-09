@@ -138,6 +138,7 @@ export const failoverLastSwitchText = (groupName: string, lanes: FailoverLaneVie
     'lane-failed': 'failoverReasonLaneFailed',
     'restore-primary': 'failoverReasonRestore',
     'all-failed': 'failoverReasonAllFailed',
+    'priority-changed': 'failoverReasonPriority',
     recovered: 'failoverReasonRecovered',
     initial: 'failoverReasonInitial',
   }

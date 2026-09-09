@@ -416,3 +416,202 @@ test('测速地址是 http:// 的:单节点探测和子组重选发给内核的�
   assert.ok(delayCalls.length >= 5, delayCalls.join('\n'))
   assert.ok(delayCalls.every((c) => c.includes('url=https%3A%2F%2Fcp.cloudflare.com%2Fgenerate_204&')), delayCalls.join('\n'))
 })
+
+// ---------- 用户改了页签顺序(主备优先级)之后的重选 ----------
+const reorderTo = ({ k, ctx }, ids, metaAt = 'v2') => {
+  const original = mapping()
+  const ordered = mapping({ lanes: ids.map((id, index) => ({ ...original.lanes.find((l) => l.id === id), index })) })
+  ctx.files[configMetaPath(paths)] = metaJson(metaAt, [ordered])
+  k.proxies['主备'].all = [...ordered.lanes.map((l) => l.ref), '拒绝']
+  return ordered
+}
+const persistedOf = (store) => JSON.parse(store.getRaw(FAILOVER_STATE_KEY)).groups.fo1
+
+test('验收 A:A 全失败已切到 B,用户把顺序改成 A/C/B 并应用 → 下一轮确认 C 通过就切到 C(priority-changed),不用重启、不要求 B 先失败', async () => {
+  const s = setup()
+  const { k, mgr, store } = s
+  await mgr.tick()
+  k.down.add('a1'); k.down.add('a2')
+  await s.round(); await s.round()
+  assert.equal(group(mgr).currentLaneId, 'B')
+  // 顺序没变、只是 C 延迟更低:不动(备用延迟更低不是切换理由)
+  await s.round()
+  assert.equal(group(mgr).currentLaneId, 'B')
+  assert.equal(group(mgr).reorder, null)
+  assert.deepEqual(persistedOf(store).laneOrder, ['A', 'B', 'C'])
+  reorderTo(s, ['A', 'C', 'B'])
+  const r = await s.round()
+  assert.deepEqual(group(mgr).lanes.map((l) => l.id), ['A', 'C', 'B'])
+  assert.equal(r.ran['主备'].switched.reason, 'priority-changed')
+  assert.equal(group(mgr).currentLaneId, 'C')
+  assert.equal(k.now(), '__fo:fo1:C')
+  assert.equal(group(mgr).status, 'backup')
+  assert.equal(group(mgr).lastSwitch.reason, 'priority-changed')
+  assert.deepEqual(persistedOf(store).laneOrder, ['A', 'C', 'B'])
+  // 主用还在失败:待办保留(A 恢复了要按规则处理),但不再来回切
+  assert.ok(group(mgr).reorder && group(mgr).reorder.reason === 'priority-changed')
+  await s.round(); await s.round()
+  assert.equal(group(mgr).currentLaneId, 'C')
+  assert.equal(k.calls.filter((c) => c.startsWith('PUT')).length, 2)
+  // 主用恢复:仍按既有规则等满 60 秒才切回,切回后待办落定
+  k.down.clear()
+  await s.round()
+  assert.equal(group(mgr).currentLaneId, 'C')
+  await s.round(); await s.round()
+  assert.equal(group(mgr).currentLaneId, 'A')
+  assert.equal(group(mgr).lastSwitch.reason, 'restore-primary')
+  assert.equal(group(mgr).reorder, null)
+})
+
+test('验收 A:只是重新生成配置(顺序没变,改名 / 换图标)不算重排,不重选;新增或删掉页签才按新顺序看', async () => {
+  const s = setup()
+  const { k, mgr } = s
+  await mgr.tick()
+  k.down.add('a1'); k.down.add('a2')
+  await s.round(); await s.round()
+  assert.equal(group(mgr).currentLaneId, 'B')
+  const renamed = mapping({ lanes: mapping().lanes.map((l) => ({ ...l, name: `页签${l.id}` })) })
+  s.ctx.files[configMetaPath(paths)] = metaJson('v2', [renamed])
+  await s.round()
+  assert.equal(group(mgr).reorder, null)
+  assert.equal(group(mgr).currentLaneId, 'B')
+  assert.equal(k.calls.filter((c) => c.startsWith('PUT')).length, 1)
+})
+
+test('验收 B:排序应用后、重选完成前重启管理器 / 内核不可达 → 待办跟着落盘,最终仍按新顺序切到 C', async () => {
+  const s = setup()
+  const { k, ctx, store } = s
+  // C 的探测先报 500(未知):重排后目标没确认,保留 B
+  const unknownC = { on: false }
+  const fetchImpl = async (url, init) => {
+    if (unknownC.on && /\/proxies\/c[12]\/delay/.test(decodeURIComponent(String(url)))) return { ok: false, status: 500, json: async () => ({}) }
+    return k.fetchImpl(url, init)
+  }
+  const make = () => createFailoverManager({ store, ctx, paths, fetchImpl, now: s.clock, log: () => {} })
+  let mgr = make()
+  await mgr.tick()
+  k.down.add('a1'); k.down.add('a2')
+  s.advance(30_000); await mgr.tick(); s.advance(30_000); await mgr.tick()
+  assert.equal(group(mgr).currentLaneId, 'B')
+  unknownC.on = true
+  reorderTo(s, ['A', 'C', 'B'])
+  s.advance(30_000); await mgr.tick()
+  assert.equal(group(mgr).currentLaneId, 'B', 'C 未确认:保留 B')
+  assert.equal(lanes(mgr).C, 'unknown')
+  assert.ok(group(mgr).reorder && group(mgr).reorder.evaluated === false)
+  assert.ok(persistedOf(store).reorder, '待办落盘')
+  // 管理器重启(面板重启):从落盘记录接着办
+  mgr.stop()
+  mgr = make()
+  s.advance(30_000); await mgr.tick()
+  assert.equal(group(mgr).currentLaneId, 'B')
+  assert.ok(group(mgr).reorder, '重启后待办还在')
+  // 内核不可达一轮(内核重启):暂停,不动
+  k.setReachable(false)
+  s.advance(30_000); await mgr.tick()
+  assert.equal(mgr.status().paused, 'kernel')
+  k.setReachable(true)
+  // C 确认通过:立刻切
+  unknownC.on = false
+  s.advance(30_000); await mgr.tick()
+  assert.equal(group(mgr).currentLaneId, 'C')
+  assert.equal(k.now(), '__fo:fo1:C')
+  assert.equal(group(mgr).lastSwitch.reason, 'priority-changed')
+})
+
+test('验收 B:老的落盘记录没有顺序信息(停在旧备用 B)→ 校正一次:新顺序里更靠前的 C 通过就挪过去;校正只做到当前是第一个通过的为止', async () => {
+  // 旧版存的记录:只有 laneId,没有 laneOrder / reorder
+  const store = memStore()
+  store.setRaw(FAILOVER_STATE_KEY, JSON.stringify({ groups: { fo1: { laneId: 'B', at: T0 - 600_000, lastSwitch: { at: T0 - 600_000, reason: 'lane-failed' } } } }))
+  let clock = T0
+  const k = kernel(() => clock)
+  k.down.add('a1'); k.down.add('a2')
+  k.proxies['主备'].now = 'b1'
+  const ordered = mapping({ lanes: ['A', 'C', 'B'].map((id, index) => ({ ...mapping().lanes.find((l) => l.id === id), index })) })
+  k.proxies['主备'].all = [...ordered.lanes.map((l) => l.ref), '拒绝']
+  const ctx = createMockContext({ files: { [configMetaPath(paths)]: metaJson('v9', [ordered]) }, execResults: { 'pidof sing-box': { code: 1, stdout: '' } } })
+  const mgr = createFailoverManager({ store, ctx, paths, fetchImpl: k.fetchImpl, now: () => clock, log: () => {} })
+  await mgr.tick()
+  assert.equal(group(mgr).currentLaneId, 'C')
+  assert.equal(k.now(), '__fo:fo1:C')
+  assert.equal(group(mgr).lastSwitch.reason, 'priority-changed')
+  assert.equal(group(mgr).reorder, null, '校正完成即落定')
+  assert.deepEqual(persistedOf(store).laneOrder, ['A', 'C', 'B'])
+  // 关着「恢复后切回」、停在健康的备用而主用也健康:校正不把它挪回主用
+  const store2 = memStore()
+  store2.setRaw(FAILOVER_STATE_KEY, JSON.stringify({ groups: { fo1: { laneId: 'B', at: T0 - 600_000, lastSwitch: null } } }))
+  const k2 = kernel(() => clock)
+  k2.proxies['主备'].now = 'b1'
+  const ctx2 = createMockContext({ files: { [configMetaPath(paths)]: metaJson('v9', [mapping({ settings: { ...mapping().settings, restorePrimary: false } })]) }, execResults: { 'pidof sing-box': { code: 1, stdout: '' } } })
+  const mgr2 = createFailoverManager({ store: store2, ctx: ctx2, paths, fetchImpl: k2.fetchImpl, now: () => clock, log: () => {} })
+  await mgr2.tick()
+  assert.equal(group(mgr2).currentLaneId, 'B')
+  assert.equal(k2.now(), 'b1')
+  assert.equal(group(mgr2).reorder, null)
+  assert.equal(k2.calls.filter((c) => c.startsWith('PUT')).length, 0)
+})
+
+test('验收 C:重排时 C 正失败 → 仍用 B、待办保留;C 恢复后和主用恢复一样连续通过满 60 秒再挪过去', async () => {
+  const s = setup()
+  const { k, mgr } = s
+  await mgr.tick()
+  k.down.add('a1'); k.down.add('a2')
+  await s.round(); await s.round()
+  assert.equal(group(mgr).currentLaneId, 'B')
+  k.down.add('c1'); k.down.add('c2')
+  reorderTo(s, ['A', 'C', 'B'])
+  await s.round()
+  assert.equal(group(mgr).currentLaneId, 'B')
+  assert.equal(lanes(mgr).C, 'down')
+  assert.ok(group(mgr).reorder && group(mgr).reorder.evaluated === true)
+  k.down.delete('c1'); k.down.delete('c2')
+  await s.round()            // C 刚通过:等
+  assert.equal(group(mgr).currentLaneId, 'B')
+  await s.round()            // 30 秒
+  assert.equal(group(mgr).currentLaneId, 'B')
+  await s.round()            // 60 秒:挪
+  assert.equal(group(mgr).currentLaneId, 'C')
+  assert.equal(group(mgr).lastSwitch.reason, 'priority-changed')
+})
+
+test('验收 C:切换接口被拒 → 保留实际选择 B 并记原因,待办不算已判断;接口恢复后下一轮完成重选', async () => {
+  const s = setup()
+  const { k, mgr } = s
+  await mgr.tick()
+  k.down.add('a1'); k.down.add('a2')
+  await s.round(); await s.round()
+  assert.equal(group(mgr).currentLaneId, 'B')
+  reorderTo(s, ['A', 'C', 'B'])
+  k.setRefuseSwitch(true)
+  await s.round()
+  assert.equal(group(mgr).currentLaneId, 'B')
+  assert.equal(k.now(), 'b1')
+  assert.match(group(mgr).lastError, /切换失败/)
+  assert.ok(group(mgr).reorder && group(mgr).reorder.evaluated === false)
+  k.setRefuseSwitch(false)
+  await s.round()
+  assert.equal(group(mgr).currentLaneId, 'C')
+  assert.equal(k.now(), '__fo:fo1:C')
+})
+
+test('验收 A:重排后目标页签和当前引用同一个出站(两个单节点页签挂同一个节点)→ 只改关联,不发切换', async () => {
+  const twin = mapping({ lanes: [
+    { id: 'A', name: '', index: 0, members: ['a1', 'a2'], valid: ['a1', 'a2'], mode: 'urltest', ref: '__fo:fo1:A', subTag: '__fo:fo1:A' },
+    { id: 'B', name: '', index: 1, members: ['b1'], valid: ['b1'], mode: 'single', ref: 'b1', subTag: null },
+    { id: 'D', name: '', index: 2, members: ['b1'], valid: ['b1'], mode: 'single', ref: 'b1', subTag: null },
+  ] })
+  const s = setup({ failover: [twin] })
+  const { k, mgr, ctx } = s
+  k.proxies['主备'].all = ['__fo:fo1:A', 'b1', '拒绝']
+  await mgr.tick()
+  k.down.add('a1'); k.down.add('a2')
+  await s.round(); await s.round()
+  assert.equal(group(mgr).currentLaneId, 'B')
+  const puts = k.calls.filter((c) => c.startsWith('PUT')).length
+  const swapped = mapping({ lanes: [twin.lanes[0], { ...twin.lanes[2], index: 1 }, { ...twin.lanes[1], index: 2 }] })
+  ctx.files[configMetaPath(paths)] = metaJson('v2', [swapped])
+  await s.round()
+  assert.equal(group(mgr).currentLaneId, 'D')
+  assert.equal(k.now(), 'b1')
+  assert.equal(k.calls.filter((c) => c.startsWith('PUT')).length, puts, '没有多余的切换')
+})

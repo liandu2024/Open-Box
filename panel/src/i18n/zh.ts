@@ -590,6 +590,7 @@ const zh: LANG_MESSAGE = {
   failoverReasonLaneFailed: '页签失效',
   failoverReasonRestore: '主用恢复',
   failoverReasonAllFailed: '全部失效',
+  failoverReasonPriority: '按新顺序重选',
   failoverReasonRecovered: '候选恢复',
   failoverReasonInitial: '初次选择',
   groupUnitMs: '毫秒',

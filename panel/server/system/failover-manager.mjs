@@ -20,6 +20,10 @@
 //      确认失败才按页签顺序转到第一个通过的候选;当前不是主用、主用连续通过满 recoveryHoldMs 且
 //      开了「恢复后切回」就切回主用;全部候选都确认失败就切到兜底拒绝(不转直连),之后继续定期
 //      检查,有候选恢复再切回去;未知不触发任何切换。
+//      用户改了页签顺序(按稳定页签 id 的先后比,改名 / 换图标 / 别的原因重新生成配置都不算)是一次
+//      「按新优先级重选」的待办:更靠前的页签这轮确认通过就挪过去,不要求当前页签先失败、也和
+//      「恢复后切回」开关无关;目标是主用的仍走主用那套规则(开关 + 等待);目标还没确认或切换失败就
+//      保留当前、下一轮再看。待办跟着状态落盘,内核 / 面板重启后接着办,直到落定。
 //   6. 切换 = PUT /proxies/<父组> {name},再读回 now 确认;失败保留实际状态并记原因。
 //
 // 自动选择是运行状态,不回写用户的页签顺序;只把「当前在哪个页签」按稳定页签 id 存进
@@ -58,6 +62,7 @@ const mapLimit = async (items, limit, fn) => {
 }
 
 export const laneRole = (index) => (index === 0 ? 'primary' : `backup-${index}`)
+const sameOrder = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => x === b[i])
 
 export const createFailoverManager = ({
   store, ctx, paths, history = null, fetchImpl = globalThis.fetch, now = () => Date.now(),
@@ -81,7 +86,7 @@ export const createFailoverManager = ({
     if (!store.setRaw) return
     const groups = {}
     for (const g of states.values()) {
-      groups[g.id] = { laneId: g.currentLaneId, at: g.currentSince, lastSwitch: g.lastSwitch }
+      groups[g.id] = { laneId: g.currentLaneId, at: g.currentSince, lastSwitch: g.lastSwitch, laneOrder: g.laneOrder, reorder: g.reorder }
     }
     try { store.setRaw(FAILOVER_STATE_KEY, JSON.stringify({ groups })) } catch (err) { log(`[failover] 状态写不进去:${errText(err)}`) }
   }
@@ -118,9 +123,23 @@ export const createFailoverManager = ({
       const laneIds = new Set(lanes.map((l) => l.id))
       const hintLane = prev?.currentLaneId && laneIds.has(prev.currentLaneId) ? prev.currentLaneId
         : saved?.laneId && laneIds.has(saved.laneId) ? saved.laneId : null
+      // 页签顺序(稳定 id 的先后)和上一次已经应用的顺序比:变了就是用户改了主备优先级,记一条待办,
+      // 下一轮按新顺序重选(runRound 的决策);上次的待办没办完就带过来。老的落盘记录没有顺序信息
+      // (这个功能之前存下的):不知道用户有没有改过,记一次「按当前顺序校正」的待办,只校正到当前
+      // 页签就是新顺序里第一个通过的为止,不把停在备用上的强行挪回主用(那是「恢复后切回」开关的事)
+      const order = lanes.map((l) => l.id)
+      const prevOrder = Array.isArray(prev?.laneOrder) ? prev.laneOrder : Array.isArray(saved?.laneOrder) ? saved.laneOrder : null
+      const carried = prev?.reorder ?? saved?.reorder ?? null
+      let reorder = carried && typeof carried === 'object' ? { since: carried.since, reason: carried.reason, evaluated: Boolean(carried.evaluated) } : null
+      if (prevOrder && !sameOrder(prevOrder, order)) {
+        reorder = { since: now(), reason: 'priority-changed', evaluated: false }
+        log(`[failover] ${def.tag}:页签顺序从 ${prevOrder.join('/')} 改成 ${order.join('/')},下一轮按新顺序重选`)
+      } else if (!prevOrder && saved && !reorder) {
+        reorder = { since: now(), reason: 'order-unknown', evaluated: false }
+      }
       states.set(def.id, {
         id: def.id, tag: def.tag, rejectTag: def.rejectTag || '', settings: def.settings || {},
-        lanes,
+        lanes, laneOrder: order, reorder,
         // 关联提示:上个版本 / 上次重启前在哪个页签。只是提示——健康没重新核过之前不据此宣布任何事
         currentLaneId: hintLane, currentSince: prev?.currentSince ?? saved?.at ?? null,
         lastSwitch: prev?.lastSwitch ?? saved?.lastSwitch ?? null,
@@ -314,7 +333,49 @@ export const createFailoverManager = ({
     const anyUnknown = state.lanes.some((l) => l.health === 'unknown')
     let target = null
     let reason = ''
-    if (current) {
+    // 按新顺序重选的待办(见 loadMap):新顺序里第一个通过的页签就是该用的;它上面还有未知的页签先不动
+    // (等那些页签确认了再说)。目标是主用就交给下面既有的「恢复后切回」规则——开着回切等满 hold 再切,
+    // 关着回切这次重排就算落定。第一次能判断时立刻挪;之后(比如目标当时是失败的、后来才恢复)和主用
+    // 恢复一样等它连续通过满 recoveryHoldMs 再挪,免得刚恢复就来回切。
+    // 落定:当前页签就是新顺序里第一个通过的,且它上面没有别的页签(或只有空页签);上面还有确认失败的
+    // 页签时待办保留——那是用户明确表达的优先级,它恢复了要挪过去(备用之间平时不这么做)。「校正」
+    // (order-unknown)不是用户的动作,当前就是第一个通过的就直接落定
+    const unknownAbove = (lane) => state.lanes.some((l) => l.health === 'unknown' && l.index < lane.index)
+    const settleReorder = (why) => {
+      if (!state.reorder) return
+      log(`[failover] ${state.tag}:按页签顺序重选已落定(${why})`)
+      state.reorder = null
+    }
+    // 当前页签就是新顺序里第一个通过的:落定(或记为已判断)。决策前和切换后各看一次,切到位就当轮落定
+    const settleIfDone = () => {
+      if (!state.reorder) return
+      const cur = state.currentLaneId ? laneById(state, state.currentLaneId) : null
+      if (!cur || cur.health !== 'up') return
+      const preferred = state.lanes.find((l) => l.health === 'up') || null
+      if (!preferred || preferred.id !== cur.id || unknownAbove(preferred)) return
+      const nothingAbove = state.lanes.every((l) => l.index >= cur.index || l.mode === 'empty')
+      if (nothingAbove || state.reorder.reason !== 'priority-changed') settleReorder(`当前已是顺序里第一个通过的页签 ${laneRole(cur.index)}`)
+      else state.reorder.evaluated = true
+    }
+    let reorderMove = false
+    if (current && state.reorder) {
+      const preferred = state.lanes.find((l) => l.health === 'up') || null
+      if (preferred && !unknownAbove(preferred)) {
+        if (preferred.id === current.id) {
+          settleIfDone()
+        } else if (preferred.index === 0) {
+          if (!restorePrimary) settleReorder('目标是主用而「恢复后切回」关着')
+          else state.reorder.evaluated = true
+        } else if (!state.reorder.evaluated || (preferred.upSince !== null && at - preferred.upSince >= holdMs)) {
+          target = preferred; reason = 'priority-changed'; reorderMove = true
+        } else {
+          state.reorder.evaluated = true
+        }
+      }
+    }
+    if (target) {
+      /* 按新顺序重选已经定了目标 */
+    } else if (current) {
       if (current.health === 'up') {
         if (restorePrimary && primary && current.id !== primary.id && primary.health === 'up' && state.primaryUpSince !== null && at - state.primaryUpSince >= holdMs) {
           target = primary; reason = 'restore-primary'
@@ -339,12 +400,21 @@ export const createFailoverManager = ({
         state.lastSwitch = { at, from, to: { laneId: target.id, ref: nowRef }, reason }
         state.lastError = ''
         switched = { from: from.ref, to: nowRef, reason }
+        if (reorderMove && state.reorder) state.reorder.evaluated = true
         log(`[failover] ${state.tag}:${from.ref || '(空)'} → ${nowRef}(${reason})`)
       } catch (err) {
+        // 切换失败:保留实际状态,下一轮再试(按顺序重选的待办也原样留着,不算已经判断过)
         state.lastError = `切换失败:${errText(err)}`
         log(`[failover] ${state.tag} 切换到 ${target.ref} 失败:${errText(err)}`)
       }
+    } else if (target && target.id && target.ref === parentNow && target.id !== state.currentLaneId) {
+      // 目标页签引用的出站和内核当前选的是同一个(两个页签都只挂同一个节点):不用切,只把关联挪过去
+      state.currentLaneId = target.id
+      state.currentSince = at
+      if (reorderMove && state.reorder) state.reorder.evaluated = true
+      log(`[failover] ${state.tag}:关联改到页签 ${laneRole(target.index)},出站不变(${reason})`)
     }
+    settleIfDone()
     // 4. 状态
     const cur = state.currentLaneId ? laneById(state, state.currentLaneId) : null
     const kernelSel = switched ? switched.to : parentNow
@@ -441,6 +511,7 @@ export const createFailoverManager = ({
       id: g.id, tag: g.tag, status: g.status, paused: g.paused, lastError: g.lastError, rejectTag: g.rejectTag,
       currentLaneId: g.currentLaneId, currentSince: g.currentSince, kernelNow: g.kernelNow || null,
       lastSwitch: g.lastSwitch, lastRoundAt: g.lastRoundAt || null, nextRoundAt: g.nextRoundAt || null, inFlight: g.inFlight,
+      laneOrder: g.laneOrder, reorder: g.reorder || null,
       settings: g.settings,
       lanes: g.lanes.map((l) => ({
         id: l.id, name: l.name, index: l.index, role: laneRole(l.index), mode: l.mode, ref: l.ref, subTag: l.subTag,

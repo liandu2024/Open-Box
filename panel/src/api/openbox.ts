@@ -551,6 +551,9 @@ export interface OpenboxFailoverGroupStatus {
   lastSwitch: { at: number; from: { laneId: string | null; ref: string }; to: { laneId: string | null; ref: string }; reason: string } | null
   lastRoundAt: number | null
   nextRoundAt: number | null
+  // 已应用的页签顺序(稳定 id);用户改了顺序后的「按新顺序重选」待办,办完为 null
+  laneOrder?: string[]
+  reorder?: { since: number; reason: 'priority-changed' | 'order-unknown'; evaluated: boolean } | null
   inFlight: boolean
   settings: { interval?: string; intervalMs?: number; tolerance?: number; testUrl?: string } & Partial<OpenboxFailoverSettings>
   lanes: OpenboxFailoverLaneStatus[]
