@@ -445,6 +445,7 @@ const en = {
   ruleLookupMissingRuleSet: 'No matching RuleSet found in the current rule order',
   ruleLookupFallbackMatched: 'No rule cache hit. Traffic will fall back to the fallback rule',
   ruleSearchPlaceholder: 'Search domain / IP / keyword',
+  ruleQuickOpen: 'Open {site} in a new tab to check it loads under the current routing',
   copyLink: 'Copy link',
   category: 'Category',
   domainPenetration: 'Domain Drill',

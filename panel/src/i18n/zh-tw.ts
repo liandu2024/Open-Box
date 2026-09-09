@@ -441,6 +441,7 @@ const zhTW: LANG_MESSAGE = {
   ruleLookupMissingRuleSet: '未在目前規則順序中找到對應 RuleSet',
   ruleLookupFallbackMatched: '未命中規則快取，將落到兜底規則',
   ruleSearchPlaceholder: '搜尋 域名 / IP / 關鍵字',
+  ruleQuickOpen: '在新分頁開啟 {site},看目前分流下能不能訪問',
   copyLink: '複製連結',
   category: '類別',
   domainPenetration: '域名穿透',
