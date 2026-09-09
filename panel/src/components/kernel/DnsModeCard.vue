@@ -4,10 +4,7 @@
     <div class="card-body gap-3 p-4 text-sm">
       <div class="flex items-center justify-between gap-2">
         <div>
-          <h2 class="text-base font-semibold">
-            {{ $t('dnsModeTitle') }}
-            <span class="text-base-content/60 text-sm font-normal">({{ $t('dnsModePort', { port: KERNEL_DNS_PORT }) }})</span>
-          </h2>
+          <h2 class="text-base font-semibold">{{ $t('dnsModeTitle') }}({{ $t('dnsModePort', { port: KERNEL_DNS_PORT }) }})</h2>
           <p class="text-base-content/60 text-xs">{{ $t('dnsModeDescription') }}</p>
         </div>
         <select
