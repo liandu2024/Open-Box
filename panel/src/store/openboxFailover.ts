@@ -72,6 +72,14 @@ export const isFailoverRejectMember = (groupName: string, member: string) => {
 export const failoverMembersOf = (groupName: string, all: string[]) =>
   all.filter((member) => !isFailoverRejectMember(groupName, member))
 
+// 页签的图标:自己挑了就用自己的,没挑继承父组的(短码,给 iconUrlFor 转成地址)
+export const failoverLaneIconCode = (groupName: string, laneId: string) => {
+  const group = managedOutbounds.value.find((g) => g.name === groupName)
+  if (!group || group.type !== 'failover') return ''
+  const lane = group.lanes?.find((l) => l.id === laneId)
+  return lane?.icon || group.icon || ''
+}
+
 export const isFailoverGroup = (groupName: string) =>
   managedOutbounds.value.some((g) => g.name === groupName && g.type === 'failover')
 
@@ -86,6 +94,9 @@ export interface FailoverLaneView {
   valid: string[]
   invalid: string[]
   kernelNow: string | null
+  // 页签图标(短码;已按「自己的 → 继承父组」算好),iconScale 跟父组
+  icon: string
+  iconScale: number
 }
 export const failoverLanesOf = (
   groupName: string,
@@ -108,7 +119,7 @@ export const failoverLanesOf = (
     }
     const ref = st ? st.ref : valid.length === 1 ? valid[0]! : subTag
     const kernelNow = subTag ? (proxies[subTag]?.now ?? null) : valid.length === 1 ? valid[0]! : null
-    return { id: lane.id, index, label: lane.name || failoverRoleLabel(index), ref, subTag, valid, invalid, kernelNow }
+    return { id: lane.id, index, label: lane.name || failoverRoleLabel(index), ref, subTag, valid, invalid, kernelNow, icon: lane.icon || group.icon || '', iconScale: group.iconScale || 0 }
   })
 }
 // 内核此刻在哪个页签:先信服务端记录的当前页签,否则按顺序找第一个引用等于父组 now 的

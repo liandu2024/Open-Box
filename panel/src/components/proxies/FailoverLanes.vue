@@ -46,7 +46,14 @@
       ]"
     >
       <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-        <span class="font-medium">{{ laneLabel(lane) }}</span>
+        <span class="flex items-center font-medium">
+          <ProxyIcon
+            v-if="laneIconUrl(lane)"
+            :icon="laneIconUrl(lane)"
+            :size="16"
+            :scale="definition?.iconScale"
+          />{{ laneLabel(lane) }}
+        </span>
         <span
           v-if="lane.current"
           class="text-primary text-xs font-medium"
@@ -109,8 +116,10 @@ import type { OpenboxFailoverLaneHealth, OpenboxFailoverLaneStatus } from '@/api
 import { managedOutbounds } from '@/store/openboxSiteSets'
 import { failoverGroupByTag, watchFailoverStatus } from '@/store/openboxFailover'
 import { proxyMap } from '@/store/proxies'
+import { iconUrlFor } from '@/helper/iconUrl'
 import { computed, onBeforeUnmount, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
+import ProxyIcon from './ProxyIcon.vue'
 import ProxyName from './ProxyName.vue'
 
 const props = defineProps<{
@@ -128,6 +137,7 @@ const isKnownNode = (name: string) => Boolean(proxyMap.value[name]) && !proxyMap
 interface LaneView {
   id: string
   name: string
+  icon: string
   index: number
   mode: 'single' | 'urltest' | 'empty'
   health: OpenboxFailoverLaneHealth
@@ -154,6 +164,7 @@ const lanes = computed<LaneView[]>(() => {
     return {
       id: lane.id,
       name: lane.name,
+      icon: lane.icon || '',
       index,
       mode,
       health: st?.health ?? (mode === 'empty' ? 'down' : 'unknown'),
@@ -175,6 +186,8 @@ const currentNode = computed(() => {
 })
 
 const roleText = (index: number) => (index === 0 ? t('failoverPrimary') : t('failoverBackupN', { n: index }))
+// 页签图标:自己挑的,没挑继承分组的
+const laneIconUrl = (lane: { icon: string }) => iconUrlFor(lane.icon || definition.value?.icon || '')
 const laneLabel = (lane: { index: number; name: string }) =>
   lane.name ? `${roleText(lane.index)} · ${lane.name}` : roleText(lane.index)
 const modeText = (lane: LaneView) => {

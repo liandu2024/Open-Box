@@ -129,7 +129,7 @@ test('PUT /groups(failover):合法定义保存后 lanes 原样落库、mode 固�
   const saved = store.getGroups().find((g) => g.id === 'g-fo')
   assert.equal(saved.type, 'failover')
   assert.equal(saved.mode, 'static')
-  assert.deepEqual(saved.lanes, [{ id: 'L1', name: '', members: ['n1', 'n2'] }, { id: 'L2', name: '', members: ['n3'] }])
+  assert.deepEqual(saved.lanes, [{ id: 'L1', name: '', icon: '', members: ['n1', 'n2'] }, { id: 'L2', name: '', icon: '', members: ['n3'] }])
   assert.equal(saved.interval, '45s')
   assert.equal(saved.tolerance, 50)
   assert.deepEqual(saved.failover, { timeoutMs: 5000, failureThreshold: 3, restorePrimary: true, recoveryHoldMs: 60000 })

@@ -570,6 +570,7 @@ const zh: LANG_MESSAGE = {
   failoverMoveEarlier: '前移(优先级提高)',
   failoverMoveLater: '后移(优先级降低)',
   failoverLaneNamePlaceholder: '页签名(可选)',
+  failoverLaneIconInherit: '继承分组图标',
   failoverModeEmpty: '没有有效节点',
   failoverModeSingle: '单节点',
   failoverModeUrltest: '自动择优 · {count} 个节点',

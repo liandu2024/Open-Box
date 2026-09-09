@@ -149,8 +149,9 @@ const inRange = (v, [lo, hi], fallback) => {
   const n = Number(v)
   return Number.isFinite(n) && n >= lo && n <= hi ? Math.floor(n) : fallback
 }
-// 主备页签:id 稳定(拖拽排序、保存、运行状态都按它认),name 可选(不决定主备顺序),members 只存节点名、
-// 同一页签内去重。老记录缺 id 的补一个,重复的 id 加后缀——运行映射按 id 对齐,重复了就分不清
+// 主备页签:id 稳定(拖拽排序、保存、运行状态都按它认),name / icon 可选(不决定主备顺序;icon 空 = 继承
+// 父组的图标),members 只存节点名、同一页签内去重。老记录缺 id 的补一个,重复的 id 加后缀——运行映射按 id
+// 对齐,重复了就分不清
 export const normalizeLanes = (raw) => {
   const seen = new Set()
   return (Array.isArray(raw) ? raw : []).map((lane, i) => {
@@ -161,7 +162,7 @@ export const normalizeLanes = (raw) => {
     for (const m of Array.isArray(lane?.members) ? lane.members : []) {
       if (isNonEmptyString(m) && !members.includes(m.trim())) members.push(m.trim())
     }
-    return { id, name: isNonEmptyString(lane?.name) ? lane.name.trim() : '', members }
+    return { id, name: isNonEmptyString(lane?.name) ? lane.name.trim() : '', icon: isNonEmptyString(lane?.icon) ? lane.icon.trim() : '', members }
   })
 }
 
@@ -353,11 +354,11 @@ export const emitUserGroups = (groups, nodes, options = {}) => {
       // 只认真实节点:引用组 / 已删掉的节点一律不算有效成员(失效引用留在 members 里给界面显示)
       const valid = lane.members.filter((m) => nodeTagSet.has(m))
       if (!valid.length) {
-        lanes.push({ id: lane.id, name: lane.name, index, members: lane.members, valid, mode: 'empty', ref: null, subTag: null })
+        lanes.push({ id: lane.id, name: lane.name, icon: lane.icon || '', index, members: lane.members, valid, mode: 'empty', ref: null, subTag: null })
         return
       }
       if (valid.length === 1) {
-        lanes.push({ id: lane.id, name: lane.name, index, members: lane.members, valid, mode: 'single', ref: valid[0], subTag: null })
+        lanes.push({ id: lane.id, name: lane.name, icon: lane.icon || '', index, members: lane.members, valid, mode: 'single', ref: valid[0], subTag: null })
         refs.push(valid[0])
         return
       }
@@ -371,7 +372,7 @@ export const emitUserGroups = (groups, nodes, options = {}) => {
         url: g.testUrl || testUrl, interval: g.interval || FAILOVER_DEFAULTS.interval, tolerance: g.tolerance ?? FAILOVER_DEFAULTS.tolerance,
         idle_timeout: idleTimeoutFor(DEFAULT_IDLE_TIMEOUT, g.interval || FAILOVER_DEFAULTS.interval),
       })
-      lanes.push({ id: lane.id, name: lane.name, index, members: lane.members, valid, mode: 'urltest', ref: subTag, subTag })
+      lanes.push({ id: lane.id, name: lane.name, icon: lane.icon || '', index, members: lane.members, valid, mode: 'urltest', ref: subTag, subTag })
       refs.push(subTag)
     })
     // 不同单节点页签引用同一个节点:父 selector 的成员去重,页签定义不合并

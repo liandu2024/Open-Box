@@ -39,9 +39,9 @@ test('故障转移:归一化后固定静态、members/keywords 清空、lanes �
   assert.deepEqual(g.members, [])
   assert.deepEqual(g.keywords, [])
   assert.deepEqual(g.lanes, [
-    { id: 'A', name: '', members: ['香港-01'] },
-    { id: 'lane-2', name: '', members: ['香港-02'] },
-    { id: 'A~', name: '备', members: [] },
+    { id: 'A', name: '', icon: '', members: ['香港-01'] },
+    { id: 'lane-2', name: '', icon: '', members: ['香港-02'] },
+    { id: 'A~', name: '备', icon: '', members: [] },
   ])
   assert.equal(g.interval, '30s')
   assert.equal(g.tolerance, 100)

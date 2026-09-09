@@ -575,6 +575,7 @@ const en = {
   failoverMoveEarlier: 'Move earlier (higher priority)',
   failoverMoveLater: 'Move later (lower priority)',
   failoverLaneNamePlaceholder: 'Lane name (optional)',
+  failoverLaneIconInherit: 'Inherit group icon',
   failoverModeEmpty: 'no valid node',
   failoverModeSingle: 'single node',
   failoverModeUrltest: 'url-test · {count} nodes',

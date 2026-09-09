@@ -360,6 +360,19 @@ export const fetchProxies = async () => {
       if (url) proxyMap.value[item.name].icon = url
     }
     proxyMap.value[item.name].iconScale = item.iconScale || 0
+    // 故障转移的内部子组(__fo:组id:页签id)带页签自己的图标,没挑就继承父组的:链路和穿透里显示的是页签
+    if (item.type === 'failover') {
+      for (const lane of item.lanes ?? []) {
+        const head = `__fo:${item.id}:${lane.id}`
+        const code = lane.icon || item.icon
+        for (const key of Object.keys(proxyMap.value)) {
+          if (key !== head && !(key.startsWith(head) && /^~+$/.test(key.slice(head.length)))) continue
+          const url = code ? iconUrlFor(code) : ''
+          if (url) proxyMap.value[key].icon = url
+          proxyMap.value[key].iconScale = item.iconScale || 0
+        }
+      }
+    }
   }
 
   // 节点标上来自哪条订阅:「节点根据提供商分组」按 provider-name 分段,内核不给,这里补

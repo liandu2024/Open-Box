@@ -450,6 +450,8 @@ export type OpenboxGroupType = 'urltest' | 'selector' | 'failover'
 export interface OpenboxFailoverLane {
   id: string
   name: string
+  // 页签图标(和分组图标同一套短码);空 = 继承分组的图标
+  icon?: string
   members: string[]
 }
 export interface OpenboxFailoverSettings {

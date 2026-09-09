@@ -27,6 +27,7 @@ export const validateFailoverGroup = (raw, { nodeTags, otherNames, previous }) =
     const lane = raw.lanes[i]
     if (!lane || typeof lane !== 'object') return `故障转移「${name}」第 ${i + 1} 个页签不是对象`
     if (lane.id !== undefined && lane.id !== null && !isStr(lane.id)) return `故障转移「${name}」第 ${i + 1} 个页签的 id 不合法`
+    if (lane.icon !== undefined && lane.icon !== null && typeof lane.icon !== 'string') return `故障转移「${name}」第 ${i + 1} 个页签的图标不合法`
     const id = isStr(lane.id) ? lane.id.trim() : ''
     if (id) {
       if (ids.has(id)) return `故障转移「${name}」的页签 id 重复:${id}`

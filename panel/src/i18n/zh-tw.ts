@@ -570,6 +570,7 @@ const zhTW: LANG_MESSAGE = {
   failoverMoveEarlier: '前移(優先級提高)',
   failoverMoveLater: '後移(優先級降低)',
   failoverLaneNamePlaceholder: '頁籤名(可選)',
+  failoverLaneIconInherit: '繼承分組圖示',
   failoverModeEmpty: '沒有有效節點',
   failoverModeSingle: '單節點',
   failoverModeUrltest: '自動擇優 · {count} 個節點',

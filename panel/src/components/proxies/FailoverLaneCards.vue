@@ -14,6 +14,8 @@
         <ProxyNodeCard
           :name="lane.ref"
           :label="lane.label"
+          :icon="iconUrlFor(lane.icon)"
+          :icon-scale="lane.iconScale"
           :group-name="groupName"
           :active="lane.id === selectedLaneId"
           @click.stop="$emit('select', lane.id)"
@@ -27,7 +29,15 @@
         v-else
         class="bg-base-200 border-base-content/[0.08] flex min-w-0 flex-col items-start gap-2 rounded-md border p-2 opacity-60"
       >
-        <span class="w-full truncate text-sm">{{ lane.label }}</span>
+        <span class="flex w-full min-w-0 items-center truncate text-sm">
+          <ProxyIcon
+            v-if="iconUrlFor(lane.icon)"
+            class="-mt-[2px] shrink-0 align-middle"
+            :icon="iconUrlFor(lane.icon)"
+            :size="16"
+            :scale="lane.iconScale"
+          />{{ lane.label }}
+        </span>
         <span class="text-base-content/60 text-xs">{{ $t('failoverModeEmpty') }}</span>
       </div>
     </template>
@@ -35,9 +45,11 @@
 </template>
 
 <script setup lang="ts">
+import { iconUrlFor } from '@/helper/iconUrl'
 import { failoverCurrentLaneId, failoverLanesOf } from '@/store/openboxFailover'
 import { proxyMap } from '@/store/proxies'
 import { computed } from 'vue'
+import ProxyIcon from './ProxyIcon.vue'
 import ProxyNodeCard from './ProxyNodeCard.vue'
 import ProxyNodeGrid from './ProxyNodeGrid.vue'
 

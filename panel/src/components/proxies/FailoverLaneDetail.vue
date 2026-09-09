@@ -6,7 +6,14 @@
     class="pt-1"
   >
     <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-      <span class="text-base">{{ lane.label }}</span>
+      <span class="flex items-center text-base">
+        <ProxyIcon
+          v-if="iconUrlFor(lane.icon)"
+          :icon="iconUrlFor(lane.icon)"
+          :size="18"
+          :scale="lane.iconScale"
+        />{{ lane.label }}
+      </span>
       <span
         v-if="lane.index > 0 && lane.label !== roleText"
         class="text-base-content/60 text-xs"
@@ -52,6 +59,8 @@ import { failoverCurrentLaneId, failoverGroupByTag, failoverLanesOf, failoverRol
 import { handlerProxySelect, proxyMap } from '@/store/proxies'
 import { computed, onBeforeUnmount, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { iconUrlFor } from '@/helper/iconUrl'
+import ProxyIcon from './ProxyIcon.vue'
 import ProxyNodeCard from './ProxyNodeCard.vue'
 import ProxyNodeGrid from './ProxyNodeGrid.vue'
 

@@ -17,11 +17,11 @@
       @mouseenter="checkTruncation"
     >
       <ProxyIcon
-        v-if="node?.icon"
+        v-if="shownIcon"
         class="-mt-[2px] shrink-0 align-middle"
-        :icon="node.icon"
+        :icon="shownIcon"
         :size="16"
-        :scale="node.iconScale"
+        :scale="icon !== undefined ? iconScale : node.iconScale"
         :fill="active ? 'fill-primary-content' : 'fill-base-content'"
       /><span
         v-if="active"
@@ -92,12 +92,16 @@ const props = defineProps<{
   groupName?: string
   // 卡片标题用别的文字(故障转移的页签卡片:标题是页签名 / 角色,name 仍是它在内核里的出站)
   label?: string
+  // 卡片图标用别的(URL;故障转移的页签卡片用页签图标,没挑就是父组的);给了空串 = 不显示图标
+  icon?: string
+  iconScale?: number
 }>()
 
 const cardRef = ref()
 const node = computed(() => proxyMap.value[props.name])
 // 故障转移的内部子组显示成页签名 / 角色,不露 __fo: 技术 tag
 const displayName = computed(() => props.label ?? failoverDisplayName(node.value.name))
+const shownIcon = computed(() => (props.icon !== undefined ? props.icon : node.value?.icon))
 const isLatencyTesting = ref(false)
 const typeFormatter = (type: string) => {
   type = type.toLowerCase()

@@ -533,11 +533,20 @@
                     <PlusIcon class="h-4 w-4" />
                   </button>
                 </div>
+                <!-- 当前页签:图标(空 = 继承分组图标)+ 自定义名 + 前移 / 后移 / 删除 -->
                 <div
                   v-if="activeLane"
                   class="border-base-content/10 flex min-w-0 flex-wrap items-center gap-1 border-b px-2 py-1 text-xs"
                 >
-                  <span class="text-base-content/70 min-w-0 truncate">{{ activeLaneSummary }}</span>
+                  <div class="w-40">
+                    <CountrySelect
+                      v-model="activeLane.icon"
+                      clearable
+                      globes
+                      brands
+                      :placeholder="$t('failoverLaneIconInherit')"
+                    />
+                  </div>
                   <input
                     v-model="activeLane.name"
                     type="text"
@@ -1064,11 +1073,12 @@ const openEditor = (group: OpenboxUserGroup | null) => {
 const isFailover = computed(() => draft.value?.type === 'failover')
 const FAILOVER_DEFAULTS: OpenboxFailoverSettings = { timeoutMs: 5000, failureThreshold: 2, restorePrimary: true, recoveryHoldMs: 60000 }
 const newLaneId = () => `lane-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
-const makeLane = (members: string[] = []): OpenboxFailoverLane => ({ id: newLaneId(), name: '', members })
+const makeLane = (members: string[] = []): OpenboxFailoverLane => ({ id: newLaneId(), name: '', icon: '', members })
 // 故障转移草稿必须有的字段:页签(默认「主用」「备用 1」两个)、按秒的检测间隔、容差、高级参数
 const ensureFailoverFields = (d: OpenboxUserGroup) => {
   d.mode = 'static'
   if (!d.lanes || !d.lanes.length) d.lanes = [makeLane(), makeLane()]
+  for (const lane of d.lanes) if (lane.icon === undefined) lane.icon = ''
   if (!d.interval || !/^\d+s$/.test(d.interval)) d.interval = '30s'
   if (typeof d.tolerance !== 'number') d.tolerance = 100
   if (d.testUrl === undefined) d.testUrl = ''
@@ -1087,16 +1097,6 @@ const laneLabelOf = (lane: OpenboxFailoverLane) => {
   const role = laneRoleLabel(Math.max(0, index))
   return lane.name ? `${role} · ${lane.name}` : role
 }
-// 当前页签一行:角色 · 派生模式(单节点 / 自动择优 · N 个节点)· 失效 N
-const activeLaneSummary = computed(() => {
-  const lane = activeLane.value
-  if (!lane) return ''
-  const valid = validCount(lane)
-  const invalid = lane.members.length - valid
-  const mode = valid === 0 ? t('failoverModeEmpty') : valid === 1 ? t('failoverModeSingle') : t('failoverModeUrltest', { count: valid })
-  const base = `${laneRoleLabel(Math.max(0, activeLaneIndex.value))} · ${mode}`
-  return invalid ? `${base} · ${t('failoverInvalidCount', { count: invalid })}` : base
-})
 // 页签全是单节点(或空)时容差没有用武之地:容差只给多节点页签的内部自动择优用
 const allLanesSingle = computed(() => (draft.value?.lanes ?? []).every((l) => validCount(l) <= 1))
 // 切换页签时清掉两栏的勾选:上一个页签勾的东西不能误搬到下一个
@@ -1574,7 +1574,7 @@ const saveDraft = async (typeChangeConfirmed = false) => {
       // 页签是唯一的成员来源:members / keywords 清空;页签名去掉首尾空白
       item = {
         ...base, mode: 'static', members: [], keywords: [],
-        lanes: (base.lanes ?? []).map((l) => ({ id: l.id, name: l.name.trim(), members: [...l.members] })),
+        lanes: (base.lanes ?? []).map((l) => ({ id: l.id, name: l.name.trim(), icon: l.icon || '', members: [...l.members] })),
         failover: { ...FAILOVER_DEFAULTS, ...(base.failover || {}) },
       }
     } else {
