@@ -4,7 +4,10 @@
     <div class="card-body gap-3 p-4 text-sm">
       <div class="flex items-center justify-between gap-2">
         <div>
-          <h2 class="text-base font-semibold">{{ $t('dnsModeTitle') }}</h2>
+          <h2 class="text-base font-semibold">
+            {{ $t('dnsModeTitle') }}
+            <span class="text-base-content/60 text-sm font-normal">({{ $t('dnsModePort', { port: KERNEL_DNS_PORT }) }})</span>
+          </h2>
           <p class="text-base-content/60 text-xs">{{ $t('dnsModeDescription') }}</p>
         </div>
         <select
@@ -61,7 +64,8 @@ const saving = ref(false)
 const mode = computed<OpenboxDnsMode>(() => props.profile.dns?.mode ?? 'dnsmasq')
 const fakeIp = computed(() => props.profile.dns?.fakeIpForProxy === true)
 // 面板就在路由器上,当前打开面板的主机名就是路由器地址
-const kernelDnsAddr = `${location.hostname}:7853`
+const KERNEL_DNS_PORT = 7853
+const kernelDnsAddr = `${location.hostname}:${KERNEL_DNS_PORT}`
 
 const onFakeIp = async (event: Event) => {
   const next = (event.target as HTMLInputElement).checked
