@@ -110,7 +110,6 @@
           :name="node"
           :group-name="lane.subTag ?? groupName"
           :active="node === lane.kernelNow"
-          :selectable="false"
         />
       </ProxyNodeGrid>
     </div>

@@ -97,14 +97,14 @@ const props = defineProps<{
   // 卡片图标用别的(URL;故障转移的页签卡片用页签图标,没挑就是父组的);给了空串 = 不显示图标
   icon?: string
   iconScale?: number
-  // 能不能点了切换;不传就按所在的组判(store/proxies.ts 的 isManualSelectable):自动择优 / 故障转移的成员卡片
-  // 不可点——它们走哪个节点不由用户定,点了也只能弹一句「不能手动指定」
-  selectable?: boolean
 }>()
 const emit = defineEmits<{ click: [event: MouseEvent] }>()
 
 const cardRef = ref()
-const selectable = computed(() => props.selectable ?? isManualSelectable(props.groupName))
+// 能不能点了切换,按所在的组判(store/proxies.ts 的 isManualSelectable):站点集 / 手动组的成员可点;自动择优 /
+// 故障转移(含页签子组)的成员不可点——它们走哪个节点不由用户定。不用布尔 prop:Vue 对没传的布尔 prop 一律当
+// false,会把所有卡片都变成不可点
+const selectable = computed(() => isManualSelectable(props.groupName))
 // 点击只在可选的组里往外发(父组件据此切换);不可选的把事件吞掉,不让它冒泡到外层的折叠开关
 const onClick = (event: MouseEvent) => {
   event.stopPropagation()
