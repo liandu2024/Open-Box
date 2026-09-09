@@ -32,3 +32,4 @@ data
 .tmp-private.mrs
 .runtime/
 .devboard-server.pid
+.tools/sing-box-*
