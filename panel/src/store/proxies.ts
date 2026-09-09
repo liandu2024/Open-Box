@@ -9,7 +9,7 @@ import {
   isSingBox,
   selectProxyAPI,
 } from '@/api'
-import { isFailoverInternalTag } from '@/store/openboxFailover'
+import { failoverDisplayName, isFailoverInternalTag } from '@/store/openboxFailover'
 import { iconUrlFor } from '@/helper/iconUrl'
 import {
   loadOpenboxNodeGroups,
@@ -430,6 +430,16 @@ const repairStaleUrlTestGroups = () => {
   }
 }
 
+// 这个组的节点卡片 / 圆点能不能点了切换:只有 selector(而且不是故障转移组)由用户手动选;自动择优组由内核按
+// 测速定、故障转移组(含它的内部页签子组)由面板按检测结果切,卡片和圆点不响应点击,也就没有「不能手动指定」的提示
+export const isManualSelectable = (groupName?: string) => {
+  if (!groupName) return false
+  const g = proxyMap.value[groupName]
+  if (!g || String(g.type || '').toLowerCase() !== 'selector') return false
+  if (isFailoverInternalTag(groupName)) return false
+  return !managedOutbounds.value.some((m) => m.name === groupName && m.type === 'failover')
+}
+
 export const handlerProxySelect = async (proxyGroupName: string, proxyName: string) => {
   const proxyGroup = proxyMap.value[proxyGroupName]
 
@@ -440,7 +450,8 @@ export const handlerProxySelect = async (proxyGroupName: string, proxyName: stri
   if (proxyGroup.type.toLowerCase() === PROXY_TYPE.URLTest) {
     showNotification({
       content: 'urlTestManualSelectTip',
-      params: { name: proxyGroupName },
+      // 故障转移的内部子组显示成页签名,不露 __fo: 技术 tag
+      params: { name: failoverDisplayName(proxyGroupName) },
       type: 'alert-info',
     })
     return

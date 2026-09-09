@@ -3,13 +3,15 @@
     ref="cardRef"
     :class="
       twMerge(
-        'proxy-node-card bg-base-200 border-base-content/[0.08] flex cursor-pointer flex-col items-start rounded-md border transition-colors duration-150',
+        'proxy-node-card bg-base-200 border-base-content/[0.08] flex flex-col items-start rounded-md border transition-colors duration-150',
+        selectable ? 'cursor-pointer' : 'cursor-default',
         hoverClass,
         isSmallCard ? 'gap-1 p-1' : 'gap-2 p-2',
         latencyTipAnimationClass,
       )
     "
     @contextmenu.stop.prevent="handlerLatencyTest"
+    @click="onClick"
   >
     <div
       class="w-full flex-1 text-sm"
@@ -57,7 +59,7 @@ import { failoverDisplayName } from '@/store/openboxFailover'
 import { PROXY_CARD_SIZE, PROXY_SORT_TYPE, PROXY_TYPE } from '@/constant'
 import { checkTruncation } from '@/helper/tooltip'
 import { scrollIntoCenter } from '@/helper/utils'
-import { getIPv6ByName, getTestUrl, proxyGroupLatencyTest, proxyLatencyTest, proxyMap } from '@/store/proxies'
+import { getIPv6ByName, getTestUrl, isManualSelectable, proxyGroupLatencyTest, proxyLatencyTest, proxyMap } from '@/store/proxies'
 import { IPv6test, proxyCardSize, proxySortType, theme, truncateProxyName } from '@/store/settings'
 import { smartWeightsMap } from '@/store/smart'
 import { twMerge } from 'tailwind-merge'
@@ -95,9 +97,19 @@ const props = defineProps<{
   // 卡片图标用别的(URL;故障转移的页签卡片用页签图标,没挑就是父组的);给了空串 = 不显示图标
   icon?: string
   iconScale?: number
+  // 能不能点了切换;不传就按所在的组判(store/proxies.ts 的 isManualSelectable):自动择优 / 故障转移的成员卡片
+  // 不可点——它们走哪个节点不由用户定,点了也只能弹一句「不能手动指定」
+  selectable?: boolean
 }>()
+const emit = defineEmits<{ click: [event: MouseEvent] }>()
 
 const cardRef = ref()
+const selectable = computed(() => props.selectable ?? isManualSelectable(props.groupName))
+// 点击只在可选的组里往外发(父组件据此切换);不可选的把事件吞掉,不让它冒泡到外层的折叠开关
+const onClick = (event: MouseEvent) => {
+  event.stopPropagation()
+  if (selectable.value) emit('click', event)
+}
 const node = computed(() => proxyMap.value[props.name])
 // 故障转移的内部子组显示成页签名 / 角色,不露 __fo: 技术 tag
 const displayName = computed(() => props.label ?? failoverDisplayName(node.value.name))

@@ -110,7 +110,7 @@
           :name="node"
           :group-name="lane.subTag ?? groupName"
           :active="node === lane.kernelNow"
-          @click.stop="handlerProxySelect(lane.subTag ?? groupName, node)"
+          :selectable="false"
         />
       </ProxyNodeGrid>
     </div>
@@ -127,7 +127,7 @@ import { iconUrlFor } from '@/helper/iconUrl'
 import { prettyBytesHelper } from '@/helper/utils'
 import { activeConnections } from '@/store/connections'
 import { failoverLanesOf, watchFailoverStatus } from '@/store/openboxFailover'
-import { getTestUrl, handlerProxySelect, proxyGroupLatencyTest, proxyLatencyTest, proxyMap } from '@/store/proxies'
+import { getTestUrl, proxyGroupLatencyTest, proxyLatencyTest, proxyMap } from '@/store/proxies'
 import { proxyGroupIconMargin, proxyGroupIconSize, useLargeProxyGroupIcon } from '@/store/settings'
 import { twMerge } from 'tailwind-merge'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
