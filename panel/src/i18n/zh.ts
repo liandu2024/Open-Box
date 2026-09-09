@@ -441,7 +441,7 @@ const zh: LANG_MESSAGE = {
   ruleLookupMissingRuleSet: '未在当前规则顺序中找到对应 RuleSet',
   ruleLookupFallbackMatched: '未命中规则缓存，将落到兜底规则',
   ruleSearchPlaceholder: '搜索 域名 / IP / 关键字',
-  ruleQuickOpen: '在新标签页打开 {site},看当前分流下能不能访问',
+  ruleQuickOpen: '查询 {site} 的分流规则和真实路由',
   copyLink: '复制链接',
   category: '类别',
   domainPenetration: '域名穿透',

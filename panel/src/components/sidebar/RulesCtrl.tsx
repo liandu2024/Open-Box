@@ -7,12 +7,13 @@ import { defineComponent } from 'vue'
 import { useI18n } from 'vue-i18n'
 import TextInput from '../common/TextInput.vue'
 
-// 顶栏右侧的四个快捷测试:点一下在新标签页打开站点,看当前分流下能不能访问。图标用节点组 / 站点集同一套品牌图标
+// 顶栏右侧的四个快捷查询:点一下把站点域名填进搜索框,规则查询和真实路由测试就自动跑起来(和手输一样,
+// 由 lookupTarget 驱动)。图标用节点组 / 站点集同一套品牌图标
 const QUICK_SITES = [
-  { id: 'baidu', name: '百度', url: 'https://www.baidu.com/', icon: 'brand:baidu' },
-  { id: 'google', name: 'Google', url: 'https://www.google.com/', icon: 'brand:google' },
-  { id: 'chatgpt', name: 'ChatGPT', url: 'https://chatgpt.com/', icon: 'brand:openai' },
-  { id: 'telegram', name: 'Telegram', url: 'https://web.telegram.org/', icon: 'brand:telegram' },
+  { id: 'baidu', name: '百度', host: 'www.baidu.com', icon: 'brand:baidu' },
+  { id: 'google', name: 'Google', host: 'www.google.com', icon: 'brand:google' },
+  { id: 'chatgpt', name: 'ChatGPT', host: 'chatgpt.com', icon: 'brand:openai' },
+  { id: 'telegram', name: 'Telegram', host: 'web.telegram.org', icon: 'brand:telegram' },
 ]
 
 export default defineComponent({
@@ -50,7 +51,7 @@ export default defineComponent({
               type="button"
               class="btn btn-circle btn-sm"
               aria-label={site.name}
-              onClick={() => window.open(site.url, '_blank', 'noopener,noreferrer')}
+              onClick={() => (rulesFilter.value = normalizeRuleTarget(site.host))}
               onMouseenter={(e) => showTip(e, t('ruleQuickOpen', { site: site.name }))}
             >
               <img
