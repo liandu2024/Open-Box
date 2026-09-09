@@ -12,6 +12,7 @@ import { applyPanelLanRule, applyDnsLanRule, applyIpv6Block, removeProxyRules, a
 import { ensureTlsKeypair } from './tls-keypair.mjs'
 import { configNeedsTlsKeypair, enabledServers } from '../engine/servers.mjs'
 import { ensureRulesets } from './rulesets.mjs'
+import { recordGeoVersionsAfterDownload } from './updater.mjs'
 
 // 与 openwrt/initd/openbox 的 CONF_META 一致
 export const configMetaPath = (paths) => `${paths.etc}/config.meta.json`
@@ -107,6 +108,13 @@ export const deployConfig = async (ctx, paths, { config, profile, userGroups, fe
   mark('规则集')
   if (!rulesets.ok) {
     return withTimings({ ok: false, stage: 'rulesets', message: rulesets.message })
+  }
+  // 第一次启动 / 换来源时规则集是在这里自动下载的,以前只有在面板里手动「更新」过才记版本,新装机的
+  // 「Geosite / GeoIP 当前版本」一直是「未知」(GitHub #33)。下到了就顺手探一次上游版本记下来,探不到不影响部署
+  if (rulesets.downloaded && rulesets.downloaded.length) {
+    try {
+      await recordGeoVersionsAfterDownload(ctx, paths, { fetchImpl: fetchImpl || globalThis.fetch, downloaded: rulesets.downloaded, source: rulesets.source })
+    } catch { /* 记不上就还是「未知」,下次手动更新会记 */ }
   }
 
   // (规则集链接的 .srs 由 api/deploy-runner.mjs 在生成配置之前补齐:路由 / DNS 规则要凭

@@ -237,7 +237,10 @@ test('规则集缺失时会先补齐,再进入校验', async () => {
   const r = await deployConfig(ctx, paths, { config: configWithRulesets, profile, fetchImpl })
   assert.equal(r.ok, true)
   assert.equal(r.stage, 'running')
-  assert.equal(fetched.length, 1)
+  // 一次规则集下载;下到之后另探一次上游版本记「当前版本」(GitHub #33),那次是 GitHub API,不是规则集
+  const rulesetFetches = fetched.filter((u) => !String(u).includes('api.github.com'))
+  assert.equal(rulesetFetches.length, 1)
+  assert.ok(fetched.some((u) => String(u).includes('api.github.com/repos/MetaCubeX/meta-rules-dat/commits/sing')), '下到规则集后要探一次版本')
   assert.ok(Buffer.isBuffer(ctx.files['/opt/open-box/data/rulesets/geosite-cn.srs']))
 })
 

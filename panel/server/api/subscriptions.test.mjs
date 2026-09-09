@@ -1184,3 +1184,56 @@ test('拉订阅时把校验过的地址交给 fetch 实现(init.lookup),每一�
     await close()
   }
 })
+
+// GitHub #27:机场按 User-Agent 拒第三方客户端时,第一个 UA 被 403 不能整次失败,要换下一个 UA 继续
+test('创建时首个 UA 被 403 → 换下一个 UA 继续,第二个 UA 拿到节点就成功', async () => {
+  const seen = []
+  const fetchImpl = async (_url, init) => {
+    const ua = init?.headers?.['User-Agent'] || ''
+    seen.push(ua)
+    if (seen.length === 1) return { ok: false, status: 403, text: async () => 'forbidden' }
+    return { ok: true, status: 200, text: async () => SHARELINK_MULTI }
+  }
+  const { baseUrl, store, close } = await startApp(fetchImpl)
+  try {
+    const res = await postJson(baseUrl, '/api/openbox/subscriptions', { url: 'http://sub.example.com/a', name: 'Sub A' })
+    assert.equal(res.status, 200)
+    assert.equal((await res.json()).nodeCount, 2)
+    assert.equal(seen.length, 2)
+    assert.notEqual(seen[0], seen[1], '第二次请求要换 UA')
+    assert.equal(store.getNodes().length, 2)
+  } finally {
+    await close()
+  }
+})
+
+test('创建时所有 UA 都被 403 → 400,错误里逐个列出 UA 和状态码;网络错误不换 UA、只请求一次', async () => {
+  let calls = 0
+  const fetchImpl = async () => {
+    calls += 1
+    return { ok: false, status: 403, text: async () => 'forbidden' }
+  }
+  const { baseUrl, store, close } = await startApp(fetchImpl)
+  try {
+    const res = await postJson(baseUrl, '/api/openbox/subscriptions', { url: 'http://sub.example.com/a', name: 'Sub A' })
+    assert.equal(res.status, 400)
+    const body = await res.json()
+    assert.match(body.error, /User-Agent/)
+    assert.match(body.error, /clash-verge\/v2\.0\.0 → HTTP 403/)
+    assert.match(body.error, /Open-Box\/1\.0 → HTTP 403/)
+    assert.ok(calls >= 3, `应逐个 UA 都试过:${calls}`)
+    assert.deepEqual(store.getSubscriptions(), [])
+  } finally {
+    await close()
+  }
+  let netCalls = 0
+  const netFail = async () => { netCalls += 1; throw new Error('ECONNRESET') }
+  const app2 = await startApp(netFail)
+  try {
+    const res = await postJson(app2.baseUrl, '/api/openbox/subscriptions', { url: 'http://sub.example.com/a', name: 'Sub A' })
+    assert.equal(res.status, 400)
+    assert.equal(netCalls, 1, '网络错误和 UA 无关,不该逐个 UA 重试')
+  } finally {
+    await app2.close()
+  }
+})

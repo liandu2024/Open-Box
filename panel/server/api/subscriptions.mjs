@@ -18,8 +18,13 @@ import { subscriptionFetch } from '../system/insecure-fetch.mjs'
 // 三份完全不同的响应(base64 8.5KB / Clash YAML 36KB / sing-box JSON 15KB)。
 // 按信息量从高到低依次尝试,拿到能解析出节点的那一份就停:Clash YAML 字段最全(udp、
 // 指纹、alpn 都在),sing-box JSON 次之,最后才退回默认 UA 那一份。
+// 逐个试的 User-Agent:有些机场只认几个客户端的 UA,别的一律 403(GitHub #27)。前面是常见的
+// 第三方客户端,最后才是我们自己的名字
 const SUBSCRIPTION_USER_AGENTS = Object.freeze([
   'clash-verge/v2.0.0',
+  'ClashMetaForAndroid/2.11.0',
+  'mihomo/1.19.0',
+  'clash-verge-rev/2.3.0',
   'sing-box/1.13.14',
   'Open-Box/1.0',
 ])
@@ -150,7 +155,10 @@ const fetchSubscriptionResponse = async (initialUrl, fetchImpl, lookup, userAgen
     }
 
     if (!res.ok) {
-      throw new Error(`failed to fetch subscription: HTTP ${res.status}`)
+      // 带上状态码:调用方据此决定换下一个 UA 再试(403 / 401 这类多半是机场按 UA 拒的)
+      const err = new Error(`failed to fetch subscription: HTTP ${res.status}`)
+      err.httpStatus = res.status
+      throw err
     }
 
     return res
@@ -257,15 +265,28 @@ export const resolveNodes = async ({ url, urls, content, name }, fetchImpl, rena
 
   // 逐个 UA 试,第一份能解析出节点的就采用。多发的请求只在失败路径上产生:
   // 首选 UA 就拿到节点时(绝大多数情况)只有一次请求。
+  // 服务器按状态码拒掉的(403 / 401 / 406…)换下一个 UA 继续;网络不通、地址不合法这类错误和 UA
+  // 无关,直接报出去,不白等几轮超时(GitHub #27:以前第一个 UA 被 403 就整次失败,后面的 UA 轮不到)
   const fetchOne = async (oneUrl) => {
     let firstParsed = null
+    const rejected = []
     for (const userAgent of SUBSCRIPTION_USER_AGENTS) {
-      const text = await fetchSubscriptionText(oneUrl, fetchImpl, lookup, userAgent)
+      let text
+      try {
+        text = await fetchSubscriptionText(oneUrl, fetchImpl, lookup, userAgent)
+      } catch (err) {
+        if (err && err.httpStatus) {
+          rejected.push(`${userAgent} → HTTP ${err.httpStatus}`)
+          continue
+        }
+        throw err
+      }
       const parsed = parseSubscription(text)
       if (parsed.nodes.length) return parsed
       if (!firstParsed) firstParsed = parsed
     }
-    throw new Error(describeEmptyResult(firstParsed))
+    if (firstParsed) throw new Error(describeEmptyResult(firstParsed))
+    throw new Error(`订阅服务器拒绝了所有客户端标识(User-Agent),请联系机场确认是否限制第三方客户端:\n${rejected.join('\n')}`)
   }
 
   // 多个地址:逐个拉,任何一个失败整次失败——刷新时不能因为一个地址暂时不通就把它那份

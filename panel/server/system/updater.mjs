@@ -259,6 +259,27 @@ export const refreshRulesets = async (ctx, paths, { fetchImpl = globalThis.fetch
   return { updated, failed, total: entries.length, versions, source: src }
 }
 
+// 部署时 ensureRulesets 自动下载了规则集(新装机第一次启动、换来源):探一次上游版本记进 geo-update.json,
+// 让「当前版本」不再是「未知」。探不到就不写(留着「未知」比记一个错的强)。返回记下的版本表或 null
+export const recordGeoVersionsAfterDownload = async (ctx, paths, { fetchImpl = globalThis.fetch, downloaded = [], source = RULESET_SOURCE, timeoutMs = 8000 } = {}) => {
+  const { latest, via } = await checkGeoUpdate(ctx, paths, { fetchImpl, timeoutMs })
+  if (!latest || !Object.keys(latest).length || via === 'unknown') return null
+  const previous = await readJsonFile(ctx, paths.geoUpdateStatePath, {})
+  const record = {
+    ...previous,
+    lastAt: new Date().toISOString(),
+    updated: [...downloaded],
+    failed: [],
+    restarted: false,
+    trigger: 'deploy',
+    channel: previous.channel || 'auto',
+    versions: { ...(previous.source === source ? previous.versions || {} : {}), ...latest },
+    source,
+  }
+  await writeJsonFile(ctx, paths.geoUpdateStatePath, record)
+  return record.versions
+}
+
 export const readJsonFile = async (ctx, path, fallback = {}) => {
   try { return JSON.parse(await ctx.readFile(path)) } catch { return fallback }
 }

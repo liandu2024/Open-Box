@@ -25,7 +25,7 @@
           {{ $t('proxiesGoToKernel') }}
         </RouterLink>
       </div>
-      <!-- 分列:设置里选的列数,组按 index % 列数 轮流落到各列 -->
+      <!-- 分列:设置里选的列数,组按 index % 列数 轮流落到各列(策略 / 节点两个页签) -->
       <template v-else-if="displayColumns > 1 && proxiesTabShow !== PROXY_TAB_TYPE.PROVIDER">
         <div
           class="grid gap-2 p-2"
@@ -49,11 +49,11 @@
         </div>
       </template>
       <!-- 订阅标签渲染 Open-Box 自己的订阅(见 store/openboxSubscriptions.ts 的说明:
-           Clash 的 provider 概念在 Open-Box 里不存在)。不走两列布局:订阅通常只有一两条,
-           摊成两列反而稀疏。 -->
+           Clash 的 provider 概念在 Open-Box 里不存在)。分列和策略 / 节点页签同一个设置(GitHub #33) -->
       <div
-        class="grid grid-cols-1 gap-2 px-2 md:py-2"
         v-else-if="proxiesTabShow === PROXY_TAB_TYPE.PROVIDER"
+        class="grid gap-2 px-2 md:py-2"
+        :class="displayColumns === 3 ? 'grid-cols-3' : displayColumns === 2 ? 'grid-cols-2' : 'grid-cols-1'"
       >
         <p
           v-if="!openboxSubscriptions.length"
@@ -63,14 +63,20 @@
           <MarketLink />
           {{ $t('subscriptionEmptyHintSuffix') }}
         </p>
-        <SubscriptionCard
-          v-for="sub in openboxSubscriptions"
-          :key="sub.id"
-          :subscription="sub"
-          :refreshing="refreshingSubId === sub.id"
-          @refresh="handleSubscriptionRefresh(sub.id)"
-          @edit="requestEdit(sub)"
-        />
+        <div
+          v-for="idx in displayColumns"
+          :key="idx"
+          class="flex flex-1 flex-col gap-2"
+        >
+          <SubscriptionCard
+            v-for="sub in filterContent(openboxSubscriptions, idx - 1)"
+            :key="sub.id"
+            :subscription="sub"
+            :refreshing="refreshingSubId === sub.id"
+            @refresh="handleSubscriptionRefresh(sub.id)"
+            @edit="requestEdit(sub)"
+          />
+        </div>
       </div>
       <div
         class="grid grid-cols-1 gap-2 px-2 md:py-2"
@@ -367,13 +373,17 @@ const renderComponent = computed(() => {
   return ProxyGroup
 })
 
-// 实际摆几列:设置里的列数,窄屏最多两列(三列摆不下),组不够多也不硬拆
+// 实际摆几列:设置里的列数,三个页签(策略 / 节点 / 订阅)共用;窄屏最多两列(三列摆不下),
+// 条目不够多也不硬拆。以前只有策略页签分列,节点页签选了双列也是单列(GitHub #33)
+const columnItemCount = computed(() => {
+  if (proxiesTabShow.value === PROXY_TAB_TYPE.NODE) return nodeGroups.value.length
+  if (proxiesTabShow.value === PROXY_TAB_TYPE.PROVIDER) return openboxSubscriptions.value.length
+  return renderGroups.value.length
+})
 const displayColumns = computed(() => {
-  if (proxiesTabShow.value !== PROXY_TAB_TYPE.POLICY || renderGroups.value.length < 2) {
-    return 1
-  }
+  if (columnItemCount.value < 2) return 1
   const wanted = Math.min(Math.max(Math.trunc(proxyGroupColumns.value) || 1, 1), 3)
-  return Math.min(wanted, isMiddleScreen.value ? 2 : 3, renderGroups.value.length)
+  return Math.min(wanted, isMiddleScreen.value ? 2 : 3, columnItemCount.value)
 })
 
 const filterContent: <T>(all: T[], target: number) => T[] = (all, target) => {
