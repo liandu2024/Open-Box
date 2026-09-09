@@ -132,15 +132,26 @@ safe_rm_rf() {
   rm -rf -- "$target"
 }
 
-# 供 --probe 计时用:尽量取毫秒精度(date +%s%N,取纳秒后截到毫秒),取不到就退化
-# 成秒级精度(部分精简 date 实现不支持 %N,会把 "%N" 原样输出而不是数字——这里靠
-# 结果里混有非数字字符来识别退化情况,末尾补三个 0 凑成毫秒量级,不让计时失败拖垮
-# 整个探测)。
+# 供 --probe 计时用,毫秒。首选 /proc/uptime:第一列是开机以来的秒数、带两位小数
+# (10ms 精度),任何 Linux 都有,busybox awk 就能算,不依赖 date 的实现。
+# 以前只用 date +%s%N:OpenWrt 自带的 busybox date 不支持 %N,而且不是原样输出
+# "%N"、是直接吞掉——得到的是纯数字的秒数,识别不出退化,再除以一百万就成了 1788,
+# 前后两次相减永远是 0,LuCI 渠道检测于是每个渠道都显示「可用 0ms」(正式路由器
+# 实测;开发路由器装的是 coreutils 的 date 所以看不出来)。date 只当没有 /proc 的
+# 后备(开发机 macOS):%s%N 出来的要至少 16 位数字才当纳秒,否则按秒 ×1000。
 now_ms() {
+  if [ -r /proc/uptime ]; then
+    t=$(awk '{ printf "%d\n", $1 * 1000 }' /proc/uptime 2>/dev/null)
+    case "$t" in
+      ''|*[!0-9]*) ;;
+      *) echo "$t"; return ;;
+    esac
+  fi
   t=$(date +%s%N 2>/dev/null || echo '')
   case "$t" in
     ''|*[!0-9]*) date +%s000 ;;
-    *) echo $((t / 1000000)) ;;
+    ????????????????*) echo $((t / 1000000)) ;;
+    *) echo "${t}000" ;;
   esac
 }
 

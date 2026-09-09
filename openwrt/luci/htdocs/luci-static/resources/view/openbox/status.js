@@ -822,7 +822,11 @@ var STYLE_CSS =
 	'.ob-chan-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 12px;border:1px solid rgba(127,127,127,.2);border-radius:8px}' +
 	'.ob-chan-row:hover{background:rgba(127,127,127,.06)}' +
 	'.ob-chan-radio{display:flex;align-items:center;gap:.5em;min-width:0;cursor:pointer}' +
-	'.ob-chan-radio input{flex:none;margin:0;cursor:pointer}' +
+	// 主题(Argon)给所有 input 统一加了 padding / line-height / 边框 / 外边距,原生单选框
+	// 带着这些会比文字高出一截、圆点被压到文字基线以下(Windows 上尤其明显);这里
+	// 把它们全部还原、给个固定尺寸,让 flex 的 align-items:center 真正对上文字的中线
+	'.ob-chan-row .ob-chan-radio input{flex:none;width:16px;height:16px;margin:0;padding:0;border:0;border-radius:50%;box-shadow:none;line-height:1;position:static;vertical-align:middle;cursor:pointer}' +
+	'.ob-chan-name{line-height:1.3}' +
 	'.ob-chan-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
 	'.ob-chan-stat{margin-left:auto;font-size:.85em;opacity:.85;white-space:nowrap}' +
 	'.ob-chan-ok{color:#2e9e4f}' +
