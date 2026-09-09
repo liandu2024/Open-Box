@@ -298,3 +298,10 @@ test('interval 比 idle_timeout 长时 idle_timeout 抬到和 interval 一样(si
   assert.equal(group.interval, '1440m')
   assert.equal(group.idle_timeout, '1440m')
 })
+
+test('动态组按关键词选成员时把识别出的地区名也算上:订阅关了重命名、节点叫 US-01 也能进「美国-自动」', () => {
+  const ns = [{ tag: 'US-01', regionName: '美国' }, { tag: 'HK-01', regionName: '香港' }, { tag: 'Tokyo Node', regionName: '' }]
+  const groups = [{ id: 'g-us', name: '美国-自动', type: 'urltest', mode: 'dynamic', keywords: ['美国'], members: [], enabled: true }]
+  const { outbounds } = emitUser(groups, ns)
+  assert.deepEqual(outbounds.find((o) => o.tag === '美国-自动').outbounds, ['US-01'])
+})

@@ -132,6 +132,9 @@ export const excludeNodes = (nodes, options = {}) => {
 }
 
 export const renameNodes = (nodes, options = {}) => {
+  // enabled=false:不改名,节点保留机场的原始名字(GitHub #3 要的"保留原始节点名"),手工改名和订阅名前缀照常;
+  // 地区仍按关键词识别,国旗和按地区选成员的节点组靠 regionCode / regionName,不靠名字
+  const enabled = options.enabled !== false
   const regionDict = options.regionDict || REGIONS
   // featureKeywords 是新写法(扁平关键词表);featureDict 是老档案里的两层结构,
   // extractFeatures 内部会扁平化,这里只负责挑一个非空的来源。
@@ -168,6 +171,8 @@ export const renameNodes = (nodes, options = {}) => {
     let tag
     if (override) {
       tag = override
+    } else if (!enabled) {
+      tag = node.originalTag
     } else {
       const key = `${regionName}|${keyFeature}`
       const next = (counters.get(key) || 0) + 1
@@ -181,13 +186,18 @@ export const renameNodes = (nodes, options = {}) => {
     // 就把那行的代码挂在节点上。界面据此显示国旗,不必再从名字里倒推一次——名字是
     // 模板拼出来的,可能被手工改过、也可能带订阅名前缀,从它反推国家并不可靠。
     const regionCode = region && region.code ? String(region.code).toUpperCase() : ''
+    // 识别出的地区名也挂在节点上:不改名时节点名里没有它,节点组按「美国」这类关键词选成员要靠它
+    const recognizedRegion = region ? region.name : ''
     // regionRank 只用于排序,不进最终节点对象。兜底目录命中的排在用户词典的所有地区之后、
     // 「其他」之前,顺序按目录
     const regionRank = own
       ? regionDict.findIndex((r) => r.name === regionName)
       : region ? regionDict.length + FALLBACK_REGION_DICT.findIndex((r) => r.code === region.code) : -1
-    return { node: { ...node, tag, regionCode }, regionRank }
+    return { node: { ...node, tag, regionCode, regionName: recognizedRegion }, regionRank }
   })
+
+  // 不改名时保持订阅原始顺序:用户要的就是机场原样
+  if (!enabled) return renamed.map((item) => item.node)
 
   // 按地区词典的顺序排列,未识别的(「其他」)一律垫底。词典顺序是用户在规则页拖出来
   // 的,那既是匹配优先级,也理应是节点的呈现顺序——否则界面上排在最前的地区,到了

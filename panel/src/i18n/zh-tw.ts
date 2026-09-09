@@ -648,6 +648,7 @@ const zhTW: LANG_MESSAGE = {
   iconCategoryMisc: '其他',
   subscriptionRenameCountryNoMatch: '沒有符合的國家/地區',
   subscriptionRenamePrefixLabel: '節點名前加訂閱名(如「機場名稱 {sep} 香港-01」)',
+  subscriptionRenameDisabledHint: '已關閉:節點保留機場的原始名字(訂閱名前綴、逐條手工改名照常)。地區仍按下面的關鍵字識別,用於國旗和按地區選成員的節點組。',
   subscriptionRenameTokensHint: '拖曳排序:',
   subscriptionRenameUnknownLabel: '\u7121\u6cd5\u8b58\u5225\u5730\u5340\u6642\u7684\u6a19\u7c64',
   subscriptionRenameSeqPadHint: '給序號補零的位數。節點名到處都按文字排序,不補零時「美國-10」會排到「美國-2」前面。',

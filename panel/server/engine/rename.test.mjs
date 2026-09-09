@@ -348,3 +348,13 @@ test('手工改过名的节点同样带国别:国别看的是原名,与改成什
   const out = renameNodes([mk('香港01')], { regionDict: dict, overrides: { 香港01: '我的节点' } })
   assert.deepEqual(out.map((n) => [n.tag, n.regionCode]), [['我的节点', 'HK']])
 })
+
+test('enabled=false:保留原始名字、不排序,前缀和手工改名照常,地区仍识别(regionCode / regionName)', () => {
+  const out = renameNodes([mk('US-IEPL 02'), mk('HK-01 香港'), mk('plain-node')], { enabled: false, prefix: '机场', overrides: { 'plain-node': '我的节点' } })
+  assert.deepEqual(out.map((n) => n.tag), ['机场 | US-IEPL 02', '机场 | HK-01 香港', '机场 | 我的节点'])
+  assert.deepEqual(out.map((n) => n.regionCode), ['US', 'HK', ''])
+  assert.deepEqual(out.map((n) => n.regionName), ['美国', '香港', ''])
+  // 开着时照旧改名 + 按地区排序,并同样带 regionName
+  const on = renameNodes([mk('US-IEPL 02'), mk('HK-01 香港')])
+  assert.deepEqual(on.map((n) => [n.tag, n.regionName]), [['美国-IEPL-01', '美国'], ['香港-01', '香港']])
+})

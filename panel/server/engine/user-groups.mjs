@@ -195,12 +195,14 @@ export const builtinTags = (groups) => {
 //              本来也不需要把组算进去。
 //   static  —— 用显式成员,剔除"指向不存在的东西"的条目;组之间可以互相引用,但引用
 //              必须最终落到真实存在的组上。
-const resolveMembers = (group, nodeTags, groupNameSet) => {
+// matchText:节点名之外再带上识别出的地区名(rename.mjs 挂的 regionName)。订阅关了重命名、节点保留
+// 机场原名(比如 "US-01")时,「美国-自动」这种按地区关键词选成员的组照样能选到它
+const resolveMembers = (group, nodeTags, groupNameSet, matchText = new Map()) => {
   const nodeTagSet = new Set(nodeTags)
   if (group.mode === 'dynamic') {
     if (!group.keywords.length) return [...nodeTags]
     return nodeTags.filter((tag) => {
-      const lower = normalizeForMatch(tag)
+      const lower = matchText.get(tag) ?? normalizeForMatch(tag)
       return group.keywords.some((kw) => keywordMatches(lower, kw))
     })
   }
@@ -255,6 +257,7 @@ export const emitUserGroups = (groups, nodes, options = {}) => {
   // 保持节点原有顺序:节点已经按地区词典排过序了(见 rename.mjs),组里的成员顺序
   // 跟着它走,策略组列表看起来才和节点列表一致。
   const nodeTags = (nodes || []).map((n) => n.tag)
+  const matchText = new Map((nodes || []).map((n) => [n.tag, normalizeForMatch(`${n.regionName || ''} ${n.tag}`)]))
 
   const builtin = builtinTags(normalized)
   // 停用的组不进配置。内置的直连例外:内核里 direct 出站必须存在(内网直连、DNS 直连
@@ -276,7 +279,7 @@ export const emitUserGroups = (groups, nodes, options = {}) => {
     if (g.kind === 'direct') { outbounds.push({ type: 'direct', tag: g.name }); continue }
     if (g.kind === 'block') { outbounds.push({ type: 'block', tag: g.name }); continue }
     if (!withoutCycles.includes(g)) continue
-    let members = resolveMembers(g, nodeTags, groupNameSet)
+    let members = resolveMembers(g, nodeTags, groupNameSet, matchText)
     if (!members.length) {
       // 空组不能原样写进配置——内核会 FATAL(1.13.14 实测:
       // "initialize outbound[N]: missing tags")。但也不该把整个组丢掉:用户建

@@ -653,6 +653,7 @@ const en = {
   iconCategoryMisc: 'Other',
   subscriptionRenameCountryNoMatch: 'No matching country/region',
   subscriptionRenamePrefixLabel: 'Prefix node names with the subscription name (e.g. "Airport {sep} HK-01")',
+  subscriptionRenameDisabledHint: 'Off: nodes keep the original names from the provider (the subscription-name prefix and per-node manual renames still apply). Regions are still recognized by the keywords below for flags and region-based node groups.',
   subscriptionRenameTokensHint: 'Drag to reorder:',
   subscriptionRenameUnknownLabel: 'Label for unrecognized region',
   subscriptionRenameSeqPadHint: 'Zero-pads the sequence number. Names sort as text everywhere, so without padding US-10 comes before US-2.',

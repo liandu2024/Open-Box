@@ -1,8 +1,28 @@
 <template>
   <div class="flex flex-col gap-4">
+    <!-- 前缀存的是开关而不是文本:存文本的话,用户改了订阅名,前缀还留着旧名字。
+         它和重命名规则无关(关了重命名也能加前缀),所以放在规则标题前面 -->
+    <label class="flex cursor-pointer items-center gap-2 text-xs">
+      <input
+        v-model="usePrefix"
+        type="checkbox"
+        class="checkbox checkbox-xs"
+      />
+      {{ $t('subscriptionRenamePrefixLabel', { sep: '|' }) }}
+    </label>
+
+    <!-- 重命名规则:标题后面是总开关,关掉时下面的规则整块收起、节点保留机场原始名字 -->
     <div class="flex items-center justify-between gap-2">
-      <h3 class="text-sm font-semibold">{{ $t('subscriptionRenameEditorTitle') }}</h3>
+      <label class="flex cursor-pointer items-center gap-2">
+        <h3 class="text-sm font-semibold">{{ $t('subscriptionRenameEditorTitle') }}</h3>
+        <input
+          v-model="enabled"
+          type="checkbox"
+          class="toggle toggle-xs toggle-primary"
+        />
+      </label>
       <button
+        v-if="enabled"
         type="button"
         class="btn btn-ghost btn-xs"
         @click="resetToDefaults"
@@ -11,9 +31,16 @@
         {{ $t('reset') }}
       </button>
     </div>
+    <p
+      v-if="!enabled"
+      class="text-base-content/60 -mt-2 text-xs"
+    >{{ $t('subscriptionRenameDisabledHint') }}</p>
 
     <!-- Template + unknown label + seq padding -->
-    <div class="flex flex-col gap-2">
+    <div
+      v-if="enabled"
+      class="flex flex-col gap-2"
+    >
       <!-- 命名模板不再是一个要手写 {region}-{feature}-{seq} 的文本框:那对小白等于
            没说。改成三块可拖拽的牌子,拖出来的先后顺序就是节点名的组成顺序,分隔符
            固定用 "-"。下面那行实时显示算出来的样子。
@@ -62,19 +89,9 @@
       <p class="text-base-content/60 text-xs">
         {{ $t('subscriptionRenameTemplateExample', { example: templateExample }) }}
       </p>
-      <!-- 前缀存的是开关而不是文本:存文本的话,用户改了订阅名,前缀还留着旧名字。
-           手工改过名的节点不加前缀——那是用户指定的完整名字。 -->
-      <label class="flex cursor-pointer items-center gap-2 text-xs">
-        <input
-          v-model="usePrefix"
-          type="checkbox"
-          class="checkbox checkbox-xs"
-        />
-        {{ $t('subscriptionRenamePrefixLabel', { sep: '|' }) }}
-      </label>
     </div>
 
-    <!-- Region dictionary -->
+    <!-- Region dictionary:关了重命名也要留着——地区识别给国旗和按地区选成员的节点组用 -->
     <div class="flex flex-col gap-2">
       <div class="flex items-center justify-between">
         <label class="text-xs font-medium">{{ $t('subscriptionRenameRegionDictLabel') }}</label>
@@ -143,7 +160,10 @@
 
     <!-- 「无法识别地区时的标签」紧跟在地区关键词后面:它就是这张表全都没命中时的
          兜底值,挨着它要兜底的那份清单最好懂。原来它在最上面和序号位数并排,离得远。 -->
-    <div class="flex flex-col gap-1">
+    <div
+      v-if="enabled"
+      class="flex flex-col gap-1"
+    >
       <label class="text-xs font-medium">{{ $t('subscriptionRenameUnknownLabel') }}</label>
       <input
         v-model="unknownLabel"
@@ -155,7 +175,10 @@
     <!-- 特征不再是「标签 + 同义词」两层结构:命中哪个关键词就把那个词本身(转大写)
          写进节点名。所以这里只需要一行关键词,不再有标签列,也不再有多行增删。
          例:关键词填 iplc,ipv6,节点名 "美国 IPLC IPv6 01" → 美国-IPLC-IPV6-01。 -->
-    <div class="flex flex-col gap-1">
+    <div
+      v-if="enabled"
+      class="flex flex-col gap-1"
+    >
       <label class="text-xs font-medium">{{ $t('subscriptionRenameFeatureDictLabel') }}</label>
       <p class="text-base-content/50 text-xs">{{ $t('subscriptionRenameFeatureDictHint') }}</p>
       <input
@@ -329,8 +352,11 @@ const template = computed(() => tokenOrder.value.join('-'))
 // 用订阅名做前缀(「机场名称 | 香港-01」),一眼看出节点来自哪个订阅。
 // 默认打开;只有明确存过 false(用户关过)才关
 const usePrefix = ref(init?.usePrefix !== false)
+// 重命名总开关:默认开;只有明确存过 false 才关
+const enabled = ref(init?.enabled !== false)
 
 const options = computed<OpenboxRenameOptions>(() => ({
+  enabled: enabled.value,
   template: template.value || DEFAULT_RENAME_TEMPLATE,
   usePrefix: usePrefix.value,
   unknownLabel: unknownLabel.value.trim() || DEFAULT_UNKNOWN_LABEL,
@@ -372,6 +398,7 @@ const templateExample = computed(() => {
 })
 
 const resetToDefaults = () => {
+  enabled.value = true
   tokenOrder.value = orderFromTemplate(DEFAULT_RENAME_TEMPLATE)
   unknownLabel.value = DEFAULT_UNKNOWN_LABEL
   seqPad.value = DEFAULT_SEQ_PAD

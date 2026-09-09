@@ -180,6 +180,8 @@ export interface OpenboxRenameFeatureEntry {
 }
 
 export interface OpenboxRenameOptions {
+  // 重命名总开关:关掉后节点保留机场原始名字(手工改名、订阅名前缀照常),地区仍识别用于国旗和节点组;默认开
+  enabled?: boolean
   regionDict?: OpenboxRenameRegionEntry[]
   // 特征关键词扁平表:命中哪个词就把那个词本身(转大写)写进节点名。
   featureKeywords?: string[]
