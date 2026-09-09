@@ -112,10 +112,18 @@ export const registerTrafficRoutes = (app, { collector, ctx, paths, store, now =
   }
 
   // 「分析数据保留时长」卡片用:存了多少、大概占多大、每天涨多少
+  // perDay 是按天记录的日增量(存满整个保留时长按它算);小时明细只留 HOUR_DETAIL_KEEP_DAYS 天,
+  // 另给 hourPerDay,前端估算时只乘这几天
   router.get('/traffic/usage', (_req, res) => {
     const u = collector.store.usage ? collector.store.usage() : null
-    if (!u) return res.json({ rows: 0, days: 0, bytes: 0, perDay: 0 })
-    res.json({ ...u, perDay: u.days ? Math.round(u.bytes / u.days) : 0 })
+    if (!u) return res.json({ rows: 0, days: 0, bytes: 0, perDay: 0, hourPerDay: 0, hourKeepDays: HOUR_DETAIL_KEEP_DAYS })
+    const dayBytes = Number(u.dayBytes ?? u.bytes) || 0
+    res.json({
+      ...u,
+      perDay: u.days ? Math.round(dayBytes / u.days) : 0,
+      hourPerDay: u.hourDays ? Math.round((Number(u.hourBytes) || 0) / u.hourDays) : 0,
+      hourKeepDays: HOUR_DETAIL_KEEP_DAYS,
+    })
   })
 
   router.get('/traffic/month', (req, res) => {

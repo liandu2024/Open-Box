@@ -23,7 +23,7 @@
         <template v-if="usage && usage.days">
           {{ $t('trafficRetentionUsage', { days: usage.days, size: fmt(usage.bytes), perDay: fmt(usage.perDay) }) }}
           <template v-if="usage.perDay">
-            {{ $t('trafficRetentionForecast', { size: fmt(usage.perDay * 30 * months) }) }}
+            {{ $t('trafficRetentionForecast', { size: fmt(usage.perDay * 30 * months + (usage.hourPerDay || 0) * (usage.hourKeepDays || 7)) }) }}
           </template>
         </template>
         <template v-else>{{ $t('trafficRetentionNoData') }}</template>

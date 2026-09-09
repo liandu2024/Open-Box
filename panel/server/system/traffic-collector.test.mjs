@@ -212,6 +212,24 @@ test('sqlite store:交叉表按前一维 / 后一维查构成,含空串 key;交�
   assert.equal(u.days, 1)
   assert.ok(u.rows > 0 && u.bytes > u.rows * 40)
   assert.equal(u.oldestDay, '2026-09-03')
+  assert.equal(u.hourDays, 0)
+  assert.equal(u.hourBytes, 0)
+  assert.equal(u.bytes, u.dayBytes)
+  // 加两天的小时明细(「天@小时」行):天数、最早 / 最新那天不受它们影响,字节数按天 / 按小时分开
+  store.add([
+    { day: '2026-09-03@10', kind: 'hour', key: '10', up: 1, down: 2, conns: 1 },
+    { day: '2026-09-03@11', kind: 'node', key: '香港 | 01', up: 1, down: 2, conns: 1 },
+    { day: '2026-09-04@00', kind: 'hour', key: '00', up: 1, down: 2, conns: 1 },
+  ])
+  const u2 = store.usage()
+  assert.equal(u2.days, 1, '小时明细行不算天')
+  assert.equal(u2.oldestDay, '2026-09-03')
+  assert.equal(u2.newestDay, '2026-09-03', '最新那天不能是「天@小时」')
+  assert.equal(u2.hourDays, 2)
+  assert.equal(u2.dayBytes, u.dayBytes)
+  assert.ok(u2.hourBytes > 0)
+  assert.equal(u2.bytes, u2.dayBytes + u2.hourBytes)
+  assert.equal(u2.rows, u.rows + 3)
 })
 
 test('dnsmasq 回环出站不算流量:不进任何维度,总量也把它减掉', () => {

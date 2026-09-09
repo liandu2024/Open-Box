@@ -96,7 +96,7 @@ const en = {
   trafficRetentionDescription: 'How long daily traffic records stay on the router; expired ones are cleaned daily. Hourly detail is kept for 7 days only.',
   trafficRetentionUnit: 'months',
   trafficRetentionRange: '1 to 36, default 3',
-  trafficRetentionUsage: '{days} days stored, about {size}; roughly {perDay} per day.',
+  trafficRetentionUsage: '{days} days stored, about {size}; roughly {perDay} per day (excluding hourly detail, kept 7 days).',
   trafficRetentionForecast: 'At this rate, a full retention window is about {size}.',
   trafficRetentionNoData: 'No data yet — collection starts once the kernel is running.',
   testUrlTitle: 'Test URLs',

@@ -98,7 +98,7 @@ const zh: LANG_MESSAGE = {
   trafficRetentionDescription: '每日流量记录在路由器上存多久,超期每天清理一次;按小时的明细只留最近 7 天。',
   trafficRetentionUnit: '个月',
   trafficRetentionRange: '1 ~ 36,默认 3',
-  trafficRetentionUsage: '已存 {days} 天,约 {size};每天约 {perDay}。',
+  trafficRetentionUsage: '已存 {days} 天,约 {size};每天约 {perDay}(不含只留 7 天的小时明细)。',
   trafficRetentionForecast: '按这个速度,存满设定的时长约 {size}。',
   trafficRetentionNoData: '还没有攒下数据,内核跑起来之后才开始记。',
   testUrlTitle: '测速地址',

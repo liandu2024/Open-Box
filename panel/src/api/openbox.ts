@@ -1125,7 +1125,10 @@ export interface OpenboxTrafficUsage {
   rows: number
   days: number
   bytes: number
+  // 按天记录的日增量;小时明细(只留 hourKeepDays 天)另算 hourPerDay
   perDay: number
+  hourPerDay?: number
+  hourKeepDays?: number
   oldestDay: string
   newestDay: string
 }

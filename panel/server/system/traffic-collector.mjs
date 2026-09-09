@@ -157,9 +157,17 @@ export const createTrafficStore = (db) => {
   const deleteBefore = db.prepare(`DELETE FROM traffic_daily WHERE day < ?`)
   // 某一天的小时明细行(day 是「那天@HH」)在主键上紧挨在那天后面:> '那天' 且 < '那天~'
   const deleteHourDetailOfDay = db.prepare(`DELETE FROM traffic_daily WHERE day > ?1 AND day < ?1 || '~'`)
+  // 「天@小时」的明细行和按天的行混在一张表里:天数、最早 / 最新那天只数按天的行(不然每天 24 个小时
+  // 桶都算一「天」,正式路由器装了 5 天显示「已存 101 天」);字节数按天 / 按小时分开给,小时明细只留
+  // HOUR_DETAIL_KEEP_DAYS 天,估算存满要多大时不能按它的日增量乘整个保留时长
   const usageStat = db.prepare(`
-    SELECT COUNT(*) AS rows, COUNT(DISTINCT day) AS days, MIN(day) AS oldestDay, MAX(day) AS newestDay,
-           COALESCE(SUM(LENGTH(key) + LENGTH(kind)), 0) AS keyBytes
+    SELECT COUNT(*) AS rows,
+           COUNT(DISTINCT CASE WHEN instr(day, '@') = 0 THEN day END) AS days,
+           MIN(CASE WHEN instr(day, '@') = 0 THEN day END) AS oldestDay,
+           MAX(CASE WHEN instr(day, '@') = 0 THEN day END) AS newestDay,
+           COALESCE(SUM(CASE WHEN instr(day, '@') = 0 THEN LENGTH(key) + LENGTH(kind) + 40 ELSE 0 END), 0) AS dayBytes,
+           COALESCE(SUM(CASE WHEN instr(day, '@') > 0 THEN LENGTH(key) + LENGTH(kind) + 40 ELSE 0 END), 0) AS hourBytes,
+           COUNT(DISTINCT CASE WHEN instr(day, '@') > 0 THEN substr(day, 1, 10) END) AS hourDays
     FROM traffic_daily
   `)
 
@@ -233,16 +241,23 @@ export const createTrafficStore = (db) => {
     },
     // 「分析数据保留时长」那张卡片要显示的东西:存了多少天、多少行、大概占多大。
     // 字节数是估的:键本身的长度 + 每行 40 字节(日期、三个整数、页内开销)。和把某一天
-    // 的行复制进空库量出来的实际占用对得上(实测差 5% 以内)。
+    // 的行复制进空库量出来的实际占用对得上(实测差 5% 以内)。days / oldestDay / newestDay
+    // 只看按天的行;dayBytes / hourBytes 分别是按天的行和「天@小时」明细行的占用,hourDays
+    // 是有小时明细的天数
     usage() {
       const r = usageStat.get() || {}
       const rows = Number(r.rows) || 0
+      const dayBytes = Number(r.dayBytes) || 0
+      const hourBytes = Number(r.hourBytes) || 0
       return {
         rows,
         days: Number(r.days) || 0,
         oldestDay: r.oldestDay || '',
         newestDay: r.newestDay || '',
-        bytes: (Number(r.keyBytes) || 0) + rows * 40,
+        bytes: dayBytes + hourBytes,
+        dayBytes,
+        hourBytes,
+        hourDays: Number(r.hourDays) || 0,
       }
     },
   }
