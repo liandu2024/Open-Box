@@ -13,12 +13,12 @@
         class="text-base-content/70 flex cursor-pointer items-center gap-1.5 text-xs font-normal"
         :title="$t('trafficCountDirectHint')"
       >
+        <span>{{ $t('trafficCountDirect') }}</span>
         <input
           v-model="trafficCountDirect"
           type="checkbox"
           class="toggle toggle-xs toggle-primary"
         >
-        <span>{{ $t('trafficCountDirect') }}</span>
       </label>
       <!-- 月份切换:和明细页签同一套 tabs-box 样式(圆角高亮块),两侧箭头用圆形幽灵按钮 -->
       <div
