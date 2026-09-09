@@ -1,4 +1,5 @@
 import express from 'express'
+import { DNS_REWRITE_DEFAULTS, validateDnsRewrite } from '../engine/dns-rewrite.mjs'
 import { RESERVED_PORTS, SERVER_PROTOCOLS, SS_METHODS } from '../engine/servers.mjs'
 import { isIpOrCidr } from '../engine/client-routes.mjs'
 import { CUSTOM_RULE_TYPES, FALLBACK_TAG, normalizeRouting, parsePortSpec } from '../engine/routing-model.mjs'
@@ -126,6 +127,10 @@ export const validateProfilePatch = (patch, { reservedNames = [] } = {}) => {
       return 'dns.mode must be one of off, hijack, dnsmasq'
     }
     if ('fakeIpForProxy' in dns && !isBoolean(dns.fakeIpForProxy)) return 'dns.fakeIpForProxy must be a boolean'
+    if ('rewrite' in dns) {
+      const bad = validateDnsRewrite(dns.rewrite)
+      if (bad) return bad
+    }
   }
 
   if ('routing' in patch) {
@@ -363,7 +368,8 @@ export const registerProfileRoutes = (app, { store } = {}) => {
   // 区域推荐默认——放在 GET / 前面注册,和 subscriptions.mjs 里 /preview 先于 / 的顺序一致,
   // 虽然这里都是字面量路径不存在遮蔽问题,但保持同样的可读习惯。
   router.get('/defaults', (req, res) => {
-    res.json({ defaults: buildRegionDefaults(req.query.region) })
+    // dnsRewriteDefaults:「DNS 重写」卡片的「恢复默认」按它把两条默认项放回去
+    res.json({ defaults: buildRegionDefaults(req.query.region), dnsRewriteDefaults: DNS_REWRITE_DEFAULTS })
   })
 
   // 地区层退役的一次性升级:老档案里的地区被翻译成站点集(engine/routing-model.mjs),

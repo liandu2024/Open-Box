@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import { readSystemDns } from '../system/resolv.mjs'
+import { normalizeDnsRewrite, rewriteForwardDomains } from '../engine/dns-rewrite.mjs'
 import { readLocalSubnets } from '../system/local-subnets.mjs'
 import { resolveHostsToCidrs } from '../system/resolve-hosts.mjs'
 import { collectDirectHosts } from '../engine/direct-hosts.mjs'
@@ -143,7 +144,7 @@ export const firstLayerChanged = async (ctx, paths, store, selections) => {
     if (prev.dnsMode === 'dnsmasq') {
       // 这里只能算到计划阶段(规则集要到部署时才展开),所以和元数据里计划阶段的模式比;老元数据
       // 没有这个字段时退回和实际模式比
-      const forward = dnsmasqForwardPlan(profile.routing, members, builtin, selections || {})
+      const forward = dnsmasqForwardPlan(profile.routing, members, builtin, selections || {}, { rewriteDomains: rewriteForwardDomains(normalizeDnsRewrite(profile.dns).rules) })
       if (forward.mode !== (prev.dnsForwardPlanned || prev.dnsForward)) return true
     }
     return false

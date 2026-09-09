@@ -1,4 +1,5 @@
 import { DEFAULT_BUILTIN, customOutboundTag, customPolicyActive, customRuleTag, dnsRulesetTags, normalizeRouting, policyOutboundOptions, policyGoesDirect } from './routing-model.mjs'
+import { normalizeDnsRewrite, rewriteDnsRules, rewriteDnsServer } from './dns-rewrite.mjs'
 
 const extractHost = (url) => {
   // "https://1.1.1.1/dns-query" -> "1.1.1.1";裸 host 原样返回
@@ -106,9 +107,13 @@ export const buildDnsWithResolvers = (profile, options = {}) => {
   // 找回来再匹配规则。没有它,SSH / 游戏这类嗅不出域名的连接永远命中不了域名规则(比如
   // 「订阅和节点站点直连」),全落到兜底走代理。
   const resolvers = { policies: {}, custom: [], clients: [], fallback: 'dns-direct' }
+  // DNS 重写(engine/dns-rewrite.mjs):命中源域名的查询交给面板进程在 127.0.0.1:7854 上开的重写服务,排在所有
+  // 规则最前面——先定命中哪条重写,再谈别的
+  const rewriteRules = rewriteDnsRules(normalizeDnsRewrite(profile.dns).rules)
+  const rewriteServers = rewriteRules.length ? [rewriteDnsServer()] : []
   if (!profile.dns.split) {
-    const only = { servers: [directServer, ...localServers], final: 'dns-direct', strategy, reverse_mapping: true }
-    if (localRules.length) only.rules = localRules
+    const only = { servers: [directServer, ...rewriteServers, ...localServers], final: 'dns-direct', strategy, reverse_mapping: true }
+    if (rewriteRules.length || localRules.length) only.rules = [...rewriteRules, ...localRules]
     return { dns: only, resolvers }
   }
 
@@ -116,12 +121,12 @@ export const buildDnsWithResolvers = (profile, options = {}) => {
   const proxyHost = extractHost(profile.dns.proxy)
   // 代理侧的解析 detour 到兜底站点集「其他」:上面没被任何站点集挑走的域名,走哪条线路
   // 就用哪条线路解析,和各站点集各自 detour 到自己的 selector 是同一个道理。
-  const servers = [directServer, proxyServerFor(proxyHost, 'dns-proxy', conf.fallback.name)]
+  const servers = [directServer, ...rewriteServers, proxyServerFor(proxyHost, 'dns-proxy', conf.fallback.name)]
 
-  // 规则顺序和连接侧(routing.mjs)对齐:本地主机名 → 前置自定义分流 → 订阅 / 节点站点直连 →
+  // 规则顺序和连接侧(routing.mjs)对齐:DNS 重写 → 本地主机名 → 前置自定义分流 → 订阅 / 节点站点直连 →
   // 终端分流 → 广告拦截 → 站点集 → 兜底。以前直连站点和广告拦截排在前置自定义分流前面,
   // 用户明确放行的域名会先被广告规则拒掉(审核 B4)。
-  const rules = [...localRules]
+  const rules = [...rewriteRules, ...localRules]
 
   // 每个站点集的域名怎么解析,看它此刻实际走哪:
   //   · 走直连 → dns-direct(本地/直连解析,国内站点才拿得到就近的 CDN 地址)

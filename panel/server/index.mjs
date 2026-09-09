@@ -22,6 +22,9 @@ import { registerLatencyHistoryRoutes } from './api/latency-history.mjs'
 import { createLatencyHistory } from './system/latency-history.mjs'
 import { createLatencyScheduler } from './system/latency-scheduler.mjs'
 import { createFailoverManager } from './system/failover-manager.mjs'
+import { createDnsRewriteServer } from './system/dns-rewrite-server.mjs'
+import { ensureDnsRewriteDefaults } from './engine/dns-rewrite.mjs'
+import { readSystemDns } from './system/resolv.mjs'
 import { registerFailoverRoutes } from './api/failover.mjs'
 import { registerServerRoutes } from './api/servers.mjs'
 import { registerBackupRoutes } from './api/backup.mjs'
@@ -156,6 +159,12 @@ const store = createStore({
   set: (key, value) => upsertStorageValueStatement.run(key, value),
   del: (key) => deleteStorageValueStatement.run(key),
 })
+// DNS 重写第一次引入时补两条默认规则(只在还没初始化的档案上做一次;用户之后改 / 停 / 删都算数)
+try {
+  if (ensureDnsRewriteDefaults(store)) console.log('[dns-rewrite] 档案首次初始化 DNS 重写,写入默认规则')
+} catch (err) {
+  console.log(`[dns-rewrite] 初始化默认规则失败:${err instanceof Error ? err.message : err}`)
+}
 
 // 会话密钥落库,不是每次启动随机生成:否则升级 / 重启面板 / 路由器重启后进程一换,所有
 // 浏览器 cookie 立刻失效、被踢回登录页(升级到"替换文件"阶段面板重启就会当场弹登录)。
@@ -1113,6 +1122,9 @@ registerLatencyHistoryRoutes(app, { history: latencyHistory, scheduler: latencyS
 // 的节点、组内先恢复、组间按顺序转移、主用恢复后切回、全部失败切兜底拒绝。跟随服务端生命周期,浏览器关了照样跑
 const failoverManager = createFailoverManager({ store, ctx: obCtx, paths: obPaths, history: latencyHistory, fetchImpl: globalThis.fetch, log: (m) => console.log(m) })
 registerFailoverRoutes(app, { manager: failoverManager })
+// DNS 重写的应答服务(system/dns-rewrite-server.mjs):内核把命中重写源域名的查询交到 127.0.0.1:7854,这里按档案
+// 里此刻的规则生成答案;没命中的按直连侧上游(WAN 下发的 DNS)解析
+const dnsRewriteServer = createDnsRewriteServer({ store, fallbackServers: () => readSystemDns(obCtx).catch(() => []), log: (m) => console.log(m) })
 registerServerRoutes(app, { store, ctx: obCtx })
 // 导出诊断包(后端设置那张卡片):版本、固件、内核状态、脱敏配置、最近日志,给 issue 用
 registerDiagnosticsRoutes(app, { store, ctx: obCtx, paths: obPaths })
@@ -1243,6 +1255,7 @@ const startServer = async () => {
   trafficCollector.start()
   latencyScheduler.start()
   failoverManager.start()
+  dnsRewriteServer.start().catch(() => {})
   // 上一个面板进程留下的虚拟终端(模拟 LAN 终端测试用的网络命名空间)先拆掉,不留孤儿接口挂在网桥上
   teardownProbeNetns(obCtx).catch(() => {})
   if (server.listening) {
@@ -1292,6 +1305,7 @@ const shutdownServer = async () => {
   trafficCollector.stop()
   latencyScheduler.stop()
   failoverManager.stop()
+  dnsRewriteServer.stop()
   if (typeof db.close === 'function') {
     db.close()
   }

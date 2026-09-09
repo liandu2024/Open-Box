@@ -88,6 +88,15 @@ export interface OpenboxProfileRouting {
 
 // DNS 劫持方式:off 不碰 DNS / hijack 防火墙(nft)劫持 / dnsmasq 转发(默认)
 export type OpenboxDnsMode = 'off' | 'hijack' | 'dnsmasq'
+// DNS 重写的一条规则(server/engine/dns-rewrite.mjs):源域名(精确或 *.泛域名)→ 目标域名(动态解析)或固定地址
+export interface OpenboxDnsRewriteRule {
+  id: string
+  enabled?: boolean
+  source: string
+  domain?: string
+  addresses?: string[]
+  note?: string
+}
 export interface OpenboxProfileDns {
   split?: boolean
   mode?: OpenboxDnsMode
@@ -95,6 +104,8 @@ export interface OpenboxProfileDns {
   proxy?: string
   // 走代理的域名由内核发占位地址(FakeIP 原型):域名交给选中的节点解析,解析和连接落在同一个节点
   fakeIpForProxy?: boolean
+  // DNS 重写:initialized 记「默认规则补过了」,rules 是整份规则表(空数组 = 用户不要任何重写)
+  rewrite?: { initialized?: number; rules: OpenboxDnsRewriteRule[] }
 }
 
 // The backend deep-merges patches onto this shape (see server/store/openbox-store.mjs), so a
@@ -346,6 +357,12 @@ const requestJson = async <T>(input: string, init?: RequestInit): Promise<T> => 
 export const fetchProfile = async (): Promise<OpenboxProfile> => {
   const data = await requestJson<{ profile: OpenboxProfile }>('/api/openbox/profile')
   return data.profile
+}
+
+// 「DNS 重写」的两条默认项(恢复默认用)
+export const fetchDnsRewriteDefaults = async (): Promise<OpenboxDnsRewriteRule[]> => {
+  const data = await requestJson<{ dnsRewriteDefaults?: OpenboxDnsRewriteRule[] }>('/api/openbox/profile/defaults?region=cn')
+  return data.dnsRewriteDefaults ?? []
 }
 
 export const fetchProfileDefaults = async (region: string): Promise<OpenboxProfileDefaults> => {
@@ -777,6 +794,13 @@ export interface OpenboxDnsAssumption {
   action?: string
   sameOutcome?: boolean
 }
+// 规则页:这个域名命中了哪条 DNS 重写(server/api/route-test.mjs 的 decideDnsServer)
+export interface OpenboxDnsRewriteHit {
+  source: string
+  domain: string
+  addresses: string[]
+}
+
 export interface OpenboxPenetrationResult {
   matched: OpenboxPenetrationMatched | null
   // 要看终端来源 IP / 目标端口 / 地址族才能判、这次查询没给的规则:推算按"不满足它"的情况继续,这里把前提列出来
@@ -787,7 +811,7 @@ export interface OpenboxPenetrationResult {
   dns?:
     | { skipped: true }
     | { error: string }
-    | { ruleIndex: number | null; rejected?: boolean; server?: { tag: string; type?: string; server?: string; detour?: string }; viaProxy?: boolean; assumed?: OpenboxDnsAssumption[] }
+    | { ruleIndex: number | null; rejected?: boolean; server?: { tag: string; type?: string; server?: string; detour?: string }; viaProxy?: boolean; assumed?: OpenboxDnsAssumption[]; rewrite?: OpenboxDnsRewriteHit }
   // Starts with the resolved policy target (outbound) and drills down through clash_api's `now`
   // field to the leaf node; empty when the match was an outright reject (nothing to route).
   chain: string[]
@@ -924,7 +948,7 @@ export interface OpenboxRouteTest {
     | { error: string }
     // runtimeChain:代理侧解析时查询实际经过的线路,detour 的站点集 → 节点组 → 节点(按内核此刻的选择);runtimeLeaf 是它的末尾
     // fakeIpRule:内核自己的 fakeip 规则(FakeIP 原型)先命中,A / AAAA 拿占位地址;server 是其它查询类型走的真解析器
-    | { ruleIndex: number | null; rejected?: boolean; server?: { tag: string; type?: string; server?: string; detour?: string }; viaProxy?: boolean; stale?: 'direct' | 'proxy'; runtimeLeaf?: string; runtimeChain?: string[]; fakeIpRule?: number; assumed?: OpenboxDnsAssumption[] }
+    | { ruleIndex: number | null; rejected?: boolean; server?: { tag: string; type?: string; server?: string; detour?: string }; viaProxy?: boolean; stale?: 'direct' | 'proxy'; runtimeLeaf?: string; runtimeChain?: string[]; fakeIpRule?: number; assumed?: OpenboxDnsAssumption[]; rewrite?: OpenboxDnsRewriteHit }
   // fakeIp:答案落在 fake-ip 段(198.18.0.0/15),不是配置里那台 DNS 答的;fakeIpFrom 是代理侧解析时
   // 截下查询并应答的那个节点(detour 此刻落到的节点),直连解析回 fake-ip 时没有这个字段;
   // fakeIpLocal:占位地址是内核自己发的(FakeIP 原型),连接时按它找回域名交给选中的节点解析

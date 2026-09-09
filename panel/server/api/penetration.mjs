@@ -2,6 +2,7 @@ import express from 'express'
 import { builtinTags } from '../engine/user-groups.mjs'
 import { loadEntries } from './rulesets.mjs'
 import { decideDnsServer } from './route-test.mjs'
+import { normalizeDnsRewrite } from '../engine/dns-rewrite.mjs'
 import { customOutboundTag, customPolicyActive, customRuleTag, normalizeRouting, parsePortSpec, routingFingerprint } from '../engine/routing-model.mjs'
 import { readRuleListShapes } from '../system/rule-lists.mjs'
 import { configMetaPath } from '../system/deploy.mjs'
@@ -461,7 +462,7 @@ export const registerPenetrationRoutes = (app, { store, ctx, paths, fetchImpl = 
     } else {
       try {
         const config = JSON.parse(await ctx.readFile(paths.configPath))
-        body.dns = await decideDnsServer(ctx, paths, config, target.toLowerCase(), { sourceIp })
+        body.dns = await decideDnsServer(ctx, paths, config, target.toLowerCase(), { sourceIp, rewriteRules: typeof store?.getProfile === 'function' ? normalizeDnsRewrite(store.getProfile().dns).rules : [] })
       } catch (err) {
         body.dns = { error: `还没有生成过配置,无法判断 DNS(${errorMessage(err)})` }
       }

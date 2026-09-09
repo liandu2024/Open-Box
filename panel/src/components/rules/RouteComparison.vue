@@ -432,8 +432,12 @@
             <span class="badge badge-sm badge-error badge-soft w-fit">{{ $t('penetrationBlockedTitle') }}</span>
           </template>
           <template v-else>
-            <span class="font-medium">{{ ruleDns.viaProxy ? $t('routeTestDnsProxy') : $t('routeTestDnsDirect') }}</span>
+            <span class="font-medium">{{ ruleDns.rewrite ? $t('routeDnsRewrite') : ruleDns.viaProxy ? $t('routeTestDnsProxy') : $t('routeTestDnsDirect') }}</span>
             <span class="text-base-content/60 font-mono text-xs">{{ ruleDns.serverLine }}</span>
+            <span
+              v-if="ruleDns.rewrite"
+              class="basis-full text-xs"
+            >{{ ruleDns.rewrite }}</span>
           </template>
           <template
             v-if="ruleDns.kind === 'decision'"
@@ -486,8 +490,12 @@
           </template>
           <template v-else>
             <!-- 模拟终端问的是 LAN 的 DNS(DHCP 发下来的那台);内核诊断是内核自己的直连 / 代理解析器 -->
-            <span class="font-medium">{{ actualDns.lan ? $t('routeTermDnsLan') : actualDns.viaProxy ? $t('routeTestDnsProxy') : $t('routeTestDnsDirect') }}</span>
+            <span class="font-medium">{{ actualDns.lan ? $t('routeTermDnsLan') : actualDns.rewrite ? $t('routeDnsRewrite') : actualDns.viaProxy ? $t('routeTestDnsProxy') : $t('routeTestDnsDirect') }}</span>
             <span class="text-base-content/60 font-mono text-xs">{{ actualDns.serverLine }}</span>
+            <span
+              v-if="actualDns.rewrite"
+              class="basis-full text-xs"
+            >{{ actualDns.rewrite }}</span>
             <!-- IPv4 / IPv6 分开说、排在第二行:v4 成功了不能因为 AAAA 为空写成"没有解析结果";
                  档案没开 IPv6 的"未查询"不占这一行,放进解析记录里 -->
             <span
@@ -789,6 +797,8 @@ interface DnsView {
   serverLine?: string
   tag?: string
   detour?: string
+  // 命中的 DNS 重写:「原域名 → 目标」
+  rewrite?: string
   v4?: { text: string; tone: Tone }
   // queried:档案开了 IPv6、这次真的查了 AAAA;没查的(未开启 IPv6)不占主行,进详情
   v6?: { text: string; tone: Tone; queried: boolean }
@@ -822,6 +832,11 @@ const targetKind = computed<'domain' | 'ipv4' | 'ipv6'>(() => {
 })
 const kindText = computed(() => t(targetKind.value === 'domain' ? 'routeKindDomain' : targetKind.value === 'ipv4' ? 'routeKindIpv4' : 'routeKindIpv6'))
 const listOf = (v: unknown): string[] => (Array.isArray(v) ? v.map(String) : v === undefined || v === null ? [] : [String(v)])
+// 命中 DNS 重写时的一句:「DNS 重写:services.googleapis.cn → services.googleapis.com」
+const rewriteLineOf = (r?: { source: string; domain: string; addresses: string[] }) => {
+  if (!r || !r.source) return ''
+  return t('routeDnsRewriteHit', { source: r.source, target: r.domain || r.addresses.join(', ') })
+}
 const serverLineOf = (s?: { tag: string; type?: string; server?: string }) => {
   if (!s) return ''
   const type = s.type === 'local' ? 'local' : s.type || ''
@@ -905,6 +920,7 @@ const ruleDns = computed<DnsView>(() => {
   return {
     kind: 'decision', state: 'ok', badge: t('routeDnsPredicted'), tone: 'muted',
     viaProxy: Boolean(d.viaProxy), serverLine: serverLineOf(d.server) || d.server?.tag || '', tag: d.server?.tag || '', detour: d.server?.detour || '',
+    rewrite: rewriteLineOf(d.rewrite),
     assumptions: dnsAssumptionLines(d.assumed).relevant, assumptionsSame: dnsAssumptionLines(d.assumed).same,
   }
 })
@@ -1017,6 +1033,7 @@ const kernelDns = computed<DnsView>(() => {
     badge: r ? `${r.ms} ms` : t('routeDnsMeasured'),
     tone: failed ? 'pending' : 'good',
     viaProxy: Boolean(d.viaProxy), serverLine: serverLineOf(d.server) || d.server?.tag || '', tag: d.server?.tag || '',
+    rewrite: rewriteLineOf(d.rewrite),
     v4, v6, notes, chain, answers, answers6,
     stale: d.stale ? t(d.stale === 'direct' ? 'routeTestDnsStaleDirect' : 'routeTestDnsStaleProxy') : '',
     assumptions: dnsAssumptionLines(d.assumed).relevant, assumptionsSame: dnsAssumptionLines(d.assumed).same,

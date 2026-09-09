@@ -8,6 +8,7 @@ import { fetchSelections } from './deploy-runner.mjs'
 import { flushDnsCache } from '../system/dns-cache.mjs'
 import { builtinTags } from '../engine/user-groups.mjs'
 import { normalizeRouting } from '../engine/routing-model.mjs'
+import { DNS_REWRITE_TAG, matchRewrite, normalizeDnsRewrite } from '../engine/dns-rewrite.mjs'
 
 // 「真实路由」:不只按规则推,而是真的走一遍——
 //   1. DNS 用哪台服务器:按生成配置里 dns.rules 的顺序判(规则集用内核 rule-set match,
@@ -45,7 +46,9 @@ const fetchWithTimeout = async (fetchImpl, url, init = {}, timeoutMs = 8000) => 
 // dns.rules 里每条的条件和 route.rules 同一套写法(rule_set / domain / domain_suffix / domain_keyword /
 // source_ip_cidr)。带来源条件的规则要有终端来源 IP 才判得了;没给时不中断,记成前提(按不在该来源里的
 // 终端推算)继续往下,前提原样回给前端列出来
-export const decideDnsServer = async (ctx, paths, config, target, { sourceIp = '' } = {}) => {
+// rewriteRules:档案里的 DNS 重写规则(engine/dns-rewrite.mjs 归一化后的);命中 dns-rewrite 服务器时把命中的
+// 那条(源 / 目标)一并回给前端,规则页画成「原域名 → 目标」
+export const decideDnsServer = async (ctx, paths, config, target, { sourceIp = '', rewriteRules = [] } = {}) => {
   const dns = config.dns || {}
   const servers = new Map((dns.servers || []).map((s) => [s.tag, s]))
   const srsPathByTag = new Map(((config.route || {}).rule_set || []).map((r) => [r.tag, r.path]))
@@ -56,7 +59,12 @@ export const decideDnsServer = async (ctx, paths, config, target, { sourceIp = '
   let fakeIpRule
   const assumed = []
   // 返回时给每条前提标 sameOutcome:它命中时用的解析器 / 拒绝,和这里判出来的结果是不是一样(一样的前端不提示)
-  const withFake = (r) => {
+  const withFake = (r0) => {
+    let r = r0
+    if (r.server && r.server.tag === DNS_REWRITE_TAG) {
+      const hit = matchRewrite(rewriteRules, target)
+      r = { ...r, rewrite: hit ? { source: hit.source, domain: hit.domain, addresses: hit.addresses } : { source: '', domain: '', addresses: [] } }
+    }
     const out = fakeIpRule === undefined ? r : { ...r, fakeIpRule }
     if (!assumed.length) return out
     const finalized = assumed.map((a) => ({ ...a, sameOutcome: a.action === 'reject' ? Boolean(r.rejected) : Boolean(r.server && a.server === r.server.tag) }))
@@ -190,7 +198,7 @@ export const registerRouteTestRoutes = (app, { store, ctx, paths, fetchImpl = gl
     } else {
       try {
         const sourceIp = req.body && typeof req.body.sourceIp === 'string' && net.isIP(req.body.sourceIp.trim()) ? req.body.sourceIp.trim() : ''
-        out.dns = await decideDnsServer(ctx, paths, config, target, { sourceIp })
+        out.dns = await decideDnsServer(ctx, paths, config, target, { sourceIp, rewriteRules: typeof store?.getProfile === 'function' ? normalizeDnsRewrite(store.getProfile().dns).rules : [] })
         // 下面的解析和访问都是面板自己发起的:内核的 DNS 查询接口(clash API /dns/query)不带原终端来源,
         // 回环 mixed 入站的探测来源也是本机——指定终端的来源规则在这两步里没有生效,不能把它们画成
         // "该终端的实测"(复审 S4)

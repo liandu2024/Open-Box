@@ -8,6 +8,7 @@ import { normalizeClientRoutes } from '../engine/client-routes.mjs'
 import { dnsFakeIpEnabled, ipv6ProxyMode } from '../engine/dns.mjs'
 import { dnsPolicyClasses } from '../engine/dns.mjs'
 import { builtinTags } from '../engine/user-groups.mjs'
+import { enabledRewriteSources, normalizeDnsRewrite, rewriteForwardDomains } from '../engine/dns-rewrite.mjs'
 import { applyPanelLanRule, applyDnsLanRule, applyIpv6Block, removeProxyRules, applyServerPortRules, commitFirewall } from './firewall.mjs'
 import { ensureTlsKeypair } from './tls-keypair.mjs'
 import { configNeedsTlsKeypair, enabledServers } from '../engine/servers.mjs'
@@ -159,7 +160,8 @@ export const deployConfig = async (ctx, paths, { config, profile, userGroups, fe
     const clientRoutes = normalizeClientRoutes(profile.clientRoutes)
     // 计划阶段(纯函数)→ 展开阶段(把走代理的规则集解码成域名,展不开就降成 all)→ 应用阶段
     // (可能再降级)。元数据记的是最终实际执行的那份;计划阶段的模式另存一份,选择同步时按同口径比
-    const dnsPlanned = dnsmasqForwardPlan(profile.routing, policyMembers, builtin, selections || {})
+    const dnsRewrite = normalizeDnsRewrite(profile.dns).rules
+    const dnsPlanned = dnsmasqForwardPlan(profile.routing, policyMembers, builtin, selections || {}, { rewriteDomains: rewriteForwardDomains(dnsRewrite) })
     let dnsForward = dnsMode === 'dnsmasq' ? await expandDnsForward(ctx, paths, dnsPlanned) : dnsPlanned
     const bypassPlanned = nativeBypassPlan(profile.routing, { members: policyMembers, builtin, selections: selections || {}, clientRoutes, fakeIp: dnsFakeIpEnabled(profile), dnsMode })
     // 部署入口(api/deploy-runner.mjs)会带一份做过重叠核对的结论;没带就按纯函数的保守结论
@@ -182,6 +184,8 @@ export const deployConfig = async (ctx, paths, { config, profile, userGroups, fe
           // 故障转移的运行映射:父组 id / tag、页签 id / 顺序 / 有效节点 / 子组 tag / 派生模式、检测参数。
           // 后台管理器只按已经部署的这份做主备决策(弹窗里保存了还没生效的定义不算)
           failover: Array.isArray(failover) ? failover : [],
+          // 这次部署里进了内核 dns.rules 的 DNS 重写源域名:规则改了没重启,规则页和状态接口拿它对照
+          dnsRewrite: enabledRewriteSources(dnsRewrite),
           // 第一层:DNS 怎么分(none / domains / all)、入口有没有原生旁路、终端来源的 DNS 规则
           // 有没有生效(只有劫持模式内核才看得到终端的来源地址;dnsmasq 转发过来的一律是本机)
           firstLayer: {

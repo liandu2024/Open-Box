@@ -499,8 +499,11 @@ export const policyGoesDirect = (name, policyDefault, members, builtin, selectio
 // 不留到应用阶段再悄悄降级(复审 S3)。三种情况以前都用 [] 表示(审核 B2);前置分流里走代理的
 // 域名也没进名单(审核 B1)。
 const CUSTOM_TYPE_LABEL = { domainKeyword: '域名关键词', ruleset: '规则集' }
-export const dnsmasqForwardPlan = (routing, members = ['direct'], builtin = DEFAULT_BUILTIN, selections = {}) => {
+// extra.rewriteDomains:DNS 重写的源域名(已按 dnsmasq 写法整理,泛域名写根域;engine/dns-rewrite.mjs 的
+// rewriteForwardDomains)。它们不管走不走代理都得交给内核,不然在原上游就被正常解析、重写碰不到
+export const dnsmasqForwardPlan = (routing, members = ['direct'], builtin = DEFAULT_BUILTIN, selections = {}, extra = {}) => {
   const conf = normalizeRouting(routing)
+  const rewriteDomains = Array.isArray(extra.rewriteDomains) ? extra.rewriteDomains.filter((d) => typeof d === 'string' && d) : []
   const all = (reason) => ({ mode: 'all', domains: [], expand: [], reason })
   if (!policyGoesDirect(conf.fallback.name, conf.fallback.default, members, builtin, selections)) return all(`兜底「${conf.fallback.name}」走代理`)
   // 广告拦截是规则集,拦截又必须在 DNS 入口就生效(否则查询交给原上游,内核里的拒绝规则根本碰
@@ -541,12 +544,13 @@ export const dnsmasqForwardPlan = (routing, members = ['direct'], builtin = DEFA
     // geoip 只按 IP 分,解析阶段用不上;geosite / 规则集链接(rulesets 里已经含链接对应的 tag)交给部署时展开
     for (const tag of p.rulesets) if (!/^geoip-/.test(tag)) expand.push({ tag, owner: `站点集「${p.name}」` })
   }
+  for (const d of rewriteDomains) domains.add(d)
   if (!domains.size && !expand.length) return { mode: 'none', domains: [], expand: [], reason: '没有走代理的域名,DNS 全部由路由器原有上游解析' }
   return { mode: 'domains', domains: [...domains], expand, reason: '' }
 }
 // 老接口:只回名单。none / all 都是空数组——只给还没改到计划形状的调用方过渡用
-export const dnsmasqForwardDomains = (routing, members = ['direct'], builtin = DEFAULT_BUILTIN, selections = {}) => {
-  const plan = dnsmasqForwardPlan(routing, members, builtin, selections)
+export const dnsmasqForwardDomains = (routing, members = ['direct'], builtin = DEFAULT_BUILTIN, selections = {}, extra = {}) => {
+  const plan = dnsmasqForwardPlan(routing, members, builtin, selections, extra)
   return plan.mode === 'domains' ? plan.domains : []
 }
 
