@@ -9,6 +9,7 @@ import {
   isSingBox,
   selectProxyAPI,
 } from '@/api'
+import { isFailoverInternalTag } from '@/store/openboxFailover'
 import { iconUrlFor } from '@/helper/iconUrl'
 import {
   loadOpenboxNodeGroups,
@@ -288,8 +289,9 @@ export const fetchProxies = async () => {
   )
   // 延迟时间线由服务端攒(见 store/latencyHistory.ts),拉节点数据时顺带拉一份
   void loadLatencyHistory()
+  // 故障转移的内部子组(__fo:…)是内核出站但不是用户组:不开卡片、不进组列表
   proxyGroupList.value = Object.values(proxyData.proxies)
-    .filter((proxy) => proxy.all?.length && proxy.name !== GLOBAL)
+    .filter((proxy) => proxy.all?.length && proxy.name !== GLOBAL && !isFailoverInternalTag(proxy.name))
     .sort((prev, next) => {
       const prevIndex = sortIndex.indexOf(prev.name)
       const nextIndex = sortIndex.indexOf(next.name)
@@ -425,6 +427,15 @@ export const handlerProxySelect = async (proxyGroupName: string, proxyName: stri
   if (proxyGroup.type.toLowerCase() === PROXY_TYPE.URLTest) {
     showNotification({
       content: 'urlTestManualSelectTip',
+      params: { name: proxyGroupName },
+      type: 'alert-info',
+    })
+    return
+  }
+  // 故障转移组:底层虽然是 selector,但主备由面板服务端按检测结果切,手动点了下一轮也会被纠回去
+  if (managedOutbounds.value.some((g) => g.name === proxyGroupName && g.type === 'failover')) {
+    showNotification({
+      content: 'failoverManualSelectTip',
       params: { name: proxyGroupName },
       type: 'alert-info',
     })

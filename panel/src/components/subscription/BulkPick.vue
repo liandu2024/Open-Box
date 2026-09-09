@@ -34,10 +34,17 @@
       <option value="">
         {{ $t('groupFilterAllSubscriptions') }}
       </option>
-      <option value="kind:group">
+      <!-- 故障转移的页签只放真实节点:左侧候选里没有组,「全部节点组」这一项就不给 -->
+      <option
+        v-if="!nodesOnly"
+        value="kind:group"
+      >
         {{ $t('groupFilterAllGroups') }}
       </option>
-      <option value="kind:node">
+      <option
+        v-if="!nodesOnly"
+        value="kind:node"
+      >
         {{ $t('groupFilterAllNodes') }}
       </option>
       <option
@@ -56,6 +63,8 @@ defineProps<{
   // 节点实际来自的订阅名(去重后)。为空时下拉框只有「全部」一项。
   subscriptions: string[]
   subscription: string
+  // 候选里只有节点(故障转移):不给「全部节点组 / 全部节点」两项
+  nodesOnly?: boolean
 }>()
 
 defineEmits<{

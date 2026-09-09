@@ -81,7 +81,7 @@ export const autoRedirectFallbackWarning = (fatal) =>
 
 // rebuild(profilePatch):按改过的档案重新生成一份配置(见 api/deploy-runner.mjs)。只在 auto_redirect
 // 起不来要降级重试时用;不传就不降级,照旧回滚直连。
-export const deployConfig = async (ctx, paths, { config, profile, userGroups, fetchImpl, selections = {}, isCancelled = () => false, rebuild, nativeBypass: bypassGiven } = {}) => {
+export const deployConfig = async (ctx, paths, { config, profile, userGroups, fetchImpl, selections = {}, isCancelled = () => false, rebuild, nativeBypass: bypassGiven, failover = [] } = {}) => {
   // 每一步花了多久:随结果一起带回去写进日志,"重启要一分钟"这种反馈能直接看到卡在哪
   const timings = {}
   let stepStart = Date.now()
@@ -171,6 +171,9 @@ export const deployConfig = async (ctx, paths, { config, profile, userGroups, fe
           dnsPolicyClasses: dnsPolicyClasses(profile.routing, policyMembers, builtin, selections || {}),
           // 这次部署用的是哪份分流设置。规则页拿它和当前档案比,改了没重启就明说
           routingHash: routingFingerprint(profile.routing),
+          // 故障转移的运行映射:父组 id / tag、页签 id / 顺序 / 有效节点 / 子组 tag / 派生模式、检测参数。
+          // 后台管理器只按已经部署的这份做主备决策(弹窗里保存了还没生效的定义不算)
+          failover: Array.isArray(failover) ? failover : [],
           // 第一层:DNS 怎么分(none / domains / all)、入口有没有原生旁路、终端来源的 DNS 规则
           // 有没有生效(只有劫持模式内核才看得到终端的来源地址;dnsmasq 转发过来的一律是本机)
           firstLayer: {

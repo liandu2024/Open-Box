@@ -12,6 +12,7 @@
 import { CLASH_API_BASE } from '../api/penetration.mjs'
 import { processUptime } from './service.mjs'
 import { parseDuration } from '../engine/duration.mjs'
+import { isInternalTag } from '../engine/user-groups.mjs'
 
 export { parseDuration }
 
@@ -57,8 +58,10 @@ export const createLatencyScheduler = ({
   }
   const readGroups = async () => {
     const cfg = JSON.parse(await ctx.readFile(paths.configPath))
+    // 故障转移的内部子组不在这里调度:它们的检测由 system/failover-manager.mjs 按父组的间隔统一做,两个调度器
+    // 不重复发起同一批检查
     return (cfg.outbounds || [])
-      .filter((o) => o && o.type === 'urltest' && o.tag)
+      .filter((o) => o && o.type === 'urltest' && o.tag && !isInternalTag(o.tag))
       .map((o) => ({ tag: o.tag, url: o.url || '', intervalMs: parseDuration(o.interval) || DEFAULT_INTERVAL_MS, members: Array.isArray(o.outbounds) ? o.outbounds : [] }))
   }
 

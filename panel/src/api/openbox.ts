@@ -440,9 +440,28 @@ export const testNodeLatency = async (payload: {
   return data.results
 }
 
-// 用户自定义节点组(策略组)。类型只有两种,因为 sing-box 只有这两种——Clash 的
-// fallback 在 sing-box 里不存在(实测 1.13.14 报 unknown outbound type)。
-export type OpenboxGroupType = 'urltest' | 'selector'
+// 用户自定义节点组(策略组)。内核只有 urltest / selector 两种——Clash 的 fallback 在 sing-box 里
+// 不存在(实测 1.13.14 报 unknown outbound type)。failover(故障转移)是应用层类型:内核里落成
+// 一个 selector(父组)+ 每个多节点页签一个私有 urltest 子组,主备切换由面板服务端后台做。
+export type OpenboxGroupType = 'urltest' | 'selector' | 'failover'
+
+// 故障转移的主备页签:顺序即优先级(第一个主用,后面依次备用),id 稳定(拖拽、保存、运行状态都按它认),
+// name 可选(不决定主备顺序),members 只放真实节点名
+export interface OpenboxFailoverLane {
+  id: string
+  name: string
+  members: string[]
+}
+export interface OpenboxFailoverSettings {
+  // 单次节点端到端探测的等待上限
+  timeoutMs: number
+  // 当前页签连续几轮确认没有可用节点才转移
+  failureThreshold: number
+  // 主用恢复后切回
+  restorePrimary: boolean
+  // 主用持续通过检查多久才切回
+  recoveryHoldMs: number
+}
 
 // 名字不用 OpenboxNodeGroup:那个已经被"按地区自动切分的组"占了(见上方,形状是
 // { name, type, nodeTags }),两者是不同的东西,重名会让人以为可以互换。
@@ -472,8 +491,62 @@ export interface OpenboxUserGroup {
   tolerance?: number
   // urltest 用:多久没流量经过就停止健康检查(内核默认 30 分钟,见 engine/user-groups.mjs)
   idleTimeout?: string
-  // urltest 用:这个组自己的测速地址,空 = 用档案里的全局地址
+  // urltest / failover 用:这个组自己的测速地址,空 = 用档案里的全局地址
   testUrl?: string
+  // failover 用:主备页签(唯一的成员来源;members 对故障转移没有意义,服务端会清空)
+  lanes?: OpenboxFailoverLane[]
+  failover?: OpenboxFailoverSettings
+}
+
+// 故障转移组的运行状态(服务端 system/failover-manager.mjs 维护)
+export type OpenboxFailoverLaneHealth = 'up' | 'down' | 'unknown'
+export interface OpenboxFailoverLaneStatus {
+  id: string
+  name: string
+  index: number
+  role: string
+  // 派生模式:single = 直接用那个节点;urltest = 内部自动择优子组;empty = 没有有效节点
+  mode: 'single' | 'urltest' | 'empty'
+  ref: string | null
+  subTag: string | null
+  members: string[]
+  valid: string[]
+  health: OpenboxFailoverLaneHealth
+  failStreak: number
+  upSince: number | null
+  // 多节点页签:内核子组此刻选中的节点,以及它是否被确认可用
+  kernelNow: string | null
+  confirmed: boolean | null
+  nodes: Record<string, { ok: boolean | null; delay: number | null; at: number; reason: string | null } | null>
+}
+export interface OpenboxFailoverGroupStatus {
+  id: string
+  tag: string
+  status: 'pending' | 'ok' | 'backup' | 'failing' | 'reject' | 'unknown'
+  paused: string
+  lastError: string
+  rejectTag: string
+  currentLaneId: string | null
+  currentSince: number | null
+  kernelNow: string | null
+  lastSwitch: { at: number; from: { laneId: string | null; ref: string }; to: { laneId: string | null; ref: string }; reason: string } | null
+  lastRoundAt: number | null
+  nextRoundAt: number | null
+  inFlight: boolean
+  settings: { interval?: string; intervalMs?: number; tolerance?: number; testUrl?: string } & Partial<OpenboxFailoverSettings>
+  lanes: OpenboxFailoverLaneStatus[]
+}
+export interface OpenboxFailoverStatus {
+  version: string | null
+  paused: string
+  lastError?: string
+  running?: boolean
+  groups: OpenboxFailoverGroupStatus[]
+}
+export const fetchFailoverStatus = async (): Promise<OpenboxFailoverStatus> =>
+  requestJson<OpenboxFailoverStatus>('/api/openbox/failover/status')
+export const refreshFailover = async (): Promise<void> => {
+  await requestJson<{ ok: boolean }>('/api/openbox/failover/refresh', { method: 'POST' })
 }
 
 export interface OpenboxGroupsPayload {

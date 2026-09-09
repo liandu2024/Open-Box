@@ -19,7 +19,33 @@
 import { keywordMatches, normalizeForMatch } from './rename.mjs'
 import { parseDuration } from './duration.mjs'
 
-export const GROUP_TYPES = Object.freeze(['urltest', 'selector'])
+// failover(故障转移)是应用层类型:内核里生成的是一个 selector(父组)+ 每个多节点页签一个私有 urltest
+// 子组,主备决策由面板服务端的 system/failover-manager.mjs 做,不向内核写 type: failover / fallback
+export const GROUP_TYPES = Object.freeze(['urltest', 'selector', 'failover'])
+
+// 故障转移的内部出站(页签子组、内置拒绝停用时的兜底拒绝)都带这个前缀:它们要进内核配置、要能被链路
+// 解析,但不是用户组——不进节点管理列表、不进站点集出口候选、不进别的组的候选(见 isInternalTag)
+export const FAILOVER_INTERNAL_PREFIX = '__fo:'
+export const FAILOVER_REJECT_TAG = `${FAILOVER_INTERNAL_PREFIX}reject`
+export const isInternalTag = (tag) => typeof tag === 'string' && tag.startsWith(FAILOVER_INTERNAL_PREFIX)
+// 页签子组的 tag 由稳定的父组 id 和页签 id 派生,不用「主用 / 备用 1」或下标当身份
+export const laneSubTag = (groupId, laneId) => `${FAILOVER_INTERNAL_PREFIX}${groupId}:${laneId}`
+export const FAILOVER_DEFAULTS = Object.freeze({
+  interval: '30s',
+  tolerance: 100,
+  timeoutMs: 5000,
+  failureThreshold: 2,
+  restorePrimary: true,
+  recoveryHoldMs: 60_000,
+})
+// 检测参数的合法范围(API 写入前校验用;归一化读取时越界回落默认)
+export const FAILOVER_LIMITS = Object.freeze({
+  intervalMs: [5_000, 24 * 3600_000],
+  tolerance: [0, 60_000],
+  timeoutMs: [1_000, 60_000],
+  failureThreshold: [1, 20],
+  recoveryHoldMs: [0, 24 * 3600_000],
+})
 
 // 成员怎么来:
 //   static  —— 手工挑,members 里存的是节点名/组名(下面那套左右穿梭选出来的)
@@ -119,13 +145,33 @@ export const normalizeIconScale = (v) => {
   return Math.max(-ICON_SCALE_LIMIT, Math.min(ICON_SCALE_LIMIT, Math.round(n)))
 }
 
+const inRange = (v, [lo, hi], fallback) => {
+  const n = Number(v)
+  return Number.isFinite(n) && n >= lo && n <= hi ? Math.floor(n) : fallback
+}
+// 主备页签:id 稳定(拖拽排序、保存、运行状态都按它认),name 可选(不决定主备顺序),members 只存节点名、
+// 同一页签内去重。老记录缺 id 的补一个,重复的 id 加后缀——运行映射按 id 对齐,重复了就分不清
+export const normalizeLanes = (raw) => {
+  const seen = new Set()
+  return (Array.isArray(raw) ? raw : []).map((lane, i) => {
+    let id = isNonEmptyString(lane?.id) ? lane.id.trim() : `lane-${i + 1}`
+    while (seen.has(id)) id = `${id}~`
+    seen.add(id)
+    const members = []
+    for (const m of Array.isArray(lane?.members) ? lane.members : []) {
+      if (isNonEmptyString(m) && !members.includes(m.trim())) members.push(m.trim())
+    }
+    return { id, name: isNonEmptyString(lane?.name) ? lane.name.trim() : '', members }
+  })
+}
+
 // 把外部传进来的一条组定义收敛成内部形状;不合法的字段回落默认值而不是抛错——
 // 这个函数同时用于读取历史数据,老记录缺字段是正常的。
 export const normalizeGroup = (raw, index = 0) => {
   const type = GROUP_TYPES.includes(raw?.type) ? raw.type : 'selector'
   // allNodes 是 mode 之前的写法(只有"全部节点"这一种动态),等价于一个不带关键词的
-  // 动态组。老记录照这个规则迁移,行为不变。
-  const mode = GROUP_MODES.includes(raw?.mode) ? raw.mode : (raw?.allNodes === true ? 'dynamic' : 'static')
+  // 动态组。老记录照这个规则迁移,行为不变。故障转移只有静态一种,mode 固定
+  const mode = type === 'failover' ? 'static' : GROUP_MODES.includes(raw?.mode) ? raw.mode : (raw?.allNodes === true ? 'dynamic' : 'static')
   const group = {
     id: isNonEmptyString(raw?.id) ? raw.id.trim() : `group-${index}`,
     name: isNonEmptyString(raw?.name) ? raw.name.trim() : `分组-${index + 1}`,
@@ -148,6 +194,24 @@ export const normalizeGroup = (raw, index = 0) => {
     const tol = Number(raw?.tolerance)
     group.tolerance = Number.isFinite(tol) && tol >= 0 ? Math.floor(tol) : DEFAULT_TOLERANCE
     group.idleTimeout = isNonEmptyString(raw?.idleTimeout) ? raw.idleTimeout.trim() : DEFAULT_IDLE_TIMEOUT
+  }
+  if (type === 'failover') {
+    // 主备定义只有 lanes 这一份真实来源:members / keywords 对故障转移没有意义,清空免得两份对不上
+    group.keywords = []
+    group.members = []
+    group.lanes = normalizeLanes(raw?.lanes)
+    group.testUrl = isNonEmptyString(raw?.testUrl) ? raw.testUrl.trim() : ''
+    const interval = isNonEmptyString(raw?.interval) ? raw.interval.trim() : ''
+    const intervalMs = parseDuration(interval)
+    group.interval = intervalMs >= FAILOVER_LIMITS.intervalMs[0] && intervalMs <= FAILOVER_LIMITS.intervalMs[1] ? interval : FAILOVER_DEFAULTS.interval
+    group.tolerance = inRange(raw?.tolerance, FAILOVER_LIMITS.tolerance, FAILOVER_DEFAULTS.tolerance)
+    const fo = raw?.failover && typeof raw.failover === 'object' ? raw.failover : {}
+    group.failover = {
+      timeoutMs: inRange(fo.timeoutMs, FAILOVER_LIMITS.timeoutMs, FAILOVER_DEFAULTS.timeoutMs),
+      failureThreshold: inRange(fo.failureThreshold, FAILOVER_LIMITS.failureThreshold, FAILOVER_DEFAULTS.failureThreshold),
+      restorePrimary: fo.restorePrimary !== false,
+      recoveryHoldMs: inRange(fo.recoveryHoldMs, FAILOVER_LIMITS.recoveryHoldMs, FAILOVER_DEFAULTS.recoveryHoldMs),
+    }
   }
   return group
 }
@@ -234,7 +298,8 @@ const dropCycles = (groups) => {
     for (let i = 0; i < pending.length; i++) {
       const g = pending[i]
       // 动态组只挑节点,不引用别的组,所以永远没有依赖,也就不可能成环
-      const groupDeps = g.mode === 'dynamic'
+      // 动态组只挑节点;故障转移的页签也只引用真实节点——都没有组依赖,不可能成环
+      const groupDeps = g.mode === 'dynamic' || g.type === 'failover'
         ? []
         : g.members.filter((m) => m !== g.name && allGroupNames.has(m))
       if (groupDeps.some((d) => !acceptedNames.has(d))) continue
@@ -274,11 +339,71 @@ export const emitUserGroups = (groups, nodes, options = {}) => {
   const placeholderTag = builtin.direct
   const placeholders = []
 
+  // 故障转移:内部出站(页签子组 / 兜底拒绝)的 tag,和每个父组的运行映射(给后台管理器和界面用)
+  const internal = new Set()
+  const failover = []
+  const nodeTagSet = new Set(nodeTags)
+  const usedTags = new Set([...nodeTags, ...normalized.map((g) => g.name)])
+  // 内置拒绝在配置里就用它当兜底;被停用(不进配置)时补一个内部的 block 出站,不能用直连占位
+  let rejectTag = builtin.blockEnabled ? builtin.block : FAILOVER_REJECT_TAG
+  const emitFailover = (g) => {
+    const lanes = []
+    const refs = []
+    g.lanes.forEach((lane, index) => {
+      // 只认真实节点:引用组 / 已删掉的节点一律不算有效成员(失效引用留在 members 里给界面显示)
+      const valid = lane.members.filter((m) => nodeTagSet.has(m))
+      if (!valid.length) {
+        lanes.push({ id: lane.id, name: lane.name, index, members: lane.members, valid, mode: 'empty', ref: null, subTag: null })
+        return
+      }
+      if (valid.length === 1) {
+        lanes.push({ id: lane.id, name: lane.name, index, members: lane.members, valid, mode: 'single', ref: valid[0], subTag: null })
+        refs.push(valid[0])
+        return
+      }
+      let subTag = laneSubTag(g.id, lane.id)
+      while (usedTags.has(subTag)) subTag += '~'
+      usedTags.add(subTag)
+      internal.add(subTag)
+      // 内部子组共用父组的检测参数;idle_timeout 抬到不低于 interval(内核硬性要求)
+      outbounds.push({
+        type: 'urltest', tag: subTag, outbounds: valid,
+        url: g.testUrl || testUrl, interval: g.interval || FAILOVER_DEFAULTS.interval, tolerance: g.tolerance ?? FAILOVER_DEFAULTS.tolerance,
+        idle_timeout: idleTimeoutFor(DEFAULT_IDLE_TIMEOUT, g.interval || FAILOVER_DEFAULTS.interval),
+      })
+      lanes.push({ id: lane.id, name: lane.name, index, members: lane.members, valid, mode: 'urltest', ref: subTag, subTag })
+      refs.push(subTag)
+    })
+    // 不同单节点页签引用同一个节点:父 selector 的成员去重,页签定义不合并
+    const memberTags = [...new Set(refs)]
+    if (rejectTag === FAILOVER_REJECT_TAG && !outbounds.some((o) => o.tag === FAILOVER_REJECT_TAG)) {
+      outbounds.push({ type: 'block', tag: FAILOVER_REJECT_TAG })
+      internal.add(FAILOVER_REJECT_TAG)
+    }
+    // 全部页签都没有有效节点:父组仍是合法配置,只剩兜底拒绝,显示「全部不可用」;不补直连
+    outbounds.push({
+      type: 'selector', tag: g.name,
+      outbounds: [...memberTags, rejectTag],
+      default: memberTags[0] || rejectTag,
+      // 主备真正切换时让旧连接重建(只影响这个 selector 的连接)
+      interrupt_exist_connections: true,
+    })
+    const intervalMs = parseDuration(g.interval || FAILOVER_DEFAULTS.interval)
+    failover.push({
+      id: g.id, tag: g.name, lanes, rejectTag,
+      settings: {
+        interval: g.interval || FAILOVER_DEFAULTS.interval, intervalMs, tolerance: g.tolerance ?? FAILOVER_DEFAULTS.tolerance,
+        testUrl: g.testUrl || testUrl, ...(g.failover || FAILOVER_DEFAULTS),
+      },
+    })
+  }
+
   // 按列表顺序出:内置出站和节点组混排,用户拖成什么样内核里就是什么样
   for (const g of active) {
     if (g.kind === 'direct') { outbounds.push({ type: 'direct', tag: g.name }); continue }
     if (g.kind === 'block') { outbounds.push({ type: 'block', tag: g.name }); continue }
     if (!withoutCycles.includes(g)) continue
+    if (g.type === 'failover') { emitFailover(g); continue }
     let members = resolveMembers(g, nodeTags, groupNameSet, matchText)
     if (!members.length) {
       // 空组不能原样写进配置——内核会 FATAL(1.13.14 实测:
@@ -305,5 +430,8 @@ export const emitUserGroups = (groups, nodes, options = {}) => {
     }
   }
 
-  return { outbounds, dropped, placeholders, builtin }
+  // publicTags:能出现在节点管理列表、站点集出口候选、别的组候选里的出站(内置 + 用户组的父组);
+  // 内部子组 / 兜底拒绝只在 outbounds 里,不在这份清单里
+  const publicTags = outbounds.filter((o) => !internal.has(o.tag)).map((o) => o.tag)
+  return { outbounds, dropped, placeholders, builtin, internalTags: [...internal], publicTags, failover }
 }

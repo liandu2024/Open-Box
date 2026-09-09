@@ -61,7 +61,7 @@
             </template>
             <template v-else>
               {{ memberSummary(group) }}
-              <template v-if="group.type === 'urltest'">
+              <template v-if="group.type === 'urltest' || group.type === 'failover'">
                 · {{ $t('groupInterval') }} {{ group.interval }} · {{ $t('groupTolerance') }} {{ group.tolerance }}ms
               </template>
             </template>
@@ -209,13 +209,65 @@
             <select
               v-model="draft.type"
               class="select select-sm"
+              @change="onTypeChange"
             >
               <option value="urltest">{{ $t('groupType_urltest') }}</option>
               <option value="selector">{{ $t('groupType_selector') }}</option>
+              <option value="failover">{{ $t('groupType_failover') }}</option>
             </select>
           </div>
+          <!-- 故障转移:检测间隔按秒填(30 秒一轮健康检查,不是分钟级的择优测速);容差只给多节点页签里的
+               内部自动择优用,页签全是单节点时没有用武之地,置灰说明;超时 / 失败轮数 / 回切收进高级设置 -->
+          <template v-if="isFailover">
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-medium">{{ $t('groupInterval') }}</label>
+              <div class="flex items-center gap-1">
+                <input
+                  v-model.number="intervalSeconds"
+                  type="number"
+                  min="5"
+                  max="86400"
+                  class="input input-sm w-20"
+                />
+                <span class="text-base-content/60 text-xs">{{ $t('groupUnitSecond') }}</span>
+              </div>
+            </div>
+            <div class="flex flex-col gap-1">
+              <label
+                class="text-xs font-medium"
+                v-tip="allLanesSingle ? $t('failoverToleranceUnused') : $t('failoverToleranceHint')"
+              >{{ $t('failoverTolerance') }}</label>
+              <div class="flex items-center gap-1">
+                <input
+                  v-model.number="draft.tolerance"
+                  type="number"
+                  min="0"
+                  class="input input-sm w-20"
+                  :disabled="allLanesSingle"
+                />
+                <span class="text-base-content/60 text-xs">{{ $t('groupUnitMs') }}</span>
+              </div>
+            </div>
+            <div class="flex min-w-0 flex-1 flex-col gap-1">
+              <label class="text-xs font-medium">{{ $t('groupTestUrl') }}</label>
+              <input
+                v-model="draft.testUrl"
+                type="url"
+                class="input input-sm w-full font-mono text-xs"
+                :placeholder="$t('groupTestUrlPlaceholder')"
+              />
+            </div>
+            <button
+              type="button"
+              class="btn btn-ghost btn-sm"
+              @click="showAdvanced = !showAdvanced"
+            >
+              {{ $t('failoverAdvanced') }}
+              <ChevronDownIcon :class="['h-3.5 w-3.5 transition-transform', showAdvanced && 'rotate-180']" />
+            </button>
+          </template>
           <!-- 检测间隔/容差只对 urltest 有意义:selector 是手动选,不会自己去测 -->
-          <template v-if="draft.type === 'urltest'">
+          <template v-else-if="draft.type === 'urltest'">
             <div class="flex flex-col gap-1">
               <label class="text-xs font-medium">{{ $t('groupInterval') }}</label>
               <div class="flex items-center gap-1">
@@ -251,9 +303,93 @@
             </div>
           </template>
         </div>
-        <!-- 成员怎么来:动态组按关键词现算,静态组手工挑。放在这儿是因为下面整块
-             (穿梭框 / 关键词框)都归它管。 -->
         <div
+          v-if="isFailover && showAdvanced && failoverSettings"
+          class="bg-base-200/60 flex flex-wrap items-end gap-3 rounded-lg px-3 py-2"
+        >
+          <div class="flex flex-col gap-1">
+            <label class="text-xs font-medium">{{ $t('failoverTimeout') }}</label>
+            <div class="flex items-center gap-1">
+              <input
+                v-model.number="timeoutSeconds"
+                type="number"
+                min="1"
+                max="60"
+                class="input input-sm w-20"
+              />
+              <span class="text-base-content/60 text-xs">{{ $t('groupUnitSecond') }}</span>
+            </div>
+          </div>
+          <div class="flex flex-col gap-1">
+            <label
+              class="text-xs font-medium"
+              v-tip="$t('failoverThresholdHint')"
+            >{{ $t('failoverThreshold') }}</label>
+            <div class="flex items-center gap-1">
+              <input
+                v-model.number="failoverSettings.failureThreshold"
+                type="number"
+                min="1"
+                max="20"
+                class="input input-sm w-20"
+              />
+              <span class="text-base-content/60 text-xs">{{ $t('failoverUnitRound') }}</span>
+            </div>
+          </div>
+          <label class="flex cursor-pointer items-center gap-2 pb-1.5">
+            <input
+              v-model="failoverSettings.restorePrimary"
+              type="checkbox"
+              class="toggle toggle-sm"
+            />
+            <span
+              class="text-xs font-medium"
+              v-tip="$t('failoverRestoreHint')"
+            >{{ $t('failoverRestore') }}</span>
+          </label>
+          <div
+            v-if="failoverSettings.restorePrimary"
+            class="flex flex-col gap-1"
+          >
+            <label
+              class="text-xs font-medium"
+              v-tip="$t('failoverHoldHint')"
+            >{{ $t('failoverHold') }}</label>
+            <div class="flex items-center gap-1">
+              <input
+                v-model.number="recoveryHoldSeconds"
+                type="number"
+                min="0"
+                max="86400"
+                class="input input-sm w-20"
+              />
+              <span class="text-base-content/60 text-xs">{{ $t('groupUnitSecond') }}</span>
+            </div>
+          </div>
+        </div>
+        <!-- 从普通组切成故障转移时,原来引用了组的成员进不了页签(页签只放真实节点):列出来、拦住保存,
+             由用户决定是移除它们还是切回原类型;不悄悄展开也不悄悄丢 -->
+        <div
+          v-if="isFailover && blockedMembers.length"
+          class="fo-note flex flex-wrap items-center gap-2 rounded-lg px-3 py-2 text-xs"
+        >
+          <span class="min-w-0 flex-1">{{ $t('failoverBlockedMembers', { members: blockedMembers.join('、') }) }}</span>
+          <button
+            type="button"
+            class="btn btn-xs"
+            @click="blockedMembers = []"
+          >
+            {{ $t('failoverDropBlocked') }}
+          </button>
+        </div>
+        <!-- 成员怎么来:动态组按关键词现算,静态组手工挑。放在这儿是因为下面整块
+             (穿梭框 / 关键词框)都归它管。故障转移只有静态一种,不给切换 -->
+        <p
+          v-if="isFailover"
+          class="text-base-content/60 text-xs"
+        >{{ $t('failoverStaticHint') }}</p>
+        <div
+          v-else
           role="tablist"
           class="tabs-box tabs tabs-sm w-fit"
         >
@@ -297,6 +433,7 @@
                 <BulkPick
                   v-model:subscription="memberSub"
                   :subscriptions="subscriptionOptions"
+                  :nodes-only="isFailover"
                   @select-all="tickAll('available')"
                   @invert="tickInvert('available')"
                   @clear="tickNone('available')"
@@ -360,11 +497,89 @@
               </button>
             </div>
 
-            <div class="border-base-content/10 flex min-h-0 flex-col rounded-lg border">
+            <div class="border-base-content/10 flex min-h-0 min-w-0 flex-col rounded-lg border">
+              <!-- 故障转移:右侧上方是主备页签。顺序即优先级(第一个主用,后面依次备用),拖拽排序;
+                   页签按稳定 id 认,拖完选中的还是原来那个;多了在容器内横向滚动,不把弹窗撑宽 -->
+              <template v-if="isFailover && draft.lanes">
+                <div class="border-base-content/10 flex min-w-0 items-center gap-1 border-b px-2 py-1.5">
+                  <Draggable
+                    v-model="draft.lanes"
+                    :animation="150"
+                    :force-fallback="true"
+                    :fallback-on-body="true"
+                    ghost-class="opacity-40"
+                    item-key="id"
+                    class="flex min-w-0 flex-1 gap-1 overflow-x-auto"
+                  >
+                    <template #item="{ element: lane, index }">
+                      <button
+                        type="button"
+                        :class="['btn btn-xs shrink-0 cursor-move whitespace-nowrap', lane.id === activeLaneId ? 'btn-primary' : 'btn-ghost border-base-content/15 border']"
+                        @click="selectLane(lane.id)"
+                      >
+                        {{ laneRoleLabel(index) }}<template v-if="lane.name"> · {{ lane.name }}</template>
+                        <span class="opacity-70 tabular-nums">· {{ validCount(lane) }}</span>
+                      </button>
+                    </template>
+                  </Draggable>
+                  <button
+                    type="button"
+                    class="btn btn-ghost btn-square btn-xs shrink-0"
+                    :aria-label="$t('failoverAddLane')"
+                    v-tip="$t('failoverAddLane')"
+                    @click="addLane"
+                  >
+                    <PlusIcon class="h-4 w-4" />
+                  </button>
+                </div>
+                <div
+                  v-if="activeLane"
+                  class="border-base-content/10 flex min-w-0 flex-wrap items-center gap-1 border-b px-2 py-1 text-xs"
+                >
+                  <span class="text-base-content/70 min-w-0 truncate">{{ activeLaneSummary }}</span>
+                  <input
+                    v-model="activeLane.name"
+                    type="text"
+                    class="input input-xs w-28"
+                    :placeholder="$t('failoverLaneNamePlaceholder')"
+                  />
+                  <div class="ml-auto flex items-center gap-0.5">
+                    <button
+                      type="button"
+                      class="btn btn-ghost btn-square btn-xs"
+                      :disabled="activeLaneIndex <= 0"
+                      :aria-label="$t('failoverMoveEarlier')"
+                      v-tip="$t('failoverMoveEarlier')"
+                      @click="moveLane(-1)"
+                    >
+                      <ChevronLeftIcon class="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-ghost btn-square btn-xs"
+                      :disabled="activeLaneIndex < 0 || activeLaneIndex >= draft.lanes.length - 1"
+                      :aria-label="$t('failoverMoveLater')"
+                      v-tip="$t('failoverMoveLater')"
+                      @click="moveLane(1)"
+                    >
+                      <ChevronRightIcon class="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-ghost btn-square btn-xs hover:text-error"
+                      :aria-label="$t('failoverDeleteLane')"
+                      v-tip="$t('failoverDeleteLane')"
+                      @click="askDeleteLane(activeLane)"
+                    >
+                      <TrashIcon class="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </template>
               <div class="border-base-content/10 flex flex-col gap-1 border-b px-2 py-1.5">
                 <div class="flex items-center gap-2">
                   <span class="text-xs font-medium whitespace-nowrap">
-                    {{ $t('groupSelected') }} ({{ draft.members.length }})
+                    {{ $t('groupSelected') }} ({{ members.length }})
                   </span>
                   <input
                     v-model="selectedFilter"
@@ -376,6 +591,7 @@
                 <BulkPick
                   v-model:subscription="selectedSub"
                   :subscriptions="subscriptionOptions"
+                  :nodes-only="isFailover"
                   @select-all="tickAll('selected')"
                   @invert="tickInvert('selected')"
                   @clear="tickNone('selected')"
@@ -407,7 +623,12 @@
                   >
                     <ChevronLeftIcon class="text-base-content/30 h-4 w-4" />
                   </button>
-                  <span class="truncate">{{ name }}</span>
+                  <span :class="['truncate', isFailover && !nodeNameSet.has(name) && 'line-through opacity-60']">{{ name }}</span>
+                  <!-- 订阅更新后已经不存在的节点:留着给用户看,不算有效节点、不进配置 -->
+                  <span
+                    v-if="isFailover && !nodeNameSet.has(name)"
+                    class="badge badge-ghost badge-xs shrink-0"
+                  >{{ $t('failoverInvalid') }}</span>
                 </label>
               </div>
             </div>
@@ -464,13 +685,67 @@
             type="button"
             class="btn btn-primary btn-sm"
             :disabled="saving"
-            @click="saveDraft"
+            @click="saveDraft()"
           >
             <span
               v-if="saving"
               class="loading loading-spinner loading-xs"
             />
             {{ $t('subscriptionSave') }}
+          </button>
+        </div>
+      </div>
+    </DialogWrapper>
+
+    <!-- 删有成员的页签先确认(草稿内的动作,取消整个弹窗也不会落库) -->
+    <DialogWrapper
+      v-model="showLaneDelete"
+      :title="$t('failoverDeleteLane')"
+    >
+      <div class="flex flex-col gap-4 p-2">
+        <p class="text-sm">
+          {{ $t('failoverDeleteLaneConfirm', { lane: pendingLane ? laneLabelOf(pendingLane) : '', count: pendingLane?.members.length ?? 0 }) }}
+        </p>
+        <div class="flex justify-end gap-2">
+          <button
+            type="button"
+            class="btn btn-sm"
+            @click="showLaneDelete = false"
+          >
+            {{ $t('cancel') }}
+          </button>
+          <button
+            type="button"
+            class="btn btn-error btn-sm"
+            @click="confirmDeleteLane"
+          >
+            {{ $t('confirm') }}
+          </button>
+        </div>
+      </div>
+    </DialogWrapper>
+
+    <!-- 已保存的故障转移组改成普通类型再保存:主备层次会丢,明确确认一次 -->
+    <DialogWrapper
+      v-model="showTypeChangeConfirm"
+      :title="$t('failoverTypeChangeTitle')"
+    >
+      <div class="flex flex-col gap-4 p-2">
+        <p class="text-sm">{{ $t('failoverTypeChangeConfirm') }}</p>
+        <div class="flex justify-end gap-2">
+          <button
+            type="button"
+            class="btn btn-sm"
+            @click="showTypeChangeConfirm = false"
+          >
+            {{ $t('cancel') }}
+          </button>
+          <button
+            type="button"
+            class="btn btn-error btn-sm"
+            @click="showTypeChangeConfirm = false; void saveDraft(true)"
+          >
+            {{ $t('confirm') }}
           </button>
         </div>
       </div>
@@ -637,7 +912,7 @@
 </template>
 
 <script setup lang="ts">
-import type { OpenboxGroupType, OpenboxUserGroup } from '@/api/openbox'
+import type { OpenboxFailoverLane, OpenboxFailoverSettings, OpenboxGroupType, OpenboxUserGroup } from '@/api/openbox'
 import { fetchNodeGroups, saveNodeGroups } from '@/api/openbox'
 import BulkPick from '@/components/subscription/BulkPick.vue'
 import CountryFlag from '@/components/common/CountryFlag.vue'
@@ -649,9 +924,11 @@ import { showNotification } from '@/helper/notification'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import {
   Bars3Icon,
+  ChevronDownIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   PencilSquareIcon,
+  PlusIcon,
   PowerIcon,
   TrashIcon,
   XMarkIcon,
@@ -717,10 +994,16 @@ const matchedNodes = (group: OpenboxUserGroup) => {
   })
 }
 
-const memberSummary = (group: OpenboxUserGroup) =>
-  group.mode === 'dynamic'
+const memberSummary = (group: OpenboxUserGroup) => {
+  if (group.type === 'failover') {
+    const lanes = group.lanes || []
+    const nodes = new Set(lanes.flatMap((l) => l.members))
+    return t('failoverSummary', { lanes: lanes.length, count: nodes.size })
+  }
+  return group.mode === 'dynamic'
     ? t('groupDynamicSummary', { count: matchedNodes(group).length })
     : t('groupMembersSummary', { count: group.members.length })
+}
 
 const showEditor = ref(false)
 const editing = ref<OpenboxUserGroup | null>(null)
@@ -759,7 +1042,14 @@ const openEditor = (group: OpenboxUserGroup | null) => {
     if (!draft.value.mode) draft.value.mode = 'static'
     if (!draft.value.keywords) draft.value.keywords = []
     if (draft.value.icon === undefined) draft.value.icon = ''
+    if (draft.value.type === 'failover') ensureFailoverFields(draft.value)
   }
+  lastType.value = draft.value?.type ?? 'urltest'
+  normalBackup = null
+  failoverBackup = null
+  blockedMembers.value = []
+  showAdvanced.value = false
+  activeLaneId.value = draft.value?.lanes?.[0]?.id ?? ''
   memberFilter.value = ''
   selectedFilter.value = ''
   memberSub.value = ''
@@ -769,11 +1059,182 @@ const openEditor = (group: OpenboxUserGroup | null) => {
   showEditor.value = true
 }
 
-// 候选成员 = 所有节点 + 除自己以外的其它组(组可以套组,但不能套自己)
+// ---------- 故障转移(主备页签) ----------
+const isFailover = computed(() => draft.value?.type === 'failover')
+const FAILOVER_DEFAULTS: OpenboxFailoverSettings = { timeoutMs: 5000, failureThreshold: 2, restorePrimary: true, recoveryHoldMs: 60000 }
+const newLaneId = () => `lane-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
+const makeLane = (members: string[] = []): OpenboxFailoverLane => ({ id: newLaneId(), name: '', members })
+// 故障转移草稿必须有的字段:页签(默认「主用」「备用 1」两个)、按秒的检测间隔、容差、高级参数
+const ensureFailoverFields = (d: OpenboxUserGroup) => {
+  d.mode = 'static'
+  if (!d.lanes || !d.lanes.length) d.lanes = [makeLane(), makeLane()]
+  if (!d.interval || !/^\d+s$/.test(d.interval)) d.interval = '30s'
+  if (typeof d.tolerance !== 'number') d.tolerance = 100
+  if (d.testUrl === undefined) d.testUrl = ''
+  d.failover = { ...FAILOVER_DEFAULTS, ...(d.failover || {}) }
+}
+const failoverSettings = computed(() => (draft.value?.type === 'failover' ? draft.value.failover ?? null : null))
+const showAdvanced = ref(false)
+const activeLaneId = ref('')
+const activeLane = computed(() => draft.value?.lanes?.find((l) => l.id === activeLaneId.value) ?? null)
+const activeLaneIndex = computed(() => draft.value?.lanes?.findIndex((l) => l.id === activeLaneId.value) ?? -1)
+const nodeNameSet = computed(() => new Set(availableNodes.value.map((n) => n.name)))
+const validCount = (lane: OpenboxFailoverLane) => lane.members.filter((m) => nodeNameSet.value.has(m)).length
+const laneRoleLabel = (index: number) => (index === 0 ? t('failoverPrimary') : t('failoverBackupN', { n: index }))
+const laneLabelOf = (lane: OpenboxFailoverLane) => {
+  const index = draft.value?.lanes?.findIndex((l) => l.id === lane.id) ?? 0
+  const role = laneRoleLabel(Math.max(0, index))
+  return lane.name ? `${role} · ${lane.name}` : role
+}
+// 当前页签一行:角色 · 派生模式(单节点 / 自动择优 · N 个节点)· 失效 N
+const activeLaneSummary = computed(() => {
+  const lane = activeLane.value
+  if (!lane) return ''
+  const valid = validCount(lane)
+  const invalid = lane.members.length - valid
+  const mode = valid === 0 ? t('failoverModeEmpty') : valid === 1 ? t('failoverModeSingle') : t('failoverModeUrltest', { count: valid })
+  const base = `${laneRoleLabel(Math.max(0, activeLaneIndex.value))} · ${mode}`
+  return invalid ? `${base} · ${t('failoverInvalidCount', { count: invalid })}` : base
+})
+// 页签全是单节点(或空)时容差没有用武之地:容差只给多节点页签的内部自动择优用
+const allLanesSingle = computed(() => (draft.value?.lanes ?? []).every((l) => validCount(l) <= 1))
+// 切换页签时清掉两栏的勾选:上一个页签勾的东西不能误搬到下一个
+const selectLane = (id: string) => {
+  if (activeLaneId.value === id) return
+  activeLaneId.value = id
+  checkedAvailable.value = []
+  checkedSelected.value = []
+}
+const addLane = () => {
+  if (!draft.value?.lanes) return
+  const lane = makeLane()
+  draft.value.lanes = [...draft.value.lanes, lane]
+  selectLane(lane.id)
+}
+const moveLane = (dir: -1 | 1) => {
+  const lanes = draft.value?.lanes
+  const i = activeLaneIndex.value
+  if (!lanes || i < 0) return
+  const j = i + dir
+  if (j < 0 || j >= lanes.length) return
+  const next = [...lanes]
+  ;[next[i], next[j]] = [next[j]!, next[i]!]
+  draft.value!.lanes = next
+}
+const showLaneDelete = ref(false)
+const pendingLane = ref<OpenboxFailoverLane | null>(null)
+const deleteLane = (id: string) => {
+  const lanes = draft.value?.lanes
+  if (!lanes) return
+  const i = lanes.findIndex((l) => l.id === id)
+  const next = lanes.filter((l) => l.id !== id)
+  draft.value!.lanes = next
+  if (activeLaneId.value === id) {
+    const neighbour = next[Math.min(Math.max(0, i), next.length - 1)]
+    activeLaneId.value = neighbour?.id ?? ''
+    checkedAvailable.value = []
+    checkedSelected.value = []
+  }
+}
+const askDeleteLane = (lane: OpenboxFailoverLane) => {
+  if (!lane.members.length) {
+    deleteLane(lane.id)
+    return
+  }
+  pendingLane.value = lane
+  showLaneDelete.value = true
+}
+const confirmDeleteLane = () => {
+  if (pendingLane.value) deleteLane(pendingLane.value.id)
+  pendingLane.value = null
+  showLaneDelete.value = false
+}
+// 界面上按秒填,存的是 sing-box 认的 "30s"
+const intervalSeconds = computed<number>({
+  get: () => {
+    const m = /^(\d+)s$/.exec(draft.value?.interval || '')
+    return m ? Number(m[1]) : 30
+  },
+  set: (v: number) => {
+    if (!draft.value) return
+    const n = Number.isFinite(v) ? Math.min(86400, Math.max(5, Math.floor(v))) : 30
+    draft.value.interval = `${n}s`
+  },
+})
+const timeoutSeconds = computed<number>({
+  get: () => Math.round((failoverSettings.value?.timeoutMs ?? 5000) / 1000),
+  set: (v: number) => {
+    if (!failoverSettings.value) return
+    failoverSettings.value.timeoutMs = (Number.isFinite(v) ? Math.min(60, Math.max(1, Math.floor(v))) : 5) * 1000
+  },
+})
+const recoveryHoldSeconds = computed<number>({
+  get: () => Math.round((failoverSettings.value?.recoveryHoldMs ?? 60000) / 1000),
+  set: (v: number) => {
+    if (!failoverSettings.value) return
+    failoverSettings.value.recoveryHoldMs = (Number.isFinite(v) ? Math.min(86400, Math.max(0, Math.floor(v))) : 60) * 1000
+  },
+})
+
+// 类型切换:普通 ↔ 故障转移之间成员形状不同,两边各留一份草稿便于切回;组成员进不了页签的列出来拦住保存
+const lastType = ref<OpenboxGroupType>('urltest')
+const blockedMembers = ref<string[]>([])
+let normalBackup: { mode: OpenboxUserGroup['mode']; members: string[]; keywords: string[]; interval?: string } | null = null
+let failoverBackup: { lanes: OpenboxFailoverLane[] } | null = null
+const onTypeChange = () => {
+  const d = draft.value
+  if (!d) return
+  const prev = lastType.value
+  const next = d.type
+  lastType.value = next
+  if (prev === next) return
+  if (next === 'failover') {
+    normalBackup = { mode: d.mode, members: [...d.members], keywords: [...(d.keywords || [])], interval: d.interval }
+    if (failoverBackup) {
+      d.lanes = failoverBackup.lanes.map((l) => ({ ...l, members: [...l.members] }))
+    } else {
+      // 已有的真实节点放进主用页签;引用了组的成员不能悄悄展开或丢掉,列出来等用户处理;
+      // 只有动态规则的组进入空草稿,不自动取全量节点
+      const nodes = d.mode === 'static' ? d.members.filter((m) => nodeNameSet.value.has(m)) : []
+      blockedMembers.value = d.mode === 'static' ? d.members.filter((m) => !nodeNameSet.value.has(m)) : []
+      d.lanes = [makeLane(nodes), makeLane()]
+    }
+    d.members = []
+    d.interval = ''
+    ensureFailoverFields(d)
+    activeLaneId.value = d.lanes?.[0]?.id ?? ''
+  } else if (prev === 'failover') {
+    failoverBackup = { lanes: (d.lanes ?? []).map((l) => ({ ...l, members: [...l.members] })) }
+    blockedMembers.value = []
+    d.mode = normalBackup?.mode ?? 'static'
+    d.members = normalBackup ? [...normalBackup.members] : []
+    d.keywords = normalBackup ? [...normalBackup.keywords] : []
+    d.interval = normalBackup?.interval && /^\d+m$/.test(normalBackup.interval) ? normalBackup.interval : '5m'
+    if (typeof d.tolerance !== 'number') d.tolerance = 100
+  }
+  checkedAvailable.value = []
+  checkedSelected.value = []
+}
+
+// 穿梭框操作的成员表:故障转移是当前页签的成员,普通组是 draft.members
+const members = computed<string[]>({
+  get: () => (isFailover.value ? activeLane.value?.members ?? [] : draft.value?.members ?? []),
+  set: (list: string[]) => {
+    if (isFailover.value) {
+      if (activeLane.value) activeLane.value.members = list
+    } else if (draft.value) {
+      draft.value.members = list
+    }
+  },
+})
+
+// 候选成员 = 所有节点 + 除自己以外的其它组(组可以套组,但不能套自己)。
+// 故障转移的页签只放真实节点:候选里没有组、站点集、内置出站或别的故障转移组
 const candidates = computed(() => {
   const nodeItems = availableNodes.value.map((n) => ({
     kind: 'node' as const, name: n.name, subscription: n.subscription,
   }))
+  if (isFailover.value) return nodeItems
   const groupItems = groups.value
     .filter((g) => g.name !== draft.value?.name)
     .map((g) => ({ kind: 'group' as const, name: g.name, subscription: '' }))
@@ -810,8 +1271,9 @@ const scopeOf = (sel: string, keyword: string) => {
 }
 
 // 左侧只列"还没选的":选走一个左边就少一个,不必再靠打勾去分辨状态。
+// 故障转移按当前页签算:同一节点可以出现在不同页签,同一页签内不重复
 const availableCandidates = computed(() =>
-  candidates.value.filter((item) => !draft.value?.members.includes(item.name)),
+  candidates.value.filter((item) => !members.value.includes(item.name)),
 )
 
 const filteredAvailable = computed(() => {
@@ -820,14 +1282,14 @@ const filteredAvailable = computed(() => {
 })
 
 const addMember = (name: string) => {
-  if (!draft.value || draft.value.members.includes(name)) return
-  draft.value.members = [...draft.value.members, name]
+  if (!draft.value || members.value.includes(name)) return
+  members.value = [...members.value, name]
   checkedAvailable.value = checkedAvailable.value.filter((n) => n !== name)
 }
 
 const removeMember = (name: string) => {
   if (!draft.value) return
-  draft.value.members = draft.value.members.filter((m) => m !== name)
+  members.value = members.value.filter((m) => m !== name)
   checkedSelected.value = checkedSelected.value.filter((n) => n !== name)
 }
 
@@ -847,8 +1309,10 @@ const intervalMinutes = computed<number>({
 })
 
 const filteredSelected = computed(() => {
-  const list = draft.value?.members || []
+  const list = members.value
   const inScope = new Set(scopeOf(selectedSub.value, selectedFilter.value).map((c) => c.name))
+  // 故障转移里已经失效的引用(订阅更新删掉的节点)不在候选表里,过滤 / 订阅筛选为空时照样列出来给用户看
+  if (isFailover.value && !selectedSub.value && !selectedFilter.value.trim()) return list
   return list.filter((name) => inScope.has(name))
 })
 
@@ -881,9 +1345,9 @@ const tickInvert = (pane: Pane) => {
 // 两个箭头:把勾中的整批搬到另一边,搬完清掉这一侧的勾(它们已经不在这一栏了)
 const moveRight = () => {
   if (!draft.value) return
-  const chosen = new Set(draft.value.members)
-  draft.value.members = [
-    ...draft.value.members,
+  const chosen = new Set(members.value)
+  members.value = [
+    ...members.value,
     ...checkedAvailable.value.filter((n) => !chosen.has(n)),
   ]
   checkedAvailable.value = []
@@ -891,7 +1355,7 @@ const moveRight = () => {
 const moveLeft = () => {
   if (!draft.value) return
   const drop = new Set(checkedSelected.value)
-  draft.value.members = draft.value.members.filter((n) => !drop.has(n))
+  members.value = members.value.filter((n) => !drop.has(n))
   checkedSelected.value = []
 }
 
@@ -956,6 +1420,8 @@ const openAutoDialog = () => {
 const AUTO_SUFFIX: Record<OpenboxGroupType, string> = {
   urltest: '自动',
   selector: '手动',
+  // 自动分组只建自动 / 手动两种;故障转移要用户自己排主备,这里只是让类型表完整
+  failover: '主备',
 }
 
 // 同一个国家的组要挨在一起,自动排在手动前面。分两次生成(先建一批自动,过几天
@@ -1061,7 +1527,8 @@ const persist = async (next: OpenboxUserGroup[]) => {
   return res
 }
 
-const saveDraft = async () => {
+const showTypeChangeConfirm = ref(false)
+const saveDraft = async (typeChangeConfirmed = false) => {
   if (!draft.value || saving.value) return
   const name = draft.value.name.trim()
   if (!name) {
@@ -1073,15 +1540,48 @@ const saveDraft = async () => {
     showNotification({ content: 'groupNameDuplicate', type: 'alert-error' })
     return
   }
-  // 动态组不需要成员名单:关键词为空就是"全部节点",本身是合法的一种组
-  if (draft.value.mode === 'static' && !draft.value.members.length) {
+  if (isFailover.value) {
+    // 从普通组带过来的组成员还没处理:不能悄悄丢
+    if (blockedMembers.value.length) {
+      showNotification({ content: 'failoverBlockedMembersRequired', type: 'alert-error' })
+      return
+    }
+    const lanes = draft.value.lanes ?? []
+    const nonEmpty = lanes.filter((l) => validCount(l) > 0).length
+    // 新建至少两个非空候选(只有一个候选就不是故障转移);已保存的组允许历史失效后只剩一个,
+    // 但不能一个都没有
+    if ((editing.value ? nonEmpty < 1 : nonEmpty < 2)) {
+      showNotification({ content: editing.value ? 'failoverLanesRequiredOne' : 'failoverLanesRequired', type: 'alert-error' })
+      return
+    }
+  } else if (draft.value.mode === 'static' && !draft.value.members.length) {
+    // 动态组不需要成员名单:关键词为空就是"全部节点",本身是合法的一种组
     showNotification({ content: 'groupMembersRequired', type: 'alert-error' })
+    return
+  }
+  // 已保存的故障转移组改成普通类型:主备层次会丢,先确认
+  if (!isFailover.value && editing.value?.type === 'failover' && !typeChangeConfirmed) {
+    showTypeChangeConfirm.value = true
     return
   }
 
   saving.value = true
   try {
-    const item: OpenboxUserGroup = { ...draft.value, name, id: draft.value.id || `g-${Date.now()}` }
+    const base: OpenboxUserGroup = { ...draft.value, name, id: draft.value.id || `g-${Date.now()}` }
+    let item: OpenboxUserGroup
+    if (isFailover.value) {
+      // 页签是唯一的成员来源:members / keywords 清空;页签名去掉首尾空白
+      item = {
+        ...base, mode: 'static', members: [], keywords: [],
+        lanes: (base.lanes ?? []).map((l) => ({ id: l.id, name: l.name.trim(), members: [...l.members] })),
+        failover: { ...FAILOVER_DEFAULTS, ...(base.failover || {}) },
+      }
+    } else {
+      const { lanes: _lanes, failover: _failover, ...rest } = base
+      void _lanes
+      void _failover
+      item = rest
+    }
     const next = editing.value
       ? groups.value.map((g) => (g.id === editing.value?.id ? item : g))
       : [...groups.value, item]
@@ -1163,3 +1663,12 @@ const confirmDelete = async () => {
   }
 }
 </script>
+
+<style scoped>
+/* 提醒句用淡黄底 + 正常文字色(和规则页的 .route-note 同一套),不用黄字——浅色主题上黄字看不清 */
+.fo-note {
+  border-left: 2px solid var(--color-warning);
+  background-color: color-mix(in srgb, var(--color-warning) 12%, transparent);
+  color: color-mix(in srgb, var(--color-base-content) 85%, transparent);
+}
+</style>

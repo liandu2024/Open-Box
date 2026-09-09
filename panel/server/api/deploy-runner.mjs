@@ -196,8 +196,8 @@ export const currentBypassPlan = (store, selections) => {
   const profile = store.getProfile() || {}
   const groups = typeof store.getGroups === 'function' ? store.getGroups() : []
   const builtin = builtinTags(groups)
-  const { outbounds } = emitUserGroups(groups, store.getNodes ? store.getNodes() : [], {})
-  const members = policyOutboundOptions(normalizeRouting(profile.routing).outboundOptions, outbounds.map((o) => o.tag), builtin)
+  const { publicTags } = emitUserGroups(groups, store.getNodes ? store.getNodes() : [], {})
+  const members = policyOutboundOptions(normalizeRouting(profile.routing).outboundOptions, publicTags, builtin)
   return nativeBypassPlan(profile.routing, { members, builtin, selections: selections || {}, clientRoutes: normalizeClientRoutes(profile.clientRoutes), fakeIp: dnsFakeIpEnabled(profile), dnsMode: (profile.dns && profile.dns.mode) || 'hijack' })
 }
 
@@ -236,7 +236,10 @@ export const buildCurrentConfig = (store, systemDns, { cacheFilePath, selections
     ruleLists,
     nativeBypass,
   })
-  return { config, profile }
+  // 故障转移的运行映射(父组 / 页签 / 有效节点 / 子组 tag / 检测参数):和配置同一次生成,写进 config.meta.json
+  // 给后台管理器和界面用
+  const { failover } = emitUserGroups(store.getGroups(), nodes, { testUrl: profile.testUrl })
+  return { config, profile, failover }
 }
 
 // 「保存设置」与「让设置生效」之间只隔一次启动内核:各个设置页只管把自己那块写进档案,
@@ -370,10 +373,10 @@ const runDeployInner = async ({ store, ctx, paths, fetchImpl = globalThis.fetch,
         cacheFilePath: paths.cacheDb, selections, tlsCert: { certPath: paths.tlsCert, keyPath: paths.tlsKey }, localSubnets, directHostCidrs,
         ruleLists: ruleLists.lists, nativeBypass,
       }
-      const { config, profile } = buildCurrentConfig(store, systemDns, buildOptions)
+      const { config, profile, failover } = buildCurrentConfig(store, systemDns, buildOptions)
       const prepMs = Date.now() - startedAt
       result = await deployConfig(ctx, paths, {
-        config, profile, userGroups: store.getGroups(), selections, isCancelled, nativeBypass,
+        config, profile, userGroups: store.getGroups(), selections, isCancelled, nativeBypass, failover,
         rebuild: (profilePatch) => buildCurrentConfig(store, systemDns, { ...buildOptions, profilePatch }).config,
       })
       if (result.warning) console.warn(`[deploy] ${result.warning}`)

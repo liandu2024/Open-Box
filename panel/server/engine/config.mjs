@@ -82,7 +82,9 @@ export const buildConfig = ({ nodes, profile, userGroups, systemDns, localSubnet
   // 节点组只有用户自己建的这一种:emitUserGroups 已经保证了成员非空、无悬空引用、
   // 无环(sing-box check 只能挡住第一条,见 user-groups.mjs 的说明)。
   // 内置的直连/拒绝也从这里出(它们和节点组同在「节点管理」列表里,按那里的顺序)
-  const { outbounds: userGroupOutbounds, builtin } = emitUserGroups(userGroups || [], nodes, {
+  // 故障转移的内部子组也在 userGroupOutbounds 里(要进内核),但公开的出站清单(站点集出口候选、DNS 分类、
+  // 旁路计划)只用 publicTags——内部子组不能漏进候选
+  const { outbounds: userGroupOutbounds, builtin, publicTags } = emitUserGroups(userGroups || [], nodes, {
     testUrl: profile.testUrl,
   })
 
@@ -91,7 +93,7 @@ export const buildConfig = ({ nodes, profile, userGroups, systemDns, localSubnet
   // 所以站点集本身不记节点,只记"能选哪些"。最后固定跟一个兜底的「其他」:
   // route.final 指向它,上面都没命中的流量走它。
   const routingConf = normalizeRouting(profile.routing)
-  const groupTags = userGroupOutbounds.map((g) => g.tag)
+  const groupTags = publicTags
   const policyMemberTags = policyOutboundOptions(routingConf.outboundOptions, groupTags, builtin)
   // default 必须是成员之一,否则内核启动时找不到。effectiveOutbound 负责把"不在成员
   // 表里"的情况(空值、已删掉的组、迁移留下的 'proxy' 占位)算成一个真实存在的成员。
