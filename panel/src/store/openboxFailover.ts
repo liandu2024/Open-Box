@@ -72,18 +72,50 @@ export const isFailoverRejectMember = (groupName: string, member: string) => {
 export const failoverMembersOf = (groupName: string, all: string[]) =>
   all.filter((member) => !isFailoverRejectMember(groupName, member))
 
-// 策略穿透要直接穿到节点:故障转移父组这一层列的不是页签(内部子组),而是各页签的真实节点按页签顺序摊开
-// (去重、只留内核里真有的节点);内部子组不再单独成一层。isNode 由调用方给(store/proxies 里的 proxyMap)
-export const failoverFlatNodes = (groupName: string, isNode: (name: string) => boolean) => {
+export const isFailoverGroup = (groupName: string) =>
+  managedOutbounds.value.some((g) => g.name === groupName && g.type === 'failover')
+
+// 策略穿透里故障转移组的页签视图:每个页签在内核里对应哪个出站(单节点 = 节点本身,多节点 = 内部子组,
+// 空 = 没有),有哪些有效节点,内核此刻在页签内选中谁。优先用服务端运行状态,没拉到就按定义 + 内核 /proxies 推
+export interface FailoverLaneView {
+  id: string
+  index: number
+  label: string
+  ref: string | null
+  subTag: string | null
+  valid: string[]
+  invalid: string[]
+  kernelNow: string | null
+}
+export const failoverLanesOf = (
+  groupName: string,
+  proxies: Record<string, { all?: string[]; now?: string } | undefined>,
+): FailoverLaneView[] | null => {
   const group = managedOutbounds.value.find((g) => g.name === groupName)
   if (!group || group.type !== 'failover') return null
-  const out: string[] = []
-  for (const lane of group.lanes ?? []) {
-    for (const member of lane.members) {
-      if (isNode(member) && !out.includes(member)) out.push(member)
+  const status = failoverGroupByTag.value.get(groupName)
+  const statusLanes = new Map((status?.lanes ?? []).map((l) => [l.id, l]))
+  const isNode = (name: string) => Boolean(proxies[name]) && !proxies[name]?.all?.length
+  const parentAll = proxies[groupName]?.all ?? []
+  return (group.lanes ?? []).map((lane, index) => {
+    const st = statusLanes.get(lane.id)
+    const valid = st ? st.valid : lane.members.filter(isNode)
+    const invalid = lane.members.filter((m) => !valid.includes(m))
+    let subTag = st?.subTag ?? null
+    if (!st && valid.length > 1) {
+      const head = `${FAILOVER_INTERNAL_PREFIX}${group.id}:${lane.id}`
+      subTag = parentAll.find((m) => m === head || (m.startsWith(head) && /^~+$/.test(m.slice(head.length)))) ?? null
     }
-  }
-  return out
+    const ref = st ? st.ref : valid.length === 1 ? valid[0]! : subTag
+    const kernelNow = subTag ? (proxies[subTag]?.now ?? null) : valid.length === 1 ? valid[0]! : null
+    return { id: lane.id, index, label: lane.name || failoverRoleLabel(index), ref, subTag, valid, invalid, kernelNow }
+  })
+}
+// 内核此刻在哪个页签:先信服务端记录的当前页签,否则按顺序找第一个引用等于父组 now 的
+export const failoverCurrentLaneId = (groupName: string, lanes: FailoverLaneView[], now: string | undefined) => {
+  const status = failoverGroupByTag.value.get(groupName)
+  if (status?.currentLaneId && lanes.some((l) => l.id === status.currentLaneId)) return status.currentLaneId
+  return lanes.find((l) => l.ref && l.ref === now)?.id ?? null
 }
 
 // 内部子组 tag → 它是哪个故障转移组的第几个页签。按节点管理里的定义找(不用等运行状态):

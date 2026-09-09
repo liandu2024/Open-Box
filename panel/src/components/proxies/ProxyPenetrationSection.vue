@@ -24,15 +24,24 @@
       class="border-base-300/60 mt-2 border-t"
     >
       <div
-        v-for="(groupName, index) in renderedGroups"
-        :key="groupName"
+        v-for="(level, index) in renderedLevels"
+        :key="level.key"
         class="border-base-300/60 border-b pt-2.5 pb-4 last:border-b-0 last:pb-0 max-md:pb-3 max-md:last:pb-0"
       >
+        <!-- 故障转移组后面跟一层「当前选中页签的明细节点」;页签本身在上一层(父组那一栏)里选 -->
+        <FailoverLaneDetail
+          v-if="level.kind === 'lane'"
+          :group-name="level.groupName"
+          :lane-id="level.laneId"
+        />
         <ProxyEmbeddedGroup
-          :name="groupName"
+          v-else
+          :name="level.groupName"
           :level="index + 1"
           :root-group-name="groupNameRoot"
+          :selected-lane-id="selectedLaneFor(level.groupName)"
           @selection-change="handleSelectionChange"
+          @lane-change="handleLaneChange"
         />
       </div>
     </div>
@@ -40,12 +49,13 @@
 </template>
 
 <script setup lang="ts">
-import { isFailoverInternalTag } from '@/store/openboxFailover'
+import { failoverCurrentLaneId, failoverLanesOf, isFailoverGroup, isFailoverInternalTag } from '@/store/openboxFailover'
 import { getDescendantProxyGroups, getProxyGroupChains, proxyMap } from '@/store/proxies'
 import { collapseGroupMap } from '@/store/settings'
 import { ChevronDownIcon } from '@heroicons/vue/24/outline'
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import FailoverLaneDetail from './FailoverLaneDetail.vue'
 import ProxyEmbeddedGroup from './ProxyEmbeddedGroup.vue'
 
 // 穿透:展开站点集卡片只看到它的成员(节点 / 节点组),穿透默认收着;点「策略穿透」
@@ -109,6 +119,31 @@ const buildPenetratedGroupNames = () => {
 const penetratedGroupNames = computed(() => buildPenetratedGroupNames())
 const canPenetrate = computed(() => penetratedGroupNames.value.length > 0)
 const renderedGroups = computed(() => (canPenetrate.value ? penetratedGroupNames.value : []))
+
+// 故障转移组:上面一栏选页签(不动内核),下面一栏看它的节点。没点过就看内核此刻在的那个页签
+const selectedLaneMap = ref<Record<string, string>>({})
+const selectedLaneFor = (groupName: string) => {
+  if (!isFailoverGroup(groupName)) return null
+  const lanes = failoverLanesOf(groupName, proxyMap.value) ?? []
+  const picked = selectedLaneMap.value[groupName]
+  if (picked && lanes.some((l) => l.id === picked)) return picked
+  return failoverCurrentLaneId(groupName, lanes, proxyMap.value[groupName]?.now) ?? lanes[0]?.id ?? null
+}
+const handleLaneChange = (groupName: string, laneId: string) => {
+  selectedLaneMap.value = { ...selectedLaneMap.value, [groupName]: laneId }
+}
+type Level = { key: string; kind: 'group'; groupName: string } | { key: string; kind: 'lane'; groupName: string; laneId: string }
+const renderedLevels = computed<Level[]>(() => {
+  const out: Level[] = []
+  for (const groupName of renderedGroups.value) {
+    out.push({ key: groupName, kind: 'group', groupName })
+    if (isFailoverGroup(groupName)) {
+      const laneId = selectedLaneFor(groupName)
+      if (laneId) out.push({ key: `lane:${groupName}:${laneId}`, kind: 'lane', groupName, laneId })
+    }
+  }
+  return out
+})
 
 const buttonLabel = computed(() =>
   isExpanded.value ? t('collapsePenetration') : t('strategyPenetration'),

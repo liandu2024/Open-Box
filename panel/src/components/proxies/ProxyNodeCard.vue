@@ -90,12 +90,14 @@ const props = defineProps<{
   name: string
   active?: boolean
   groupName?: string
+  // 卡片标题用别的文字(故障转移的页签卡片:标题是页签名 / 角色,name 仍是它在内核里的出站)
+  label?: string
 }>()
 
 const cardRef = ref()
 const node = computed(() => proxyMap.value[props.name])
 // 故障转移的内部子组显示成页签名 / 角色,不露 __fo: 技术 tag
-const displayName = computed(() => failoverDisplayName(node.value.name))
+const displayName = computed(() => props.label ?? failoverDisplayName(node.value.name))
 const isLatencyTesting = ref(false)
 const typeFormatter = (type: string) => {
   type = type.toLowerCase()

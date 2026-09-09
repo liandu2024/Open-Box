@@ -125,7 +125,7 @@
         <ProxyPreview
           v-else
           :nodes="renderProxies"
-          :now="leafNow"
+          :now="proxyGroup.now"
           :groupName="proxyGroup.name"
           :relaxed-dots-spacing="true"
           @nodeclick="handlePreviewSelect"
@@ -137,10 +137,18 @@
       v-if="showCollapse && !isWindowResizing"
       class="pt-1.5"
     >
+      <!-- 故障转移组这一层:上面一栏是各个主备页签(当前页签高亮,点哪个下面一栏就看哪个的节点) -->
+      <FailoverLaneCards
+        v-if="isFailover"
+        :group-name="name"
+        :selected-lane-id="selectedLaneId"
+        @select="(laneId) => emit('lane-change', name, laneId)"
+      />
       <Component
+        v-else
         :is="groupProxiesByProvider ? ProxiesByProvider : ProxiesContent"
         :name="name"
-        :now="leafNow"
+        :now="proxyGroup.now"
         :render-proxies="renderProxies"
         :render-all="true"
         @select="handleSelectionChange"
@@ -170,11 +178,12 @@ import {
   proxyGroupIconSize,
   useLargeProxyGroupIcon,
 } from '@/store/settings'
-import { failoverDisplayName, failoverFlatNodes, failoverMembersOf } from '@/store/openboxFailover'
+import { failoverDisplayName, failoverMembersOf, isFailoverGroup } from '@/store/openboxFailover'
 import { EyeIcon, EyeSlashIcon } from '@heroicons/vue/24/outline'
 import { twMerge } from 'tailwind-merge'
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import FailoverLaneCards from './FailoverLaneCards.vue'
 import LatencyTag from './LatencyTag.vue'
 import ProxiesByProvider from './ProxiesByProvider.vue'
 import ProxiesContent from './ProxiesContent.vue'
@@ -185,6 +194,8 @@ import ProxyPreview from './ProxyPreview.vue'
 
 const emit = defineEmits<{
   'selection-change': [groupName: string, nodeName: string]
+  // 故障转移组:在上面一栏点了哪个页签(穿透的下一层就显示它的节点;不动内核的选择)
+  'lane-change': [groupName: string, laneId: string]
 }>()
 
 const props = withDefaults(
@@ -192,10 +203,13 @@ const props = withDefaults(
     name: string
     level?: number
     rootGroupName?: string
+    // 故障转移组:穿透里当前看的是哪个页签
+    selectedLaneId?: string | null
   }>(),
   {
     level: 1,
     rootGroupName: '',
+    selectedLaneId: null,
   },
 )
 
@@ -214,19 +228,12 @@ const showCollapse = computed({
     collapseGroupMap.value[penetrationCollapseKey.value] = value
   },
 })
-// 故障转移父组:穿透直接到节点——这一层列各页签的真实节点(不列内部子组、不列兜底拒绝),高亮的是内核实际
-// 落到的那个节点(父组选中的可能是内部子组,再往下取它选中的节点)
-const isNode = (name: string) => Boolean(proxyMap.value[name]) && !proxyMap.value[name].all?.length
-const flatNodes = computed(() => failoverFlatNodes(props.name, isNode))
+// 故障转移父组:成员是各页签的引用(单节点 = 节点,多节点 = 内部子组)加末尾的兜底拒绝;拒绝不是候选,不列。
+// 折叠态的圆点按页签引用画;展开是上下两栏(页签栏 + 当前页签的节点),见 FailoverLaneCards / FailoverLaneDetail
+const isFailover = computed(() => isFailoverGroup(props.name))
 // 故障转移组在穿透里也叫「故障转移」,不因底层是 selector 就显示成手动组
-const typeText = computed(() => (flatNodes.value ? t('groupType_failover_short') : proxyGroup.value.type))
-const allProxies = computed(() => flatNodes.value ?? failoverMembersOf(props.name, proxyGroup.value.all ?? []))
-const leafNow = computed(() => {
-  const now = proxyGroup.value.now ?? ''
-  if (!flatNodes.value) return now
-  const sub = proxyMap.value[now]
-  return sub?.all?.length ? (sub.now ?? now) : now
-})
+const typeText = computed(() => (isFailover.value ? t('groupType_failover_short') : proxyGroup.value.type))
+const allProxies = computed(() => failoverMembersOf(props.name, proxyGroup.value.all ?? []))
 const { proxiesCount, renderProxies } = useRenderProxies(allProxies, props.name)
 const isLatencyTesting = ref(false)
 
