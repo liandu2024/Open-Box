@@ -41,9 +41,9 @@
                 {{ typeText }}
               </span>
               <span
-                v-tip="$t(isFailover ? 'failoverLaneCountHint' : 'groupNodeCountHint')"
+                v-tip="$t('groupNodeCountHint')"
                 class="text-base-content/60 shrink-0 text-xs tabular-nums"
-              >({{ shownStats.valid }}/{{ shownStats.total }})</span>
+              >({{ nodeStats.valid }}/{{ nodeStats.total }})</span>
             </div>
             <button
               v-if="manageHiddenGroup"
@@ -115,9 +115,9 @@
             {{ typeText }}
           </span>
           <span
-            v-tip="$t(isFailover ? 'failoverLaneCountHint' : 'groupNodeCountHint')"
+            v-tip="$t('groupNodeCountHint')"
             class="text-base-content/60 shrink-0 text-xs tabular-nums"
-          >({{ shownStats.valid }}/{{ shownStats.total }})</span>
+          >({{ nodeStats.valid }}/{{ nodeStats.total }})</span>
           <button
             v-if="manageHiddenGroup"
             class="btn btn-circle btn-xs z-10 ml-1"
@@ -164,13 +164,8 @@
         v-if="isWindowResizing"
         class="bg-base-content/10 mt-2 h-4 rounded-full"
       />
-      <!-- 故障转移组折叠态:当前在哪个页签、实际节点、状态,而不是内部子组的圆点 -->
-      <FailoverLanes
-        v-else-if="isFailover"
-        :name="name"
-        compact
-      />
-      <!-- 折叠态永远是一排圆点,不按订阅分段:分段是展开后看节点卡片用的,圆点摊成几行反而占地方 -->
+      <!-- 折叠态永远是一排圆点,不按订阅分段:分段是展开后看节点卡片用的,圆点摊成几行反而占地方。
+           故障转移组的圆点是各页签(单节点页签 = 节点,多节点页签 = 内部子组),不含兜底拒绝 -->
       <ProxyPreview
         v-else
         :nodes="renderProxies"
@@ -182,12 +177,24 @@
     </template>
     <template v-slot:content>
       <div class="flex flex-col gap-0">
-        <!-- 故障转移组展开:按主备顺序列页签(角色 / 健康 / 派生模式 / 成员探测结果),不是可点选的节点网格——
-             主备由服务端按检测结果切,手动点选下一轮会被纠回去 -->
-        <FailoverLanes
-          v-if="isFailover"
-          :name="name"
-        />
+        <!-- 故障转移组展开:和策略穿透里同一套上下两栏——上栏各主备页签一张卡(点哪张下栏看哪个),
+             下栏当前选中页签的明细节点。主备由服务端按检测结果切,节点卡片点了不会改内核的选择 -->
+        <template v-if="isFailover">
+          <FailoverLaneCards
+            :group-name="name"
+            :selected-lane-id="selectedLaneId"
+            @select="pickedLaneId = $event"
+          />
+          <div
+            v-if="selectedLaneId"
+            class="border-base-300/60 mt-2 border-t pt-2.5"
+          >
+            <FailoverLaneDetail
+              :group-name="name"
+              :lane-id="selectedLaneId"
+            />
+          </div>
+        </template>
         <Component
           v-else
           :is="groupProxiesByProvider ? ProxiesByProvider : ProxiesContent"
@@ -223,17 +230,18 @@ import {
 } from '@/store/settings'
 import { EyeIcon, EyeSlashIcon } from '@heroicons/vue/24/outline'
 import { managedOutbounds, siteSetNames } from '@/store/openboxSiteSets'
-import { failoverGroupByTag } from '@/store/openboxFailover'
+import { failoverCurrentLaneId, failoverLanesOf, failoverLastSwitchText, failoverMembersOf, isFailoverGroup, watchFailoverStatus } from '@/store/openboxFailover'
 import { openPenetrationDialog } from '@/store/proxyGroupRulePenetration'
 import { DARK_THEME, theme } from '@/store/settings'
 import { twMerge } from 'tailwind-merge'
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import CollapseCard from '../common/CollapseCard.vue'
 import LatencyTag from './LatencyTag.vue'
 import ProxiesByProvider from './ProxiesByProvider.vue'
 import ProxiesContent from './ProxiesContent.vue'
-import FailoverLanes from './FailoverLanes.vue'
+import FailoverLaneCards from './FailoverLaneCards.vue'
+import FailoverLaneDetail from './FailoverLaneDetail.vue'
 import ProxyGroupNow from './ProxyGroupNow.vue'
 import ProxyIcon from './ProxyIcon.vue'
 import ProxyPenetrationSection from './ProxyPenetrationSection.vue'
@@ -243,7 +251,9 @@ const props = defineProps<{
   name: string
 }>()
 const proxyGroup = computed(() => proxyMap.value[props.name])
-const allProxies = computed(() => proxyGroup.value.all ?? [])
+// 故障转移组:成员是各页签的引用加末尾的兜底拒绝,拒绝不是候选,圆点 / 计数里不算它
+const isFailover = computed(() => isFailoverGroup(props.name))
+const allProxies = computed(() => (isFailover.value ? failoverMembersOf(props.name, proxyGroup.value.all ?? []) : proxyGroup.value.all ?? []))
 const { renderProxies } = useRenderProxies(allProxies, props.name)
 // 标题后的「有效 / 总数」
 const nodeStats = useGroupNodeStats(allProxies, props.name)
@@ -263,17 +273,25 @@ const { t } = useI18n()
 // 节点管理里的这个组(有就是 Open-Box 自己生成的组,没有就是内核配置里别的出站)
 const managedGroup = computed(() => managedOutbounds.value.find((g) => g.name === props.name))
 // 故障转移组:底层是 selector + 内部 urltest 子组,但对用户它是「故障转移」,不显示成手动组
-const isFailover = computed(() => managedGroup.value?.type === 'failover')
 const typeText = computed(() => (isFailover.value ? t('groupType_failover_short') : proxyGroup.value.type))
-// 故障转移组标题后的数字是「通过检测的页签 / 页签数」(运行状态还没拉到时按定义算页签数、0 个通过)
-const failoverStats = computed(() => {
-  const st = failoverGroupByTag.value.get(props.name)
-  const total = st ? st.lanes.length : (managedGroup.value?.lanes?.length ?? 0)
-  const valid = st ? st.lanes.filter((l) => l.health === 'up').length : 0
-  return { valid, total }
+// 故障转移组展开后上栏选的页签:没点过就是内核此刻在的那个
+const pickedLaneId = ref<string | null>(null)
+const failoverLanes = computed(() => (isFailover.value ? failoverLanesOf(props.name, proxyMap.value) ?? [] : []))
+const selectedLaneId = computed(() => {
+  const lanes = failoverLanes.value
+  if (pickedLaneId.value && lanes.some((l) => l.id === pickedLaneId.value)) return pickedLaneId.value
+  return failoverCurrentLaneId(props.name, lanes, proxyGroup.value.now) ?? lanes[0]?.id ?? null
 })
-const shownStats = computed(() => (isFailover.value ? failoverStats.value : nodeStats.value))
-// 自动择优组显示「检测间隔 5 分钟 · 容差 100 毫秒」;故障转移显示「检测间隔 30 秒 · 容差 100 毫秒」;手动组没有这两项
+// 故障转移组自己拉运行状态(当前页签 / 最近切换按服务端记录来)
+let releaseStatus: (() => void) | null = null
+onMounted(() => {
+  if (isFailover.value) releaseStatus = watchFailoverStatus()
+})
+onBeforeUnmount(() => {
+  releaseStatus?.()
+})
+// 自动择优组显示「检测间隔 5 分钟 · 容差 100 毫秒」;故障转移显示「检测间隔 30 秒 · 容差 100 毫秒 · 最近切换…」;
+// 手动组没有这两项
 const intervalText = (interval: string) => {
   const m = /^(\d+)(m|s)$/.exec(interval)
   if (!m) return interval
@@ -283,7 +301,9 @@ const testMeta = computed(() => {
   const g = managedGroup.value
   if (!g || (g.type !== 'urltest' && g.type !== 'failover')) return ''
   const interval = g.interval || (g.type === 'failover' ? '30s' : '5m')
-  return `${t('groupInterval')} ${intervalText(interval)} · ${t('groupTolerance')} ${g.tolerance ?? 100} ${t('groupUnitMs')}`
+  const base = `${t('groupInterval')} ${intervalText(interval)} · ${t('groupTolerance')} ${g.tolerance ?? 100} ${t('groupUnitMs')}`
+  const lastSwitch = g.type === 'failover' ? failoverLastSwitchText(props.name, failoverLanes.value) : ''
+  return lastSwitch ? `${base} · ${lastSwitch}` : base
 })
 
 const hiddenGroup = computed({

@@ -122,6 +122,33 @@ export const failoverLanesOf = (
     return { id: lane.id, index, label: lane.name || failoverRoleLabel(index), ref, subTag, valid, invalid, kernelNow, icon: lane.icon || group.icon || '', iconScale: group.iconScale || 0 }
   })
 }
+// 「最近切换:主用 → 备用 1(页签失效)· 14:20:05」这一句(没切换过就是空串)
+export const failoverLastSwitchText = (groupName: string, lanes: FailoverLaneView[]) => {
+  const status = failoverGroupByTag.value.get(groupName)
+  const sw = status?.lastSwitch
+  if (!sw) return ''
+  const t = i18n.global.t
+  const refLabel = (laneId: string | null, ref: string) => {
+    const lane = laneId ? lanes.find((l) => l.id === laneId) : null
+    if (lane) return lane.label
+    if (status && ref === status.rejectTag) return t('failoverReject')
+    return ref || '—'
+  }
+  const reasonKey: Record<string, string> = {
+    'lane-failed': 'failoverReasonLaneFailed',
+    'restore-primary': 'failoverReasonRestore',
+    'all-failed': 'failoverReasonAllFailed',
+    recovered: 'failoverReasonRecovered',
+    initial: 'failoverReasonInitial',
+  }
+  return t('failoverLastSwitch', {
+    from: refLabel(sw.from.laneId, sw.from.ref),
+    to: refLabel(sw.to.laneId, sw.to.ref),
+    reason: reasonKey[sw.reason] ? t(reasonKey[sw.reason]) : sw.reason,
+    time: new Date(sw.at).toLocaleTimeString(),
+  })
+}
+
 // 内核此刻在哪个页签:先信服务端记录的当前页签,否则按顺序找第一个引用等于父组 now 的
 export const failoverCurrentLaneId = (groupName: string, lanes: FailoverLaneView[], now: string | undefined) => {
   const status = failoverGroupByTag.value.get(groupName)
