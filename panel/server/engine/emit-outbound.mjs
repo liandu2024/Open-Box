@@ -133,6 +133,10 @@ const EMITTERS = {
   hysteria2: (n) => {
     const o = withTls({ type: 'hysteria2', ...base(n), password: n.fields.password }, n.fields, QUIC)
     if (n.fields.obfs) o.obfs = n.fields.obfs
+    // sing-box 1.14 起 hysteria2 默认模仿 Chrome 的 QUIC 握手指纹;Chrome 不声明 Ed25519,服务端用 Ed25519 证书的
+    // 握手会失败,官方给的开关是 disable_chrome_parrot。订阅里没有这个信息,节点自带这个字段(手写配置 / 导入的
+    // sing-box 出站)时原样带过去,其余节点按内核默认
+    if (n.fields.disable_chrome_parrot === true || n.fields.disableChromeParrot === true) o.disable_chrome_parrot = true
     return o
   },
   // socks 出站只有版本和账号密码:内核这一项没有 tls / transport 字段,多写就 unknown field。

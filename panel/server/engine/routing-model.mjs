@@ -659,3 +659,24 @@ export const bypassPlanKey = (plan) => {
     fakeIp: Boolean(plan.fakeIp),
   })
 }
+
+// sing-box 1.14 起(route/rule/rule_item_rule_set.go 的 mergeableRuleIn):同一条规则里的规则集只有在「规则集
+// 只含一条 default 规则、不带 invert、不嵌套规则集」时才和这条规则自己的域名 / IP 条件合并成「或」;其它形状
+// (多条规则、逻辑规则、取反)按独立条件求值,和域名 / IP 条件是「与」——1.13 之前一律按「或」。Open-Box 从来
+// 都按「任一命中」理解(用户在界面上也是这么看的),又不能替每个规则集判形状(MetaCubeX 的 geosite 是一条,自己
+// 编的 .list / .mrs 不一定),所以规则集和域名 / IP 条件拆成紧邻的两条、动作 / 来源 / 端口条件原样各带一份:
+// 首条命中生效,两条任一命中效果和原来一条「或」完全一样。只有规则集或只有域名 / IP 条件的不拆。
+// DNS 规则和路由规则共用(engine/dns.mjs、engine/routing.mjs)
+const RULE_DEST_KEYS = ['domain', 'domain_suffix', 'domain_keyword', 'domain_regex', 'ip_cidr']
+export const splitRuleSetConditions = (rule) => {
+  if (!rule || typeof rule !== 'object' || !rule.rule_set) return [rule]
+  const destKeys = RULE_DEST_KEYS.filter((k) => Object.prototype.hasOwnProperty.call(rule, k))
+  if (!destKeys.length) return [rule]
+  const rest = { ...rule }
+  delete rest.rule_set
+  for (const k of destKeys) delete rest[k]
+  const withSet = { rule_set: rule.rule_set, ...rest }
+  const withDest = {}
+  for (const k of destKeys) withDest[k] = rule[k]
+  return [withSet, { ...withDest, ...rest }]
+}

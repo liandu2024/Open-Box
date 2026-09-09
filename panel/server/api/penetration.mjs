@@ -110,6 +110,8 @@ export const ipv4InCidr = (ip, cidr) => cidrContains(cidr, ip)
 // 目标地址这一组条件:domain 全等、domain_suffix 后缀(含"就是它本身")、domain_keyword 子串、
 // ip_cidr 网段包含。同一条规则里这几个字段是"或"的关系——sing-box 1.13.14 把它们都归进
 // destinationAddressItems,任一命中就算目标地址命中(route/rule/rule_abstract.go)
+// 1.14 起规则集和这些字段不再稳定地「或」(只有单条 default 规则的规则集才合并),所以生成器把规则集和域名 / IP
+// 条件拆成紧邻的两条(routing-model.mjs 的 splitRuleSetConditions);这里按内核里的实际规则逐条判,自然对得上
 export const matchLocalConditions = (rule, target) => {
   const host = String(target).toLowerCase()
   const list = (v) => (Array.isArray(v) ? v : v === undefined ? [] : [v])

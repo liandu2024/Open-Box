@@ -1,8 +1,10 @@
-import { customOutboundTag, customPolicyActive, customRuleTag, normalizeRouting, parsePortSpec, routeRulesetTags } from './routing-model.mjs'
+import { customOutboundTag, customPolicyActive, customRuleTag, normalizeRouting, parsePortSpec, routeRulesetTags, splitRuleSetConditions } from './routing-model.mjs'
 
 // 一条策略的匹配条件 → 一条 sing-box 路由规则。
-// 同一条规则里的多个字段是「或」的关系(sing-box 规则内部各字段取并集),所以一条策略
+// 同一条规则里的域名 / IP 字段是「或」的关系(sing-box 规则内部目标地址各字段取并集),所以一条策略
 // 写了域名后缀又写了 IP 段时,任一命中即算这条策略命中——和用户在界面上的理解一致。
+// 规则集例外:sing-box 1.14 起它和同一条里的域名 / IP 条件不再稳定地「或」,写进配置前要经
+// routing-model.mjs 的 splitRuleSetConditions 拆成两条(见那里的说明)
 // 规则集链接是域名 / IP 两份 .srs,路由规则两份都引用(见 routing-model.mjs 的 routeRulesetTags)
 const policyRule = (policy, ruleLists) => {
   const rule = {}
@@ -86,7 +88,7 @@ export const preResolveRules = (conf, ruleLists, resolvers, options = {}) => {
     const server = resolvers.policies && resolvers.policies[policy.name]
     if (ipSeen && server) {
       const match = policyDomainMatch(policy, ruleLists)
-      if (match) out.push({ ...match, action: 'resolve', server })
+      if (match) for (const part of splitRuleSetConditions(match)) out.push({ ...part, action: 'resolve', server })
     }
     if (policyNeedsIp(policy, ruleLists)) ipSeen = true
   }
@@ -215,10 +217,10 @@ export const buildRoute = (routing, rulesetDir, options = {}) => {
     rules.push({ rule_set: conf.adRuleset, action: 'reject' })
   }
 
-  // 站点集按用户排的顺序逐条匹配,首条命中生效。
+  // 站点集按用户排的顺序逐条匹配,首条命中生效。规则集 + 域名 / IP 的站点集拆成紧邻的两条(1.14 的规则集语义)
   for (const policy of conf.activePolicies) {
     for (const tag of routeRulesetTags(policy, ruleLists)) addTag(tag)
-    pushRule(policyRule(policy, ruleLists))
+    for (const part of splitRuleSetConditions(policyRule(policy, ruleLists))) pushRule(part)
   }
   // 兜底此刻走代理:没命中的 v6 连接同样明确拒绝(final 写不了条件,单独一条)
   if (rejectV6For && rejectV6For(conf.fallback.name)) rules.push({ ip_version: 6, action: 'reject' })

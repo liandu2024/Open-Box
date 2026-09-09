@@ -76,6 +76,9 @@ export const decideDnsServer = async (ctx, paths, config, target, { sourceIp = '
     const rule = rules[i]
     if (!rule || typeof rule !== 'object') continue
     if (rule.server && ignored.has(rule.server)) continue
+    // 只管某些查询类型、又不含 A 的规则(代理 v6 降为 IPv4 时给走代理的域名回空 AAAA 的 predefined 那条)和这里
+    // 无关:规则页推算的是「这个域名的 A 查询由谁解析」
+    if (Array.isArray(rule.query_type) && rule.query_type.length && !rule.query_type.includes('A')) continue
     const hasDest = hasDestinationCondition(rule)
     const hasSource = Object.prototype.hasOwnProperty.call(rule, 'source_ip_cidr')
     const fake = rule.server && (servers.get(rule.server) || {}).type === 'fakeip'

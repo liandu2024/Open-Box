@@ -19,6 +19,11 @@ const TUN_V6 = 'fdfe:dcba:9876::1/126'
 // 上面两个地址所在的网段,给路由规则做防回环用(见 routing.mjs)
 export const TUN_V4_NET = '172.19.0.0/30'
 export const TUN_V6_NET = 'fdfe:dcba:9876::/126'
+// tun 的对端地址(网段里的第二个地址):sing-box 1.14 起 tun 自己的 DNS 劫持(dns_mode)把 53 端口改写到这里,
+// 和 1.13 隐含的做法同一个地址;显式写出来是为了关掉它顺带的「发到这个地址的连接自动交给 DNS 模块」
+// (见下面 tunInbound.dns_address 处的说明)
+const TUN_V4_PEER = '172.19.0.2'
+const TUN_V6_PEER = 'fdfe:dcba:9876::2'
 
 // 私网 / 链路本地 / 组播目标不进 TUN,由内核按普通路由转发——和 OpenClash 的 localnetwork
 // 放行一致。否则局域网里发往任何私网地址(包括指向死网关的静态路由网段)的包都会进 sing-box,
@@ -205,6 +210,19 @@ export const buildConfig = ({ nodes, profile, userGroups, systemDns, localSubnet
     udp_timeout: TUN_UDP_TIMEOUT,
   }
   if (autoRedirect) tunInbound.auto_redirect = true
+  // sing-box 1.14 起 tun 自己管 DNS 接管(dns_mode,缺省 hijack):auto_redirect 下 nft 把 53 端口 DNAT 到 dns_address;
+  // 没有 auto_redirect 时另加一条 ip rule 把发往直连网段的 53 端口流量强行送进 tun——后者是 1.13 没有的行为,
+  // 不写这个字段就会悄悄多出来。所以:开着 auto_redirect 的劫持 / dnsmasq 模式明确写 hijack,DNAT 目标写死成
+  // tun 对端(和 1.13 隐含的一样),这样改写后的查询照旧经路由规则处理——劫持模式由 {protocol:'dns'} 接住,
+  // dnsmasq 模式由 engine/routing.mjs 那条 override 交回本机 dnsmasq;dns_address 不写的话 1.14 会把发到对端的
+  // 连接直接交给 DNS 模块、越过路由规则,dnsmasq 那一层就被绕开了。「禁用」模式和没有 auto_redirect 的兜底路径
+  // (system/deploy.mjs 在 nft 失败时关掉 auto_redirect 重生成)一律 disabled:1.13 在这两种情况下本来就什么都不劫持
+  if (autoRedirect && dnsMode !== 'off') {
+    tunInbound.dns_mode = 'hijack'
+    tunInbound.dns_address = profile.ipv6 ? [TUN_V4_PEER, TUN_V6_PEER] : [TUN_V4_PEER]
+  } else {
+    tunInbound.dns_mode = 'disabled'
+  }
   // 第一层 · 入口原生旁路:此刻走直连的站点集里的 geoip 集合(geoip-cn 之类)编进
   // route_exclude_address_set——命中的目标在系统入口就旁路,不进内核。开 auto_redirect 时
   // 内核把它们写成 nft 集合;不开时等价于加进 route_exclude_address(1.11 起)。条件和

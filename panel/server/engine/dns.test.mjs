@@ -66,11 +66,9 @@ test('走代理的站点集各有一台自己的 DNS,detour 指向同名 selecto
     GROUPS,
   )
   assert.deepEqual(dns.servers[2], { type: 'tcp', tag: 'dns-policy-0', server: '1.1.1.1', detour: '谷歌' })
-  assert.deepEqual(dns.rules[0], {
-    server: 'dns-policy-0',
-    rule_set: ['geosite-google'],
-    domain_suffix: ['google.com'],
-  })
+  // 规则集和手写域名拆成紧邻的两条、同一台解析器(sing-box 1.14 起规则集不再稳定地和同条里的域名条件「或」)
+  assert.deepEqual(dns.rules[0], { rule_set: ['geosite-google'], server: 'dns-policy-0' })
+  assert.deepEqual(dns.rules[1], { domain_suffix: ['google.com'], server: 'dns-policy-0' })
 })
 
 test('走直连的站点集用本地解析(国内站点才拿得到就近地址),不给专属解析器', () => {
@@ -287,7 +285,8 @@ test('终端分流(劫持模式):指定来源的终端,解析跟着它的出口�
   ])
   assert.equal(dns.servers.find((s) => s.tag === 'dns-client-0').detour, 'US')
   assert.equal(dns.servers.find((s) => s.tag === 'dns-client-1').detour, 'VW | 美国-01')
-  assert.equal(dns.independent_cache, true)
+  // 1.14 起缓存本来就按解析器分,弃用的 independent_cache 不再写
+  assert.equal(dns.independent_cache, undefined)
   // 终端规则排在站点集之前:直连终端查 youtube.com 也用直连解析,和它的连接一致
   const client = dns.rules.findIndex((r) => r.source_ip_cidr)
   const site = dns.rules.findIndex((r) => r.domain_suffix && r.domain_suffix[0] === 'youtube.com')
@@ -347,7 +346,7 @@ test('FakeIP 原型:指定终端走代理的来源规则(hijack 模式)也先占
   assert.equal(dns.rules[i + 1].server, 'dns-client-0')
 })
 
-test('IPv6 分层 · 代理 v6 降为 IPv4(ipv6 开 + ipv6Proxy=ipv4):走代理的规则只解析 A(strategy ipv4_only),直连规则照常;兜底走代理时 AAAA 也回空;FakeIP 不给 v6 占位段', () => {
+test('IPv6 分层 · 代理 v6 降为 IPv4(ipv6 开 + ipv6Proxy=ipv4):走代理的规则前面一条 predefined 把 AAAA 回空(1.14 不认遗留的 strategy),直连规则照常;兜底走代理时 AAAA 也回空;FakeIP 不给 v6 占位段、只管 A', () => {
   const routing = {
     policies: [
       { id: 'g', name: '谷歌', default: '所有-自动', rulesets: ['geosite-google'] },
@@ -357,22 +356,30 @@ test('IPv6 分层 · 代理 v6 降为 IPv4(ipv6 开 + ipv6Proxy=ipv4):走代理�
   }
   const split = buildDns({ ...withRouting(routing), ipv6: true, ipv6Proxy: 'ipv4' }, GROUPS)
   assert.equal(split.strategy, 'prefer_ipv4')                       // 全局(直连侧)仍然双栈
-  assert.deepEqual(split.rules[0], { server: 'dns-policy-0', rule_set: ['geosite-google'], strategy: 'ipv4_only' })
-  assert.deepEqual(split.rules[1], { server: 'dns-direct', rule_set: ['geosite-cn'] })
-  assert.deepEqual(split.rules.at(-1), { query_type: ['AAAA'], server: 'dns-proxy', strategy: 'ipv4_only' })
+  assert.deepEqual(split.rules[0], { rule_set: ['geosite-google'], query_type: ['AAAA'], action: 'predefined', rcode: 'NOERROR' })
+  assert.deepEqual(split.rules[1], { rule_set: ['geosite-google'], server: 'dns-policy-0' })
+  assert.deepEqual(split.rules[2], { server: 'dns-direct', rule_set: ['geosite-cn'] })
+  assert.deepEqual(split.rules.at(-1), { query_type: ['AAAA'], action: 'predefined', rcode: 'NOERROR' })
   assert.equal(split.final, 'dns-proxy')
+  // 遗留的 strategy 动作一条都不写:1.14 里它和 query_type 不能出现在同一份 DNS 配置里(启动 FATAL)
+  assert.ok(!split.rules.some((r) => r.strategy))
   // 兜底直连:没有那条 AAAA 收尾
   const fbDirect = buildDns({ ...withRouting({ ...routing, fallbackDefault: 'direct' }), ipv6: true, ipv6Proxy: 'ipv4' }, GROUPS)
-  assert.ok(!fbDirect.rules.some((r) => r.query_type))
-  // node(默认)/ ipv6 关着:一条 strategy 都不写
+  assert.ok(!fbDirect.rules.some((r) => r.query_type && !r.rule_set))
+  // node(默认)/ ipv6 关着:一条 AAAA 回空都不写
   const node = buildDns({ ...withRouting(routing), ipv6: true, ipv6Proxy: 'node' }, GROUPS)
-  assert.ok(!node.rules.some((r) => r.strategy))
+  assert.ok(!node.rules.some((r) => r.strategy || r.action === 'predefined'))
   const off = buildDns({ ...withRouting(routing), ipv6: false, ipv6Proxy: 'ipv4' }, GROUPS)
-  assert.ok(!off.rules.some((r) => r.strategy))
+  assert.ok(!off.rules.some((r) => r.strategy || r.action === 'predefined'))
   assert.equal(off.strategy, 'ipv4_only')
-  // FakeIP + 降为 IPv4:占位服务器没有 inet6_range
+  // FakeIP + 降为 IPv4:占位服务器没有 inet6_range;每个走代理的匹配是 AAAA 回空 → 占位(只管 A)→ 真实解析器,
+  // 兜底同样先回空 AAAA 再占位 A
   const fake = buildDns({ ...withRouting(routing), ipv6: true, ipv6Proxy: 'ipv4', dns: { ...base.dns, fakeIpForProxy: true } }, GROUPS)
   assert.deepEqual(fake.servers.find((s) => s.type === 'fakeip'), { type: 'fakeip', tag: 'dns-fakeip', inet4_range: '198.18.0.0/15' })
+  const fakeGoogle = fake.rules.filter((r) => r.rule_set && r.rule_set[0] === 'geosite-google')
+  assert.deepEqual(fakeGoogle.map((r) => r.action || r.server), ['predefined', 'dns-fakeip', 'dns-policy-0'])
+  assert.deepEqual(fakeGoogle[1].query_type, ['A'])
+  assert.deepEqual(fake.rules.slice(-2), [{ query_type: ['AAAA'], action: 'predefined', rcode: 'NOERROR' }, { query_type: ['A'], server: 'dns-fakeip' }])
   const fakeNode = buildDns({ ...withRouting(routing), ipv6: true, ipv6Proxy: 'node', dns: { ...base.dns, fakeIpForProxy: true } }, GROUPS)
   assert.equal(fakeNode.servers.find((s) => s.type === 'fakeip').inet6_range, 'fc00::/18')
 })

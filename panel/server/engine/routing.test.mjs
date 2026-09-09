@@ -49,7 +49,7 @@ test('规则集链接:路由规则按形状表引用域名 / IP 两份 .srs,两�
   assert.deepEqual(unknown.route.rules[3], { rule_set: [tag], outbound: '谷歌' })
 })
 
-test('一个站点集的五类条件落进同一条规则', () => {
+test('一个站点集的五类条件:规则集一条、手写域名 / IP 一条,紧邻、同一出口(1.14 起规则集不再稳定地和同条里的域名 / IP「或」)', () => {
   const { route, rulesetTags } = build({
     policies: [
       policy({
@@ -61,8 +61,8 @@ test('一个站点集的五类条件落进同一条规则', () => {
       }),
     ],
   })
-  assert.deepEqual(route.rules[3], {
-    rule_set: ['geosite-google', 'geoip-google'],
+  assert.deepEqual(route.rules[3], { rule_set: ['geosite-google', 'geoip-google'], outbound: '谷歌' })
+  assert.deepEqual(route.rules[4], {
     domain: ['example.com'],
     domain_suffix: ['google.com'],
     domain_keyword: ['gstatic'],
@@ -333,9 +333,13 @@ test('IPv6 分层 · 代理 v6 降为 IPv4:出口是代理线路的规则前面�
   const i = rules.findIndex((r) => r.source_ip_cidr && r.action === 'reject')
   assert.deepEqual(rules[i], { source_ip_cidr: ['192.168.1.9/32'], ip_version: 6, action: 'reject' })
   assert.deepEqual(rules[i + 1], { source_ip_cidr: ['192.168.1.9/32'], outbound: '香港-自动' })
+  // 规则集 + IP 段拆成两条,每一条前面各插一条同条件的 v6 拒绝
   const g = rules.findIndex((r) => r.outbound === '谷歌')
-  assert.deepEqual(rules[g - 1], { rule_set: ['geosite-google'], ip_cidr: ['8.8.8.0/24'], ip_version: 6, action: 'reject' })
-  assert.deepEqual(rules[g + 1], { rule_set: ['geosite-cn'], outbound: '国内' })
+  assert.deepEqual(rules[g - 1], { rule_set: ['geosite-google'], ip_version: 6, action: 'reject' })
+  assert.deepEqual(rules[g], { rule_set: ['geosite-google'], outbound: '谷歌' })
+  assert.deepEqual(rules[g + 1], { ip_cidr: ['8.8.8.0/24'], ip_version: 6, action: 'reject' })
+  assert.deepEqual(rules[g + 2], { ip_cidr: ['8.8.8.0/24'], outbound: '谷歌' })
+  assert.deepEqual(rules[g + 3], { rule_set: ['geosite-cn'], outbound: '国内' })
   // 兜底「其他」不在直连名单里 → 收尾一条裸 v6 拒绝
   assert.deepEqual(rules.at(-1), { ip_version: 6, action: 'reject' })
   // 没开:一条 ip_version 都没有
@@ -359,7 +363,8 @@ test('预解析(第五轮 任务 4):只有当按目标 IP 判的规则排在某�
     { domain_suffix: ['x.test'], action: 'resolve', server: 'dns-custom-0' },
     { domain_suffix: ['y.test'], action: 'resolve', server: 'dns-direct' },
     { source_ip_cidr: ['192.168.1.9/32'], action: 'resolve', server: 'dns-client-0' },
-    { rule_set: ['geosite-google'], domain_suffix: ['google.com'], action: 'resolve', server: 'dns-policy-0' },
+    { rule_set: ['geosite-google'], action: 'resolve', server: 'dns-policy-0' },
+    { domain_suffix: ['google.com'], action: 'resolve', server: 'dns-policy-0' },
     { rule_set: ['geosite-cn'], action: 'resolve', server: 'dns-direct' },
     { action: 'resolve', server: 'dns-proxy' },
   ])

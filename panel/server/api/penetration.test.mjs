@@ -741,7 +741,7 @@ test('POST /penetration:策略的域名条件本地就能判定,不去 exec 内�
   }
 })
 
-test('命中规则集时带回具体命中的条目(内核解码后逐条比),手写条件同样列出', async () => {
+test('命中规则集时带回具体命中的条目(内核解码后逐条比);规则集和手写条件在内核里是紧邻的两条,命中哪条就列哪条的', async () => {
   const srs = `${paths.rulesetDir}/geosite-google.srs`
   const ctx = createMockContext({
     files: {
@@ -769,10 +769,12 @@ test('命中规则集时带回具体命中的条目(内核解码后逐条比),�
     assert.equal(res.status, 200)
     assert.ok(body.matched, 'should match the Google policy rule')
     assert.equal(body.matched.outbound, 'Google')
+    // 站点集的规则集那条排在前、手写域名那条紧跟其后(1.14 的规则集语义,生成器拆开写):mail.google.com 先命中规则集那条
+    assert.deepEqual(body.matched.rule, { rule_set: ['geosite-google'], outbound: 'Google' })
     const entries = body.matched.entries
-    assert.ok(Array.isArray(entries) && entries.length >= 2, JSON.stringify(body.matched))
-    assert.ok(entries.some((e) => e.source === 'custom' && e.type === 'domain_suffix' && e.value === 'google.com'))
+    assert.ok(Array.isArray(entries) && entries.length >= 1, JSON.stringify(body.matched))
     assert.ok(entries.some((e) => e.source === 'geosite-google' && e.type === 'domain_suffix' && e.value === 'google.com'))
+    assert.ok(!entries.some((e) => e.source === 'custom'), '手写条件在下一条规则里,这次没轮到它')
     assert.ok(!entries.some((e) => e.value === 'gstatic.com'))
     assert.equal(body.matched.entriesTotal, entries.length)
   } finally {

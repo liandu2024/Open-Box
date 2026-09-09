@@ -1,4 +1,4 @@
-import { DEFAULT_BUILTIN, customOutboundTag, customPolicyActive, customRuleTag, dnsRulesetTags, normalizeRouting, policyOutboundOptions, policyGoesDirect } from './routing-model.mjs'
+import { DEFAULT_BUILTIN, customOutboundTag, customPolicyActive, customRuleTag, dnsRulesetTags, normalizeRouting, policyOutboundOptions, policyGoesDirect, splitRuleSetConditions } from './routing-model.mjs'
 import { normalizeDnsRewrite, rewriteDnsRules, rewriteDnsServer } from './dns-rewrite.mjs'
 
 const extractHost = (url) => {
@@ -151,11 +151,20 @@ export const buildDnsWithResolvers = (profile, options = {}) => {
   // 走代理的匹配:开了 FakeIP 就先给 A / AAAA 一条占位地址规则,其它查询类型(HTTPS / TXT …)仍走
   // 代理侧真实解析器
   const fakeIp = dnsFakeIpEnabled(profile)
-  // 代理 v6 降为 IPv4:走代理的匹配只解析 A(AAAA 回空),终端就不会拿着 v6 地址去连代理线路
+  // 代理 v6 降为 IPv4:走代理的匹配 AAAA 直接回空(NOERROR、没有记录),终端就不会拿着 v6 地址去连代理线路。
+  // 以前写在规则动作上的 strategy: ipv4_only 在 sing-box 1.14 里是遗留写法,和同一份 DNS 配置里的 query_type
+  // (FakeIP 那条、兜底那条)不能共存、启动直接 FATAL(migration:ip_version and query_type behavior changes);
+  // 改成 predefined 动作明确回空答案,语义和原来一样、和 1.13 也兼容(predefined 1.12 起就有)
   const proxyV4Only = ipv6ProxyMode(profile) === 'ipv4'
+  const emptyAAAA = (match) => ({ ...match, query_type: ['AAAA'], action: 'predefined', rcode: 'NOERROR' })
+  // 规则集 + 域名的匹配拆成两条(1.14 的规则集语义,见 routing-model.mjs 的 splitRuleSetConditions),每一半各带
+  // 同一套 AAAA / FakeIP / 真实解析器规则
   const pushProxyRule = (match, tag) => {
-    if (fakeIp) rules.push({ ...match, query_type: ['A', 'AAAA'], server: FAKEIP_TAG })
-    rules.push(proxyV4Only ? { ...match, server: tag, strategy: 'ipv4_only' } : { ...match, server: tag })
+    for (const part of splitRuleSetConditions(match)) {
+      if (proxyV4Only) rules.push(emptyAAAA(part))
+      if (fakeIp) rules.push({ ...part, query_type: proxyV4Only ? ['A'] : ['A', 'AAAA'], server: FAKEIP_TAG })
+      rules.push({ ...part, server: tag })
+    }
   }
   const custom = conf.custom
   if (customPolicyActive(custom)) {
@@ -194,21 +203,19 @@ export const buildDnsWithResolvers = (profile, options = {}) => {
 
   // 终端分流:指定来源的终端,解析也跟着它的出口走。只有劫持模式内核才看得到终端的来源地址
   // (dnsmasq 转发模式下查询是 dnsmasq 转来的,来源一律是本机,写了也永远不命中——审核 B3),
-  // 所以只在劫持模式生成;各解析器的缓存要分开,否则同一域名两台终端会互相拿到对方出口的答案
-  let sourceRules = false
+  // 所以只在劫持模式生成。各解析器的缓存本来就要分开(同一域名两台终端会互相拿到对方出口的答案):
+  // sing-box 1.14 起缓存一律按解析器分,以前为此写的 independent_cache 已弃用,不再生成
   if (dnsMode === 'hijack') {
     const serverByTarget = new Map()
     for (const cr of Array.isArray(options.clientRoutes) ? options.clientRoutes : []) {
       if (!cr || !Array.isArray(cr.sources) || !cr.sources.length || !cr.outbound) continue
       if (cr.outbound === builtin.block) {
         rules.push({ source_ip_cidr: cr.sources, action: 'reject' })
-        sourceRules = true
         continue
       }
       if (cr.outbound === builtin.direct) {
         rules.push({ source_ip_cidr: cr.sources, server: 'dns-direct' })
         resolvers.clients.push({ sources: cr.sources, server: 'dns-direct' })
-        sourceRules = true
         continue
       }
       if (options.knownOutbounds instanceof Set && !options.knownOutbounds.has(cr.outbound)) continue
@@ -220,7 +227,6 @@ export const buildDnsWithResolvers = (profile, options = {}) => {
       }
       pushProxyRule({ source_ip_cidr: cr.sources }, tag)
       resolvers.clients.push({ sources: cr.sources, server: tag })
-      sourceRules = true
     }
   }
 
@@ -231,7 +237,7 @@ export const buildDnsWithResolvers = (profile, options = {}) => {
   conf.activePolicies.forEach((policy, index) => {
     if (!hasDomainCondition(policy, ruleLists)) return
     if (goesDirect(policy.name, policy.default)) {
-      rules.push(policyDnsRule(policy, 'dns-direct', ruleLists))
+      rules.push(...splitRuleSetConditions(policyDnsRule(policy, 'dns-direct', ruleLists)))
       resolvers.policies[policy.name] = 'dns-direct'
       return
     }
@@ -243,14 +249,15 @@ export const buildDnsWithResolvers = (profile, options = {}) => {
 
   const fallbackDirect = goesDirect(conf.fallback.name, conf.fallback.default)
   resolvers.fallback = fallbackDirect ? 'dns-direct' : 'dns-proxy'
+  // 兜底走代理 + 代理 v6 降为 IPv4:没命中的域名 AAAA 也回空(final 本身带不了条件,单独一条排在最后;
+  // 要在 FakeIP 兜底那条前面,不然 AAAA 先被占位服务器接走)
+  if (!fallbackDirect && proxyV4Only) rules.push(emptyAAAA({}))
   if (fakeIp) {
-    // v6 占位段只在"代理也管 v6"时给;降为 IPv4 时 AAAA 从占位服务器回空
+    // v6 占位段只在"代理也管 v6"时给;降为 IPv4 时 AAAA 已经在上面回空了,占位只管 A
     servers.push({ type: 'fakeip', tag: FAKEIP_TAG, inet4_range: FAKEIP_V4, ...(profile.ipv6 && !proxyV4Only ? { inet6_range: FAKEIP_V6 } : {}) })
     // 兜底走代理:上面都没命中的域名 A / AAAA 也发占位地址
-    if (!fallbackDirect) rules.push({ query_type: ['A', 'AAAA'], server: FAKEIP_TAG })
+    if (!fallbackDirect) rules.push({ query_type: proxyV4Only ? ['A'] : ['A', 'AAAA'], server: FAKEIP_TAG })
   }
-  // 兜底走代理 + 代理 v6 降为 IPv4:没命中的域名 AAAA 也回空(final 本身写不了 strategy)
-  if (!fallbackDirect && proxyV4Only) rules.push({ query_type: ['AAAA'], server: 'dns-proxy', strategy: 'ipv4_only' })
   servers.push(...localServers)
   const dns = {
     servers,
@@ -260,9 +267,6 @@ export const buildDnsWithResolvers = (profile, options = {}) => {
     strategy,
     reverse_mapping: true,
   }
-  // 有按来源分的规则时,各解析器的缓存必须独立:同一个域名,直连终端和走代理的终端拿到的
-  // 答案本来就该不一样,共用一份缓存就串了
-  if (sourceRules) dns.independent_cache = true
   return { dns, resolvers }
 }
 

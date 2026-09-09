@@ -25,7 +25,7 @@ const SUBSCRIPTION_USER_AGENTS = Object.freeze([
   'ClashMetaForAndroid/2.11.0',
   'mihomo/1.19.0',
   'clash-verge-rev/2.3.0',
-  'sing-box/1.13.14',
+  'sing-box/1.14.0',
   'Open-Box/1.0',
 ])
 

@@ -402,7 +402,9 @@ test('IPv6 分层(第三轮 阶段 5):ipv6 开 + ipv6Proxy=ipv4 时按此刻的�
   assert.deepEqual(split.route.rules[g - 1], { rule_set: ['geosite-google', 'geoip-google'], ip_version: 6, action: 'reject' })
   assert.ok(!split.route.rules.some((r) => r.ip_version === 6 && r.rule_set && r.rule_set.includes('geoip-cn')), '直连站点集前不插')
   assert.ok(!split.route.rules.some((r) => r.ip_version === 6 && !r.rule_set), '兜底直连:没有裸 v6 拒绝')
-  assert.deepEqual(split.dns.rules.find((r) => r.server === 'dns-policy-0'), { server: 'dns-policy-0', rule_set: ['geosite-google'], strategy: 'ipv4_only' })
+  const gi = split.dns.rules.findIndex((r) => r.server === 'dns-policy-0')
+  assert.deepEqual(split.dns.rules[gi - 1], { rule_set: ['geosite-google'], query_type: ['AAAA'], action: 'predefined', rcode: 'NOERROR' })
+  assert.deepEqual(split.dns.rules[gi], { rule_set: ['geosite-google'], server: 'dns-policy-0' })
   assert.equal(split.dns.strategy, 'prefer_ipv4')
   assert.ok(split.inbounds[0].address.some((a) => a.includes(':')), 'tun 仍有 v6 地址:直连 v6 照常走')
   // 代理页把 Google 切到直连:不再插;把「国内」切到代理:插
@@ -474,4 +476,21 @@ test('预解析本轮不进正式配置(收尾验收):即使按目标 IP 判的�
     assert.deepEqual(c.route.rules.filter((r) => r.outbound && r.rule_set).map((r) => r.outbound), ['Google', '电报', '国内'])
     assert.ok(c.dns.servers.some((s) => s.tag === 'dns-policy-0' && s.detour === 'Google'))
   }
+})
+
+test('sing-box 1.14 的 tun DNS 接管(dns_mode):开着 auto_redirect 的劫持 / dnsmasq 模式写 hijack + 显式对端地址(关掉内核自动交给 DNS 模块);禁用模式和没有 auto_redirect 时 disabled', () => {
+  const tun = (over) => buildConfig({ nodes, regionGroups, profile: { ...profile, ...over } }).inbounds[0]
+  const dm = tun({ ipv6: false, tun: { autoRedirect: true }, dns: { ...profile.dns, mode: 'dnsmasq' } })
+  assert.equal(dm.dns_mode, 'hijack')
+  assert.deepEqual(dm.dns_address, ['172.19.0.2'])
+  const hj = tun({ ipv6: true, tun: { autoRedirect: true }, dns: { ...profile.dns, mode: 'hijack' } })
+  assert.equal(hj.dns_mode, 'hijack')
+  assert.deepEqual(hj.dns_address, ['172.19.0.2', 'fdfe:dcba:9876::2'])
+  const off = tun({ tun: { autoRedirect: true }, dns: { ...profile.dns, mode: 'off' } })
+  assert.equal(off.dns_mode, 'disabled')
+  assert.equal(off.dns_address, undefined)
+  assert.equal(off.auto_redirect, undefined)
+  const pure = tun({ tun: { autoRedirect: false }, dns: { ...profile.dns, mode: 'hijack' } })
+  assert.equal(pure.dns_mode, 'disabled')
+  assert.equal(pure.dns_address, undefined)
 })

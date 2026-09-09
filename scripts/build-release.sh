@@ -62,7 +62,7 @@ set -eu
 export COPYFILE_DISABLE=1
 
 NODE_VERSION="24.18.0"
-SINGBOX_VERSION="1.13.14"
+SINGBOX_VERSION="1.14.0"
 
 # ---- 供应链固定:版本号旁边固定对应资产的 sha256,下载后(含缓存命中时)校验,
 # 不匹配就构建失败。避免"每次发版都重新下载却从不校验"的静默供应链口子——
@@ -75,8 +75,8 @@ NODE_SHA256_ARM64="b32d834975b3b38cf3226e220d3e1fcb5959047f0b2e184fffb709d9a69ed
 # https://github.com/SagerNet/sing-box/releases/download/v${SINGBOX_VERSION}/ 下的
 # sing-box-${SINGBOX_VERSION}-linux-{amd64,arm64}-musl.tar.gz 现下现算的(键名用
 # sing-box 自己的架构命名 amd64/arm64,与下方 $SINGBOX_ARCH 对应)。
-SINGBOX_SHA256_AMD64="d5b46de6498427bccfeb87dbafcde4dbefdfe35680020d07d286ad915f0bfb34"
-SINGBOX_SHA256_ARM64="edec18488af35a93cf8b362063146fdd7b557ef9862710ee77a1f4adb5c70118"
+SINGBOX_SHA256_AMD64="d2d6b4543d850269214ced70ffe41b13b1595baa1b6f9c016466abfba162c4d4"
+SINGBOX_SHA256_ARM64="1811c446a4957edee1b62ed2363607f8e99e1f7b6d88179719251d7ed5f30169"
 
 # Alpine 的 musl 版 libstdc++ / libgcc(见文件头 Critical 1 说明)。latest-stable
 # 仓库里 x86_64 与 aarch64 目前恰好是同一个包版本,但两个架构的资产是分别构建的
