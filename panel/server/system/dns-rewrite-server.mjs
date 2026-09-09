@@ -12,11 +12,19 @@
 //   4. 没命中任何规则(用户刚停用 / 删了规则、内核还没重启):不能再交回内核(内核会再送回来成环),按
 //      直连侧上游解析一次,和原来直连解析的行为一致。
 // 只处理 A / AAAA / CNAME;其它类型对域名型规则只回 CNAME 链,对固定地址规则回空。
+//
+// 同一个回环端口同时听 UDP 和 TCP:固定地址多、域名长的应答超过 UDP 上限时只能截断(TC),内核会按
+// RFC 7766 换 TCP 重试,TCP 上按两字节长度前缀给完整报文,不裁剪。
+//
+// 「代理 v6 降为 IPv4」:重写规则排在内核 DNS 规则最前面,后面按站点集判出来的 strategy: ipv4_only 轮不到;
+// 所以这里按源域名在现有分流里的归类(sourceViaProxy,由调用方用内核配置判)自己压掉走代理域名的 AAAA,
+// 直连域名的 IPv6 照常给。
 import dgram from 'node:dgram'
 import { Resolver } from 'node:dns/promises'
 import net from 'node:net'
 import { DNS_REWRITE_FIXED_TTL, DNS_REWRITE_PORT, matchRewrite, normalizeDnsRewrite, normalizeDomain } from '../engine/dns-rewrite.mjs'
 import { DNS_INBOUND_PORT } from '../engine/config.mjs'
+import { ipv6ProxyMode } from '../engine/dns.mjs'
 
 export const QTYPE = Object.freeze({ A: 1, CNAME: 5, AAAA: 28, OPT: 41 })
 export const RCODE = Object.freeze({ NOERROR: 0, FORMERR: 1, SERVFAIL: 2, NXDOMAIN: 3, NOTIMP: 4, REFUSED: 5 })
@@ -171,7 +179,8 @@ export const makeResolver = (servers, { timeoutMs = 4000 } = {}) => {
 
 // ---------- 答案 ----------
 // 纯函数,便于测试:query + 规则 + 档案 + 解析函数 → { rcode, answers, matched }
-export const answerQuery = async (query, { rules, ipv6 = true, resolveKernel, resolveFallback, log = () => {} }) => {
+// suppressAAAA:async (源域名) → 是否要压掉这个源的 AAAA(代理 v6 降为 IPv4 且源域名按现有分流走代理)
+export const answerQuery = async (query, { rules, ipv6 = true, resolveKernel, resolveFallback, suppressAAAA = null, log = () => {} }) => {
   const qname = normalizeDomain(query.qname)
   if (query.qclass !== 1 || !qname) return { rcode: RCODE.NOTIMP, answers: [], matched: null }
   const want4 = query.qtype === QTYPE.A
@@ -207,15 +216,21 @@ export const answerQuery = async (query, { rules, ipv6 = true, resolveKernel, re
     current = matchRewrite(rules, target)
   }
   if (wantCname) return { rcode: RCODE.NOERROR, answers, matched: rule, chain }
+  // AAAA 给不给:档案关着 IPv6 不给;「代理 v6 降为 IPv4」且这个源域名按现有分流走代理也不给(和没重写时
+  // 内核对它的处理一致);直连域名的 IPv6 照常
+  let give6 = ipv6
+  if (want6 && give6 && suppressAAAA) {
+    try { if (await suppressAAAA(qname)) give6 = false } catch { /* 判不出来就按档案的 IPv6 开关 */ }
+  }
   if (current) {
     // 落在固定地址规则上:按查询类型给地址,所有者是链尾的名字(直接命中就是被查的名字本身)
     if (want4) for (const a of current.addresses) if (net.isIP(a) === 4) answers.push({ name: owner, type: QTYPE.A, ttl: DNS_REWRITE_FIXED_TTL, data: a })
-    if (want6 && ipv6) for (const a of current.addresses) if (net.isIP(a) === 6) answers.push({ name: owner, type: QTYPE.AAAA, ttl: DNS_REWRITE_FIXED_TTL, data: a })
-    return { rcode: RCODE.NOERROR, answers, matched: rule, chain }
+    if (want6 && give6) for (const a of current.addresses) if (net.isIP(a) === 6) answers.push({ name: owner, type: QTYPE.AAAA, ttl: DNS_REWRITE_FIXED_TTL, data: a })
+    return { rcode: RCODE.NOERROR, answers, matched: rule, chain, suppressedAAAA: want6 && ipv6 && !give6 }
   }
   // 链尾是外部域名:A / AAAA 回头问内核;别的类型只给 CNAME 链
   if (!(want4 || want6)) return { rcode: RCODE.NOERROR, answers, matched: rule, chain }
-  if (want6 && !ipv6) return { rcode: RCODE.NOERROR, answers, matched: rule, chain }
+  if (want6 && !give6) return { rcode: RCODE.NOERROR, answers, matched: rule, chain, suppressedAAAA: ipv6 }
   const r = await resolveKernel(owner, query.qtype)
   if (r.rcode !== RCODE.NOERROR && r.rcode !== RCODE.NXDOMAIN) {
     log(`[dns-rewrite] ${qname} → ${owner} 解析失败:${r.error || r.rcode}`)
@@ -228,9 +243,12 @@ export const answerQuery = async (query, { rules, ipv6 = true, resolveKernel, re
 }
 
 // ---------- UDP 服务 ----------
+// sourceViaProxy:async (域名) → true / false / null(判不出)。「代理 v6 降为 IPv4」时按它决定压不压 AAAA;
+// 判定按内核已部署的 DNS 规则走(api/route-test.mjs 的 decideDnsServer,跳过重写规则本身),结果按域名缓存
 export const createDnsRewriteServer = ({
   store, host = '127.0.0.1', port = DNS_REWRITE_PORT, kernelDns = `127.0.0.1:${DNS_INBOUND_PORT}`,
-  resolveKernel, fallbackServers = async () => [], log = () => {}, now = () => Date.now(),
+  resolveKernel, fallbackServers = async () => [], sourceViaProxy = null, policyCacheMs = 300_000,
+  log = () => {}, now = () => Date.now(),
 } = {}) => {
   const kernelResolve = resolveKernel || makeResolver([kernelDns])
   let fallbackResolve = null
@@ -246,23 +264,45 @@ export const createDnsRewriteServer = ({
     if (!fallbackResolve || fallbackKey !== key) { fallbackResolve = makeResolver(list); fallbackKey = key }
     return fallbackResolve(name, qtype)
   }
-  // 规则从档案读,2 秒缓存:每条查询都解析整份档案没必要,改了规则两秒内生效
+  // 规则从档案读,2 秒缓存:每条查询都解析整份档案没必要(服务端这一层两秒内看到新规则;内核 / 终端里已有
+  // 的答案仍按 TTL 过期)
   let cache = null
   const liveConfig = () => {
     const t = now()
     if (cache && t - cache.at < 2000) return cache
     const profile = store.getProfile ? store.getProfile() : {}
-    cache = { at: t, rules: normalizeDnsRewrite(profile.dns).rules, ipv6: Boolean(profile.ipv6) }
+    cache = { at: t, rules: normalizeDnsRewrite(profile.dns).rules, ipv6: Boolean(profile.ipv6), proxyV4Only: ipv6ProxyMode(profile) === 'ipv4' }
     return cache
+  }
+  // 源域名走不走代理:按域名缓存,规则集匹配要 exec 内核,不能每条查询都算
+  const policyCache = new Map()
+  const suppressAAAAFor = async (qname) => {
+    if (!sourceViaProxy) return false
+    const t = now()
+    const hit = policyCache.get(qname)
+    if (hit && t - hit.at < policyCacheMs) return hit.value
+    const via = await sourceViaProxy(qname)
+    const value = via === true
+    if (via !== null && via !== undefined) {
+      if (policyCache.size > 500) policyCache.clear()
+      policyCache.set(qname, { at: t, value })
+    }
+    return value
   }
 
   let socket = null
-  const handle = async (msg) => {
+  let tcpServer = null
+  const answerFor = async (query) => {
+    const { rules, ipv6, proxyV4Only } = liveConfig()
+    return answerQuery(query, { rules, ipv6, resolveKernel: kernelResolve, resolveFallback, suppressAAAA: proxyV4Only ? suppressAAAAFor : null, log })
+  }
+  // tcp:整段报文不按 UDP 上限裁剪
+  const handle = async (msg, { tcp = false } = {}) => {
     let query
     try { query = parseQuery(msg) } catch { return null }
+    if (tcp) query = { ...query, udpSize: 65535 }
     try {
-      const { rules, ipv6 } = liveConfig()
-      const r = await answerQuery(query, { rules, ipv6, resolveKernel: kernelResolve, resolveFallback, log })
+      const r = await answerFor(query)
       return buildResponse(query, { rcode: r.rcode, answers: r.answers })
     } catch (err) {
       log(`[dns-rewrite] 处理 ${query.qname} 出错:${err instanceof Error ? err.message : err}`)
@@ -270,28 +310,56 @@ export const createDnsRewriteServer = ({
     }
   }
 
-  const start = () => new Promise((resolve, reject) => {
-    if (socket) { resolve(); return }
+  const startUdp = (bindPort) => new Promise((resolve, reject) => {
     const s = dgram.createSocket('udp4')
     s.on('message', (msg, rinfo) => {
       handle(msg).then((buf) => { if (buf) s.send(buf, rinfo.port, rinfo.address, () => {}) }).catch(() => {})
     })
-    s.once('error', (err) => {
-      log(`[dns-rewrite] 监听 ${host}:${port} 失败:${err.message}`)
-      socket = null
-      reject(err)
-    })
-    s.bind(port, host, () => {
-      socket = s
-      log(`[dns-rewrite] 监听 ${host}:${s.address().port}`)
-      resolve()
-    })
+    s.once('error', (err) => reject(err))
+    s.bind(bindPort, host, () => { socket = s; resolve(s.address().port) })
   })
+  // TCP:两字节长度前缀,一个连接上可以连着来几条查询;10 秒没动静就关
+  const startTcp = (bindPort) => new Promise((resolve, reject) => {
+    const srv = net.createServer((conn) => {
+      let pending = Buffer.alloc(0)
+      conn.setTimeout(10_000, () => conn.destroy())
+      conn.on('error', () => {})
+      conn.on('data', (chunk) => {
+        pending = Buffer.concat([pending, chunk])
+        while (pending.length >= 2) {
+          const len = pending.readUInt16BE(0)
+          if (pending.length < 2 + len) break
+          const msg = pending.subarray(2, 2 + len)
+          pending = pending.subarray(2 + len)
+          handle(msg, { tcp: true }).then((buf) => {
+            if (!buf || conn.destroyed) return
+            const head = Buffer.alloc(2)
+            head.writeUInt16BE(buf.length, 0)
+            conn.write(Buffer.concat([head, buf]))
+          }).catch(() => {})
+        }
+      })
+    })
+    srv.once('error', (err) => reject(err))
+    srv.listen(bindPort, host, () => { tcpServer = srv; resolve(srv.address().port) })
+  })
+  const start = async () => {
+    if (socket) return
+    try {
+      // port 为 0 时先让 UDP 挑一个端口,TCP 再绑同一个(端口只是给测试用;正式用固定的 7854)
+      const udpPort = await startUdp(port)
+      await startTcp(udpPort)
+      log(`[dns-rewrite] 监听 ${host}:${udpPort}(UDP + TCP)`)
+    } catch (err) {
+      log(`[dns-rewrite] 监听 ${host}:${port} 失败:${err.message}`)
+      stop()
+      throw err
+    }
+  }
   const stop = () => {
-    if (!socket) return
-    try { socket.close() } catch { /* 已关 */ }
-    socket = null
+    if (socket) { try { socket.close() } catch { /* 已关 */ } socket = null }
+    if (tcpServer) { try { tcpServer.close() } catch { /* 已关 */ } tcpServer = null }
   }
   const address = () => (socket ? socket.address() : null)
-  return { start, stop, address, handle, answerQuery: (q, opts) => answerQuery(q, { resolveKernel: kernelResolve, resolveFallback, log, rules: liveConfig().rules, ipv6: liveConfig().ipv6, ...opts }) }
+  return { start, stop, address, handle, answerQuery: (q, opts) => answerFor({ ...q, ...(opts || {}) }) }
 }

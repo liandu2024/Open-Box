@@ -403,3 +403,37 @@ test('decideDnsServer:内核自己的 fakeip 规则先命中时记成 fakeIpRule
     await new Promise((r) => server.close(r))
   }
 })
+
+// DNS 重写服务问「没有重写时这个域名怎么判」:ignoreServers 跳过指向重写服务器的规则,落到后面的站点集 / 兜底
+test('decideDnsServer ignoreServers:跳过 dns-rewrite 那条,按后面的规则判走不走代理', async () => {
+  const { decideDnsServer } = await import('./route-test.mjs')
+  const { createMockContext } = await import('../system/context.mjs')
+  const { createPaths } = await import('../system/paths.mjs')
+  const config = { dns: {
+    servers: [
+      { type: 'udp', tag: 'dns-direct', server: '1.1.1.1' },
+      { type: 'udp', tag: 'dns-rewrite', server: '127.0.0.1', server_port: 7854 },
+      { type: 'tcp', tag: 'dns-proxy', server: '1.1.1.1', detour: '其他' },
+      { type: 'tcp', tag: 'dns-policy-0', server: '1.1.1.1', detour: 'Google' },
+    ],
+    rules: [
+      { domain: ['proxy-v6.review.test', 'direct-v6.review.test'], server: 'dns-rewrite' },
+      { domain: ['direct-v6.review.test'], server: 'dns-direct' },
+      { domain_suffix: ['review.test'], server: 'dns-policy-0', strategy: 'ipv4_only' },
+    ],
+    final: 'dns-proxy',
+  } }
+  const ctx = createMockContext({})
+  const paths = createPaths('/opt/open-box')
+  const plain = await decideDnsServer(ctx, paths, config, 'proxy-v6.review.test')
+  assert.equal(plain.server.tag, 'dns-rewrite')
+  const p = await decideDnsServer(ctx, paths, config, 'proxy-v6.review.test', { ignoreServers: ['dns-rewrite'] })
+  assert.equal(p.server.tag, 'dns-policy-0')
+  assert.equal(p.viaProxy, true)
+  const d = await decideDnsServer(ctx, paths, config, 'direct-v6.review.test', { ignoreServers: ['dns-rewrite'] })
+  assert.equal(d.server.tag, 'dns-direct')
+  assert.equal(d.viaProxy, false)
+  const fb = await decideDnsServer(ctx, paths, config, 'other.example', { ignoreServers: ['dns-rewrite'] })
+  assert.equal(fb.server.tag, 'dns-proxy')
+  assert.equal(fb.viaProxy, true)
+})

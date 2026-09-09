@@ -140,3 +140,97 @@ test('UDP 服务端到端:A / AAAA / CNAME 查询都能回到可用的记录;规
     server.stop()
   }
 })
+
+// 复核 F1:固定地址多、域名长的应答超过 UDP 上限时 UDP 只能截断(TC),同一端口的 TCP 要给完整报文;
+// node 的 Resolver(c-ares)见 TC 会自己换 TCP 重试,和内核的行为一样
+const LONG_NAME = ['a'.repeat(60), 'b'.repeat(60), 'c'.repeat(60), 'd'.repeat(51), 'review', 'test'].join('.')
+const SIXTEEN_V6 = Array.from({ length: 16 }, (_, i) => `2001:db8::${(i + 1).toString(16)}`)
+const rawQuery = (name, type, udpSize = 4096) => {
+  const h = Buffer.alloc(12); h.writeUInt16BE(23456, 0); h.writeUInt16BE(0x100, 2); h.writeUInt16BE(1, 4); h.writeUInt16BE(1, 10)
+  const tail = Buffer.alloc(4); tail.writeUInt16BE(type, 0); tail.writeUInt16BE(1, 2)
+  const opt = Buffer.alloc(11); opt.writeUInt16BE(41, 1); opt.writeUInt16BE(udpSize, 3)
+  const parts = String(name).split('.').flatMap((l) => [Buffer.from([l.length]), Buffer.from(l, 'latin1')])
+  return Buffer.concat([h, ...parts, Buffer.from([0]), tail, opt])
+}
+test('大应答:UDP 按声明的上限截断并置 TC;同端口 TCP 给全部 16 条;Resolver 经 TC 重试后拿全', async () => {
+  const profile = { ipv6: true, dns: { rewrite: { initialized: 1, rules: [{ id: 'large', source: LONG_NAME, addresses: SIXTEEN_V6 }] } } }
+  const server = createDnsRewriteServer({ store: { getProfile: () => profile }, port: 0, resolveKernel: kernel, log: () => {} })
+  await server.start()
+  const port = server.address().port
+  try {
+    const { default: dgram } = await import('node:dgram')
+    const udp = await new Promise((resolve, reject) => {
+      const s = dgram.createSocket('udp4')
+      const t = setTimeout(() => { s.close(); reject(new Error('udp timeout')) }, 2000)
+      s.once('message', (b) => { clearTimeout(t); s.close(); resolve(b) })
+      s.send(rawQuery(LONG_NAME, QTYPE.AAAA, 4096), port, '127.0.0.1')
+    })
+    assert.ok(udp.readUInt16BE(2) & 0x0200, 'UDP 应答应置 TC')
+    assert.ok(udp.readUInt16BE(6) < 16 && udp.length <= 4096)
+    const { default: net } = await import('node:net')
+    const tcp = await new Promise((resolve, reject) => {
+      const c = net.connect(port, '127.0.0.1')
+      let buf = Buffer.alloc(0)
+      const t = setTimeout(() => { c.destroy(); reject(new Error('tcp timeout')) }, 2000)
+      c.on('data', (d) => {
+        buf = Buffer.concat([buf, d])
+        if (buf.length >= 2 && buf.length >= 2 + buf.readUInt16BE(0)) { clearTimeout(t); c.destroy(); resolve(buf.subarray(2, 2 + buf.readUInt16BE(0))) }
+      })
+      c.on('error', (e) => { clearTimeout(t); reject(e) })
+      const q = rawQuery(LONG_NAME, QTYPE.AAAA, 4096)
+      const head = Buffer.alloc(2); head.writeUInt16BE(q.length, 0)
+      c.write(Buffer.concat([head, q]))
+    })
+    assert.equal(tcp.readUInt16BE(2) & 0x0200, 0, 'TCP 不截断')
+    assert.equal(tcp.readUInt16BE(6), 16)
+    const resolver = new Resolver({ timeout: 2000, tries: 1 })
+    resolver.setServers([`127.0.0.1:${port}`])
+    const all = await resolver.resolve6(LONG_NAME)
+    assert.equal(all.length, 16)
+    assert.deepEqual([...all].sort(), [...SIXTEEN_V6].sort())
+  } finally {
+    server.stop()
+  }
+})
+
+// 复核 F2:「代理 v6 降为 IPv4」时,按现有分流走代理的源域名不给 AAAA(固定地址和域名型都一样),直连的照给
+test('代理 v6 降为 IPv4:走代理的源域名 AAAA 回空、直连的照给;代理允许 IPv6 或全局关 IPv6 时按原样', async () => {
+  const rules = rulesOf([
+    { id: 'p', source: 'proxy-v6.review.test', addresses: ['203.0.113.8', '2001:db8::8'] },
+    { id: 'd', source: 'direct-v6.review.test', addresses: ['203.0.113.9', '2001:db8::9'] },
+    { id: 'pd', source: 'proxy-alias.review.test', domain: 'services.googleapis.com' },
+  ])
+  const viaProxy = async (name) => name.startsWith('proxy-')
+  const base = { rules, ipv6: true, resolveKernel: kernel, resolveFallback: async () => ({ rcode: RCODE.SERVFAIL, records: [] }) }
+  const p = await answerQuery(q('proxy-v6.review.test', QTYPE.AAAA), { ...base, suppressAAAA: viaProxy })
+  assert.deepEqual(p.answers, [])
+  assert.equal(p.suppressedAAAA, true)
+  const d = await answerQuery(q('direct-v6.review.test', QTYPE.AAAA), { ...base, suppressAAAA: viaProxy })
+  assert.deepEqual(d.answers.map((x) => x.data), ['2001:db8::9'])
+  const pd = await answerQuery(q('proxy-alias.review.test', QTYPE.AAAA), { ...base, suppressAAAA: viaProxy })
+  assert.deepEqual(pd.answers.map((x) => x.type), [QTYPE.CNAME], '域名型:只给 CNAME,不去问目标的 AAAA')
+  // A 不受影响
+  const pa = await answerQuery(q('proxy-v6.review.test', QTYPE.A), { ...base, suppressAAAA: viaProxy })
+  assert.deepEqual(pa.answers.map((x) => x.data), ['203.0.113.8'])
+  // 代理允许 IPv6(不传 suppressAAAA):照给
+  const allow = await answerQuery(q('proxy-v6.review.test', QTYPE.AAAA), base)
+  assert.deepEqual(allow.answers.map((x) => x.data), ['2001:db8::8'])
+  // 全局 IPv6 关:一律空
+  const off = await answerQuery(q('direct-v6.review.test', QTYPE.AAAA), { ...base, ipv6: false, suppressAAAA: viaProxy })
+  assert.deepEqual(off.answers, [])
+  // 整个服务:档案 ipv6Proxy=ipv4 + sourceViaProxy 注入,按域名缓存判定
+  let asked = 0
+  const profile = { ipv6: true, ipv6Proxy: 'ipv4', dns: { rewrite: { initialized: 1, rules } } }
+  const server = createDnsRewriteServer({ store: { getProfile: () => profile }, port: 0, resolveKernel: kernel, sourceViaProxy: async (n) => { asked += 1; return n.startsWith('proxy-') }, log: () => {} })
+  await server.start()
+  try {
+    const resolver = new Resolver({ timeout: 2000, tries: 1 })
+    resolver.setServers([`127.0.0.1:${server.address().port}`])
+    await assert.rejects(resolver.resolve6('proxy-v6.review.test'), (e) => e.code === 'ENODATA')
+    assert.deepEqual(await resolver.resolve6('direct-v6.review.test'), ['2001:db8::9'])
+    await assert.rejects(resolver.resolve6('proxy-v6.review.test'), (e) => e.code === 'ENODATA')
+    assert.equal(asked, 2, '同一域名的归类只判一次(缓存)')
+  } finally {
+    server.stop()
+  }
+})

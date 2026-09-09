@@ -23,7 +23,8 @@ import { createLatencyHistory } from './system/latency-history.mjs'
 import { createLatencyScheduler } from './system/latency-scheduler.mjs'
 import { createFailoverManager } from './system/failover-manager.mjs'
 import { createDnsRewriteServer } from './system/dns-rewrite-server.mjs'
-import { ensureDnsRewriteDefaults } from './engine/dns-rewrite.mjs'
+import { DNS_REWRITE_TAG, ensureDnsRewriteDefaults } from './engine/dns-rewrite.mjs'
+import { decideDnsServer } from './api/route-test.mjs'
 import { readSystemDns } from './system/resolv.mjs'
 import { registerFailoverRoutes } from './api/failover.mjs'
 import { registerServerRoutes } from './api/servers.mjs'
@@ -1124,7 +1125,27 @@ const failoverManager = createFailoverManager({ store, ctx: obCtx, paths: obPath
 registerFailoverRoutes(app, { manager: failoverManager })
 // DNS 重写的应答服务(system/dns-rewrite-server.mjs):内核把命中重写源域名的查询交到 127.0.0.1:7854,这里按档案
 // 里此刻的规则生成答案;没命中的按直连侧上游(WAN 下发的 DNS)解析
-const dnsRewriteServer = createDnsRewriteServer({ store, fallbackServers: () => readSystemDns(obCtx).catch(() => []), log: (m) => console.log(m) })
+// 「代理 v6 降为 IPv4」时重写服务要知道源域名按现有分流走不走代理:按已部署的 config.json 里的 DNS 规则判(跳过重写
+// 规则本身),配置按 meta.generatedAt 缓存,只在重新部署后重读
+let deployedDnsConfig = { version: null, config: null }
+const readDeployedConfig = async () => {
+  let version = ''
+  try { version = String(JSON.parse(await obCtx.readFile(`${obPaths.etc}/config.meta.json`)).generatedAt || '') } catch { version = '' }
+  if (deployedDnsConfig.config && deployedDnsConfig.version === version) return deployedDnsConfig.config
+  const config = JSON.parse(await obCtx.readFile(obPaths.configPath))
+  deployedDnsConfig = { version, config }
+  return config
+}
+const dnsRewriteSourceViaProxy = async (name) => {
+  try {
+    const config = await readDeployedConfig()
+    const d = await decideDnsServer(obCtx, obPaths, config, name, { ignoreServers: [DNS_REWRITE_TAG] })
+    if (!d || d.error) return null
+    if (d.rejected) return false
+    return Boolean(d.viaProxy)
+  } catch { return null }
+}
+const dnsRewriteServer = createDnsRewriteServer({ store, fallbackServers: () => readSystemDns(obCtx).catch(() => []), sourceViaProxy: dnsRewriteSourceViaProxy, log: (m) => console.log(m) })
 registerServerRoutes(app, { store, ctx: obCtx })
 // 导出诊断包(后端设置那张卡片):版本、固件、内核状态、脱敏配置、最近日志,给 issue 用
 registerDiagnosticsRoutes(app, { store, ctx: obCtx, paths: obPaths })

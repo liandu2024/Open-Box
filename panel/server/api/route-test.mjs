@@ -48,8 +48,10 @@ const fetchWithTimeout = async (fetchImpl, url, init = {}, timeoutMs = 8000) => 
 // 终端推算)继续往下,前提原样回给前端列出来
 // rewriteRules:档案里的 DNS 重写规则(engine/dns-rewrite.mjs 归一化后的);命中 dns-rewrite 服务器时把命中的
 // 那条(源 / 目标)一并回给前端,规则页画成「原域名 → 目标」
-export const decideDnsServer = async (ctx, paths, config, target, { sourceIp = '', rewriteRules = [] } = {}) => {
+// ignoreServers:跳过指向这些解析器的规则——重写服务要知道「没有重写时这个域名会怎么判」,就把 dns-rewrite 那条跳过
+export const decideDnsServer = async (ctx, paths, config, target, { sourceIp = '', rewriteRules = [], ignoreServers = [] } = {}) => {
   const dns = config.dns || {}
+  const ignored = new Set(ignoreServers)
   const servers = new Map((dns.servers || []).map((s) => [s.tag, s]))
   const srsPathByTag = new Map(((config.route || {}).rule_set || []).map((r) => [r.tag, r.path]))
   const rules = dns.rules || []
@@ -73,6 +75,7 @@ export const decideDnsServer = async (ctx, paths, config, target, { sourceIp = '
   for (let i = 0; i < rules.length; i++) {
     const rule = rules[i]
     if (!rule || typeof rule !== 'object') continue
+    if (rule.server && ignored.has(rule.server)) continue
     const hasDest = hasDestinationCondition(rule)
     const hasSource = Object.prototype.hasOwnProperty.call(rule, 'source_ip_cidr')
     const fake = rule.server && (servers.get(rule.server) || {}).type === 'fakeip'
