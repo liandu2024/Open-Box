@@ -320,8 +320,10 @@ export const createFailoverManager = ({
     if (!current) state.currentLaneId = null
     const at = now()
     for (const lane of state.lanes) {
+      // upSince 是「连续通过」的起点:失败和未知都打断它(未知 = 这轮没测出结果,不能算作还在连续通过;
+      // 按顺序重选等 recoveryHoldMs 就靠它计时)。未知不算失败:不增加失败轮数、不触发任何切换
       if (lane.health === 'up') lane.upSince = lane.upSince || at
-      else if (lane.health === 'down') lane.upSince = null
+      else lane.upSince = null
       if (lane.health === 'down') lane.failStreak += 1
       else if (lane.health === 'up') lane.failStreak = 0
     }

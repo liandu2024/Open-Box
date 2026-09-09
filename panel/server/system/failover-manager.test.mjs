@@ -615,3 +615,45 @@ test('验收 A:重排后目标页签和当前引用同一个出站(两个单节�
   assert.equal(k.now(), 'b1')
   assert.equal(k.calls.filter((c) => c.startsWith('PUT')).length, puts, '没有多余的切换')
 })
+
+test('验收 C:候选恢复计时被未知打断——C down → up → unknown → up,最后一次 up 后仍留在 B,重新连续通过满 60 秒才切 C;未知不计失败', async () => {
+  const s = setup()
+  const { k, ctx, store } = s
+  const unknownC = { on: false }
+  const fetchImpl = async (url, init) => {
+    if (unknownC.on && /\/proxies\/c[12]\/delay/.test(decodeURIComponent(String(url)))) return { ok: false, status: 500, json: async () => ({}) }
+    return k.fetchImpl(url, init)
+  }
+  const mgr = createFailoverManager({ store, ctx, paths, fetchImpl, now: s.clock, log: () => {} })
+  const round = async () => { s.advance(30_000); return mgr.tick() }
+  await mgr.tick()
+  k.down.add('a1'); k.down.add('a2')
+  await round(); await round()
+  assert.equal(group(mgr).currentLaneId, 'B')
+  k.down.add('c1'); k.down.add('c2')
+  reorderTo(s, ['A', 'C', 'B'])
+  await round()
+  assert.equal(group(mgr).currentLaneId, 'B')
+  assert.ok(group(mgr).reorder && group(mgr).reorder.evaluated === true)
+  // C 恢复(0 秒):开始计时
+  k.down.delete('c1'); k.down.delete('c2')
+  await round()
+  assert.equal(lanes(mgr).C, 'up')
+  assert.equal(group(mgr).currentLaneId, 'B')
+  // 30 / 60 秒:探测接口对 C 报 500 → 未知,计时中断;失败轮数不增
+  unknownC.on = true
+  await round(); await round()
+  assert.equal(lanes(mgr).C, 'unknown')
+  assert.equal(group(mgr).lanes.find((l) => l.id === 'C').failStreak, 0)
+  assert.equal(group(mgr).currentLaneId, 'B')
+  // 90 秒:又通过——不能当作已经连续恢复 90 秒,重新计时
+  unknownC.on = false
+  await round()
+  assert.equal(lanes(mgr).C, 'up')
+  assert.equal(group(mgr).currentLaneId, 'B', '最后一次 up 后仍留在 B')
+  await round()                                   // +30s
+  assert.equal(group(mgr).currentLaneId, 'B')
+  await round()                                   // +60s:满等待期
+  assert.equal(group(mgr).currentLaneId, 'C')
+  assert.equal(group(mgr).lastSwitch.reason, 'priority-changed')
+})
