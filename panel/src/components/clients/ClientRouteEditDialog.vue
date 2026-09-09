@@ -59,7 +59,7 @@
                   <button
                     type="button"
                     class="hover:bg-base-200 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left"
-                    @click="addKnown(c.ip)"
+                    @click="addKnown(c)"
                   >
                     <CheckIcon
                       class="h-4 w-4 shrink-0"
@@ -67,6 +67,10 @@
                     />
                     <span class="shrink-0 font-mono text-xs">{{ c.ip }}</span>
                     <span class="text-base-content/60 min-w-0 flex-1 truncate text-xs">{{ c.name }}</span>
+                    <span
+                      v-if="c.mac"
+                      class="text-base-content/40 shrink-0 font-mono text-xs"
+                    >{{ c.mac }}</span>
                   </button>
                 </li>
                 <li
@@ -81,7 +85,36 @@
         </div>
       </div>
 
-      <div class="flex flex-col gap-1">
+      <!-- 不进内核(GitHub #39):像 OpenClash 的黑名单,按 MAC 在入口就放行;开着时不用选出站 -->
+      <label class="flex cursor-pointer items-start gap-2">
+        <input
+          v-model="form.bypass"
+          type="checkbox"
+          class="checkbox checkbox-sm mt-0.5"
+        />
+        <span class="flex flex-col gap-0.5">
+          <span class="text-sm">{{ $t('clientRouteBypassLabel') }}</span>
+          <span class="text-base-content/50 text-xs">{{ $t('clientRouteBypassHint') }}</span>
+        </span>
+      </label>
+
+      <div
+        v-if="form.bypass"
+        class="flex flex-col gap-1"
+      >
+        <label class="text-xs font-medium">{{ $t('clientRouteMacsLabel') }}</label>
+        <textarea
+          v-model="form.macsText"
+          rows="3"
+          class="textarea textarea-sm w-full font-mono"
+          :placeholder="$t('clientRouteMacsPlaceholder')"
+        />
+      </div>
+
+      <div
+        v-else
+        class="flex flex-col gap-1"
+      >
         <label class="text-xs font-medium">{{ $t('clientRouteOutboundLabel') }}</label>
         <OutboundPicker
           v-model="form.outbound"
@@ -124,7 +157,7 @@ import { computed, reactive, ref, watch } from 'vue'
 const props = defineProps<{
   modelValue: boolean
   route: OpenboxClientRoute | null
-  knownClients: Array<{ ip: string; name: string }>
+  knownClients: Array<{ ip: string; name: string; mac?: string }>
   options: OutboundPickerOptions
 }>()
 
@@ -139,7 +172,7 @@ const isOpen = computed({
 })
 
 const newId = () => `c${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`
-const form = reactive({ id: newId(), enabled: true, name: '', sourcesText: '', outbound: '' })
+const form = reactive({ id: newId(), enabled: true, name: '', sourcesText: '', outbound: '', bypass: false, macsText: '' })
 
 watch(
   () => props.modelValue,
@@ -151,14 +184,20 @@ watch(
     form.name = r?.name || ''
     form.sourcesText = (r?.sources || []).join('\n')
     form.outbound = r?.outbound || ''
+    form.bypass = r?.bypass === true
+    form.macsText = (r?.macs || []).join('\n')
   },
 )
 
 const sourceLines = () => form.sourcesText.split('\n').map((x) => x.trim()).filter(Boolean)
 const hasSource = (ip: string) => sourceLines().includes(ip) || sourceLines().includes(`${ip}/32`)
-const addKnown = (ip: string) => {
-  if (!ip || hasSource(ip)) return
-  form.sourcesText = [...sourceLines(), ip].join('\n')
+const macLines = () => form.macsText.split(/[\n,;\s]+/).map((x) => x.trim().toLowerCase()).filter(Boolean)
+// 从已知终端加:IP 进终端框;不进内核模式下租约里有 MAC 的顺手填进 MAC 框
+const addKnown = (c: { ip: string; mac?: string }) => {
+  if (!c.ip || hasSource(c.ip)) return
+  form.sourcesText = [...sourceLines(), c.ip].join('\n')
+  const mac = (c.mac || '').toLowerCase()
+  if (mac && !macLines().includes(mac)) form.macsText = [...macLines(), mac].join('\n')
 }
 
 // 已知终端的浮层
@@ -200,6 +239,8 @@ const fail = (content: string, params?: Record<string, string>) => {
   showNotification({ content, params, type: 'alert-error' })
 }
 
+// 和 server/engine/client-routes.mjs 的 normalizeMac 同一套:六组十六进制,冒号或横线
+const MAC = /^([0-9a-f]{2}[:-]){5}[0-9a-f]{2}$/i
 const submit = () => {
   const name = form.name.trim()
   if (!name) return fail('clientRouteErrName')
@@ -207,6 +248,15 @@ const submit = () => {
   if (!sources.length) return fail('clientRouteErrNoSources')
   const bad = sources.find((x) => !isIpOrCidr(x))
   if (bad) return fail('clientRouteErrSources', { value: bad })
+  if (form.bypass) {
+    const macs = [...new Set(macLines().map((m) => m.replace(/-/g, ':')))]
+    if (!macs.length) return fail('clientRouteErrNoMacs')
+    const badMac = macs.find((m) => !MAC.test(m))
+    if (badMac) return fail('clientRouteErrMacs', { value: badMac })
+    emit('saved', { id: form.id, enabled: form.enabled, name, sources: [...new Set(sources)], outbound: '', bypass: true, macs })
+    isOpen.value = false
+    return
+  }
   if (!form.outbound) return fail('clientRouteErrOutbound')
   emit('saved', { id: form.id, enabled: form.enabled, name, sources: [...new Set(sources)], outbound: form.outbound })
   isOpen.value = false

@@ -59,7 +59,7 @@
           <div class="min-w-0 flex-1">
             <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
               <span class="max-w-full truncate text-base font-medium">{{ r.name }}</span>
-              <span class="badge badge-outline badge-sm shrink-0 whitespace-nowrap">{{ r.outbound }}</span>
+              <span class="badge badge-outline badge-sm shrink-0 whitespace-nowrap">{{ r.bypass ? $t('clientRouteBypassBadge') : r.outbound }}</span>
               <StatusBadge
                 v-if="r.enabled === false"
                 :on="false"
@@ -67,12 +67,12 @@
                 :off-text="$t('groupDisabledBadge')"
               />
               <span
-                v-if="!outboundExists(r.outbound)"
+                v-if="!r.bypass && !outboundExists(r.outbound)"
                 class="text-warning text-xs"
               >{{ $t('clientRouteOutboundMissing', { name: r.outbound }) }}</span>
             </div>
             <div class="text-base-content/60 mt-0.5 text-xs break-all">
-              {{ r.sources.map(labelOf).join(' · ') }}
+              {{ r.sources.map(labelOf).join(' · ') }}<template v-if="r.bypass && r.macs?.length"> · {{ r.macs.join(' · ') }}</template>
             </div>
           </div>
           <button
@@ -139,7 +139,7 @@ const { padding } = usePaddingForViews({ offsetTop: 0, offsetBottom: 0 })
 const profile = ref<OpenboxProfile | null>(null)
 const groups = ref<OpenboxUserGroup[]>([])
 const availableNodes = ref<Array<{ name: string; subscription: string }>>([])
-const knownClients = ref<Array<{ ip: string; name: string }>>([])
+const knownClients = ref<Array<{ ip: string; name: string; mac?: string }>>([])
 const loading = ref(true)
 const dialogOpen = ref(false)
 const editing = ref<OpenboxClientRoute | null>(null)

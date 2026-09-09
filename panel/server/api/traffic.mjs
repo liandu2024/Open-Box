@@ -57,6 +57,15 @@ export const parseDhcpLeases = (text) => {
   }
   return map
 }
+// 租约的每一行:{ mac, ip, name }(name 没有就是空串)。终端分流「不进内核」要按 MAC 放行,从这里给用户挑
+export const parseDhcpLeaseRows = (text) => {
+  const rows = []
+  for (const line of String(text || '').split('\n')) {
+    const f = line.trim().split(/\s+/)
+    if (f.length >= 3 && f[1] && f[2]) rows.push({ mac: f[1].toLowerCase(), ip: f[2], name: f[3] && f[3] !== '*' ? f[3] : '' })
+  }
+  return rows
+}
 
 // 路由器自己的地址 → { iface, kind }:WAN / LAN 地址会以"终端"身份出现在流量表里(打环、
 // 路由器自身的直连),标出来免得像一台陌生设备
@@ -260,16 +269,18 @@ export const registerTrafficRoutes = (app, { collector, ctx, paths, store, now =
   })
 
   router.get('/clients', async (_req, res) => {
-    const names = await readLeaseNames(ctx, paths && paths.dhcpLeases)
+    // 租约里有 MAC(终端分流「不进内核」按它放行);流量表里只有 IP
+    let rows = []
+    try { if (ctx && paths && paths.dhcpLeases) rows = parseDhcpLeaseRows(await ctx.readFile(paths.dhcpLeases)) } catch { rows = [] }
     const seen = new Map()
-    for (const [ip, name] of names) seen.set(ip, name)
+    for (const r of rows) seen.set(r.ip, { ip: r.ip, name: r.name, mac: r.mac })
     try {
       collector.flush()
       for (const r of collector.store.day(localDay(now()), 'client', 500)) {
-        if (r.key && !seen.has(r.key)) seen.set(r.key, '')
+        if (r.key && !seen.has(r.key)) seen.set(r.key, { ip: r.key, name: '', mac: '' })
       }
     } catch { /* 采集器没数据就只给租约 */ }
-    res.json({ clients: [...seen.entries()].map(([ip, name]) => ({ ip, name })) })
+    res.json({ clients: [...seen.values()] })
   })
 
   app.use('/api/openbox', router)

@@ -550,3 +550,13 @@ test('validateProfilePatch ipv6Proxy 只认 node / ipv4', () => {
   assert.equal(validateProfilePatch({ ipv6Proxy: 'ipv4' }), null)
   assert.match(validateProfilePatch({ ipv6Proxy: 'off' }), /ipv6Proxy/)
 })
+
+test('validateClientRoutes:不进内核(bypass)要至少一个合法 MAC、出站可以不填;普通规则出站必填', async () => {
+  const { validateClientRoutes } = await import('./profile.mjs')
+  assert.equal(validateClientRoutes([{ id: 'a', name: 'Switch', sources: ['10.0.0.9'], bypass: true, macs: ['AA:BB:CC:DD:EE:FF'] }]), null)
+  assert.equal(validateClientRoutes([{ id: 'a', name: 'Switch', sources: ['10.0.0.9'], bypass: true, macs: ['aa-bb-cc-dd-ee-ff'], outbound: '' }]), null)
+  assert.match(validateClientRoutes([{ id: 'a', name: 'Switch', sources: ['10.0.0.9'], bypass: true }]), /macs is required/)
+  assert.match(validateClientRoutes([{ id: 'a', name: 'Switch', sources: ['10.0.0.9'], bypass: true, macs: ['nope'] }]), /invalid MAC/)
+  assert.match(validateClientRoutes([{ id: 'a', name: 'Switch', sources: ['10.0.0.9'], bypass: 'yes', macs: ['aa:bb:cc:dd:ee:ff'] }]), /bypass must be a boolean/)
+  assert.match(validateClientRoutes([{ id: 'a', name: 'TV', sources: ['10.0.0.8'] }]), /outbound must be a non-empty string/)
+})

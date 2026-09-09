@@ -176,7 +176,8 @@ test('GET /clients:租约里的设备 + 今天流量里的来源 IP', async () =
   const { base, close } = await startApp(collector, () => new Date(2026, 8, 3, 10), { ctx, paths: { dhcpLeases: '/tmp/dhcp.leases' } })
   try {
     const body = await (await fetch(`${base}/api/openbox/clients`)).json()
-    assert.deepEqual(body.clients, [{ ip: '10.0.0.209', name: 'WIN11' }, { ip: '10.0.0.7', name: '' }])
+    // 租约里的设备带 MAC(终端分流「不进内核」按它放行),只在流量里见过的没有
+    assert.deepEqual(body.clients, [{ ip: '10.0.0.209', name: 'WIN11', mac: 'm1' }, { ip: '10.0.0.7', name: '', mac: '' }])
   } finally {
     await close()
   }
