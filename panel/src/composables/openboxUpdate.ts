@@ -55,6 +55,8 @@ let timer = 0
 let polling = false
 let wasRunning = false
 let offline = 0
+// 用户在这一轮升级里关掉过弹窗:轮询不再把它弹回来,新一轮开始才重新弹(#34)
+let dismissed = false
 
 const schedule = (ms: number) => {
   window.clearTimeout(timer)
@@ -64,6 +66,7 @@ const schedule = (ms: number) => {
 const finish = (stage: string, message: string) => {
   writeActiveFlag(false)
   polling = false
+  dismissed = false
   if (stage === 'done') {
     showNotification({ content: 'obUpdateDone', type: 'alert-success' })
     window.setTimeout(() => window.location.reload(), 1500)
@@ -97,7 +100,8 @@ const poll = async () => {
   if (running) {
     polling = true
     writeActiveFlag(true)
-    updateDialogOpen.value = true
+    if (!wasRunning) dismissed = false
+    if (!dismissed) updateDialogOpen.value = true
   } else if (wasRunning || polling) {
     finish(updateInfo.value.status.stage, updateInfo.value.status.message)
   }
@@ -135,6 +139,7 @@ export const startUpdate = async (channel: OpenboxUpdateChannel) => {
     polling = true
     wasRunning = true
     offline = 0
+    dismissed = false
     writeActiveFlag(true)
     updateDialogOpen.value = true
     schedule(800)
@@ -167,4 +172,9 @@ export const cancelRunningUpdate = async () => {
 // 登录成功(或会话恢复)之后再试一次:被踢回登录页那一刻轮询会停,登录完要接上
 watch([serverAuthenticated, serverPasswordSet], ([authed, hasPassword]) => {
   if (authed && hasPassword) void resumeUpdateWatch()
+})
+
+// 升级还在跑时用户关掉弹窗(关闭按钮、点遮罩、Esc 都走 v-model):这一轮不再自动弹回来
+watch(updateDialogOpen, (open) => {
+  if (!open && updateRunning.value) dismissed = true
 })

@@ -1,6 +1,7 @@
 import dns from 'node:dns/promises'
 import express from 'express'
 import { emitOutbound } from '../engine/emit-outbound.mjs'
+import { DEFAULT_TEST_URL } from '../engine/test-url.mjs'
 import { assertPublicHost } from './net-guard.mjs'
 import { resolveNodes } from './subscriptions.mjs'
 
@@ -19,7 +20,6 @@ import { resolveNodes } from './subscriptions.mjs'
 // 代价:每测一个节点要起一个 sing-box 进程(本机实测走 direct 出站约 0.4~0.9 秒,
 // 路由器上更慢),所以并发压到 4,并给每次调用单独的超时。
 
-const TEST_URL = 'http://www.gstatic.com/generate_204'
 const DEFAULT_TIMEOUT_MS = 8000
 const MAX_TIMEOUT_MS = 30000
 const MAX_TARGETS = 100
@@ -42,7 +42,14 @@ const runPool = async (items, limit, worker) => {
   return results
 }
 
-export const registerNodeLatencyRoutes = (app, { ctx, paths, fetchImpl = globalThis.fetch, lookup = dns.lookup } = {}) => {
+export const registerNodeLatencyRoutes = (app, { ctx, paths, store = null, fetchImpl = globalThis.fetch, lookup = dns.lookup } = {}) => {
+  // 测的地址跟「分流与策略 → 其他」里的全局测速地址走(用户改了就按改的测;#35);`tools fetch` 认 http,不用升 https
+  const testUrl = () => {
+    try {
+      const u = store?.getProfile?.()?.testUrl
+      return typeof u === 'string' && u.trim() ? u.trim() : DEFAULT_TEST_URL
+    } catch { return DEFAULT_TEST_URL }
+  }
   const router = express.Router({ caseSensitive: true })
   router.use(express.json({ limit: '10mb' }))
 
@@ -127,7 +134,7 @@ export const registerNodeLatencyRoutes = (app, { ctx, paths, fetchImpl = globalT
       const startedAt = Date.now()
       const { code, stderr } = await ctx.exec(
         paths.singbox,
-        ['tools', 'fetch', '-c', configPath, '-o', probeTag, TEST_URL],
+        ['tools', 'fetch', '-c', configPath, '-o', probeTag, testUrl()],
         { timeoutMs },
       )
       const ms = Date.now() - startedAt

@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import { BUILTIN_REGIONS } from '../engine/routing-model.mjs'
 import { defaultGroups, normalizeGroups } from '../engine/user-groups.mjs'
+import { DEFAULT_DIRECT_TEST_URL, DEFAULT_TEST_URL } from '../engine/test-url.mjs'
 
 export const KEYS = {
   profile: 'openbox/profile',
@@ -41,8 +42,9 @@ export const DEFAULT_PROFILE = {
   traffic: { keepMonths: 3 },
   // 测速地址。testUrl 给自动择优(url-test)组和面板的延迟测试用;directTestUrl 只给内置
   // 直连出站用——默认那个是 Google 的域名,从国内直连去测量出来的是"直连到 Google 有多远"。
-  testUrl: 'http://www.gstatic.com/generate_204',
-  directTestUrl: 'http://www.msftconnecttest.com/connecttest.txt',
+  // 都是 https:内核的 clash API 不认 http 的测速地址(见 engine/test-url.mjs)
+  testUrl: DEFAULT_TEST_URL,
+  directTestUrl: DEFAULT_DIRECT_TEST_URL,
   // 自动更新计划(面板进程内的定时器,见 system/scheduler.mjs):默认都关
   // channel 是自动更新走的通道;checkChannel 是卡片上手动「检查更新 / 立即更新」那个下拉框
   // 上次选的通道,记下来免得每次进页面都要重选

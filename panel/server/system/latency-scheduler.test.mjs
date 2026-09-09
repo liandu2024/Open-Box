@@ -164,3 +164,28 @@ test('到点按成员算:共用的成员刚被前一个组测过就不算,组里
   assert.deepEqual(history.get()['us-1'].map((x) => x.delay), [300, 104])
   assert.equal(history.get()['hk-1'].length, 2)
 })
+
+test('组配置里的测速地址是 http:// 的,发给内核的组测速请求升成 https://(内核不认 http,会悄悄换成 gstatic)', async () => {
+  const httpConfig = { outbounds: [
+    { type: 'urltest', tag: 'CF', url: 'http://cp.cloudflare.com/generate_204', interval: '5m', outbounds: ['cf-1'] },
+    { type: 'urltest', tag: '旧默认', url: 'http://www.gstatic.com/generate_204', interval: '5m', outbounds: ['cf-2'] },
+  ] }
+  const calls = []
+  const fetchImpl = async (url) => {
+    calls.push(String(url))
+    if (String(url).includes('/proxies')) return { ok: true, status: 200, json: async () => ({ proxies: { 'cf-1': { type: 'vless', history: [] }, 'cf-2': { type: 'vless', history: [] } } }) }
+    return { ok: true, status: 200, json: async () => ({}) }
+  }
+  const ctx = createMockContext({
+    files: { [paths.configPath]: JSON.stringify(httpConfig), '/proc/123/stat': '123 (sing-box) S 1 1 1 0 -1 0 0 0 0 0 0 0 0 0 20 0 1 0 100 0', '/proc/uptime': '1000 0' },
+    execResults: { 'pidof sing-box': { code: 0, stdout: '123\n' } },
+  })
+  const store = memStore()
+  const s = createLatencyScheduler({ store, ctx, paths, history: createLatencyHistory({ store, now: () => T0 + 60_000 }), fetchImpl, now: () => T0 + 60_000, log: () => {} })
+  await s.tick()
+  const groupCalls = calls.filter((u) => u.includes('/group/'))
+  assert.equal(groupCalls.length, 2)
+  assert.ok(groupCalls.some((u) => u.includes('/group/CF/delay?url=https%3A%2F%2Fcp.cloudflare.com%2Fgenerate_204&')), groupCalls.join('\n'))
+  assert.ok(groupCalls.some((u) => u.includes('url=https%3A%2F%2Fwww.gstatic.com%2Fgenerate_204&')), groupCalls.join('\n'))
+  assert.ok(!groupCalls.some((u) => u.includes('url=http%3A%2F%2F')))
+})

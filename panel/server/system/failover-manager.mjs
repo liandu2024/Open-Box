@@ -25,6 +25,7 @@
 // 自动选择是运行状态,不回写用户的页签顺序;只把「当前在哪个页签」按稳定页签 id 存进
 // openbox/failover-state,重启 / 重新部署后据此恢复关联,但健康一定重新检测过才动手。
 import { CLASH_API_BASE } from '../api/penetration.mjs'
+import { kernelTestUrl } from '../engine/test-url.mjs'
 import { configMetaPath } from './deploy.mjs'
 import { processUptime } from './service.mjs'
 
@@ -171,7 +172,7 @@ export const createFailoverManager = ({
   // 单个节点的端到端探测。内核用这个节点出站访问测速地址:200 = 通过;503 / 504 = 这个节点失败
   // (超时 / 出错);别的情况(接口不可达、404、5xx)是探测基础设施的问题,记未知,不算节点失败。
   // 注意 sing-box 的这个接口对 http:// 的测速地址不认(内核会换成它内置的 https://www.gstatic.com/generate_204
-  // 去测),所以想指定探测地址要写 https://;内部子组自己的定时测速用的才是配置里那个 url
+  // 去测),所以传进来之前先过 kernelTestUrl 升成 https(runRound 里做);内部子组自己的定时测速用的才是配置里那个 url
   const probeNode = async (tag, url, timeoutMs) => {
     const at = now()
     try {
@@ -220,7 +221,7 @@ export const createFailoverManager = ({
     const roundVersion = version
     const roundId = ++state.lastRoundId
     const s = state.settings || {}
-    const url = s.testUrl || ''
+    const url = kernelTestUrl(s.testUrl || '')
     const timeoutMs = Number(s.timeoutMs) || 5000
     const threshold = Math.max(1, Number(s.failureThreshold) || 1)
     const restorePrimary = s.restorePrimary !== false

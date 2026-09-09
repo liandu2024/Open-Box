@@ -39,6 +39,7 @@
 import { showNotification } from '@/helper/notification'
 import type { OpenboxProfile } from '@/api/openbox'
 import { DIRECT_TEST_URL, TEST_URL } from '@/constant'
+import { kernelTestUrl } from '@/helper/testUrl'
 import { directTestUrl, speedtestUrl } from '@/store/settings'
 import { ref, watch } from 'vue'
 
@@ -57,13 +58,14 @@ watch(
   },
 )
 
-// 空就回落到默认;存进档案的同时更新面板那份,延迟测试立刻按新地址走,不用刷新
+// 空就回落到默认;http:// 升成 https://(内核的延迟测试不认 http,见 helper/testUrl.ts);存进档案的同时
+// 更新面板那份,延迟测试立刻按新地址走,不用刷新
 const save = async (key: 'testUrl' | 'directTestUrl', raw: string) => {
-  const value = raw.trim() || (key === 'testUrl' ? TEST_URL : DIRECT_TEST_URL)
+  const value = kernelTestUrl(raw) || (key === 'testUrl' ? TEST_URL : DIRECT_TEST_URL)
   try {
     await props.patchProfile({ [key]: value })
-    if (key === 'testUrl') speedtestUrl.value = value
-    else directTestUrl.value = value
+    if (key === 'testUrl') { speedtestUrl.value = value; testUrl.value = value }
+    else { directTestUrl.value = value; directUrl.value = value }
   } catch (err) {
     showNotification({ content: 'routingSaveFailed', params: { message: err instanceof Error ? err.message : String(err) }, type: 'alert-error' })
   }

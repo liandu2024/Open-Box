@@ -907,6 +907,7 @@ import { fetchNodeGroups, saveNodeGroups } from '@/api/openbox'
 import BulkPick from '@/components/subscription/BulkPick.vue'
 import CountryFlag from '@/components/common/CountryFlag.vue'
 import CountrySelect from '@/components/common/CountrySelect.vue'
+import { kernelTestUrl } from '@/helper/testUrl'
 import IconScaleInput from '@/components/common/IconScaleInput.vue'
 import { AUTO_GROUP_DEFAULT_COUNTRIES, COUNTRIES, countryName, findCountry } from '@/constant/countries'
 import { keywordMatches, normalizeForMatch } from '@/helper/keywordMatch'
@@ -1547,7 +1548,8 @@ const saveDraft = async (typeChangeConfirmed = false) => {
 
   saving.value = true
   try {
-    const base: OpenboxUserGroup = { ...draft.value, name, id: draft.value.id || `g-${Date.now()}` }
+    // 组自己的测速地址 http:// 升成 https://(内核的延迟测试不认 http,见 helper/testUrl.ts)
+    const base: OpenboxUserGroup = { ...draft.value, name, id: draft.value.id || `g-${Date.now()}`, testUrl: kernelTestUrl(draft.value.testUrl) }
     let item: OpenboxUserGroup
     if (isFailover.value) {
       // 页签是唯一的成员来源:members / keywords 清空;页签名去掉首尾空白

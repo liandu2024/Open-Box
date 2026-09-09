@@ -1,3 +1,4 @@
+import { kernelTestUrl } from '@/helper/testUrl'
 import { serviceStatus } from '@/composables/kernelService'
 import { showNotification } from '@/helper/notification'
 import { ACCESS_PASSWORD_REQUIRED_CODE, markServerAuthenticationRequired } from '@/store/auth'
@@ -103,10 +104,11 @@ export const deleteFixedProxyAPI = (proxyGroup: string) => {
   return axios.delete(`/proxies/${encodeURIComponent(proxyGroup)}`)
 }
 
+// 三个延迟测试接口的 url 都先过 kernelTestUrl:内核对 http:// 的测速地址不认(会换成 gstatic 去测)
 export const fetchProxyLatencyAPI = (proxyName: string, url: string, timeout: number) => {
   return axios.get<{ delay: number }>(`/proxies/${encodeURIComponent(proxyName)}/delay`, {
     params: {
-      url,
+      url: kernelTestUrl(url),
       timeout,
     },
   })
@@ -122,7 +124,7 @@ export const fetchProxyProviderLatencyAPI = (
     `/providers/proxies/${encodeURIComponent(providerName)}/${encodeURIComponent(proxyName)}/healthcheck`,
     {
       params: {
-        url,
+        url: kernelTestUrl(url),
         timeout,
       },
     },
@@ -132,7 +134,7 @@ export const fetchProxyProviderLatencyAPI = (
 export const fetchProxyGroupLatencyAPI = (proxyName: string, url: string, timeout: number) => {
   return axios.get<Record<string, number>>(`/group/${encodeURIComponent(proxyName)}/delay`, {
     params: {
-      url,
+      url: kernelTestUrl(url),
       timeout,
     },
   })

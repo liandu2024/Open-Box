@@ -24,6 +24,7 @@ import { createLatencyScheduler } from './system/latency-scheduler.mjs'
 import { createFailoverManager } from './system/failover-manager.mjs'
 import { createDnsRewriteServer } from './system/dns-rewrite-server.mjs'
 import { DNS_REWRITE_TAG, ensureDnsRewriteDefaults } from './engine/dns-rewrite.mjs'
+import { ensureTestUrlDefaults } from './engine/test-url.mjs'
 import { decideDnsServer } from './api/route-test.mjs'
 import { readSystemDns } from './system/resolv.mjs'
 import { registerFailoverRoutes } from './api/failover.mjs'
@@ -165,6 +166,12 @@ try {
   if (ensureDnsRewriteDefaults(store)) console.log('[dns-rewrite] 档案首次初始化 DNS 重写,写入默认规则')
 } catch (err) {
   console.log(`[dns-rewrite] 初始化默认规则失败:${err instanceof Error ? err.message : err}`)
+}
+// 测速地址还是老的 http 默认值的换成 https 默认(内核的 clash API 不认 http,见 engine/test-url.mjs)
+try {
+  if (ensureTestUrlDefaults(store)) console.log('[profile] 测速地址从老的 http 默认值换成 https 默认值')
+} catch (err) {
+  console.log(`[profile] 迁移测速地址失败:${err instanceof Error ? err.message : err}`)
 }
 
 // 会话密钥落库,不是每次启动随机生成:否则升级 / 重启面板 / 路由器重启后进程一换,所有
@@ -1097,7 +1104,7 @@ registerDeployRoutes(app, { store, ctx: obCtx, paths: obPaths })
 registerServiceRoutes(app, { store, ctx: obCtx, paths: obPaths })
 registerRulesetRoutes(app, { store, ctx: obCtx, paths: obPaths, fetchImpl: globalThis.fetch })
 registerPenetrationRoutes(app, { store, ctx: obCtx, paths: obPaths, fetchImpl: globalThis.fetch })
-registerNodeLatencyRoutes(app, { ctx: obCtx, paths: obPaths, fetchImpl: globalThis.fetch })
+registerNodeLatencyRoutes(app, { ctx: obCtx, paths: obPaths, store, fetchImpl: globalThis.fetch })
 registerGroupRoutes(app, { store })
 registerUpdateRoutes(app, { store, ctx: obCtx, paths: obPaths, fetchImpl: globalThis.fetch })
 registerRouteTestRoutes(app, { store, ctx: obCtx, paths: obPaths, fetchImpl: globalThis.fetch })
