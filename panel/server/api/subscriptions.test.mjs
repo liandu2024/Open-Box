@@ -1212,9 +1212,6 @@ test('#40:PATCH enabled 只改开关不重拉,开关翻转算节点池变了(cha
     const id = created.id
     const total = store.getNodes().length
     assert.ok(total >= 1)
-    let calls = 0
-    const counting = async (...a) => { calls += 1; return fetchImpl(...a) }
-    void counting
     const off = await fetch(`${baseUrl}/api/openbox/subscriptions/${id}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ enabled: false }) })
     assert.equal(off.status, 200)
     const offBody = await off.json()
@@ -1231,6 +1228,30 @@ test('#40:PATCH enabled 只改开关不重拉,开关翻转算节点池变了(cha
     assert.equal(activeNodes(store).length, total)
     const bad = await fetch(`${baseUrl}/api/openbox/subscriptions/${id}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ enabled: 'yes' }) })
     assert.equal(bad.status, 400)
+  } finally {
+    await close()
+  }
+})
+
+test('F1:curl 兜底传到一半失败 → 刷新失败,原有节点池和更新时间原样保留', async () => {
+  let phase = 'create'
+  const fetchImpl = async () => (phase === 'create'
+    ? { ok: true, status: 200, text: async () => `${HK_LINE}\n${JP_LINE}` }
+    : { ok: false, status: 403, text: async () => 'forbidden' })
+  let curlCalls = 0
+  const curlFetch = async () => { curlCalls += 1; return { status: 0, httpStatus: 200, error: 'curl 退出码 18:transfer closed with 65 bytes remaining to read' } }
+  const { baseUrl, store, close } = await startApp(fetchImpl, fakePublicLookup, { curlFetch })
+  try {
+    const created = await (await postJson(baseUrl, '/api/openbox/subscriptions', { url: 'https://public.example.com/sub', name: 'A' })).json()
+    const before = { nodes: JSON.stringify(store.getNodes()), updatedAt: store.getSubscriptions()[0].updatedAt }
+    assert.equal(store.getNodes().length, 2)
+    phase = 'refresh'
+    const res = await fetch(`${baseUrl}/api/openbox/subscriptions/${created.id}/refresh`, { method: 'POST' })
+    assert.equal(res.status, 400)
+    assert.match((await res.json()).error, /curl 退出码 18/)
+    assert.equal(curlCalls, 1, '进程失败就停,不再换 UA 重试')
+    assert.equal(JSON.stringify(store.getNodes()), before.nodes, '节点池原样')
+    assert.equal(store.getSubscriptions()[0].updatedAt, before.updatedAt, '更新时间原样')
   } finally {
     await close()
   }

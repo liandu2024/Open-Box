@@ -161,13 +161,16 @@ export const buildDnsWithResolvers = (profile, options = {}) => {
   // (FakeIP 那条、兜底那条)不能共存、启动直接 FATAL(migration:ip_version and query_type behavior changes);
   // 改成 predefined 动作明确回空答案,语义和原来一样、和 1.13 也兼容(predefined 1.12 起就有)
   const proxyV4Only = ipv6ProxyMode(profile) === 'ipv4'
+  // FakeIP 的占位只在「代理也管 v6」(交给节点)时连 AAAA 一起给;降级时 AAAA 已经回空,不进内核(bypass)时
+  // 占位服务器没有 v6 段,AAAA 落到它上面只会回空——要让 AAAA 继续交给真实解析器(复核 F2)
+  const fakeIpTypes = ipv6ProxyMode(profile) === 'node' ? ['A', 'AAAA'] : ['A']
   const emptyAAAA = (match) => ({ ...match, query_type: ['AAAA'], action: 'predefined', rcode: 'NOERROR' })
   // 规则集 + 域名的匹配拆成两条(1.14 的规则集语义,见 routing-model.mjs 的 splitRuleSetConditions),每一半各带
   // 同一套 AAAA / FakeIP / 真实解析器规则
   const pushProxyRule = (match, tag) => {
     for (const part of splitRuleSetConditions(match)) {
       if (proxyV4Only) rules.push(emptyAAAA(part))
-      if (fakeIp) rules.push({ ...part, query_type: proxyV4Only ? ['A'] : ['A', 'AAAA'], server: FAKEIP_TAG })
+      if (fakeIp) rules.push({ ...part, query_type: fakeIpTypes, server: FAKEIP_TAG })
       rules.push({ ...part, server: tag })
     }
   }
@@ -262,8 +265,8 @@ export const buildDnsWithResolvers = (profile, options = {}) => {
     // v6 占位段只在「代理也管 v6」(交给节点)时给;降级和不进内核都不给——不进内核时终端拿到占位 v6 会直接
     // 往 WAN 发,哪都到不了
     servers.push({ type: 'fakeip', tag: FAKEIP_TAG, inet4_range: FAKEIP_V4, ...(ipv6ProxyMode(profile) === 'node' ? { inet6_range: FAKEIP_V6 } : {}) })
-    // 兜底走代理:上面都没命中的域名 A / AAAA 也发占位地址
-    if (!fallbackDirect) rules.push({ query_type: proxyV4Only ? ['A'] : ['A', 'AAAA'], server: FAKEIP_TAG })
+    // 兜底走代理:上面都没命中的域名 A(交给节点时连 AAAA)也发占位地址
+    if (!fallbackDirect) rules.push({ query_type: fakeIpTypes, server: FAKEIP_TAG })
   }
   servers.push(...localServers)
   const dns = {

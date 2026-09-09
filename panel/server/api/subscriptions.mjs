@@ -630,7 +630,7 @@ export const registerSubscriptionRoutes = (app, { store, fetchImpl = subscriptio
       return
     }
     try {
-      const r = await refreshSubscriptionById(store, id, { fetchImpl, lookup, renameOptions: req.body && req.body.renameOptions })
+      const r = await refreshSubscriptionById(store, id, { fetchImpl, lookup, renameOptions: req.body && req.body.renameOptions, curlFetch })
       res.json({ ...r, changed: changedSince(before) })
     } catch (err) {
       res.status(400).json({ error: errorMessage(err) })

@@ -394,3 +394,19 @@ test('ipv6ProxyMode:关着 off、默认 node、降级 ipv4、不进内核 bypass
   assert.equal(bypass.strategy, 'prefer_ipv4')
   assert.ok(!bypass.rules.some((r) => r.action === 'predefined' || r.strategy))
 })
+
+test('F2:IPv6 不进内核(bypass)+ FakeIP:占位只管 A,AAAA 继续交给真实解析器(逐策略和兜底都是);node 模式 A/AAAA 都占位;ipv4 模式 AAAA 回空', () => {
+  const routing = { policies: [{ id: 'g', name: '谷歌', default: '所有-自动', rulesets: ['geosite-google'] }], fallbackDefault: 'proxy' }
+  const fake = (over) => buildDns({ ...withRouting(routing), ipv6: true, dns: { ...base.dns, fakeIpForProxy: true }, ...over }, GROUPS)
+  const bypass = fake({ ipv6Proxy: 'bypass' })
+  const rulesFor = (dns) => dns.rules.filter((r) => r.rule_set && r.rule_set[0] === 'geosite-google')
+  assert.deepEqual(rulesFor(bypass).map((r) => [r.server || r.action, r.query_type || null]), [['dns-fakeip', ['A']], ['dns-policy-0', null]])
+  assert.deepEqual(bypass.rules.at(-1), { query_type: ['A'], server: 'dns-fakeip' })
+  assert.equal(bypass.servers.find((s) => s.type === 'fakeip').inet6_range, undefined)
+  assert.ok(!bypass.rules.some((r) => r.action === 'predefined'))
+  const node = fake({ ipv6Proxy: 'node' })
+  assert.deepEqual(rulesFor(node)[0].query_type, ['A', 'AAAA'])
+  assert.deepEqual(node.rules.at(-1), { query_type: ['A', 'AAAA'], server: 'dns-fakeip' })
+  const v4 = fake({ ipv6Proxy: 'ipv4' })
+  assert.deepEqual(rulesFor(v4).map((r) => [r.server || r.action, r.query_type || null]), [['predefined', ['AAAA']], ['dns-fakeip', ['A']], ['dns-policy-0', null]])
+})

@@ -27,7 +27,10 @@ const readLocation = async (headPath) => {
 }
 
 // 返回:{ available:false }(系统没有 curl)| { status, text }(拿到响应,status 是最后一跳的状态码)|
-// { status:0, error }(连接层失败)。校验不过(地址不合法 / 不可路由)直接抛,和 Node 路径同一套报错
+// { status:0, error }(连接层失败)。校验不过(地址不合法 / 不可路由)直接抛,和 Node 路径同一套报错。
+// curl 进程只要不是正常退出(非零退出码、被信号杀、执行超时)一律算下载失败——哪怕已经收到了 HTTP 200:
+// 传到一半断开(exit 18)、超时(28)、超过 --max-filesize(63)时正文是残缺的,交上去会被当成一份"变少了"
+// 的订阅把节点池覆盖掉(复核 F1)。3xx / 4xx 本身 curl 是正常退出,状态码照常交给上层判
 export const curlFetchText = async (initialUrl, {
   userAgent = 'Open-Box/1.0', lookup, allowPrivate = true, maxBytes = 5 * 1024 * 1024, timeoutMs = 20000, maxRedirects = 3,
 } = {}) => {
@@ -40,7 +43,7 @@ export const curlFetchText = async (initialUrl, {
     try {
       const args = [
         '-sS', '--proto', '=http,https', '--max-redirs', '0',
-        '--connect-timeout', '10', '--max-time', String(Math.max(5, Math.ceil(timeoutMs / 1000))),
+        '--connect-timeout', '10', '--max-time', String(Math.max(1, Math.ceil(timeoutMs / 1000))),
         '--max-filesize', String(maxBytes),
         '-A', userAgent, '-o', bodyPath, '-D', headPath, '-w', '%{http_code}',
       ]
@@ -56,6 +59,11 @@ export const curlFetchText = async (initialUrl, {
       const { err, stdout, stderr } = await runCurl(args, timeoutMs + 5000)
       if (err && err.code === 'ENOENT') return { available: false }
       const status = Number(stdout.trim().slice(-3)) || 0
+      if (err) {
+        const why = err.killed || err.signal ? `curl 被终止(${err.signal || 'timeout'})` : `curl 退出码 ${err.code}`
+        const detail = stderr.trim().split('\n').filter(Boolean).pop() || err.message
+        return { status: 0, httpStatus: status, error: `${why}:${detail}` }
+      }
       if (status >= 300 && status < 400) {
         const location = await readLocation(headPath)
         if (!location) return { status, error: 'redirect response missing Location header' }
