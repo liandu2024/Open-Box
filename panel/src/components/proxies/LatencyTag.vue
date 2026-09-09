@@ -2,7 +2,7 @@
   <div
     :class="
       twMerge(
-        'latency-tag bg-base-100 flex h-5 w-10 items-center justify-center rounded-xl text-xs select-none',
+        'latency-tag bg-base-100 flex h-5 w-10 cursor-pointer items-center justify-center rounded-xl text-xs select-none',
         color,
       )
     "
