@@ -336,9 +336,10 @@ export const createFailoverManager = ({
     let target = null
     let reason = ''
     // 按新顺序重选的待办(见 loadMap):新顺序里第一个通过的页签就是该用的;它上面还有未知的页签先不动
-    // (等那些页签确认了再说)。目标是主用就交给下面既有的「恢复后切回」规则——开着回切等满 hold 再切,
-    // 关着回切这次重排就算落定。第一次能判断时立刻挪;之后(比如目标当时是失败的、后来才恢复)和主用
-    // 恢复一样等它连续通过满 recoveryHoldMs 再挪,免得刚恢复就来回切。
+    // (等那些页签确认了再说)。用户刚改完顺序、第一次能判断时立刻挪,目标是主用也一样——用户把某个页签排到
+    // 第一位就是要用它,不受「恢复后切回」开关和等待时间约束;之后(比如目标当时是失败的、后来才恢复)才按
+    // 恢复的规则来:目标是主用走「恢复后切回」(开关 + 等待,关着回切这次重排就算落定),目标是备用和主用恢复
+    // 一样等它连续通过满 recoveryHoldMs 再挪,免得刚恢复就来回切。
     // 落定:当前页签就是新顺序里第一个通过的,且它上面没有别的页签(或只有空页签);上面还有确认失败的
     // 页签时待办保留——那是用户明确表达的优先级,它恢复了要挪过去(备用之间平时不这么做)。「校正」
     // (order-unknown)不是用户的动作,当前就是第一个通过的就直接落定
@@ -365,6 +366,8 @@ export const createFailoverManager = ({
       if (preferred && !unknownAbove(preferred)) {
         if (preferred.id === current.id) {
           settleIfDone()
+        } else if (!state.reorder.evaluated && state.reorder.reason === 'priority-changed') {
+          target = preferred; reason = 'priority-changed'; reorderMove = true
         } else if (preferred.index === 0) {
           if (!restorePrimary) settleReorder('目标是主用而「恢复后切回」关着')
           else state.reorder.evaluated = true

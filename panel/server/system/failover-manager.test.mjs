@@ -657,3 +657,30 @@ test('验收 C:候选恢复计时被未知打断——C down → up → unknown 
   assert.equal(group(mgr).currentLaneId, 'C')
   assert.equal(group(mgr).lastSwitch.reason, 'priority-changed')
 })
+
+test('验收 A:用户把某个页签排到第一位(C/A/B)→ 第一次确认它通过就立刻切过去,关着「恢复后切回」也一样;主用之后失败再恢复才按回切规则', async () => {
+  const s = setup({ failover: [mapping({ settings: { ...mapping().settings, restorePrimary: false } })] })
+  const { k, mgr } = s
+  await mgr.tick()
+  k.down.add('a1'); k.down.add('a2')
+  await s.round(); await s.round()
+  assert.equal(group(mgr).currentLaneId, 'B')
+  // 用户把 C 排到第一位
+  const original = mapping({ settings: { ...mapping().settings, restorePrimary: false } })
+  const ordered = { ...original, lanes: ['C', 'A', 'B'].map((id, index) => ({ ...original.lanes.find((l) => l.id === id), index })) }
+  s.ctx.files[configMetaPath(paths)] = metaJson('v2', [ordered])
+  k.proxies['主备'].all = [...ordered.lanes.map((l) => l.ref), '拒绝']
+  await s.round()
+  assert.equal(group(mgr).currentLaneId, 'C')
+  assert.equal(k.now(), '__fo:fo1:C')
+  assert.equal(group(mgr).lastSwitch.reason, 'priority-changed')
+  assert.equal(group(mgr).reorder, null, 'C 已是第一位,落定')
+  // 之后 C 失败 → 转到 A?A 也失败 → B;C 恢复:关着回切,不自动切回 C
+  k.down.add('c1'); k.down.add('c2')
+  await s.round(); await s.round()
+  assert.equal(group(mgr).currentLaneId, 'B')
+  k.down.delete('c1'); k.down.delete('c2')
+  await s.round(); await s.round(); await s.round()
+  assert.equal(group(mgr).currentLaneId, 'B', '关着「恢复后切回」:主用恢复不切回')
+  assert.equal(k.calls.filter((c) => c.startsWith('PUT')).length, 3)
+})
