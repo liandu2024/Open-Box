@@ -1,13 +1,12 @@
 <template>
   <section class="card bg-base-100 border-base-300/60 border">
-    <div class="card-body gap-4 p-4 text-sm">
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <div class="flex items-center gap-3">
-          <ShieldCheckIcon class="text-primary h-6 w-6" />
+    <div class="card-body gap-3 p-4 text-sm">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div class="flex flex-wrap items-center gap-2">
           <h2 class="text-base font-semibold">{{ $t('dfTitle') }}</h2>
           <input
             type="checkbox"
-            class="toggle toggle-sm toggle-primary"
+            class="toggle toggle-sm shrink-0"
             :aria-label="$t('dfTitle')"
             :checked="status.settings.enabled"
             :disabled="saving || busy"
@@ -25,20 +24,22 @@
             }}</span
           >
         </div>
-        <div class="flex gap-2">
+        <div class="flex shrink-0 items-center gap-1">
           <button
-            class="btn btn-sm btn-ghost"
-            :disabled="busy || saving"
-            @click="edit()"
-          >
-            <PlusIcon class="h-4 w-4" />{{ $t('dfAdd') }}
-          </button>
-          <button
-            class="btn btn-sm btn-soft"
+            type="button"
+            class="btn btn-ghost btn-sm"
             :disabled="busy || saving || !status.settings.lists.some((l) => l.enabled)"
             @click="$emit('update')"
           >
-            <ArrowPathIcon class="h-4 w-4" />{{ $t('dfUpdate') }}
+            {{ $t('dfUpdate') }}
+          </button>
+          <button
+            type="button"
+            class="btn btn-primary btn-sm"
+            :disabled="busy || saving"
+            @click="edit()"
+          >
+            {{ $t('dfAdd') }}
           </button>
         </div>
       </div>
@@ -50,107 +51,81 @@
       >
         {{ notice }}
       </p>
-      <div class="app-plain-table overflow-x-auto">
-        <table class="table-sm table">
-          <thead>
-            <tr>
-              <th>{{ $t('dfSwitch') }}</th>
-              <th>{{ $t('dfName') }}</th>
-              <th>{{ $t('dfUrl') }}</th>
-              <th>{{ $t('dfCount') }}</th>
-              <th>{{ $t('dfUpdated') }}</th>
-              <th class="text-right">{{ $t('dfActions') }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="list in status.settings.lists"
-              :key="list.id"
+      <p
+        v-if="!status.settings.lists.length"
+        class="text-base-content/50 text-xs"
+      >
+        {{ $t('dfEmptyLists') }}
+      </p>
+      <div
+        v-else
+        class="divide-base-content/10 divide-y"
+      >
+        <div
+          v-for="list in status.settings.lists"
+          :key="list.id"
+          class="flex items-center gap-2 py-2"
+          :class="!list.enabled && 'opacity-50'"
+        >
+          <input
+            type="checkbox"
+            class="toggle toggle-sm shrink-0"
+            :checked="list.enabled"
+            :aria-label="`${$t('dfSwitch')} ${list.name}`"
+            :disabled="busy || saving"
+            @change="changeList(list, { enabled: !list.enabled })"
+          />
+          <div class="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-0.5 text-xs">
+            <span class="truncate font-medium">{{ list.name }}</span>
+            <span
+              class="truncate font-mono"
+              :title="list.url"
+              >{{ list.url }}</span
             >
-              <td>
-                <input
-                  type="checkbox"
-                  class="toggle toggle-xs"
-                  :checked="list.enabled"
-                  :aria-label="`${$t('dfSwitch')} ${list.name}`"
-                  :disabled="busy || saving"
-                  @change="changeList(list, { enabled: !list.enabled })"
-                />
-              </td>
-              <td class="font-medium">{{ list.name }}</td>
-              <td
-                class="max-w-64 truncate text-xs"
-                :title="list.url"
-              >
-                {{ list.url }}
-              </td>
-              <td class="tabular-nums">
-                {{ status.lists[list.id]?.count?.toLocaleString() ?? '—' }}
-                <div
-                  v-if="status.lists[list.id]?.unsupported"
-                  class="text-warning text-xs"
-                  :title="status.lists[list.id]?.unsupportedExamples?.join('\n')"
-                >
-                  {{ $t('dfSkipped', { n: status.lists[list.id]?.unsupported }) }}
-                </div>
-              </td>
-              <td class="text-xs">
-                {{
-                  status.lists[list.id]?.updatedAt
-                    ? new Date(status.lists[list.id].updatedAt).toLocaleString()
-                    : $t('dfNotDownloaded')
-                }}
-                <p
-                  v-if="status.lists[list.id]?.error"
-                  class="text-error max-w-52"
-                  :title="status.lists[list.id].error"
-                >
-                  {{ status.lists[list.id].error }}
-                </p>
-              </td>
-              <td class="text-right whitespace-nowrap">
-                <template v-if="deleting === list.id"
-                  ><button
-                    class="btn btn-error btn-xs"
-                    :disabled="saving"
-                    @click="remove(list.id)"
-                  >
-                    {{ $t('dfConfirmDelete') }}</button
-                  ><button
-                    class="btn btn-ghost btn-xs"
-                    @click="deleting = ''"
-                  >
-                    {{ $t('cancel') }}
-                  </button></template
-                >
-                <template v-else
-                  ><button
-                    class="btn btn-ghost btn-xs"
-                    :aria-label="`${$t('dfEdit')} ${list.name}`"
-                    :disabled="busy || saving"
-                    @click="edit(list)"
-                  >
-                    <PencilSquareIcon class="h-4 w-4" /></button
-                  ><button
-                    class="btn btn-ghost btn-xs text-error"
-                    :aria-label="`${$t('dfDelete')} ${list.name}`"
-                    :disabled="busy || saving"
-                    @click="deleting = list.id"
-                  >
-                    <TrashIcon class="h-4 w-4" /></button
-                ></template>
-              </td>
-            </tr>
-            <tr v-if="!status.settings.lists.length">
-              <td
-                colspan="6"
-                class="text-base-content/50 py-8 text-center"
-              >
-                {{ $t('dfEmptyLists') }}
-              </td>
-            </tr>
-          </tbody>
-        </table>
+            <span class="text-base-content/50 tabular-nums">
+              {{ $t('dfCount') }} {{ status.lists[list.id]?.count?.toLocaleString() ?? '—' }}
+            </span>
+            <span class="text-base-content/50">
+              {{ $t('dfUpdated') }}
+              {{
+                status.lists[list.id]?.updatedAt
+                  ? new Date(status.lists[list.id].updatedAt).toLocaleString()
+                  : $t('dfNotDownloaded')
+              }}
+            </span>
+            <span
+              v-if="status.lists[list.id]?.unsupported"
+              class="text-warning"
+              :title="status.lists[list.id]?.unsupportedExamples?.join('\n')"
+            >
+              {{ $t('dfSkipped', { n: status.lists[list.id]?.unsupported }) }}
+            </span>
+            <p
+              v-if="status.lists[list.id]?.error"
+              class="text-error w-full break-words"
+            >
+              {{ status.lists[list.id].error }}
+            </p>
+          </div>
+          <button
+            type="button"
+            class="btn btn-ghost btn-square btn-xs"
+            :aria-label="`${$t('dfEdit')} ${list.name}`"
+            :disabled="busy || saving"
+            @click="edit(list)"
+          >
+            <PencilSquareIcon class="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            class="btn btn-ghost btn-square btn-xs hover:text-error"
+            :aria-label="`${$t('dfDelete')} ${list.name}`"
+            :disabled="busy || saving"
+            @click="askDelete(list)"
+          >
+            <TrashIcon class="h-4 w-4" />
+          </button>
+        </div>
       </div>
       <details class="border-base-300/50 border-t pt-3">
         <summary class="cursor-pointer font-medium">
@@ -174,65 +149,97 @@
         </button>
       </details>
     </div>
-    <div
-      v-if="editing"
-      class="modal modal-open"
-      role="dialog"
-      aria-modal="true"
-      :aria-label="$t('dfEditList')"
-      @keydown.esc="editing = null"
+    <DialogWrapper
+      v-model="showEditor"
+      :title="$t('dfEditList')"
+      box-class="w-full max-w-lg"
     >
       <form
-        class="modal-box"
+        v-if="editing"
+        class="flex flex-col gap-3"
         @submit.prevent="saveEdit"
       >
-        <h3 class="mb-4 text-lg font-semibold">{{ $t('dfEditList') }}</h3>
-        <label class="fieldset"
-          ><span class="fieldset-legend">{{ $t('dfName') }}</span
-          ><input
+        <label class="flex flex-col gap-1">
+          <span class="text-xs font-medium">{{ $t('dfName') }}</span>
+          <input
             v-model="editing.name"
-            class="input w-full"
+            class="input input-sm w-full"
             maxlength="80"
             required
-        /></label>
-        <label class="fieldset"
-          ><span class="fieldset-legend">{{ $t('dfUrl') }}</span
-          ><input
+          />
+        </label>
+        <label class="flex flex-col gap-1">
+          <span class="text-xs font-medium">{{ $t('dfUrl') }}</span>
+          <input
             v-model="editing.url"
-            class="input w-full"
+            class="input input-sm w-full font-mono"
             type="url"
             maxlength="2048"
             placeholder="https://example.com/filter.txt"
             required
-        /></label>
+          />
+        </label>
         <p
           v-if="error && notice"
-          class="text-error mt-3 text-sm"
+          class="text-error text-xs"
         >
           {{ notice }}
         </p>
-        <div class="modal-action">
+        <div class="flex justify-end gap-2">
           <button
-            class="btn btn-ghost"
+            class="btn btn-sm"
             type="button"
-            @click="editing = null"
+            @click="showEditor = false"
           >
             {{ $t('cancel') }}</button
           ><button
-            class="btn btn-primary"
+            class="btn btn-primary btn-sm"
             type="submit"
             :disabled="saving"
           >
+            <span
+              v-if="saving"
+              class="loading loading-spinner loading-xs"
+            />
             {{ $t('save') }}
           </button>
         </div>
       </form>
-      <button
-        class="modal-backdrop"
-        :aria-label="$t('cancel')"
-        @click="editing = null"
-      />
-    </div>
+    </DialogWrapper>
+    <DialogWrapper
+      v-model="showDelete"
+      :title="$t('dfConfirmDelete')"
+    >
+      <div class="flex flex-col gap-4 p-2">
+        <div>
+          <p class="text-sm">{{ deleting?.name }}</p>
+          <p class="text-base-content/60 font-mono text-xs break-all">{{ deleting?.url }}</p>
+        </div>
+        <p
+          v-if="error && notice"
+          class="text-error text-xs"
+        >
+          {{ notice }}
+        </p>
+        <div class="flex justify-end gap-2">
+          <button
+            type="button"
+            class="btn btn-sm"
+            @click="showDelete = false"
+          >
+            {{ $t('cancel') }}
+          </button>
+          <button
+            type="button"
+            class="btn btn-error btn-sm"
+            :disabled="saving"
+            @click="confirmDelete"
+          >
+            {{ $t('confirm') }}
+          </button>
+        </div>
+      </div>
+    </DialogWrapper>
   </section>
 </template>
 
@@ -243,13 +250,8 @@ import {
   type DnsFilterSettings,
   type DnsFilterStatus,
 } from '@/api/openbox'
-import {
-  ArrowPathIcon,
-  PencilSquareIcon,
-  PlusIcon,
-  ShieldCheckIcon,
-  TrashIcon,
-} from '@heroicons/vue/24/outline'
+import DialogWrapper from '@/components/common/DialogWrapper.vue'
+import { PencilSquareIcon, TrashIcon } from '@heroicons/vue/24/outline'
 import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 const props = defineProps<{ status: DnsFilterStatus; busy: boolean }>()
@@ -258,10 +260,17 @@ const { t } = useI18n()
 const saving = ref(false),
   error = ref(false),
   notice = ref(''),
-  deleting = ref(''),
   allowText = ref('')
+const showEditor = ref(false)
+const showDelete = ref(false)
+const deleting = ref<DnsFilterList | null>(null)
 const editing = ref<DnsFilterList | null>(null)
-watch(() => props.status.pending, (pending) => { if (!pending && !error.value) notice.value = '' })
+watch(
+  () => props.status.pending,
+  (pending) => {
+    if (!pending && !error.value) notice.value = ''
+  },
+)
 watch(
   () => props.status.settings.allowDomains.join('\n'),
   (v) => {
@@ -292,12 +301,21 @@ const changeList = (list: DnsFilterList, patch: Partial<DnsFilterList>) =>
     ...props.status.settings,
     lists: props.status.settings.lists.map((l) => (l.id === list.id ? { ...l, ...patch } : l)),
   })
-const remove = async (id: string) => {
-  await save({
-    ...props.status.settings,
-    lists: props.status.settings.lists.filter((l) => l.id !== id),
-  })
-  deleting.value = ''
+const askDelete = (list: DnsFilterList) => {
+  deleting.value = list
+  notice.value = ''
+  showDelete.value = true
+}
+const confirmDelete = async () => {
+  if (!deleting.value) return
+  const id = deleting.value.id
+  if (
+    await save({
+      ...props.status.settings,
+      lists: props.status.settings.lists.filter((l) => l.id !== id),
+    })
+  )
+    showDelete.value = false
 }
 const edit = (list?: DnsFilterList) => {
   editing.value = list
@@ -309,6 +327,7 @@ const edit = (list?: DnsFilterList) => {
         enabled: true,
       }
   notice.value = ''
+  showEditor.value = true
 }
 const saveEdit = async () => {
   if (!editing.value) return
@@ -316,7 +335,7 @@ const saveEdit = async () => {
   const lists = props.status.settings.lists.some((l) => l.id === list.id)
     ? props.status.settings.lists.map((l) => (l.id === list.id ? list : l))
     : [...props.status.settings.lists, list]
-  if (await save({ ...props.status.settings, lists })) editing.value = null
+  if (await save({ ...props.status.settings, lists })) showEditor.value = false
 }
 const saveAllow = () =>
   save({

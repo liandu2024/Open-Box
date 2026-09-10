@@ -1,3 +1,7 @@
 # Development board deployment
 
 After completing any application code or style change, run `corepack pnpm run deploy:devboard` before responding. This builds the project, (re)starts the local dev-board server if needed, and verifies that `http://127.0.0.1:2048` serves the newly built entry asset. Report the deployment result to the user.
+
+# UI consistency
+
+Before changing any UI, find and reuse existing components, styles, and interaction patterns for the same purpose. Keep list rows, switches, spacing, buttons, and dialogs consistent across the application; do not introduce another visual pattern when an existing one fits. Use `DnsRewriteCard.vue` as the reference for simple DNS settings lists and `DialogWrapper.vue` for dialogs.
