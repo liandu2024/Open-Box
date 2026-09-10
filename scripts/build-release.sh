@@ -62,7 +62,8 @@ set -eu
 export COPYFILE_DISABLE=1
 
 NODE_VERSION="24.18.0"
-SINGBOX_VERSION="1.14.0"
+SINGBOX_VERSION="1.14.0-openbox-tcp1"
+SINGBOX_RELEASE_URL="https://github.com/liandu2024/Open-Box/releases/download/v0.1.158"
 
 # ---- 供应链固定:版本号旁边固定对应资产的 sha256,下载后(含缓存命中时)校验,
 # 不匹配就构建失败。避免"每次发版都重新下载却从不校验"的静默供应链口子——
@@ -71,12 +72,11 @@ SINGBOX_VERSION="1.14.0"
 NODE_SHA256_X64="b818a0c3857272329cad4d575abf49e5060215858c9c3015437366f8adc7b85d"
 NODE_SHA256_ARM64="b32d834975b3b38cf3226e220d3e1fcb5959047f0b2e184fffb709d9a69ed434"
 
-# sing-box 官方不单独发布 checksums 文件,这两个哈希是从
-# https://github.com/SagerNet/sing-box/releases/download/v${SINGBOX_VERSION}/ 下的
-# sing-box-${SINGBOX_VERSION}-linux-{amd64,arm64}-musl.tar.gz 现下现算的(键名用
-# sing-box 自己的架构命名 amd64/arm64,与下方 $SINGBOX_ARCH 对应)。
-SINGBOX_SHA256_AMD64="d2d6b4543d850269214ced70ffe41b13b1595baa1b6f9c016466abfba162c4d4"
-SINGBOX_SHA256_ARM64="1811c446a4957edee1b62ed2363607f8e99e1f7b6d88179719251d7ed5f30169"
+# 基于官方 v1.14.0 的 TCP DNS 兼容补丁,不是 SagerNet 官方版本。
+# scripts/singbox-tcp-dns-hotfix/ 记录补丁与完整 CGO/musl 构建方式。
+# 保留官方全部默认功能(含 Naive);固定自有发布附件的哈希,不能退回精简构建。
+SINGBOX_SHA256_AMD64="d8b9adbf1ad2a124c60d3a2bbfbc93cb4703288788489a3b1d1d0d1a994d8271"
+SINGBOX_SHA256_ARM64="1cd15570e18cc9e745480a5219a139784fea439ea283e722ba24f5bd73d13a61"
 
 # Alpine 的 musl 版 libstdc++ / libgcc(见文件头 Critical 1 说明)。latest-stable
 # 仓库里 x86_64 与 aarch64 目前恰好是同一个包版本,但两个架构的资产是分别构建的
@@ -302,7 +302,7 @@ log "DT_NEEDED 校验通过($ARCH): $(printf '%s' "$NODE_NEEDED" | tr '\n' ' ')"
 
 # ---- 6. 下载并解出 sing-box(注意 x64→amd64 映射;必须是 -musl 资产,见上)----
 SINGBOX_TARBALL="sing-box-${SINGBOX_VERSION}-linux-${SINGBOX_ARCH}-musl.tar.gz"
-SINGBOX_URL="https://github.com/SagerNet/sing-box/releases/download/v${SINGBOX_VERSION}/${SINGBOX_TARBALL}"
+SINGBOX_URL="${SINGBOX_RELEASE_URL}/${SINGBOX_TARBALL}"
 SINGBOX_CACHE="$CACHE_DIR/$SINGBOX_TARBALL"
 fetch_cached "$SINGBOX_URL" "$SINGBOX_CACHE" "sing-box $SINGBOX_VERSION ($SINGBOX_ARCH)" "$SINGBOX_SHA256"
 
@@ -317,6 +317,9 @@ if [ -z "$SINGBOX_BIN" ]; then
 fi
 cp "$SINGBOX_BIN" "$STAGE/bin/sing-box"
 chmod +x "$STAGE/bin/sing-box"
+SINGBOX_INNER_DIR=$(dirname "$SINGBOX_BIN")
+cp "$SINGBOX_INNER_DIR/LICENSE" "$STAGE/bin/sing-box.LICENSE"
+cp "$SINGBOX_INNER_DIR/BUILD-INFO.json" "$STAGE/bin/sing-box.BUILD-INFO.json"
 rm -rf "$SINGBOX_EXTRACT_DIR"
 
 # ---- 7. 构建期依赖守卫(P6 复审 Minor):确认 sing-box 二进制真正静态链接。

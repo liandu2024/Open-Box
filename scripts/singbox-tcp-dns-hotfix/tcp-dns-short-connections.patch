@@ -1,0 +1,27 @@
+--- a/dns/transport/tcp.go
++++ b/dns/transport/tcp.go
+@@ -92,11 +92,22 @@
+ }
+ 
+ func (t *TCPTransport) Exchange(ctx context.Context, message *mDNS.Msg) (*mDNS.Msg, error) {
+-	return t.multiplexer.Exchange(ctx, message)
++	// Open-Box compatibility: TCP DNS uses one connection per question.
++	// A proxy path can silently discard an idle TCP stream without EOF;
++	// reusing it then stalls the next uncached lookup until DNS timeout.
++	done := make(chan struct{})
++	var response *mDNS.Msg
++	var exchangeErr error
++	t.ExchangeAsync(ctx, message, func(result *mDNS.Msg, err error) {
++		response, exchangeErr = result, err
++		close(done)
++	})
++	<-done
++	return response, exchangeErr
+ }
+ 
+ func (t *TCPTransport) ExchangeAsync(ctx context.Context, message *mDNS.Msg, callback func(response *mDNS.Msg, err error)) {
+-	t.multiplexer.ExchangeAsync(ctx, message, callback)
++	go t.multiplexer.exchangeSingle(ctx, message, callback)
+ }
+ 
+ func setConnDeadline(ctx context.Context, conn net.Conn, needClose bool) func() {
