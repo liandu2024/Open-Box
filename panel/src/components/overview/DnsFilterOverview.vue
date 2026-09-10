@@ -4,9 +4,7 @@
     class="card bg-base-100 border-base-300/60 border p-4"
   >
     <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-      <h2 class="flex items-center gap-2 font-semibold">
-        <ShieldCheckIcon class="text-primary h-5 w-5" />{{ $t('dfOverview') }}
-      </h2>
+      <h2 class="font-semibold">{{ $t('dfOverview') }}</h2>
       <RouterLink
         to="/settings?tab=dns"
         class="text-primary text-xs hover:underline"
@@ -95,7 +93,6 @@
 import { fetchDnsFilterSummary, type DnsFilterSummary } from '@/api/openbox'
 import DnsSparkline from '@/components/dns/DnsSparkline.vue'
 import { showNotification } from '@/helper/notification'
-import { ShieldCheckIcon } from '@heroicons/vue/24/outline'
 import { onMounted, onUnmounted, ref } from 'vue'
 const data = ref<DnsFilterSummary | null>(null)
 let lastError = ''
