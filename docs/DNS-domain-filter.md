@@ -36,7 +36,7 @@ API 均继承面板登录鉴权:
 - `PUT /api/openbox/dns-filter`:保存设置。
 - `POST /api/openbox/dns-filter/apply`:`{update: true}` 表示先更新名单。
 - `GET /api/openbox/dns-filter/summary`:小时统计和排行。
-- `GET /api/openbox/dns-filter/records?search=&result=&page=1`:域名搜索、结果过滤、每页 50 条。
+- `GET /api/openbox/dns-filter/records?search=&result=&page=1&pageSize=20`:域名解析查询,支持域名搜索、结果过滤;默认每页 20 条,可选 50 / 100 条或自定义 1–1000 条。界面使用全局分页控件,接口返回校正后的页码和每页条数。
 
 ## 本次验证
 
