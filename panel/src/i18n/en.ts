@@ -1,4 +1,6 @@
+import { dnsFilterEn } from './dns-filter'
 const en = {
+  ...dnsFilterEn,
   overview: 'Overview',
   proxies: 'Proxies',
   rules: 'Rules',

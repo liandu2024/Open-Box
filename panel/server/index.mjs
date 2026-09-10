@@ -6,6 +6,9 @@ import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { fileURLToPath } from 'node:url'
 import { WebSocket, WebSocketServer } from 'ws'
+import { createDnsFilterObserver, createDnsFilterStore } from './system/dns-filter-observer.mjs'
+import { readFilterArtifact } from './system/dns-filter.mjs'
+import { registerDnsFilterRoutes } from './api/dns-filter.mjs'
 import { registerDeployRoutes } from './api/deploy.mjs'
 import { registerGroupRoutes } from './api/groups.mjs'
 import { registerNodeLatencyRoutes } from './api/node-latency.mjs'
@@ -1153,6 +1156,17 @@ const dnsRewriteSourceViaProxy = async (name) => {
   } catch { return null }
 }
 const dnsRewriteServer = createDnsRewriteServer({ store, fallbackServers: () => readSystemDns(obCtx).catch(() => []), sourceViaProxy: dnsRewriteSourceViaProxy, log: (m) => console.log(m) })
+const dnsFilterData = createDnsFilterStore(db)
+const dnsFilterObserver = createDnsFilterObserver({
+  data: dnsFilterData, readConfig: readDeployedConfig, getSecret: () => store.getClashSecret(),
+  getNames: () => Object.fromEntries((readFilterArtifact(store)?.blocks || []).map((b) => [b.tag, b.name])),
+  enabled: async () => {
+    try { return JSON.parse(await obCtx.readFile(`${obPaths.etc}/config.meta.json`)).dnsFilter?.enabled === true }
+    catch { return false }
+  },
+})
+const dnsFilterUpdater = registerDnsFilterRoutes(app, { store, ctx: obCtx, paths: obPaths, data: dnsFilterData, observer: dnsFilterObserver })
+let dnsFilterTimer
 registerServerRoutes(app, { store, ctx: obCtx })
 // 导出诊断包(后端设置那张卡片):版本、固件、内核状态、脱敏配置、最近日志,给 issue 用
 registerDiagnosticsRoutes(app, { store, ctx: obCtx, paths: obPaths })
@@ -1284,6 +1298,10 @@ const startServer = async () => {
   latencyScheduler.start()
   failoverManager.start()
   dnsRewriteServer.start().catch(() => {})
+  dnsFilterObserver.start()
+  clearInterval(dnsFilterTimer)
+  dnsFilterTimer = setInterval(() => dnsFilterUpdater.updateIfDue().catch((error) => console.log(`[dns-filter] 更新失败: ${error.message}`)), 60000)
+  dnsFilterTimer.unref?.()
   // 上一个面板进程留下的虚拟终端(模拟 LAN 终端测试用的网络命名空间)先拆掉,不留孤儿接口挂在网桥上
   teardownProbeNetns(obCtx).catch(() => {})
   if (server.listening) {
@@ -1334,6 +1352,8 @@ const shutdownServer = async () => {
   latencyScheduler.stop()
   failoverManager.stop()
   dnsRewriteServer.stop()
+  clearInterval(dnsFilterTimer)
+  dnsFilterObserver.stop()
   if (typeof db.close === 'function') {
     db.close()
   }

@@ -299,6 +299,7 @@ export enum SETTINGS_TAB {
   groups = 'groups',
   routing = 'routing',
   clients = 'clients',
+  dns = 'dns',
   kernel = 'kernel',
   share = 'share',
 }

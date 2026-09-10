@@ -1,6 +1,8 @@
 import type { LANG_MESSAGE } from './en'
+import { dnsFilterZh } from './dns-filter'
 
 const zh: LANG_MESSAGE = {
+  ...dnsFilterZh,
   overview: '概览',
   proxies: '代理',
   rules: '规则',

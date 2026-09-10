@@ -1,0 +1,126 @@
+<template>
+  <section
+    v-if="data?.enabled"
+    class="card bg-base-100 border-base-300/60 border p-4"
+  >
+    <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+      <h2 class="flex items-center gap-2 font-semibold">
+        <ShieldCheckIcon class="text-primary h-5 w-5" />{{ $t('dfOverview') }}
+      </h2>
+      <RouterLink
+        to="/settings?tab=dns"
+        class="text-primary text-xs hover:underline"
+        >{{ $t('dfManage') }}</RouterLink
+      >
+    </div>
+    <p class="text-base-content/50 mb-3 text-xs">
+      {{ $t('dfScope') }}
+      <span
+        v-if="!data.connected"
+        class="text-warning"
+        >{{ $t('dfDisconnected') }}</span
+      ><span
+        v-if="error"
+        class="text-error"
+        >{{ error }}</span
+      >
+    </p>
+    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div class="border-base-300/60 flex flex-col rounded-xl border p-4">
+        <div class="text-base-content/60 text-xs">{{ $t('dfQueries') }}</div>
+        <div class="my-2 text-3xl tabular-nums">{{ data.queries.toLocaleString() }}</div>
+        <DnsSparkline
+          :values="data.hourly.map((h) => h.queries)"
+          class="mt-auto text-sky-500"
+        />
+      </div>
+      <div class="border-base-300/60 flex flex-col rounded-xl border p-4">
+        <div class="text-base-content/60 flex justify-between text-xs">
+          <span>{{ $t('dfBlocked') }}</span
+          ><span class="text-orange-500"
+            >{{ data.queries ? ((data.blocked / data.queries) * 100).toFixed(1) : '0' }}%</span
+          >
+        </div>
+        <div class="my-2 text-3xl text-orange-500 tabular-nums">
+          {{ data.blocked.toLocaleString() }}
+        </div>
+        <DnsSparkline
+          :values="data.hourly.map((h) => h.blocked)"
+          class="mt-auto text-orange-500"
+        />
+      </div>
+      <div class="border-base-300/60 rounded-xl border p-4">
+        <div class="text-base-content/60 mb-3 text-xs">{{ $t('dfTop') }}</div>
+        <div
+          v-if="!data.topDomains.length"
+          class="text-base-content/40 py-6 text-center text-xs"
+        >
+          {{ $t('dfNoBlocks') }}
+        </div>
+        <RouterLink
+          v-for="domain in data.topDomains"
+          :key="domain.domain"
+          :to="{ path: '/settings', query: { tab: 'dns', dnsDomain: domain.domain } }"
+          class="mb-2 block text-xs"
+          ><div class="flex justify-between gap-2">
+            <span
+              class="truncate"
+              :title="domain.domain"
+              >{{ domain.domain }}</span
+            ><span class="tabular-nums">{{ domain.count.toLocaleString() }}</span>
+          </div>
+          <div class="bg-base-200 mt-1 h-1 rounded-full">
+            <div
+              class="h-1 rounded-full bg-orange-400/70"
+              :style="{ width: `${(domain.count / Math.max(1, data.topDomains[0].count)) * 100}%` }"
+            /></div
+        ></RouterLink>
+      </div>
+      <div class="border-base-300/60 flex flex-col rounded-xl border p-4">
+        <div class="text-base-content/60 text-xs">{{ $t('dfAverage') }}</div>
+        <div class="my-2 text-3xl tabular-nums">
+          {{ data.averageMs === null ? '—' : Math.round(data.averageMs)
+          }}<span
+            v-if="data.averageMs !== null"
+            class="text-base-content/50 ml-1 text-sm"
+            >ms</span
+          >
+        </div>
+        <DnsSparkline
+          :values="data.hourly.map((h) => (h.timed ? h.elapsed / h.timed : 0))"
+          class="mt-auto text-emerald-500"
+        />
+        <div class="text-base-content/40 mt-1 text-[10px]">{{ $t('dfTimingHint') }}</div>
+      </div>
+    </div>
+  </section>
+</template>
+<script setup lang="ts">
+import { fetchDnsFilterSummary, type DnsFilterSummary } from '@/api/openbox'
+import DnsSparkline from '@/components/dns/DnsSparkline.vue'
+import { ShieldCheckIcon } from '@heroicons/vue/24/outline'
+import { onMounted, onUnmounted, ref } from 'vue'
+const data = ref<DnsFilterSummary | null>(null),
+  error = ref('')
+let timer: ReturnType<typeof setInterval>,
+  loading = false
+const load = async () => {
+  if (loading) return
+  loading = true
+  try {
+    data.value = await fetchDnsFilterSummary()
+    error.value = ''
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    loading = false
+  }
+}
+onMounted(() => {
+  load()
+  timer = setInterval(() => {
+    if (!document.hidden) load()
+  }, 10000)
+})
+onUnmounted(() => clearInterval(timer))
+</script>

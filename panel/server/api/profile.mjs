@@ -1,4 +1,5 @@
 import express from 'express'
+import { validateDnsFilter } from '../engine/dns-filter.mjs'
 import { DNS_REWRITE_DEFAULTS, validateDnsRewrite } from '../engine/dns-rewrite.mjs'
 import { RESERVED_PORTS, SERVER_PROTOCOLS, SS_METHODS } from '../engine/servers.mjs'
 import { isIpOrCidr, isMac } from '../engine/client-routes.mjs'
@@ -46,6 +47,10 @@ const isIconScale = (v) => Number.isInteger(v) && Math.abs(v) <= ICON_SCALE_LIMI
 
 export const validateProfilePatch = (patch, { reservedNames = [] } = {}) => {
   if (!isPlainObject(patch)) return 'patch must be an object'
+  if (isPlainObject(patch.dns) && 'filter' in patch.dns) {
+    const error = validateDnsFilter(patch.dns.filter)
+    if (error) return error
+  }
 
   if ('ipv6' in patch && !isBoolean(patch.ipv6)) {
     return 'ipv6 must be a boolean'

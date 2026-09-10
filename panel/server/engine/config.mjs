@@ -8,6 +8,7 @@ import { normalizeClientRoutes } from './client-routes.mjs'
 import { buildDnsWithResolvers, dnsFakeIpEnabled, ipv6InTun, ipv6ProxyMode, FAKEIP_V6 } from './dns.mjs'
 import { collectDirectHosts } from './direct-hosts.mjs'
 import { cidrsOverlap, parseCidr, subtractCidrs } from '../system/local-subnets.mjs'
+import { buildFilterConfig } from './dns-filter.mjs'
 
 // 面板专用回环入站的端口(见下方 inbounds 注释)
 export const PANEL_INBOUND_PORT = 7891
@@ -71,7 +72,7 @@ export const DNSMASQ_OUTBOUND_TAG = 'dnsmasq'
 // 系统解析器,会绕回 dnsmasq 形成死循环。预览/测试不传就回落到档案里填的那台。
 // regionGroups 参数已经退役(以前按国家自动分的 urltest 组 + 一个 PROXY 聚合 selector,
 // 那是节点组功能出现之前的东西);留着这个参数名只是让老调用方不报错。
-export const buildConfig = ({ nodes, profile, userGroups, systemDns, localSubnets = [], directHostCidrs = [], subscriptions = [], ruleLists = {}, cacheFilePath = '/opt/open-box/data/cache.db', selections = {}, tlsCert = { certPath: '/opt/open-box/etc/certs/server.crt', keyPath: '/opt/open-box/etc/certs/server.key' }, nativeBypass }) => {
+export const buildConfig = ({ nodes, profile, userGroups, systemDns, localSubnets = [], directHostCidrs = [], subscriptions = [], ruleLists = {}, cacheFilePath = '/opt/open-box/data/cache.db', selections = {}, tlsCert = { certPath: '/opt/open-box/etc/certs/server.crt', keyPath: '/opt/open-box/etc/certs/server.key' }, nativeBypass, dnsFilter }) => {
   // 订阅和节点站点直连(默认开):见 engine/direct-hosts.mjs
   // directHostCidrs:部署时把节点域名解析出来的 IP(见 system/resolve-hosts.mjs),让按裸 IP
   // 直连节点服务器的客户端(SSH 等)也能命中直连规则;预览接口没有这份,只按域名匹配。
@@ -155,7 +156,8 @@ export const buildConfig = ({ nodes, profile, userGroups, systemDns, localSubnet
   // 预解析(engine/routing.mjs 的 preResolveRules)本轮不进正式配置:收尾验收复现了它的回归——兜底那条无条件
   // resolve 会先于排在 IP 规则前面的域名规则执行,直连解析器对只有节点认得的域名回 NXDOMAIN 时连接被终止。
   // 解析器映射先不交给路由(留待后续方案验证),以域名进内核的连接仍按"没有真实目标 IP"处理
-  const { dns } = buildDnsWithResolvers(profile, { systemDns, groupTags, builtin, selections, directHosts, ruleLists, clientRoutes, knownOutbounds })
+  const filtering = buildFilterConfig(profile, dnsFilter)
+  const { dns } = buildDnsWithResolvers(profile, { systemDns, groupTags, builtin, selections, directHosts, ruleLists, clientRoutes, knownOutbounds, filterRules: filtering.rules })
   const { route } = buildRoute(sanitizedRouting, profile.rulesetDir, {
     dnsMode, directTag: builtin.direct, blockTag: builtin.block, directHosts, rejectV6For,
     tunCidrs: ipv6InTun(profile) ? [TUN_V4_NET, TUN_V6_NET] : [TUN_V4_NET],
@@ -165,6 +167,7 @@ export const buildConfig = ({ nodes, profile, userGroups, systemDns, localSubnet
     // 规则集链接各自有没有域名 / IP 那份 .srs(见 system/rule-lists.mjs)
     ruleLists,
   })
+  if (filtering.sets.length) route.rule_set = [...(route.rule_set || []), ...filtering.sets]
 
   // IPv6「不进内核」模式(engine/dns.mjs 的 ipv6ProxyMode = bypass):tun 不给 v6 地址,auto_route 就不接管 v6,
   // 局域网的 v6 按系统路由直接从 WAN 出去;防火墙那条 v6 拦截只在 ipv6 关着时加(system/deploy.mjs)

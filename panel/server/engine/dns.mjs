@@ -115,10 +115,11 @@ export const buildDnsWithResolvers = (profile, options = {}) => {
   // DNS 重写(engine/dns-rewrite.mjs):命中源域名的查询交给面板进程在 127.0.0.1:7854 上开的重写服务,排在所有
   // 规则最前面——先定命中哪条重写,再谈别的
   const rewriteRules = rewriteDnsRules(normalizeDnsRewrite(profile.dns).rules)
+  const filterRules = options.filterRules || []
   const rewriteServers = rewriteRules.length ? [rewriteDnsServer()] : []
   if (!profile.dns.split) {
     const only = { servers: [directServer, ...rewriteServers, ...localServers], final: 'dns-direct', strategy, reverse_mapping: true }
-    if (rewriteRules.length || localRules.length) only.rules = [...rewriteRules, ...localRules]
+    if (rewriteRules.length || localRules.length || filterRules.length) only.rules = [...rewriteRules, ...localRules, ...filterRules]
     return { dns: only, resolvers }
   }
 
@@ -131,7 +132,7 @@ export const buildDnsWithResolvers = (profile, options = {}) => {
   // 规则顺序和连接侧(routing.mjs)对齐:DNS 重写 → 本地主机名 → 前置自定义分流 → 订阅 / 节点站点直连 →
   // 终端分流 → 广告拦截 → 站点集 → 兜底。以前直连站点和广告拦截排在前置自定义分流前面,
   // 用户明确放行的域名会先被广告规则拒掉(审核 B4)。
-  const rules = [...rewriteRules, ...localRules]
+  const rules = [...rewriteRules, ...localRules, ...filterRules]
 
   // 每个站点集的域名怎么解析,看它此刻实际走哪:
   //   · 走直连 → dns-direct(本地/直连解析,国内站点才拿得到就近的 CDN 地址)

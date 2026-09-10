@@ -1,3 +1,5 @@
+import { prepareDnsFilter, readFilterArtifact } from '../system/dns-filter.mjs'
+import { filterForwardPlan } from '../engine/dns-filter.mjs'
 import { randomBytes } from 'node:crypto'
 import { activeNodes } from './subscriptions.mjs'
 import { readSystemDns } from '../system/resolv.mjs'
@@ -145,7 +147,7 @@ export const firstLayerChanged = async (ctx, paths, store, selections) => {
     if (prev.dnsMode === 'dnsmasq') {
       // 这里只能算到计划阶段(规则集要到部署时才展开),所以和元数据里计划阶段的模式比;老元数据
       // 没有这个字段时退回和实际模式比
-      const forward = dnsmasqForwardPlan(profile.routing, members, builtin, selections || {}, { rewriteDomains: rewriteForwardDomains(normalizeDnsRewrite(profile.dns).rules) })
+      const forward = filterForwardPlan(profile, dnsmasqForwardPlan(profile.routing, members, builtin, selections || {}, { rewriteDomains: rewriteForwardDomains(normalizeDnsRewrite(profile.dns).rules) }))
       if (forward.mode !== (prev.dnsForwardPlanned || prev.dnsForward)) return true
     }
     return false
@@ -238,6 +240,7 @@ export const buildCurrentConfig = (store, systemDns, { cacheFilePath, selections
     // 规则集链接的形状表:每条链接编成了域名 / IP 哪几份 .srs(见 system/rule-lists.mjs)
     ruleLists,
     nativeBypass,
+    dnsFilter: readFilterArtifact(store),
   })
   // 故障转移的运行映射(父组 / 页签 / 有效节点 / 子组 tag / 检测参数):和配置同一次生成,写进 config.meta.json
   // 给后台管理器和界面用
@@ -350,7 +353,7 @@ const CANCELLED = { ok: false, stage: 'cancelled', message: '部署被「停止�
 // 每次部署一个序号:后台盯晚崩溃的那段发现已经有新的部署开始就退出,不和它抢
 let deploySerial = 0
 
-const runDeployInner = async ({ store, ctx, paths, fetchImpl = globalThis.fetch, lookup, isCancelled = () => false, lateWatch = true }) => {
+const runDeployInner = async ({ store, ctx, paths, fetchImpl = globalThis.fetch, lookup, isCancelled = () => false, lateWatch = true, refreshDnsFilter = false }) => {
   let result
   const startedAt = Date.now()
   const serial = ++deploySerial
@@ -362,6 +365,7 @@ const runDeployInner = async ({ store, ctx, paths, fetchImpl = globalThis.fetch,
     const [systemDns, localSubnets] = await Promise.all([readSystemDns(ctx), readLocalSubnets(ctx)])
     const directHostCidrs = await resolveDirectHostCidrs(store, systemDns, lookup)
     const selections = resolveSelections(store, await fetchSelections(fetchImpl, store.getClashSecret()))
+    await prepareDnsFilter({ store, ctx, paths, force: refreshDnsFilter })
     // 规则集链接要排在生成配置之前:拉回来才知道每条名单编成了域名 / IP 哪几份 .srs,
     // 路由规则和 DNS 规则要凭这个决定引用哪几份(见 engine/routing-model.mjs)。
     // 这一步只往 rulesetDir 里写文件,失败原地返回,不动系统。

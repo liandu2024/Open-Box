@@ -1,3 +1,4 @@
+import { filterForwardPlan, filterKey, filterSettings } from '../engine/dns-filter.mjs'
 import { detectConflicts } from './conflicts.mjs'
 import { validateConfigObject, attributeBadNodes } from './validate.mjs'
 import { restartService, stopService, serviceStatus } from './service.mjs'
@@ -161,7 +162,7 @@ export const deployConfig = async (ctx, paths, { config, profile, userGroups, fe
     // 计划阶段(纯函数)→ 展开阶段(把走代理的规则集解码成域名,展不开就降成 all)→ 应用阶段
     // (可能再降级)。元数据记的是最终实际执行的那份;计划阶段的模式另存一份,选择同步时按同口径比
     const dnsRewrite = normalizeDnsRewrite(profile.dns).rules
-    const dnsPlanned = dnsmasqForwardPlan(profile.routing, policyMembers, builtin, selections || {}, { rewriteDomains: rewriteForwardDomains(dnsRewrite) })
+    const dnsPlanned = filterForwardPlan(profile, dnsmasqForwardPlan(profile.routing, policyMembers, builtin, selections || {}, { rewriteDomains: rewriteForwardDomains(dnsRewrite) }))
     let dnsForward = dnsMode === 'dnsmasq' ? await expandDnsForward(ctx, paths, dnsPlanned) : dnsPlanned
     const bypassPlanned = nativeBypassPlan(profile.routing, { members: policyMembers, builtin, selections: selections || {}, clientRoutes, fakeIp: dnsFakeIpEnabled(profile), dnsMode })
     // 部署入口(api/deploy-runner.mjs)会带一份做过重叠核对的结论;没带就按纯函数的保守结论
@@ -173,6 +174,7 @@ export const deployConfig = async (ctx, paths, { config, profile, userGroups, fe
         configMetaPath(paths),
         JSON.stringify({
           dnsMode,
+          dnsFilter: { enabled: profile.dns?.filter?.enabled === true, key: filterKey(filterSettings(profile)) },
           autoRedirect,
           generatedAt: new Date().toISOString(),
           // 这份 dns.rules 是按"谁走直连、谁走代理"定死的,把当时的判断和成员表一并存下来:

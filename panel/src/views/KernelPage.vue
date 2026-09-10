@@ -21,14 +21,6 @@
 
         <!-- 内核参数:DNS 劫持、直连、IPv6、测速地址。改动写进档案,重启内核后生效。 -->
         <template v-if="profile">
-          <DnsModeCard
-            :profile="profile"
-            :patch-profile="patchProfile"
-          />
-          <DnsRewriteCard
-            :profile="profile"
-            :patch-profile="patchProfile"
-          />
           <NodeDirectCard
             :profile="profile"
             :patch-profile="patchProfile"
@@ -74,8 +66,6 @@
 import { refreshServiceStatus } from '@/composables/kernelService'
 import type { OpenboxKernelVersion, OpenboxProfile, OpenboxServiceStatus } from '@/api/openbox'
 import { fetchKernelVersion, fetchProfile, saveProfile } from '@/api/openbox'
-import DnsModeCard from '@/components/kernel/DnsModeCard.vue'
-import DnsRewriteCard from '@/components/kernel/DnsRewriteCard.vue'
 import GeoUpdateCard from '@/components/kernel/GeoUpdateCard.vue'
 import KernelServiceCard from '@/components/kernel/KernelServiceCard.vue'
 import NodeDirectCard from '@/components/kernel/NodeDirectCard.vue'

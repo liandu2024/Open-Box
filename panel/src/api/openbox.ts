@@ -98,6 +98,7 @@ export interface OpenboxDnsRewriteRule {
   note?: string
 }
 export interface OpenboxProfileDns {
+  filter?: DnsFilterSettings
   split?: boolean
   mode?: OpenboxDnsMode
   direct?: string
@@ -107,6 +108,28 @@ export interface OpenboxProfileDns {
   // DNS 重写:initialized 记「默认规则补过了」,rules 是整份规则表(空数组 = 用户不要任何重写)
   rewrite?: { initialized?: number; rules: OpenboxDnsRewriteRule[] }
 }
+
+export interface DnsFilterList { id: string; name: string; url: string; enabled: boolean }
+export interface DnsFilterSettings { enabled: boolean; lists: DnsFilterList[]; allowDomains: string[] }
+export interface DnsFilterStatus {
+  settings: DnsFilterSettings
+  lists: Record<string, { count: number; unsupported: number; unsupportedExamples?: string[]; updatedAt: number; error?: string }>
+  pending: boolean
+  applied: { enabled: boolean; key: string } | null
+  busy: boolean
+  connected: boolean
+}
+export interface DnsFilterSummary {
+  enabled: boolean; connected: boolean; queries: number; blocked: number; averageMs: number | null
+  hourly: { hour: number; queries: number; blocked: number; elapsed: number; timed: number }[]
+  topDomains: { domain: string; count: number }[]
+}
+export interface DnsFilterRecord { id: number; at: number; domain: string; qtype: string; source: string; result: string; list: string; elapsed: number | null }
+export const fetchDnsFilter = () => requestJson<DnsFilterStatus>('/api/openbox/dns-filter')
+export const saveDnsFilter = (settings: DnsFilterSettings) => requestJson('/api/openbox/dns-filter', { method: 'PUT', body: JSON.stringify(settings) })
+export const applyDnsFilter = (update = false) => requestJson<DnsFilterStatus>('/api/openbox/dns-filter/apply', { method: 'POST', body: JSON.stringify({ update }) })
+export const fetchDnsFilterSummary = () => requestJson<DnsFilterSummary>('/api/openbox/dns-filter/summary')
+export const fetchDnsFilterRecords = (search: string, result: string, page: number) => requestJson<{ rows: DnsFilterRecord[]; total: number; page: number }>(`/api/openbox/dns-filter/records?${new URLSearchParams({ search, result, page: String(page) })}`)
 
 // The backend deep-merges patches onto this shape (see server/store/openbox-store.mjs), so a
 // profile is always fully populated — no field is ever missing on GET.
