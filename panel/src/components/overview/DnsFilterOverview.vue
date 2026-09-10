@@ -19,10 +19,6 @@
         v-if="!data.connected"
         class="text-warning"
         >{{ $t('dfDisconnected') }}</span
-      ><span
-        v-if="error"
-        class="text-error"
-        >{{ error }}</span
       >
     </p>
     <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -98,10 +94,11 @@
 <script setup lang="ts">
 import { fetchDnsFilterSummary, type DnsFilterSummary } from '@/api/openbox'
 import DnsSparkline from '@/components/dns/DnsSparkline.vue'
+import { showNotification } from '@/helper/notification'
 import { ShieldCheckIcon } from '@heroicons/vue/24/outline'
 import { onMounted, onUnmounted, ref } from 'vue'
-const data = ref<DnsFilterSummary | null>(null),
-  error = ref('')
+const data = ref<DnsFilterSummary | null>(null)
+let lastError = ''
 let timer: ReturnType<typeof setInterval>,
   loading = false
 const load = async () => {
@@ -109,9 +106,17 @@ const load = async () => {
   loading = true
   try {
     data.value = await fetchDnsFilterSummary()
-    error.value = ''
+    lastError = ''
   } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e)
+    const message = e instanceof Error ? e.message : String(e)
+    if (message !== lastError)
+      showNotification({
+        content: 'routeTestRequestFailed',
+        params: { message },
+        key: 'dns-filter-overview',
+        type: 'alert-error',
+      })
+    lastError = message
   } finally {
     loading = false
   }

@@ -21,14 +21,6 @@
             />{{ $t('dfApply') }}
           </button>
         </div>
-        <p
-          v-if="message"
-          class="mt-3 text-sm"
-          :class="failed ? 'text-error' : 'text-success'"
-          role="status"
-        >
-          {{ message }}
-        </p>
       </div>
       <template v-if="profile && status">
         <DnsModeCard
@@ -72,40 +64,47 @@ import DnsFilterRecords from '@/components/dns/DnsFilterRecords.vue'
 import DnsModeCard from '@/components/kernel/DnsModeCard.vue'
 import DnsRewriteCard from '@/components/kernel/DnsRewriteCard.vue'
 import { usePaddingForViews } from '@/composables/paddingViews'
+import { showNotification } from '@/helper/notification'
 import { onMounted, onUnmounted, ref } from 'vue'
-import { useI18n } from 'vue-i18n'
 const { padding } = usePaddingForViews({ offsetTop: 0, offsetBottom: 0 })
-const { t } = useI18n()
 const profile = ref<OpenboxProfile | null>(null)
 const status = ref<DnsFilterStatus | null>(null)
-const busy = ref(false),
-  message = ref(''),
-  failed = ref(false)
+const busy = ref(false)
 const load = async () => {
   try {
     ;[profile.value, status.value] = await Promise.all([fetchProfile(), fetchDnsFilter()])
   } catch (error) {
-    message.value = String(error)
-    failed.value = true
+    showNotification({
+      content: 'routeTestRequestFailed',
+      params: { message: error instanceof Error ? error.message : String(error) },
+      key: 'dns-settings-load',
+      type: 'alert-error',
+    })
   }
 }
 const patchProfile = async (patch: Record<string, unknown>) => {
   profile.value = await saveProfile(patch)
-  message.value = t('dfSaved')
-  failed.value = false
   return profile.value
 }
 const apply = async (update: boolean) => {
   busy.value = true
-  message.value = t(update ? 'dfUpdating' : 'dfApplying')
-  failed.value = false
+  showNotification({
+    content: update ? 'dfUpdating' : 'dfApplying',
+    key: 'dns-settings-apply',
+    type: 'alert-info',
+    timeout: 0,
+  })
   try {
     await applyDnsFilter(update)
     await load()
-    message.value = t('dfApplied')
+    showNotification({ content: 'dfApplied', key: 'dns-settings-apply', type: 'alert-success' })
   } catch (error) {
-    message.value = error instanceof Error ? error.message : String(error)
-    failed.value = true
+    showNotification({
+      content: 'routeTestRequestFailed',
+      params: { message: error instanceof Error ? error.message : String(error) },
+      key: 'dns-settings-apply',
+      type: 'alert-error',
+    })
   } finally {
     busy.value = false
   }

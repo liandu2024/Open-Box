@@ -45,13 +45,6 @@
       </div>
       <p class="text-base-content/60 text-xs leading-relaxed">{{ $t('dfDescription') }}</p>
       <p
-        v-if="notice"
-        role="status"
-        :class="error ? 'text-error' : 'text-success'"
-      >
-        {{ notice }}
-      </p>
-      <p
         v-if="!status.settings.lists.length"
         class="text-base-content/50 text-xs"
       >
@@ -127,27 +120,43 @@
           </button>
         </div>
       </div>
-      <details class="border-base-300/50 border-t pt-3">
-        <summary class="cursor-pointer font-medium">
+      <div class="border-base-300/50 border-t pt-3">
+        <button
+          type="button"
+          class="inline-flex cursor-pointer items-center gap-1.5 font-medium"
+          :aria-expanded="allowExpanded"
+          aria-controls="dns-filter-allow-domains"
+          @click="allowExpanded = !allowExpanded"
+        >
+          <ChevronDownIcon
+            class="h-4 w-4 transition-transform"
+            :class="allowExpanded && 'rotate-180'"
+          />
           {{ $t('dfAllow') }}
           <span class="text-base-content/50">({{ status.settings.allowDomains.length }})</span>
-        </summary>
-        <p class="text-base-content/60 my-2 text-xs">{{ $t('dfAllowHint') }}</p>
-        <textarea
-          v-model="allowText"
-          class="textarea w-full font-mono text-xs"
-          rows="3"
-          :aria-label="$t('dfAllow')"
-          placeholder="example.com&#10;*.example.com"
-        />
-        <button
-          class="btn btn-sm mt-2"
-          :disabled="busy || saving"
-          @click="saveAllow"
-        >
-          {{ $t('dfSaveAllow') }}
         </button>
-      </details>
+        <div
+          v-show="allowExpanded"
+          id="dns-filter-allow-domains"
+        >
+          <p class="text-base-content/60 my-2 text-xs">{{ $t('dfAllowHint') }}</p>
+          <textarea
+            v-model="allowText"
+            class="textarea w-full font-mono text-xs"
+            rows="3"
+            :aria-label="$t('dfAllow')"
+            placeholder="example.com&#10;*.example.com"
+          />
+          <button
+            type="button"
+            class="btn btn-sm mt-2"
+            :disabled="busy || saving"
+            @click="saveAllow"
+          >
+            {{ $t('dfSaveAllow') }}
+          </button>
+        </div>
+      </div>
     </div>
     <DialogWrapper
       v-model="showEditor"
@@ -179,12 +188,6 @@
             required
           />
         </label>
-        <p
-          v-if="error && notice"
-          class="text-error text-xs"
-        >
-          {{ notice }}
-        </p>
         <div class="flex justify-end gap-2">
           <button
             class="btn btn-sm"
@@ -215,12 +218,6 @@
           <p class="text-sm">{{ deleting?.name }}</p>
           <p class="text-base-content/60 font-mono text-xs break-all">{{ deleting?.url }}</p>
         </div>
-        <p
-          v-if="error && notice"
-          class="text-error text-xs"
-        >
-          {{ notice }}
-        </p>
         <div class="flex justify-end gap-2">
           <button
             type="button"
@@ -251,26 +248,18 @@ import {
   type DnsFilterStatus,
 } from '@/api/openbox'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
-import { PencilSquareIcon, TrashIcon } from '@heroicons/vue/24/outline'
+import { showNotification } from '@/helper/notification'
+import { ChevronDownIcon, PencilSquareIcon, TrashIcon } from '@heroicons/vue/24/outline'
 import { ref, watch } from 'vue'
-import { useI18n } from 'vue-i18n'
 const props = defineProps<{ status: DnsFilterStatus; busy: boolean }>()
 const emit = defineEmits<{ saved: []; update: [] }>()
-const { t } = useI18n()
-const saving = ref(false),
-  error = ref(false),
-  notice = ref(''),
-  allowText = ref('')
+const saving = ref(false)
+const allowText = ref('')
+const allowExpanded = ref(false)
 const showEditor = ref(false)
 const showDelete = ref(false)
 const deleting = ref<DnsFilterList | null>(null)
 const editing = ref<DnsFilterList | null>(null)
-watch(
-  () => props.status.pending,
-  (pending) => {
-    if (!pending && !error.value) notice.value = ''
-  },
-)
 watch(
   () => props.status.settings.allowDomains.join('\n'),
   (v) => {
@@ -280,15 +269,18 @@ watch(
 )
 const save = async (settings: DnsFilterSettings) => {
   saving.value = true
-  error.value = false
   try {
     await saveDnsFilter(settings)
-    notice.value = t('dfSaved')
+    showNotification({ content: 'dfSaved', key: 'dns-filter-save', type: 'alert-success' })
     emit('saved')
     return true
   } catch (e) {
-    notice.value = e instanceof Error ? e.message : String(e)
-    error.value = true
+    showNotification({
+      content: 'routingSaveFailed',
+      params: { message: e instanceof Error ? e.message : String(e) },
+      key: 'dns-filter-save',
+      type: 'alert-error',
+    })
     return false
   } finally {
     saving.value = false
@@ -303,7 +295,6 @@ const changeList = (list: DnsFilterList, patch: Partial<DnsFilterList>) =>
   })
 const askDelete = (list: DnsFilterList) => {
   deleting.value = list
-  notice.value = ''
   showDelete.value = true
 }
 const confirmDelete = async () => {
@@ -326,7 +317,6 @@ const edit = (list?: DnsFilterList) => {
         url: '',
         enabled: true,
       }
-  notice.value = ''
   showEditor.value = true
 }
 const saveEdit = async () => {

@@ -42,12 +42,6 @@
       >
         {{ $t(!enabled ? 'dfCollectDisabled' : 'dfDisconnected') }}
       </p>
-      <p
-        v-if="error"
-        class="text-error"
-      >
-        {{ error }}
-      </p>
       <div class="app-plain-table overflow-x-auto">
         <table class="table-sm table">
           <thead>
@@ -134,6 +128,7 @@
 </template>
 <script setup lang="ts">
 import { fetchDnsFilterRecords, type DnsFilterRecord } from '@/api/openbox'
+import { showNotification } from '@/helper/notification'
 import { ArrowPathIcon } from '@heroicons/vue/24/outline'
 import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -145,14 +140,12 @@ const search = ref(String(route.query.dnsDomain || '')),
   result = ref('blocked'),
   page = ref(1),
   total = ref(0),
-  loading = ref(false),
-  error = ref('')
+  loading = ref(false)
 const rows = ref<DnsFilterRecord[]>([])
 let serial = 0
 const load = async () => {
   const id = ++serial
   loading.value = true
-  error.value = ''
   try {
     const data = await fetchDnsFilterRecords(search.value, result.value, page.value)
     if (id === serial) {
@@ -160,7 +153,13 @@ const load = async () => {
       total.value = data.total
     }
   } catch (e) {
-    if (id === serial) error.value = e instanceof Error ? e.message : String(e)
+    if (id === serial)
+      showNotification({
+        content: 'routeTestRequestFailed',
+        params: { message: e instanceof Error ? e.message : String(e) },
+        key: 'dns-filter-records',
+        type: 'alert-error',
+      })
   } finally {
     if (id === serial) loading.value = false
   }
@@ -173,7 +172,13 @@ const resultLabel = (r: string) =>
     unknown: t('dfUnknown'),
     policy: t('dfPolicy'),
   })[r] || r.toUpperCase()
-const searchRecords = () => { page.value = 1; load() }
-const turnPage = (delta: number) => { page.value += delta; load() }
+const searchRecords = () => {
+  page.value = 1
+  load()
+}
+const turnPage = (delta: number) => {
+  page.value += delta
+  load()
+}
 onMounted(load)
 </script>
