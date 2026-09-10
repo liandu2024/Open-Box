@@ -3,22 +3,23 @@
     v-if="data?.enabled"
     class="card bg-base-100 border-base-300/60 border p-4"
   >
-    <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-      <h2 class="font-semibold">{{ $t('dfOverview') }}</h2>
+    <div class="mb-3 flex flex-wrap items-start justify-between gap-2">
+      <div>
+        <h2 class="text-base font-semibold">{{ $t('dfOverview') }}</h2>
+        <p class="text-base-content/60 text-xs">
+          {{ $t('dfScope') }}
+          <span
+            v-if="!data.connected"
+            class="text-warning"
+          >{{ $t('dfDisconnected') }}</span>
+        </p>
+      </div>
       <RouterLink
         to="/settings?tab=dns"
         class="text-primary text-xs hover:underline"
         >{{ $t('dfManage') }}</RouterLink
       >
     </div>
-    <p class="text-base-content/50 mb-3 text-xs">
-      {{ $t('dfScope') }}
-      <span
-        v-if="!data.connected"
-        class="text-warning"
-        >{{ $t('dfDisconnected') }}</span
-      >
-    </p>
     <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
       <div class="border-base-300/60 flex flex-col rounded-xl border p-4">
         <div class="text-base-content/60 text-xs">{{ $t('dfQueries') }}</div>

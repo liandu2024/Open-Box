@@ -103,6 +103,15 @@
           <button
             type="button"
             class="btn btn-ghost btn-square btn-xs"
+            :aria-label="`${$t('dfPreview')} ${list.name}`"
+            :title="$t('dfPreview')"
+            @click="preview(list)"
+          >
+            <EyeIcon class="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            class="btn btn-ghost btn-square btn-xs"
             :aria-label="`${$t('dfEdit')} ${list.name}`"
             :disabled="busy || saving"
             @click="edit(list)"
@@ -159,7 +168,8 @@
       </div>
     </div>
     <DialogWrapper
-      v-model="showEditor"
+      :model-value="showEditor && !showPreview"
+      @update:model-value="showEditor = !!$event"
       :title="$t('dfEditList')"
       box-class="w-full max-w-lg"
     >
@@ -179,14 +189,26 @@
         </label>
         <label class="flex flex-col gap-1">
           <span class="text-xs font-medium">{{ $t('dfUrl') }}</span>
-          <input
-            v-model="editing.url"
-            class="input input-sm w-full font-mono"
-            type="url"
-            maxlength="2048"
-            placeholder="https://example.com/filter.txt"
-            required
-          />
+          <div class="relative">
+            <input
+              v-model="editing.url"
+              class="input input-sm w-full pr-8 font-mono"
+              type="url"
+              maxlength="2048"
+              placeholder="https://example.com/filter.txt"
+              required
+            />
+            <button
+              type="button"
+              class="btn btn-ghost btn-square btn-xs absolute top-1/2 right-1 -translate-y-1/2"
+              :aria-label="$t('dfPreview')"
+              :title="$t('dfPreview')"
+              :disabled="!editing.url.trim()"
+              @click="preview(editing)"
+            >
+              <EyeIcon class="h-4 w-4" />
+            </button>
+          </div>
         </label>
         <div class="flex justify-end gap-2">
           <button
@@ -209,6 +231,11 @@
         </div>
       </form>
     </DialogWrapper>
+    <DnsFilterPreviewDialog
+      v-if="showPreview && previewList"
+      v-model="showPreview"
+      :list="previewList"
+    />
     <DialogWrapper
       v-model="showDelete"
       :title="$t('dfConfirmDelete')"
@@ -248,8 +275,9 @@ import {
   type DnsFilterStatus,
 } from '@/api/openbox'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
+import DnsFilterPreviewDialog from '@/components/dns/DnsFilterPreviewDialog.vue'
 import { showNotification } from '@/helper/notification'
-import { ChevronDownIcon, PencilSquareIcon, TrashIcon } from '@heroicons/vue/24/outline'
+import { ChevronDownIcon, EyeIcon, PencilSquareIcon, TrashIcon } from '@heroicons/vue/24/outline'
 import { ref, watch } from 'vue'
 const props = defineProps<{ status: DnsFilterStatus; busy: boolean }>()
 const emit = defineEmits<{ saved: []; update: [] }>()
@@ -257,6 +285,12 @@ const saving = ref(false)
 const allowText = ref('')
 const allowExpanded = ref(false)
 const showEditor = ref(false)
+const showPreview = ref(false)
+const previewList = ref<DnsFilterList | null>(null)
+const preview = (list: DnsFilterList) => {
+  previewList.value = { ...list, url: list.url.trim() }
+  showPreview.value = true
+}
 const showDelete = ref(false)
 const deleting = ref<DnsFilterList | null>(null)
 const editing = ref<DnsFilterList | null>(null)

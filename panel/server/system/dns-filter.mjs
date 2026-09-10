@@ -56,6 +56,9 @@ const guardedFetch = async (input, init) => {
   throw new Error('名单重定向次数过多')
 }
 
+export const fetchDnsFilterList = async (url, fetchImpl = guardedFetch) =>
+  (await fetchRuleList(fetchImpl, url)).toString('utf8')
+
 // Content-addressed files: a failed download / compile never changes a running rule set.
 export const prepareDnsFilter = async ({ store, ctx, paths, force = false, fetchImpl = guardedFetch, now = Date.now }) => {
   const settings = filterSettings(store.getProfile())

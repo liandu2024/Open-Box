@@ -2,24 +2,39 @@
   <!-- 每日流量:后端按连接采样记下每天的入口/出口字节数(server/system/traffic-collector.mjs),
        这里画成月视图柱状图;点一根柱子下钻到当天按终端设备、节点、访问目标的明细,每一行再能点开看它的构成。 -->
   <div class="card w-full">
-    <div class="card-title flex flex-wrap items-center gap-2 px-4 pt-4">
-      <span>{{ $t('dailyTraffic') }}</span>
-      <span
-        v-if="loading"
-        class="loading loading-spinner loading-xs"
-      />
-      <!-- 统计直连流量:关掉后服务端把走直连出站的那部分从总量 / 曲线 / 列表里扣掉,库里数据不动 -->
-      <label
-        class="text-base-content/70 flex cursor-pointer items-center gap-1.5 text-xs font-normal"
-        :title="$t('trafficCountDirectHint')"
-      >
-        <span>{{ $t('trafficCountDirect') }}</span>
-        <input
-          v-model="trafficCountDirect"
-          type="checkbox"
-          class="toggle toggle-xs toggle-primary"
+    <div class="flex flex-wrap items-center gap-2 px-4 pt-4">
+      <div class="min-w-0">
+        <div class="flex flex-wrap items-center gap-2">
+          <h2 class="text-base font-semibold">{{ $t('dailyTraffic') }}</h2>
+          <span
+            v-if="loading"
+            class="loading loading-spinner loading-xs"
+          />
+          <!-- 统计直连流量:关掉后服务端把走直连出站的那部分从总量 / 曲线 / 列表里扣掉,库里数据不动 -->
+          <label
+            class="text-base-content/70 flex cursor-pointer items-center gap-1.5 text-xs font-normal"
+            :title="$t('trafficCountDirectHint')"
+          >
+            <span>{{ $t('trafficCountDirect') }}</span>
+            <input
+              v-model="trafficCountDirect"
+              type="checkbox"
+              class="toggle toggle-xs toggle-primary"
+            >
+          </label>
+        </div>
+        <p v-if="error" class="text-error text-xs">{{ error }}</p>
+        <i18n-t
+          v-else-if="monthData"
+          keypath="trafficMonthSummary"
+          tag="p"
+          class="text-base-content/60 text-xs"
         >
-      </label>
+          <template #month>{{ monthLabel(month) }}</template>
+          <template #total><b class="text-primary">{{ fmt(monthData.total.up + monthData.total.down) }}</b></template>
+          <template #conns><b class="text-base-content">{{ monthData.total.conns }}</b></template>
+        </i18n-t>
+      </div>
       <!-- 月份切换:和明细页签同一套 tabs-box 样式(圆角高亮块),两侧箭头用圆形幽灵按钮 -->
       <div
         v-if="month"
@@ -64,27 +79,6 @@
     </div>
 
     <div class="card-body gap-4">
-      <p
-        v-if="error"
-        class="text-error text-sm"
-      >
-        {{ error }}
-      </p>
-      <i18n-t
-        v-else-if="monthData"
-        keypath="trafficMonthSummary"
-        tag="p"
-        class="text-base-content/70 text-sm"
-      >
-        <template #month>{{ monthLabel(month) }}</template>
-        <template #total>
-          <b class="text-primary">{{ fmt(monthData.total.up + monthData.total.down) }}</b>
-        </template>
-        <template #conns>
-          <b class="text-base-content">{{ monthData.total.conns }}</b>
-        </template>
-      </i18n-t>
-
       <!-- 柱状图:每天一根,下段入口(primary)、上段出口(secondary);虚线是日均 -->
       <!-- 不做横向滚动:31 根柱子平分卡片宽度,窄屏只藏掉柱顶数值。
            滚动容器在 Windows 上会冒出横竖两条占位的滚动条,很难看 -->

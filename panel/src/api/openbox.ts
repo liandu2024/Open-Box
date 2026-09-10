@@ -125,11 +125,20 @@ export interface DnsFilterSummary {
   topDomains: { domain: string; count: number }[]
 }
 export interface DnsFilterRecord { id: number; at: number; domain: string; qtype: string; source: string; result: string; list: string; elapsed: number | null }
+export interface DnsFilterPreviewEntry {
+  type: string; value: string; rule: string; action: 'allow' | 'block'; important: boolean; conditional: boolean
+}
+export interface DnsFilterPreview {
+  rows: DnsFilterPreviewEntry[]; count: number; total: number; page: number; pageSize: number
+  ruleCount: number; unsupported: number; unsupportedExamples: string[]
+  source: 'downloaded' | 'url'; updatedAt: number | null
+}
 export const fetchDnsFilter = () => requestJson<DnsFilterStatus>('/api/openbox/dns-filter')
 export const saveDnsFilter = (settings: DnsFilterSettings) => requestJson('/api/openbox/dns-filter', { method: 'PUT', body: JSON.stringify(settings) })
 export const applyDnsFilter = (update = false) => requestJson<DnsFilterStatus>('/api/openbox/dns-filter/apply', { method: 'POST', body: JSON.stringify({ update }) })
 export const fetchDnsFilterSummary = () => requestJson<DnsFilterSummary>('/api/openbox/dns-filter/summary')
 export const fetchDnsFilterRecords = (search: string, result: string, page: number, pageSize = 20) => requestJson<{ rows: DnsFilterRecord[]; total: number; page: number; pageSize: number }>(`/api/openbox/dns-filter/records?${new URLSearchParams({ search, result, page: String(page), pageSize: String(pageSize) })}`)
+export const fetchDnsFilterPreview = (url: string, search: string, page: number, pageSize = 20) => requestJson<DnsFilterPreview>(`/api/openbox/dns-filter/preview?${new URLSearchParams({ url, search, page: String(page), pageSize: String(pageSize) })}`)
 
 // The backend deep-merges patches onto this shape (see server/store/openbox-store.mjs), so a
 // profile is always fully populated — no field is ever missing on GET.

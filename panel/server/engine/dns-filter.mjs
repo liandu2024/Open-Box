@@ -46,8 +46,9 @@ const escapeRegex = (v) => v.replace(/[.+?^${}()|[\]\\]/g, '\\$&')
 
 // Only DNS syntax: cosmetic / URL-path / unknown modifiers are counted as unsupported.
 // Downloaded regular expressions are compiled by sing-box (RE2), never evaluated in Node's request loop.
-export const parseDnsFilter = (body) => {
+export const parseDnsFilter = (body, { collectEntries = false } = {}) => {
   const groups = new Map()
+  const entries = collectEntries ? [] : null
   const unsupportedExamples = []
   let count = 0, unsupported = 0, regexCount = 0
   for (let line of body.split(/\r?\n/)) {
@@ -111,6 +112,9 @@ export const parseDnsFilter = (body) => {
       if (!groups.has(key)) groups.set(key, { kind, extra, match: {} })
       const group = groups.get(key)
       for (const condition of conditions) for (const [field, values] of Object.entries(condition)) (group.match[field] ||= []).push(...values)
+      if (entries) for (const condition of conditions) for (const [type, values] of Object.entries(condition)) {
+        for (const value of values) entries.push({ type, value, rule: original, action: allow ? 'allow' : 'block', important, conditional: extra.length > 0 })
+      }
       count++
     } catch {
       unsupported++
@@ -122,7 +126,7 @@ export const parseDnsFilter = (body) => {
     for (const field of Object.keys(match)) match[field] = [...new Set(match[field])]
     rules[kind].push(and([match, ...extra]))
   }
-  return { rules, count, unsupported, unsupportedExamples }
+  return { rules, count, unsupported, unsupportedExamples, ...(entries ? { entries } : {}) }
 }
 
 export const buildFilterConfig = (profile, artifact) => {

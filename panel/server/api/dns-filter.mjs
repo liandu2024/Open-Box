@@ -2,9 +2,11 @@ import express from 'express'
 import { filterKey, filterSettings, validateDnsFilter } from '../engine/dns-filter.mjs'
 import { cleanupDnsFilterCache, readFilterListState } from '../system/dns-filter.mjs'
 import { runDeploy, runExclusive } from './deploy-runner.mjs'
+import { createDnsFilterPreview } from '../system/dns-filter-preview.mjs'
 
-export const registerDnsFilterRoutes = (app, { store, ctx, paths, data, observer, deploy = runDeploy }) => {
+export const registerDnsFilterRoutes = (app, { store, ctx, paths, data, observer, deploy = runDeploy, previewFetch }) => {
   const router = express.Router()
+  const preview = createDnsFilterPreview({ store, ctx, fetchImpl: previewFetch })
   router.use(express.json({ limit: '128kb' }))
   let busy = false
   const status = async () => {
@@ -39,6 +41,10 @@ export const registerDnsFilterRoutes = (app, { store, ctx, paths, data, observer
   })
   router.get('/summary', (_req, res) => res.json({ enabled: filterSettings(store.getProfile()).enabled, ...observer.status(), ...data.summary() }))
   router.get('/records', (req, res) => res.json(data.records(req.query)))
+  router.get('/preview', async (req, res) => {
+    try { res.json(await preview(req.query)) }
+    catch (error) { res.status(400).json({ error: error.message }) }
+  })
   app.use('/api/openbox/dns-filter', router)
   // Existing lists update once per day while enabled. Failures retain the cached list and wait
   // before retrying; disabled installations do not download anything.
