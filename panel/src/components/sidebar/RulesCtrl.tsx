@@ -12,8 +12,8 @@ import TextInput from '../common/TextInput.vue'
 const QUICK_SITES = [
   { id: 'baidu', name: '百度', host: 'www.baidu.com', icon: 'brand:baidu' },
   { id: 'google', name: 'Google', host: 'www.google.com', icon: 'brand:google' },
-  // 用绿底白字那版:黑色的 OpenAI 标在暗色主题上看不见
-  { id: 'chatgpt', name: 'ChatGPT', host: 'chatgpt.com', icon: 'brand:openai-green' },
+  // 灰色透明版和路由链图标保持一致,同时兼顾浅色与深色主题
+  { id: 'chatgpt', name: 'ChatGPT', host: 'chatgpt.com', icon: 'brand:openai-light' },
   { id: 'telegram', name: 'Telegram', host: 'web.telegram.org', icon: 'brand:telegram' },
 ]
 
