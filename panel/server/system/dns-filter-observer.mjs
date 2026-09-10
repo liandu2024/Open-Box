@@ -59,12 +59,17 @@ export const createDnsFilterStore = (db, { now = Date.now } = {}) => {
       const sum = hourly.reduce((a, h) => ({ queries: a.queries + h.queries, blocked: a.blocked + h.blocked, elapsed: a.elapsed + h.elapsed, timed: a.timed + h.timed }), { queries: 0, blocked: 0, elapsed: 0, timed: 0 })
       return { ...sum, averageMs: sum.timed ? sum.elapsed / sum.timed : null, hourly, topDomains: db.prepare('SELECT domain,SUM(count) AS count FROM dns_filter_domains WHERE hour >= ? GROUP BY domain ORDER BY count DESC LIMIT 5').all(since) }
     },
-    records: ({ search = '', result = '', page = 1 } = {}) => {
+    records: ({ search = '', result = '', page = 1, pageSize = 20 } = {}) => {
       flush()
-      const p = Math.max(1, Math.min(1000, Math.trunc(Number(page) || 1)))
+      const requestedSize = Number(pageSize)
+      const size = Number.isFinite(requestedSize) && requestedSize >= 1 ? Math.min(1000, Math.trunc(requestedSize)) : 20
+      const requestedPage = Number(page)
       const where = 'at >= ? AND instr(domain, ?) > 0 AND (? = \'\' OR result = ?)'
       const params = [now() - DAY, String(search).toLowerCase().slice(0, 253), String(result), String(result)]
-      return { page: p, total: db.prepare(`SELECT COUNT(*) AS count FROM dns_filter_records WHERE ${where}`).get(...params).count, rows: db.prepare(`SELECT * FROM dns_filter_records WHERE ${where} ORDER BY id DESC LIMIT 50 OFFSET ?`).all(...params, (p - 1) * 50) }
+      const total = db.prepare(`SELECT COUNT(*) AS count FROM dns_filter_records WHERE ${where}`).get(...params).count
+      const lastPage = Math.max(1, Math.ceil(total / size))
+      const p = Number.isFinite(requestedPage) && requestedPage >= 1 ? Math.min(lastPage, Math.trunc(requestedPage)) : 1
+      return { page: p, pageSize: size, total, rows: db.prepare(`SELECT * FROM dns_filter_records WHERE ${where} ORDER BY id DESC LIMIT ? OFFSET ?`).all(...params, size, (p - 1) * size) }
     },
   }
 }

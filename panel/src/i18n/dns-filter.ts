@@ -32,7 +32,7 @@ export const dnsFilterEn = {
   dfAllowHint:
     'One domain per line. example.com matches exactly; *.example.com matches subdomains only. These exceptions override all filter lists and still use your existing DNS routing.',
   dfSaveAllow: 'Save allowed domains',
-  dfRecords: 'Domain filtering records',
+  dfRecords: 'Domain resolution queries',
   dfSearch: 'Search domain…',
   dfResult: 'Result',
   dfAllResults: 'All results',
@@ -101,7 +101,7 @@ export const dnsFilterZh: Record<keyof typeof dnsFilterEn, string> = {
   dfAllowHint:
     '每行一个域名。example.com 精确匹配,*.example.com 只匹配子域名。放行优先于所有过滤名单,之后仍按原 DNS 分流解析。',
   dfSaveAllow: '保存放行域名',
-  dfRecords: '域名过滤记录查询',
+  dfRecords: '域名解析查询',
   dfSearch: '搜索域名…',
   dfResult: '结果',
   dfAllResults: '全部结果',
@@ -169,7 +169,7 @@ export const dnsFilterTw: Record<keyof typeof dnsFilterEn, string> = {
   dfAllowHint:
     '每行一個網域。example.com 精確比對,*.example.com 只比對子網域。放行優先於所有過濾清單,之後仍按原 DNS 分流解析。',
   dfSaveAllow: '儲存放行網域',
-  dfRecords: '網域過濾紀錄查詢',
+  dfRecords: '網域解析查詢',
   dfSearch: '搜尋網域…',
   dfResult: '結果',
   dfAllResults: '全部結果',

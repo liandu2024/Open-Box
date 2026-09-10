@@ -104,30 +104,19 @@
           </tbody>
         </table>
       </div>
-      <div class="flex items-center justify-between text-xs">
-        <span>{{ $t('dfTotal', { n: total.toLocaleString() }) }}</span>
-        <div class="flex items-center gap-3">
-          <button
-            class="btn btn-ghost btn-xs"
-            :disabled="page <= 1 || loading"
-            @click="turnPage(-1)"
-          >
-            {{ $t('dfPrevious') }}</button
-          ><span>{{ page }} / {{ Math.max(1, Math.ceil(total / 50)) }}</span
-          ><button
-            class="btn btn-ghost btn-xs"
-            :disabled="page * 50 >= total || loading"
-            @click="turnPage(1)"
-          >
-            {{ $t('dfNext') }}
-          </button>
-        </div>
-      </div>
+      <AppPagination
+        v-model:page="page"
+        v-model:page-size="pageSize"
+        :total="total"
+        :disabled="loading"
+        @change="load"
+      />
     </div>
   </section>
 </template>
 <script setup lang="ts">
 import { fetchDnsFilterRecords, type DnsFilterRecord } from '@/api/openbox'
+import AppPagination from '@/components/common/AppPagination.vue'
 import { showNotification } from '@/helper/notification'
 import { ArrowPathIcon } from '@heroicons/vue/24/outline'
 import { onMounted, ref } from 'vue'
@@ -139,6 +128,7 @@ const route = useRoute(),
 const search = ref(String(route.query.dnsDomain || '')),
   result = ref('blocked'),
   page = ref(1),
+  pageSize = ref(20),
   total = ref(0),
   loading = ref(false)
 const rows = ref<DnsFilterRecord[]>([])
@@ -147,10 +137,12 @@ const load = async () => {
   const id = ++serial
   loading.value = true
   try {
-    const data = await fetchDnsFilterRecords(search.value, result.value, page.value)
+    const data = await fetchDnsFilterRecords(search.value, result.value, page.value, pageSize.value)
     if (id === serial) {
       rows.value = data.rows
       total.value = data.total
+      page.value = data.page
+      pageSize.value = data.pageSize
     }
   } catch (e) {
     if (id === serial)
@@ -174,10 +166,6 @@ const resultLabel = (r: string) =>
   })[r] || r.toUpperCase()
 const searchRecords = () => {
   page.value = 1
-  load()
-}
-const turnPage = (delta: number) => {
-  page.value += delta
   load()
 }
 onMounted(load)

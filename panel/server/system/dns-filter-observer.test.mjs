@@ -60,3 +60,74 @@ test('core duration hundredths and retained hourly statistics survive reopening 
   assert.equal(data.records().total, 0)
   db.close()
 })
+
+const recordFixture = (t, count) => {
+  const db = new DatabaseSync(':memory:')
+  t.after(() => db.close())
+  const at = 1700000000000
+  const data = createDnsFilterStore(db, { now: () => at })
+  for (let i = 1; i <= count; i++) {
+    data.start(at)
+    data.finish({ at, domain: `${i % 2 ? 'ad' : 'site'}${i}.example.test`, qtype: 'A', result: i % 2 ? 'blocked' : 'allowed', elapsed: 1 })
+  }
+  data.flush()
+  return { db, data }
+}
+
+test('DNS records default to 20 rows and page without overlaps at preset and custom sizes', (t) => {
+  const { data } = recordFixture(t, 137)
+  const first = data.records()
+  assert.equal(first.pageSize, 20)
+  assert.equal(first.page, 1)
+  assert.equal(first.total, 137)
+  assert.equal(first.rows.length, 20)
+  assert.equal(first.rows[0].id, 137)
+  assert.equal(first.rows.at(-1).id, 118)
+  for (const size of [20, 50, 100, 37]) {
+    const ids = []
+    for (let page = 1; page <= Math.ceil(137 / size); page++) {
+      const result = data.records({ page: String(page), pageSize: String(size) })
+      assert.equal(result.page, page)
+      assert.equal(result.pageSize, size)
+      assert.equal(result.total, 137)
+      assert.equal(result.rows.length, Math.min(size, 137 - (page - 1) * size))
+      ids.push(...result.rows.map((row) => row.id))
+    }
+    assert.deepEqual(ids, Array.from({ length: 137 }, (_, i) => 137 - i))
+  }
+})
+
+test('DNS record page bounds use the filtered total and recover after records disappear', (t) => {
+  const { db, data } = recordFixture(t, 137)
+  const filtered = data.records({ search: 'AD', result: 'blocked', page: 2, pageSize: 20 })
+  assert.equal(filtered.total, 69)
+  assert.equal(filtered.rows[0].id, 97)
+  assert.equal(filtered.rows.at(-1).id, 59)
+  assert.ok(filtered.rows.every((row) => row.result === 'blocked'))
+  const empty = data.records({ search: 'not-present', page: 99, pageSize: 50 })
+  assert.deepEqual(empty, { total: 0, page: 1, pageSize: 50, rows: [] })
+  const last = data.records({ page: 999, pageSize: 20 })
+  assert.equal(last.page, 7)
+  assert.equal(last.rows.length, 17)
+  db.exec('DELETE FROM dns_filter_records WHERE id > 20')
+  const refreshed = data.records({ page: 7, pageSize: 20 })
+  assert.equal(refreshed.page, 1)
+  assert.equal(refreshed.total, 20)
+  assert.equal(refreshed.rows.length, 20)
+})
+
+test('DNS record pagination bounds invalid sizes and allows pages beyond 1000 at one row per page', (t) => {
+  const { data } = recordFixture(t, 1203)
+  for (const pageSize of [0, -1, 'bad', 'Infinity', 'NaN', 0.5, '1 OR 1=1']) {
+    const result = data.records({ pageSize })
+    assert.equal(result.pageSize, 20)
+    assert.equal(result.rows.length, 20)
+  }
+  const capped = data.records({ pageSize: 1000000 })
+  assert.equal(capped.pageSize, 1000)
+  assert.equal(capped.rows.length, 1000)
+  const last = data.records({ page: 1203, pageSize: 1 })
+  assert.equal(last.page, 1203)
+  assert.deepEqual(last.rows.map((row) => row.id), [1])
+  for (const page of [0, -1, 'bad', 'Infinity']) assert.equal(data.records({ page }).page, 1)
+})

@@ -129,7 +129,7 @@ export const fetchDnsFilter = () => requestJson<DnsFilterStatus>('/api/openbox/d
 export const saveDnsFilter = (settings: DnsFilterSettings) => requestJson('/api/openbox/dns-filter', { method: 'PUT', body: JSON.stringify(settings) })
 export const applyDnsFilter = (update = false) => requestJson<DnsFilterStatus>('/api/openbox/dns-filter/apply', { method: 'POST', body: JSON.stringify({ update }) })
 export const fetchDnsFilterSummary = () => requestJson<DnsFilterSummary>('/api/openbox/dns-filter/summary')
-export const fetchDnsFilterRecords = (search: string, result: string, page: number) => requestJson<{ rows: DnsFilterRecord[]; total: number; page: number }>(`/api/openbox/dns-filter/records?${new URLSearchParams({ search, result, page: String(page) })}`)
+export const fetchDnsFilterRecords = (search: string, result: string, page: number, pageSize = 20) => requestJson<{ rows: DnsFilterRecord[]; total: number; page: number; pageSize: number }>(`/api/openbox/dns-filter/records?${new URLSearchParams({ search, result, page: String(page), pageSize: String(pageSize) })}`)
 
 // The backend deep-merges patches onto this shape (see server/store/openbox-store.mjs), so a
 // profile is always fully populated — no field is ever missing on GET.
