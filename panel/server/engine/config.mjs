@@ -120,10 +120,6 @@ export const buildConfig = ({ nodes, profile, userGroups, systemDns, localSubnet
   ]
   const endpoints = wireguardNodes.map(emitEndpoint)
 
-  // 策略的规则指向的是策略自己的 selector(上面刚生成),所以路由这边不再需要
-  // "悬空目标重映射"那套——真正可能悬空的是 selector 的 default,已经在生成时挡掉了。
-  const sanitizedRouting = routingConf
-
   const dnsMode = (profile.dns && profile.dns.mode) || 'hijack'
   if (dnsMode === 'dnsmasq') {
     // 绑定 lo 才拨得通 127.0.0.1(auto_detect_interface 对写了 bind_interface 的出站不生效)
@@ -158,7 +154,9 @@ export const buildConfig = ({ nodes, profile, userGroups, systemDns, localSubnet
   // 解析器映射先不交给路由(留待后续方案验证),以域名进内核的连接仍按"没有真实目标 IP"处理
   const filtering = buildFilterConfig(profile, dnsFilter)
   const { dns } = buildDnsWithResolvers(profile, { systemDns, groupTags, builtin, selections, directHosts, ruleLists, clientRoutes, knownOutbounds, filterRules: filtering.rules })
-  const { route } = buildRoute(sanitizedRouting, profile.rulesetDir, {
+  // buildRoute 自己归一化档案;传已归一化的对象会丢掉 fallbackName 等原始字段,
+  // 导致 route.final 又变成「其他」,与用户改名后的 selector 不一致(GitHub #46)。
+  const { route } = buildRoute(profile.routing, profile.rulesetDir, {
     dnsMode, directTag: builtin.direct, blockTag: builtin.block, directHosts, rejectV6For,
     tunCidrs: ipv6InTun(profile) ? [TUN_V4_NET, TUN_V6_NET] : [TUN_V4_NET],
     dnsmasqTag: dnsMode === 'dnsmasq' ? DNSMASQ_OUTBOUND_TAG : '',
@@ -211,7 +209,9 @@ export const buildConfig = ({ nodes, profile, userGroups, systemDns, localSubnet
   const routeExclude = subtractCidrs(excludeBase, holes)
   const tunInbound = {
     type: 'tun', tag: 'tun-in', address: tunAddress,
-    auto_route: true, strict_route: true, stack: 'mixed',
+    // 单栈 tun + strict_route 会在 nft / ip rule 层拒绝未接管的地址族。
+    // bypass 要让原生 IPv6（含 DHCPv6、RA）继续按系统路由走;其余模式保留严格路由。
+    auto_route: true, strict_route: ipv6ProxyMode(profile) !== 'bypass', stack: 'mixed',
     route_exclude_address: autoRedirect ? subtractCidrs(routeExclude, END_OF_ADDRESS_SPACE) : routeExclude,
     udp_timeout: TUN_UDP_TIMEOUT,
   }

@@ -40,6 +40,20 @@ test('ipv6 关:tun address 仅 v4', () => {
   assert.equal(c.dns.strategy, 'ipv4_only')
 })
 
+test('兜底改名后 route.final、DNS 和 selector 使用同一名称(GitHub #46)', () => {
+  for (const fallbackName of ['漏网之鱼', 'Fallback']) {
+    const c = buildConfig({ nodes, regionGroups, profile: {
+      ...profile,
+      routing: { policies: [], fallbackName, fallbackDefault: 'direct' },
+    } })
+    const fallback = c.outbounds.find((o) => o.tag === fallbackName)
+    assert.equal(fallback.type, 'selector')
+    assert.equal(c.route.final, fallbackName, '路由不能二次归一化后引用已不存在的「其他」')
+    assert.equal(c.dns.servers.find((s) => s.tag === 'dns-proxy').detour, fallbackName)
+    assert.ok(!c.outbounds.some((o) => o.tag === '其他'))
+  }
+})
+
 test('每条策略生成一个同名 selector,成员是「出站」页签选中的那几类', () => {
   const c = buildConfig({
     nodes,
@@ -512,6 +526,31 @@ test('IPv6「不进内核,直连放行」(ipv6Proxy=bypass):tun 不给 v6 地址
   assert.deepEqual(c.route.rules.find((r) => r.action === 'reject' && r.ip_cidr), { ip_cidr: ['172.19.0.0/30'], action: 'reject' })
   const fake = buildConfig({ nodes, regionGroups, userGroups: firstLayerGroups, localSubnets: subnets, profile: firstLayerProfile({ ipv6: true, ipv6Proxy: 'bypass', dns: { split: true, mode: 'dnsmasq', direct: '223.5.5.5', proxy: '1.1.1.1', fakeIpForProxy: true }, routing: p.routing }) })
   assert.equal(fake.dns.servers.find((s) => s.type === 'fakeip').inet6_range, undefined)
+})
+
+// 单栈 tun + strict_route 会让 sing-tun 为未接管的地址族写 unreachable / nft reject。
+// GitHub #47:必须同时验证这个开关,只检查 route.rules 没有 ip_version:6 拦不住系统层误拦。
+test('IPv6 bypass 不生成严格路由拒绝,其他 IPv6 模式保持严格路由(GitHub #47)', () => {
+  for (const mode of ['dnsmasq', 'hijack', 'off']) {
+    for (const autoRedirect of [true, false]) {
+      for (const ipv6 of [true, false]) {
+        for (const ipv6Proxy of ['bypass', 'ipv4', 'node']) {
+          const p = firstLayerProfile({
+            ipv6, ipv6Proxy, tun: { autoRedirect },
+            dns: { split: true, mode, direct: '223.5.5.5', proxy: '1.1.1.1' },
+          })
+          const c = buildConfig({ nodes, regionGroups, userGroups: firstLayerGroups, localSubnets: subnets, profile: p })
+          const bypass = ipv6 && ipv6Proxy === 'bypass'
+          assert.equal(c.inbounds[0].strict_route, !bypass, JSON.stringify({ mode, autoRedirect, ipv6, ipv6Proxy }))
+          if (bypass) {
+            assert.deepEqual(c.inbounds[0].address, ['172.19.0.1/30'])
+            assert.ok(!c.route.rules.some((r) => r.ip_version === 6), '不为原生 v6 生成内核拒绝')
+            assert.equal(c.dns.strategy, 'prefer_ipv4', '保留 AAAA 查询')
+          }
+        }
+      }
+    }
+  }
 })
 
 test('终端「不进内核」(GitHub #39):开着 auto_redirect 时 tun 写 exclude_mac_address(去重);纯 tun / 没有这类规则时不写;路由里仍有一条直连兜底', () => {
