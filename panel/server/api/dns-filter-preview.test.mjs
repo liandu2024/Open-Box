@@ -74,6 +74,35 @@ test('preview paginates 20/50/100/custom, clamps bounds and searches without rel
   assert.equal(f.reads(), 1)
 })
 
+test('preview filters rule actions before search and pagination without changing the total list count', async (t) => {
+  const f = fixture(Array.from({ length: 30 }, (_, i) => `||ad${i}.example^\n@@||safe${i}.example^`).join('\n'))
+  const get = await api(t, f.deps)
+  const all = await get({ action: 'all' })
+  assert.equal(all.total, 60)
+  assert.deepEqual(all, await get())
+  for (const action of ['allow', 'block']) {
+    const result = await get({ action, page: 2 })
+    assert.equal(result.count, 60)
+    assert.equal(result.total, 30)
+    assert.equal(result.page, 2)
+    assert.equal(result.rows.length, 10)
+    assert.ok(result.rows.every((row) => row.action === action))
+  }
+  const match = await get({ action: 'allow', search: 'SAFE1', page: 2, pageSize: 7 })
+  assert.equal(match.total, 11)
+  assert.equal(match.count, 60)
+  assert.equal(match.page, 2)
+  assert.deepEqual(match.rows.map((row) => row.value), ['safe16.example', 'safe17.example', 'safe18.example', 'safe19.example'])
+  const empty = await get({ action: 'block', search: 'safe', page: 99 })
+  assert.equal(empty.total, 0)
+  assert.equal(empty.page, 1)
+  assert.deepEqual(empty.rows, [])
+  const invalid = await get({ action: 'invalid' })
+  assert.equal(invalid.status, 400)
+  assert.match(invalid.error, /筛选/)
+  assert.equal(f.reads(), 1)
+})
+
 test('draft URL preview downloads once without saving, and saved-list updates invalidate the preview', async (t) => {
   let downloads = 0
   const f = fixture('||old.example^', async (input) => { downloads++; assert.equal(input, 'https://example.com/draft.txt'); return new Response('||draft.example^') })

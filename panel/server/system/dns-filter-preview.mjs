@@ -15,7 +15,8 @@ export const createDnsFilterPreview = ({ store, ctx, fetchImpl, ttlMs = 60000 })
     timer.unref?.()
     return value
   }
-  return async ({ url, search = '', page = 1, pageSize = 20 } = {}) => {
+  return async ({ url, search = '', action = 'all', page = 1, pageSize = 20 } = {}) => {
+    if (!['all', 'allow', 'block'].includes(action)) throw new Error('无效的规则筛选类型')
     if (typeof url !== 'string') throw new Error('请填写名单网址')
     url = url.trim()
     const error = validateDnsFilter({ enabled: false, lists: [{ id: 'preview', name: 'Preview', enabled: false, url }], allowDomains: [] })
@@ -36,7 +37,10 @@ export const createDnsFilterPreview = ({ store, ctx, fetchImpl, ttlMs = 60000 })
       result = await pending.promise
     }
     const query = String(search).trim().toLowerCase().slice(0, 253)
-    const matched = query ? result.entries.filter((entry) => entry.value.toLowerCase().includes(query) || entry.rule.toLowerCase().includes(query)) : result.entries
+    const matched = query || action !== 'all'
+      ? result.entries.filter((entry) => (action === 'all' || entry.action === action)
+        && (!query || entry.value.toLowerCase().includes(query) || entry.rule.toLowerCase().includes(query)))
+      : result.entries
     const size = Number.isFinite(Number(pageSize)) && Number(pageSize) >= 1 ? Math.min(1000, Math.trunc(Number(pageSize))) : 20
     const last = Math.max(1, Math.ceil(matched.length / size))
     const current = Number.isFinite(Number(page)) && Number(page) >= 1 ? Math.min(last, Math.trunc(Number(page))) : 1

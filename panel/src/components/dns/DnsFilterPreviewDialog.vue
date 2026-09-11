@@ -14,18 +14,30 @@
           {{ list.url }}
         </p>
       </div>
-      <TextInput
-        v-model="keyword"
-        :placeholder="$t('dfSearch')"
-        clearable
-      />
+      <div class="flex items-center gap-2">
+        <select
+          v-model="action"
+          class="select select-sm w-32 shrink-0"
+          :aria-label="$t('dfResult')"
+        >
+          <option value="all">{{ $t('all') }}</option>
+          <option value="allow">{{ $t('dfPreviewFilterAllow') }}</option>
+          <option value="block">{{ $t('dfPreviewFilterBlock') }}</option>
+        </select>
+        <TextInput
+          v-model="keyword"
+          class="min-w-0 flex-1"
+          :placeholder="$t('dfSearch')"
+          clearable
+        />
+      </div>
       <p
         v-if="data"
         class="text-base-content/60 flex flex-wrap gap-x-3 gap-y-1 text-xs"
       >
         <span>{{ $t(data.source === 'downloaded' ? 'dfPreviewDownloaded' : 'dfPreviewUrl') }}</span>
         <span>{{
-          keyword
+          keyword.trim() || action !== 'all'
             ? $t('geoEntriesCountFiltered', { matched: data.total, total: data.count })
             : $t('geoEntriesCount', { total: data.count })
         }}</span>
@@ -103,7 +115,12 @@
 </template>
 
 <script setup lang="ts">
-import { fetchDnsFilterPreview, type DnsFilterList, type DnsFilterPreview } from '@/api/openbox'
+import {
+  fetchDnsFilterPreview,
+  type DnsFilterList,
+  type DnsFilterPreview,
+  type DnsFilterPreviewAction,
+} from '@/api/openbox'
 import AppPagination from '@/components/common/AppPagination.vue'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import TextInput from '@/components/common/TextInput.vue'
@@ -116,6 +133,7 @@ const open = defineModel<boolean>({ required: true })
 const data = ref<DnsFilterPreview | null>(null)
 const loading = ref(false)
 const keyword = ref('')
+const action = ref<DnsFilterPreviewAction>('all')
 const page = ref(1)
 const pageSize = ref(20)
 const entriesContainer = ref<HTMLElement>()
@@ -132,6 +150,7 @@ const load = async () => {
       keyword.value.trim(),
       page.value,
       pageSize.value,
+      action.value,
     )
     if (mine !== seq) return
     data.value = result
@@ -149,7 +168,7 @@ const load = async () => {
     if (mine === seq) loading.value = false
   }
 }
-watch(keyword, () => {
+watch([keyword, action], () => {
   ++seq
   clearTimeout(searchTimer)
   loading.value = true

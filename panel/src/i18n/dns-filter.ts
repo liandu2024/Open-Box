@@ -33,6 +33,8 @@ export const dnsFilterEn = {
   dfPreviewUrl: 'URL preview · not saved or applied',
   dfPreviewAllow: 'Allow rule',
   dfPreviewBlock: 'Block rule',
+  dfPreviewFilterAllow: 'Allow',
+  dfPreviewFilterBlock: 'Block',
   dfAllow: 'Allow domains',
   dfAllowHint:
     'One domain per line. example.com matches exactly; *.example.com matches subdomains only. These exceptions override all filter lists and still use your existing DNS routing.',
@@ -108,6 +110,8 @@ export const dnsFilterZh: Record<keyof typeof dnsFilterEn, string> = {
   dfPreviewUrl: '网址预览 · 未保存或应用',
   dfPreviewAllow: '放行规则',
   dfPreviewBlock: '拦截规则',
+  dfPreviewFilterAllow: '放行',
+  dfPreviewFilterBlock: '拦截',
   dfAllow: '放行域名',
   dfAllowHint:
     '每行一个域名。example.com 精确匹配,*.example.com 只匹配子域名。放行优先于所有过滤名单,之后仍按原 DNS 分流解析。',
@@ -182,6 +186,8 @@ export const dnsFilterTw: Record<keyof typeof dnsFilterEn, string> = {
   dfPreviewUrl: '網址預覽 · 未儲存或套用',
   dfPreviewAllow: '放行規則',
   dfPreviewBlock: '攔截規則',
+  dfPreviewFilterAllow: '放行',
+  dfPreviewFilterBlock: '攔截',
   dfAllow: '放行網域',
   dfAllowHint:
     '每行一個網域。example.com 精確比對,*.example.com 只比對子網域。放行優先於所有過濾清單,之後仍按原 DNS 分流解析。',
