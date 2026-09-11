@@ -92,7 +92,14 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: kernel-${{ matrix.kernel }}
-          path: kernel-build/sing-box-${{ steps.kernel-version.outputs.version }}-linux-${{ matrix.kernel }}-musl
+          path: kernel-download
+      - name: Normalize kernel bundle path
+        run: |
+          set -eu
+          source_dir=$(dirname "$(find kernel-download -type f -name BUILD-INFO.json -print -quit)")
+          target_dir="kernel-build/sing-box-${{ steps.kernel-version.outputs.version }}-linux-${{ matrix.kernel }}-musl"
+          mkdir -p "$target_dir"
+          cp "$source_dir"/* "$target_dir"/
       - uses: actions/download-artifact@v4
         with:
           name: kernel-amd64
@@ -100,7 +107,9 @@ jobs:
       - name: Use this run's source-built kernel for config verification
         run: |
           mkdir -p panel/.tools
-          install -m 0755 runner-kernel/sing-box panel/.tools/sing-box
+          runner_kernel=$(find runner-kernel -type f -name sing-box -print -quit)
+          test -n "$runner_kernel"
+          install -m 0755 "$runner_kernel" panel/.tools/sing-box
           panel/.tools/sing-box version
 
       # 发版前先跑测试:发布流水线原本是唯一的 CI,却从不跑测试套件,于是"套件是红的"
