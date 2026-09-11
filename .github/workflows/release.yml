@@ -1,8 +1,6 @@
 name: Release
 
-# 触发:推送 v* 标签(例如 v1.0.0)。打包本身是纯下载 + 拷贝,不涉及交叉编译,
-# 所以 x64 与 arm64 两种目标架构都能在 ubuntu-latest 上构建(见
-# scripts/build-release.sh 头部注释)。
+# 推送标签后,先从该提交的内核补丁构建双架构 sing-box,再测试和封装面板。
 
 on:
   push:
@@ -16,13 +14,57 @@ env:
   OPENBOX_REPO: liandu2024/Open-Box
 
 jobs:
-  build:
-    name: Build (${{ matrix.arch }})
+  kernel:
+    name: Build kernel (${{ matrix.arch }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        arch: [x64, arm64]
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read kernel tool versions
+        id: versions
+        run: |
+          . scripts/singbox-tcp-dns-hotfix/versions.sh
+          echo "go=$SINGBOX_GO_VERSION" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ steps.versions.outputs.go }}
+          cache: false
+      - name: Build complete static kernel from repository inputs
+        run: sh scripts/singbox-tcp-dns-hotfix/build.sh ${{ matrix.arch }} kernel-build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kernel-${{ matrix.arch }}
+          path: kernel-build/sing-box-*-linux-${{ matrix.arch }}-musl/
+          if-no-files-found: error
+      - name: Checksum corresponding kernel source
+        if: matrix.arch == 'amd64'
+        run: |
+          cd kernel-build
+          for source in *-source.tar.gz; do sha256sum "$source" > "$source.sha256"; done
+      - uses: actions/upload-artifact@v4
+        if: matrix.arch == 'amd64'
+        with:
+          name: kernel-source
+          path: |
+            kernel-build/*-source.tar.gz
+            kernel-build/*-source.tar.gz.sha256
+          if-no-files-found: error
+
+  build:
+    name: Build (${{ matrix.arch }})
+    needs: kernel
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            kernel: amd64
+          - arch: arm64
+            kernel: arm64
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -42,35 +84,29 @@ jobs:
         working-directory: panel
         run: corepack pnpm install --frozen-lockfile
 
-      # OPENBOX_VERSION 直接取 github.ref_name(推送 v1.2.3 标签时即为 "v1.2.3"),
-      # 写入产物的 meta.json 供面板展示版本号,也用来拼带版本号的留档资产名
-      # open-box-<version>-linux-<arch>.tar.gz。install.sh/update.sh 不再依赖这个
-      # 字符串去拼下载 URL——它们用不带版本号的稳定资产名(见下面 Upload artifact
-      # 步骤的注释与 Important 5),真正装的是哪个版本,由它们在下载校验通过后自己
-      # 从 meta.json 里读出来。
-      # 校验用的 sing-box 要和打包进产物的是同一个钦定版本,但架构得是 runner 自己的(amd64),
-      # 和 matrix.arch 无关。版本号和校验和直接从 build-release.sh 里读,不在这里再抄一份。
-      # 没放二进制时 check-config.test.mjs 在 CI 上会直接 fail 而不是 skip(以前 9 个用例全跳过、
-      # 步骤照样绿)。
-      - name: Fetch pinned sing-box for the runner (config verification)
+      - name: Read kernel version
+        id: kernel-version
         run: |
-          set -eu
-          ver=$(sed -n 's/^SINGBOX_VERSION="\([^"]*\)"/\1/p' scripts/build-release.sh)
-          release_url=$(sed -n 's/^SINGBOX_RELEASE_URL="\([^"]*\)"/\1/p' scripts/build-release.sh)
-          sha=$(sed -n 's/^SINGBOX_SHA256_AMD64="\([^"]*\)"/\1/p' scripts/build-release.sh)
-          [ -n "$ver" ] && [ -n "$release_url" ] && [ -n "$sha" ] || { echo "无法从 build-release.sh 读出 sing-box 版本 / 下载地址 / 校验和"; exit 1; }
-          tarball="sing-box-${ver}-linux-amd64-musl.tar.gz"
-          curl -fsSL -o "/tmp/$tarball" "$release_url/$tarball"
-          echo "${sha}  /tmp/$tarball" | sha256sum -c -
+          . scripts/singbox-tcp-dns-hotfix/versions.sh
+          echo "version=$SINGBOX_VERSION" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v4
+        with:
+          name: kernel-${{ matrix.kernel }}
+          path: kernel-build/sing-box-${{ steps.kernel-version.outputs.version }}-linux-${{ matrix.kernel }}-musl
+      - uses: actions/download-artifact@v4
+        with:
+          name: kernel-amd64
+          path: runner-kernel
+      - name: Use this run's source-built kernel for config verification
+        run: |
           mkdir -p panel/.tools
-          tar -xzf "/tmp/$tarball" -C /tmp "sing-box-${ver}-linux-amd64-musl/sing-box"
-          install -m 0755 "/tmp/sing-box-${ver}-linux-amd64-musl/sing-box" panel/.tools/sing-box
+          install -m 0755 runner-kernel/sing-box panel/.tools/sing-box
           panel/.tools/sing-box version
 
       # 发版前先跑测试:发布流水线原本是唯一的 CI,却从不跑测试套件,于是"套件是红的"
       # 拦不住发版(实际发生过:v0.1.2 就是在本地套件报 2 条失败的情况下打的 tag)。
       # 两个架构的构建都会跑一遍——重复但便宜,而且任一失败都能拦住整个发布。
-      # sing-box check 用例依赖上一步放入 panel/.tools/sing-box,所以测试必须排在下载之后。
+      # sing-box check 用例依赖上一步放入 panel/.tools/sing-box,所以测试必须排在本次内核构建之后。
       - name: Run server test suite
         working-directory: panel
         run: corepack pnpm run test:server
@@ -84,6 +120,7 @@ jobs:
       - name: Build release tarball
         env:
           OPENBOX_VERSION: ${{ github.ref_name }}
+          OPENBOX_KERNEL_BUILD_DIR: ${{ github.workspace }}/kernel-build
         run: bash scripts/build-release.sh ${{ matrix.arch }} dist-release
 
       # build-release.sh 每个架构都产出两份内容完全一致的 tarball(+sha256):带版本号
@@ -120,6 +157,13 @@ jobs:
         with:
           path: dist-release
           merge-multiple: true
+          pattern: open-box-linux-*
+
+      - name: Download corresponding kernel source
+        uses: actions/download-artifact@v4
+        with:
+          name: kernel-source
+          path: dist-release
 
       - name: List release assets
         run: ls -la dist-release
@@ -130,11 +174,11 @@ jobs:
         run: |
           set -eu
           NODE_VERSION=$(grep -m1 '^NODE_VERSION=' scripts/build-release.sh | sed -E 's/^NODE_VERSION="([^"]+)"/\1/')
-          SINGBOX_VERSION=$(grep -m1 '^SINGBOX_VERSION=' scripts/build-release.sh | sed -E 's/^SINGBOX_VERSION="([^"]+)"/\1/')
+          . scripts/singbox-tcp-dns-hotfix/versions.sh
           {
             echo "## Open-Box ${{ github.ref_name }}"
             echo ""
-            echo "- sing-box 内核版本:\`$SINGBOX_VERSION\`(musl 静态链接)"
+            echo "- sing-box 内核版本:\`$SINGBOX_VERSION\`(从本次仓库源码补丁构建，完整 CGO/musl 静态链接)"
             echo "- Node 运行时版本:\`$NODE_VERSION\`(musl 构建,glibc 版本在 OpenWrt 上无法运行)"
             echo ""
             echo "### 硬件要求"
