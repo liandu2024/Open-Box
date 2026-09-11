@@ -203,12 +203,21 @@ const targetText = (rule: OpenboxDnsRewriteRule) => (rule.domain ? rule.domain :
 const notifyError = (err: unknown) =>
   showNotification({ content: 'routingSaveFailed', params: { message: err instanceof Error ? err.message : String(err) }, type: 'alert-error' })
 
+// 哪些改动要重启内核:内核的 DNS 规则按「启用的源域名」生成,所以增删规则、改源域名、启停都要重启;
+// 只改目标(域名 / IP)是面板侧的重写服务在做,两秒内自己生效
+const emit = defineEmits<{ needsRestart: [] }>()
+const needsRestart = (before: OpenboxDnsRewriteRule[], after: OpenboxDnsRewriteRule[]) => {
+  const key = (list: OpenboxDnsRewriteRule[]) => list.map((r) => `${r.id}\u0000${normalizeDomain(r.source)}\u0000${r.enabled !== false}`).sort().join('\n')
+  return key(before) !== key(after)
+}
 // 整份规则表一次写回(数组是整体替换的,不会被默认值合并回来);服务端校验不过会报错回来
 const persist = async (next: OpenboxDnsRewriteRule[]) => {
   saving.value = true
+  const restart = needsRestart(rules.value, next)
   try {
     await props.patchProfile({ dns: { rewrite: { initialized: 1, rules: next } } })
-    showNotification({ content: 'dnsRewriteSaved', type: 'alert-success' })
+    showNotification({ content: restart ? 'dnsRewriteSavedRestart' : 'dnsRewriteSavedLive', type: 'alert-success' })
+    if (restart) emit('needsRestart')
     return true
   } catch (err) {
     notifyError(err)

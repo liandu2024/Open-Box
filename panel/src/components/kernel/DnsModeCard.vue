@@ -57,6 +57,8 @@ const NOTE_KEY: Record<OpenboxDnsMode, string> = {
   hijack: 'dnsModeHijackNote',
   off: 'dnsModeOffNote',
 }
+// 劫持方式和 FakeIP 都要重启内核才生效:保存后告诉页面挂出「立即重启内核」
+const emit = defineEmits<{ needsRestart: [] }>()
 const saving = ref(false)
 const mode = computed<OpenboxDnsMode>(() => props.profile.dns?.mode ?? 'dnsmasq')
 const fakeIp = computed(() => props.profile.dns?.fakeIpForProxy === true)
@@ -70,6 +72,7 @@ const onFakeIp = async (event: Event) => {
   try {
     await props.patchProfile({ dns: { fakeIpForProxy: next } })
     showNotification({ content: 'dnsModeSaved', type: 'alert-success' })
+    emit('needsRestart')
   } catch (err) {
     showNotification({ content: 'routingSaveFailed', params: { message: err instanceof Error ? err.message : String(err) }, type: 'alert-error' })
   } finally {
@@ -84,6 +87,7 @@ const onChange = async (event: Event) => {
   try {
     await props.patchProfile({ dns: { mode: next } })
     showNotification({ content: 'dnsModeSaved', type: 'alert-success' })
+    emit('needsRestart')
   } catch (err) {
     showNotification({ content: 'routingSaveFailed', params: { message: err instanceof Error ? err.message : String(err) }, type: 'alert-error' })
   } finally {
