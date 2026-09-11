@@ -403,28 +403,36 @@ export const isUrlTestGroupStale = (groupName: string) => {
 }
 
 // 看到这种组就替它强制重测一次(/group/<name>/delay):内核测完会立刻重新择优,
-// 用户不用自己去点闪电。同一个组 3 分钟内只补一次,免得所有成员都挂掉时反复重测。
+// 用户不用自己去点闪电。超时是即时故障信号,不应等完整的 url-test interval;
+// 短暂冷却只用于避免整组都不可用时每次刷新都重复发起整组测速。
 const staleRepairAt = new Map<string, number>()
-const STALE_REPAIR_INTERVAL = 3 * 60 * 1000
+const STALE_REPAIR_INTERVAL = 15 * 1000
 
 const repairStaleUrlTestGroups = () => {
   const now = Date.now()
 
   for (const groupName of proxyGroupList.value) {
     if (!isUrlTestGroupStale(groupName)) {
+      // 新节点已经有结果,允许下一次真正失效时立即触发补测。
+      staleRepairAt.delete(groupName)
       continue
     }
-    // 补测的时间戳不因为"这次好了"就清掉:线路刚换过又立刻挂掉时,清了就会每刷新一次
-    // 列表重测一整个组。留着就是"同一个组最多 3 分钟补一次",和内核自己的检查间隔一致。
+    // 同一批全失败时最多每 15 秒重试一次;一旦切到新节点并恢复,上面的分支会清掉时间戳。
     if (now - (staleRepairAt.get(groupName) ?? 0) < STALE_REPAIR_INTERVAL) {
       continue
     }
     staleRepairAt.set(groupName, now)
-    fetchProxyGroupLatencyAPI(
-      groupName,
-      getTestUrl(groupName),
-      Math.max(5000, speedtestTimeout.value),
-    )
+    // sing-box 把超时节点的 history 删除,服务端看不到正文;先让服务端按内核启动时间
+    // 判定这次是否真的是超时(重启造成的整批清空不会误记),再让内核重测并择优。后续
+    // syncLatencyHistory + fetchProxies 会读到新节点的延迟,悬浮框顶部自然变成「新节点
+    // + 新延迟」,紧接着旧节点「超时」。
+    void syncLatencyHistory()
+      .then(() => fetchProxyGroupLatencyAPI(
+        groupName,
+        getTestUrl(groupName),
+        Math.max(5000, speedtestTimeout.value),
+      ))
+      .then(() => syncLatencyHistory())
       .then(() => fetchProxies())
       .catch(() => {})
   }
