@@ -56,10 +56,11 @@ jobs:
         run: |
           set -eu
           ver=$(sed -n 's/^SINGBOX_VERSION="\([^"]*\)"/\1/p' scripts/build-release.sh)
+          release_url=$(sed -n 's/^SINGBOX_RELEASE_URL="\([^"]*\)"/\1/p' scripts/build-release.sh)
           sha=$(sed -n 's/^SINGBOX_SHA256_AMD64="\([^"]*\)"/\1/p' scripts/build-release.sh)
-          [ -n "$ver" ] && [ -n "$sha" ] || { echo "无法从 build-release.sh 读出 sing-box 版本 / 校验和"; exit 1; }
+          [ -n "$ver" ] && [ -n "$release_url" ] && [ -n "$sha" ] || { echo "无法从 build-release.sh 读出 sing-box 版本 / 下载地址 / 校验和"; exit 1; }
           tarball="sing-box-${ver}-linux-amd64-musl.tar.gz"
-          curl -fsSL -o "/tmp/$tarball" "https://github.com/SagerNet/sing-box/releases/download/v${ver}/${tarball}"
+          curl -fsSL -o "/tmp/$tarball" "$release_url/$tarball"
           echo "${sha}  /tmp/$tarball" | sha256sum -c -
           mkdir -p panel/.tools
           tar -xzf "/tmp/$tarball" -C /tmp "sing-box-${ver}-linux-amd64-musl/sing-box"
