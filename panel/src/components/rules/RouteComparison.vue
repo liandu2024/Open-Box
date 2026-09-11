@@ -1118,14 +1118,17 @@ const termDns = computed<DnsView>(() => {
     tag = k.server?.tag || ''
     chain = k.viaProxy ? (k.chain.length ? k.chain : [k.server?.detour || '']).filter(Boolean) : []
     const server = k.server && k.server.server ? `${(k.server.type || '').toUpperCase()} ${k.server.server}${k.server.port ? `:${k.server.port}` : ''}`.trim() : tag
+    // 内核自己的 FakeIP:域名不在这边解析,连接进内核后把域名交给出站节点(连接记录里的叶子),由节点那边的 DNS 解析
+    const exitNode = tr.kernel?.chains?.length ? tr.kernel.chains[tr.kernel.chains.length - 1] : ''
     if (k.result === 'action') { label = t('routeTermKdnsLabelAction'); serverLine = ''; kernelLine = t('routeTermKdnsFlowAction', { action: k.action }) }
-    else if (k.fakeIpLocal) { label = t('routeTermKdnsLabelFakeIp'); serverLine = ''; kernelLine = t('routeTermKdnsFlowFakeIpLocal', { ip: k.answers[0] || '' }) }
-    else if (k.fakeIp && k.viaProxy) { label = t('routeTestDnsProxy'); serverLine = server; kernelLine = t('routeTermKdnsFlowFakeIp', { node: k.outbound || chain[chain.length - 1] || '', server }); kernelWarn = true }
+    else if (k.fakeIpLocal) { label = t('routeTermKdnsLabelFakeIp'); serverLine = t('routeTermKdnsFakeIpServer'); kernelLine = exitNode ? t('routeTermKdnsFlowFakeIpLocal', { node: exitNode }) : t('routeTermKdnsFlowFakeIpLocalNoNode', { ip: k.answers[0] || '' }) }
+    else if (k.fakeIp && k.viaProxy) { label = t('routeTestDnsProxy'); serverLine = server; kernelLine = t('routeTermKdnsFlowProxy', { node: k.outbound || chain[chain.length - 1] || '', server }); kernelWarn = true }
     else if (k.rewrite) { label = t('routeDnsRewrite'); serverLine = server; kernelLine = t('routeTermKdnsFlowRewrite', { server }) }
     else if (k.viaProxy) { label = t('routeTestDnsProxy'); serverLine = server; kernelLine = k.outbound ? t('routeTermKdnsFlowProxy', { node: k.outbound, server }) : t('routeTermKdnsFlowProxyGroup', { detour: k.server?.detour || '', server }) }
     else { label = t('routeTestDnsDirect'); serverLine = server; kernelLine = t('routeTermKdnsFlowDirect', { lan: d.server, server }) }
     notes.push({ text: k.ruleIndex === null ? t('routeTermKdnsFinal') : t('routeTermKdnsRule', { index: k.ruleIndex + 1, cond: k.ruleText }) })
-    if (k.fakeIpLocal) notes.push({ text: t('routeTestFakeIpLocal') })
+    if (k.fakeIpLocal) notes.push({ text: t('routeTermKdnsFakeIpNote', { ip: k.answers[0] || '', node: exitNode || '?' }) })
+    else if (k.fakeIp && k.viaProxy) notes.push({ text: `${k.outbound || chain[chain.length - 1] || ''}:${t('routeTestFakeIpAnswered')}`, warn: true })
     else if (k.result === 'exchanged') notes.push({ text: t('routeTermKdnsExchanged', { rcode: k.rcode, ttl: k.ttl ?? '?', ms: k.ms ?? '?' }) })
     else if (k.result === 'cached') notes.push({ text: t('routeTermKdnsCached', { ttl: k.ttl ?? '?' }), warn: true })
     else if (k.result === 'optimistic') notes.push({ text: t('routeTermKdnsOptimistic'), warn: true })
