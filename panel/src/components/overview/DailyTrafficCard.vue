@@ -390,6 +390,8 @@ import {
 } from '@heroicons/vue/24/outline'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { trafficCountDirect } from '@/store/settings'
+import { getNowProxyNodeName } from '@/store/proxies'
+import { isFailoverInternalTag } from '@/store/openboxFailover'
 import { useI18n } from 'vue-i18n'
 
 // 柱子区高度、柱顶数值行高、底部日期行高(px),日均线的定位要和这几个数对齐
@@ -594,10 +596,34 @@ const backToDay = () => {
 const rows = computed(() => {
   const d = detail.value
   if (!d) return []
-  const list = tab.value === 'nodes' ? d.nodes : tab.value === 'hosts' ? d.hosts : d.clients
+  // 故障转移的多节点页签在旧版本的流量记录里可能以 __fo:...:lane-... 作为节点键。
+  // 内核当前的 /proxies 已经能解析出页签内实际选中的叶子节点；在展示层把这类历史行
+  // 归并到真实节点，避免概览暴露内部标签，也避免同一真实节点拆成两行。
+  const list = tab.value === 'nodes' ? mergeFailoverNodeRows(d.nodes) : tab.value === 'hosts' ? d.hosts : d.clients
   const q = filter.value.trim().toLowerCase()
   return q ? list.filter((r) => r.key.toLowerCase().includes(q) || (r.name || '').toLowerCase().includes(q)) : list
 })
+
+const mergeFailoverNodeRows = (source: OpenboxTrafficRow[]) => {
+  if (!source.length) return source
+  const merged = new Map<string, OpenboxTrafficRow>()
+  for (const row of source) {
+    const key = isFailoverInternalTag(row.key) ? getNowProxyNodeName(row.key) : row.key
+    const target = key || row.key
+    const prev = merged.get(target)
+    if (!prev) {
+      merged.set(target, { ...row, key: target })
+      continue
+    }
+    merged.set(target, {
+      ...prev,
+      up: prev.up + row.up,
+      down: prev.down + row.down,
+      conns: prev.conns + row.conns,
+    })
+  }
+  return [...merged.values()].sort((a, b) => (b.up + b.down) - (a.up + a.down) || a.key.localeCompare(b.key))
+}
 const restExpanded = ref(false)
 // 换页签、换日期、改搜索词都收回去
 watch([tab, selectedDay, selectedHour, filter], () => {
