@@ -1,4 +1,4 @@
-import { normalizeRealityShortId, normalizeVlessFlow } from './node-fields.mjs'
+import { normalizeRealityShortId, normalizeUtlsFingerprint, normalizeVlessFlow } from './node-fields.mjs'
 // sing-box 1.13 各传输层的字段互不相同:ws 有 path/headers/early data,http 是 host 列表 +
 // path,grpc 只有 service_name,httpupgrade 是单个 host + path。分享链接 / Clash 的字段
 // 原样照搬(比如 grpc 带 path、http 带 headers.Host)会被内核以 unknown field 拒收,
@@ -95,12 +95,12 @@ export const buildTls = (tls, options = {}) => {
     if (sid !== undefined) out.reality.short_id = sid
     // reality 硬约束:必须有 utls
     out.utls = tls.utls && tls.utls.enabled
-      ? { enabled: true, fingerprint: tls.utls.fingerprint || 'chrome' }
+      ? { enabled: true, fingerprint: normalizeUtlsFingerprint(tls.utls.fingerprint) || 'chrome' }
       : { enabled: true, fingerprint: 'chrome' }
     return out
   }
   if (!options.quic && tls.utls && tls.utls.enabled) {
-    out.utls = { enabled: true, fingerprint: tls.utls.fingerprint || 'chrome' }
+    out.utls = { enabled: true, fingerprint: normalizeUtlsFingerprint(tls.utls.fingerprint) || 'chrome' }
   }
   out.insecure = true
   return out

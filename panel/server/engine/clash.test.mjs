@@ -147,6 +147,11 @@ test('clash hysteria2 / tuic 采集 skip-cert-verify 与 client-fingerprint', ()
   assert.equal(byName.P.fields.tls.enabled, true)
 })
 
+test('Clash unsafe client-fingerprint 归一为 chrome', () => {
+  const { nodes } = parseClashProxies('proxies:\n  - {name: U, type: trojan, server: u.example.com, port: 443, password: pw, tls: true, client-fingerprint: unsafe}')
+  assert.equal(nodes[0].fields.tls.utls.fingerprint, 'chrome')
+})
+
 test('非 Clash 文本返回空', () => {
   assert.deepEqual(parseClashProxies('just: a string').nodes, [])
 })

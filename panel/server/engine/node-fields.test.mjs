@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { UnsupportedPluginError, clashSsPlugin, normalizeRealityShortId, normalizeVlessFlow, sip003Plugin } from './node-fields.mjs'
+import { UnsupportedPluginError, clashSsPlugin, normalizeRealityShortId, normalizeUtlsFingerprint, normalizeVlessFlow, sip003Plugin } from './node-fields.mjs'
+
+test('sing-box 1.14 不接受 Clash 的 unsafe 指纹,仅归一为 chrome', () => {
+  assert.equal(normalizeUtlsFingerprint('unsafe'), 'chrome')
+  assert.equal(normalizeUtlsFingerprint(' UNSAFE '), 'chrome')
+  assert.equal(normalizeUtlsFingerprint('firefox'), 'firefox')
+  assert.equal(normalizeUtlsFingerprint('some-future-fingerprint'), 'some-future-fingerprint')
+  assert.equal(normalizeUtlsFingerprint(undefined), undefined)
+})
 
 test('normalizeVlessFlow:只认 xtls-rprx-vision,-udp443 变体归一,废弃 / 空的丢掉(GitHub #23)', () => {
   assert.equal(normalizeVlessFlow('xtls-rprx-vision'), 'xtls-rprx-vision')

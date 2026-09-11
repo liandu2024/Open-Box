@@ -83,3 +83,8 @@ test('库里存的老节点:short_id "null" 不写、flow -udp443 归一成 visi
   const d = createNode({ tag: 'R-direct', type: 'vless', server: 'a.com', server_port: 443, fields: { uuid: 'u', flow: 'xtls-rprx-direct' }, source: 'clash' })
   assert.equal(emitOutbound(d).flow, undefined)
 })
+
+test('库里存的旧 unsafe 指纹在出站生成时归一为 chrome', () => {
+  const n = createNode({ tag: 'U-old', type: 'trojan', server: 'a.com', server_port: 443, fields: { password: 'pw', tls: { enabled: true, server_name: 'a.com', utls: { enabled: true, fingerprint: 'unsafe' } } }, source: 'clash' })
+  assert.equal(emitOutbound(n).tls.utls.fingerprint, 'chrome')
+})

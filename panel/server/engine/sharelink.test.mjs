@@ -151,6 +151,11 @@ test('vless reality + utls + alpn 字段采集', () => {
   assert.equal(n.fields.tls.utls.enabled, true)
 })
 
+test('分享链接 fp=unsafe 归一为 chrome', () => {
+  const n = parseShareLink('vless://11111111-1111-1111-1111-111111111111@a.com:443?security=tls&fp=unsafe#U')
+  assert.equal(n.fields.tls.utls.fingerprint, 'chrome')
+})
+
 test('insecure 采集', () => {
   const n = parseShareLink('trojan://pw@a.com:443?sni=a.com&allowInsecure=1#I')
   assert.equal(n.fields.tls.insecure, true)

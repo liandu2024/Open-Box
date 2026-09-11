@@ -1,5 +1,5 @@
 import YAML from 'yaml'
-import { clashSsPlugin, normalizeRealityShortId, normalizeVlessFlow } from './node-fields.mjs'
+import { clashSsPlugin, normalizeRealityShortId, normalizeUtlsFingerprint, normalizeVlessFlow } from './node-fields.mjs'
 import { createNode } from './node-model.mjs'
 
 const toArray = (v) => (Array.isArray(v) ? v : v == null ? [] : [v])
@@ -39,7 +39,7 @@ const buildClashTls = (p, transport) => {
   if (sni) tls.server_name = sni
   if (p.alpn) tls.alpn = toArray(p.alpn)
   if (p['skip-cert-verify'] === true) tls.insecure = true
-  if (p['client-fingerprint']) tls.utls = { enabled: true, fingerprint: p['client-fingerprint'] }
+  if (p['client-fingerprint']) tls.utls = { enabled: true, fingerprint: normalizeUtlsFingerprint(p['client-fingerprint']) }
   if (p['reality-opts']) {
     const ro = p['reality-opts']
     tls.reality = { enabled: true }

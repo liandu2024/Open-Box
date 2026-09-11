@@ -12,6 +12,17 @@ export const normalizeVlessFlow = (flow) => {
   return undefined
 }
 
+// mihomo/Clash accepts `client-fingerprint: unsafe` as a compatibility value,
+// while sing-box 1.14 rejects it during config validation.  Keep the value
+// explicit at the import and emit boundaries so one legacy node cannot prevent
+// the whole core from starting.  Other values are left untouched: sing-box
+// should still report genuinely unsupported fingerprints instead of silently
+// changing their meaning.
+export const normalizeUtlsFingerprint = (fingerprint) => {
+  if (fingerprint === undefined || fingerprint === null) return fingerprint
+  return String(fingerprint).trim().toLowerCase() === 'unsafe' ? 'chrome' : fingerprint
+}
+
 // Reality 的 short_id:十六进制、最长 16 位(8 字节)。空 / null / "null" / 非十六进制一律不写——
 // Clash 订阅里 `short-id: null` 曾被 String() 成字符串 "null",内核 decode short_id 直接 FATAL(GitHub #19)
 export const normalizeRealityShortId = (v) => {

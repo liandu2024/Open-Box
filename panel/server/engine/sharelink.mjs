@@ -1,5 +1,5 @@
 import { createNode } from './node-model.mjs'
-import { normalizeRealityShortId, normalizeVlessFlow, sip003Plugin } from './node-fields.mjs'
+import { normalizeRealityShortId, normalizeUtlsFingerprint, normalizeVlessFlow, sip003Plugin } from './node-fields.mjs'
 import { decodeBase64, parseUri } from './codec.mjs'
 
 export const SHARELINK_SCHEMES = ['ss', 'vmess', 'vless', 'trojan', 'hysteria2', 'tuic', 'anytls', 'socks', 'socks5']
@@ -154,7 +154,7 @@ const buildTlsFromQuery = (query, fallbackSni) => {
   if (alpn) tls.alpn = alpn.split(',').map((s) => s.trim()).filter(Boolean)
   if (query.get('allowInsecure') === '1' || query.get('allowInsecure') === 'true' || query.get('insecure') === '1' || query.get('insecure') === 'true') tls.insecure = true
   const fp = query.get('fp')
-  if (fp) tls.utls = { enabled: true, fingerprint: fp }
+  if (fp) tls.utls = { enabled: true, fingerprint: normalizeUtlsFingerprint(fp) }
   if (security === 'reality') {
     tls.reality = { enabled: true }
     const pbk = query.get('pbk')
