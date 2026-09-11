@@ -641,7 +641,7 @@ const zhTW: LANG_MESSAGE = {
   subscriptionAutoUpdateHint: '到點自動重新拉取;節點有變化會重啟一次核心(幾秒)。',
   subscriptionAutoUpdateDaily: '每天 {time} 自動更新',
   subscriptionAutoUpdateEvery: '每 {days} 天 {time} 自動更新',
-  subscriptionUrlHint: '一行一個,多個位址的節點合在一起;內網 / 本機位址會被拒絕,不校驗 https 憑證。',
+  subscriptionUrlHint: '一行一個,多個位址的節點合在一起;支援內網 / 本機位址,不校驗 https 憑證。',
   subscriptionContentLabel: '節點內容',
   subscriptionContentHint: '一行一個節點連結(ss:// / trojan:// / vless:// / socks5:// 等);也支援整段 Clash / sing-box 設定。',
   subscriptionContentPlaceholder: '\u8cbc\u4e0a ss:// / trojan:// / hysteria2:// \u7b49\u9023\u7d50,\u6216 Clash/sing-box \u8a2d\u5b9a\u2026',

@@ -641,7 +641,7 @@ const zh: LANG_MESSAGE = {
   subscriptionAutoUpdateHint: '到点自动重新拉取;节点有变化会重启一次内核(几秒)。',
   subscriptionAutoUpdateDaily: '每天 {time} 自动更新',
   subscriptionAutoUpdateEvery: '每 {days} 天 {time} 自动更新',
-  subscriptionUrlHint: '一行一个,多个地址的节点合在一起;内网 / 本地地址会被拒绝,不校验 https 证书。',
+  subscriptionUrlHint: '一行一个,多个地址的节点合在一起;支持内网 / 本机地址,不校验 https 证书。',
   subscriptionContentLabel: '节点内容',
   subscriptionContentHint: '一行一个节点链接(ss:// / trojan:// / vless:// / socks5:// 等);也支持整段 Clash / sing-box 配置。',
   subscriptionContentPlaceholder: '\u7c98\u8d34 ss:// / trojan:// / hysteria2:// \u7b49\u94fe\u63a5,\u6216 Clash/sing-box \u914d\u7f6e\u2026',

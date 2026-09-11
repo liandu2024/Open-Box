@@ -645,7 +645,7 @@ const en = {
   subscriptionAutoUpdateHint: 'Re-fetched on schedule; if nodes changed, the core restarts once (a few seconds).',
   subscriptionAutoUpdateDaily: 'Auto-updates daily at {time}',
   subscriptionAutoUpdateEvery: 'Auto-updates every {days} days at {time}',
-  subscriptionUrlHint: 'One per line, nodes from all links are merged; LAN / local addresses are rejected, https certificates are not verified.',
+  subscriptionUrlHint: 'One per line, nodes from all links are merged; LAN / local addresses are supported, https certificates are not verified.',
   subscriptionContentLabel: 'Nodes',
   subscriptionContentHint: 'One node link per line (ss:// / trojan:// / vless:// / socks5:// …); a whole Clash or sing-box config also works.',
   subscriptionContentPlaceholder: 'Paste ss:// / trojan:// / hysteria2:// lines, or a Clash/sing-box config…',
