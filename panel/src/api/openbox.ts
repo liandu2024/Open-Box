@@ -1058,6 +1058,32 @@ export interface OpenboxTerminalEntry {
     tunDevice?: string
   }
 }
+export type OpenboxTerminalKernelDnsResult = 'exchanged' | 'cached' | 'optimistic' | 'failed' | 'rejected' | 'action' | 'pending'
+export type OpenboxTerminalKernelDns =
+  | { seen: false; reason: 'no-log' | 'not-seen'; error?: string }
+  | {
+    seen: true
+    source: string
+    ruleIndex: number | null
+    ruleText: string
+    action: string
+    server: { tag: string; type: string; server: string; port: number | null; detour: string } | null
+    viaProxy: boolean
+    rewrite: boolean
+    // 日志里实际拨号的出站(节点);chain 是 detour 此刻的选择链,叶子以日志为准
+    outbound: string
+    chain: string[]
+    result: OpenboxTerminalKernelDnsResult
+    rcode: string
+    ttl: number | null
+    answers: string[]
+    ms: number | null
+    error: string
+    fakeIp: boolean
+    // 占位地址是内核自己的 FakeIP 服务器发的(不是上游 / 对端回的)
+    fakeIpLocal: boolean
+    v6?: { result: OpenboxTerminalKernelDnsResult; rcode: string; answers: string[]; ms: number | null; error: string }
+  }
 export interface OpenboxTerminalTest {
   target: string
   mode: 'lan'
@@ -1072,6 +1098,9 @@ export interface OpenboxTerminalTest {
   dnsForward?: { forward: 'kernel' | 'upstream' | 'unknown'; plan: string; suffix?: string; to?: string }
   // conntrack 里虚拟终端发往 DNS 服务器的查询:回复方是不是它本人(被内核劫持时回复方是 tun 对端)
   dnsEvidence?: { flows: number; hijacked: boolean; answeredBy: string; line: string }
+  // 内核侧的解析过程(server/system/dns-trace.mjs 从内核日志流里截的,不是推算):命中哪条 DNS 规则、交给哪个
+  // 解析器、经哪个节点发出、上游回了什么。seen=false 时 reason:no-log 连不上日志流 / not-seen 日志里没这条查询
+  kernelDns?: OpenboxTerminalKernelDns
   entry?: OpenboxTerminalEntry
   kernel?: { seen: boolean; inbound?: string; rule?: string; rulePayload?: string; chains?: string[]; destinationIP?: string; host?: string; viaProxy?: boolean }
   exit?: {

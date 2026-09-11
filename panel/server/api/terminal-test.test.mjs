@@ -43,6 +43,9 @@ const makeCtx = ({ conntrack, extraExec = {} }) => createMockContext({
   execResults: { 'ip -4 -o addr': { stdout: ADDRS }, 'ip -6 -o addr': { stdout: '' }, ...extraExec },
 })
 const fetchConnections = (connections) => async () => ({ ok: true, status: 200, json: async () => ({ connections }) })
+// 内核日志流:默认给一个连不上的(不去碰真实 ws);要看内核侧解析过程的用例自己给行
+const noTap = () => ({ ready: Promise.resolve(false), lines: [], error: 'connect ECONNREFUSED 127.0.0.1:9095', close: () => {} })
+const tapOf = (lines) => () => ({ ready: Promise.resolve(true), lines, error: '', close: () => {} })
 
 test('旁路目标:conntrack 里没改写、路由从 eth0 转出、回包发往 WAN 地址、内核连接表没有 → bypass,并带全部证据', async () => {
   const ctx = makeCtx({
@@ -58,7 +61,7 @@ test('旁路目标:conntrack 里没改写、路由从 eth0 转出、回包发往
     { event: 'connected', localAddress: '10.0.0.160', localPort: 50001, remoteAddress: '183.240.99.224', remotePort: 80, ms: 12 },
     { event: 'response', status: 200, ms: 70 },
   ])
-  const r = await runTerminalTest({ store, ctx, paths, fetchImpl: fetchConnections([]), probe }, { target: 'www.baidu.com', port: 80 })
+  const r = await runTerminalTest({ store, ctx, paths, fetchImpl: fetchConnections([]), probe, logTap: noTap }, { target: 'www.baidu.com', port: 80 })
   assert.equal(r.capable, true)
   assert.deepEqual(r.source, { kind: 'virtual', name: 'openbox-probe', ip: '10.0.0.160', mac: '02:4f:42:00:00:01', via: 'dhcp', dns: ['10.0.0.1'], gateway: '10.0.0.1', lanDevice: 'br-lan', reused: false, dhcpMs: 1200 })
   assert.deepEqual(r.dns, { server: '10.0.0.1', ok: true, answers: ['183.240.99.224', '111.45.11.5'], ms: 6 })
@@ -96,7 +99,7 @@ test('进内核的代理目标:conntrack 回复方改写成路由器地址(redir
     { event: 'response', status: 302, ms: 390 },
   ])
   const connections = [{ metadata: { type: 'redirect/tun-in', sourceIP: '10.0.0.160', sourcePort: '42174', destinationIP: '8.8.8.8', destinationPort: '443', host: '' }, rule: 'rule_set=[geoip-google] => route(国外)', rulePayload: '', chains: ['自建 | 美国-02', '美国-自动', '国外'] }]
-  const r = await runTerminalTest({ store, ctx, paths, fetchImpl: fetchConnections(connections), probe }, { target: '8.8.8.8', port: 443 })
+  const r = await runTerminalTest({ store, ctx, paths, fetchImpl: fetchConnections(connections), probe, logTap: noTap }, { target: '8.8.8.8', port: 443 })
   assert.deepEqual(r.dns, { skipped: true })
   assert.equal(r.dnsForward, undefined)
   assert.equal(r.entry.kind, 'kernel')
@@ -121,7 +124,7 @@ test('连接建不起来(超时):没有来源端口也按目标在 conntrack 里
     },
   })
   const probe = makeProbe([{ event: 'error', stage: 'connect', error: 'timeout', ms: 10000 }])
-  const r = await runTerminalTest({ store, ctx, paths, fetchImpl: fetchConnections([]), probe }, { target: '9.9.9.9', port: 443 })
+  const r = await runTerminalTest({ store, ctx, paths, fetchImpl: fetchConnections([]), probe, logTap: noTap }, { target: '9.9.9.9', port: 443 })
   assert.equal(r.exit.ok, false)
   assert.equal(r.exit.error, 'timeout')
   assert.equal(r.entry.kind, 'kernel')
@@ -136,7 +139,7 @@ test('conntrack 里没有这条流:不判旁路(unknown / no-conntrack),即使�
     { event: 'connected', localPort: 50002, remoteAddress: '183.240.99.224', remotePort: 80, ms: 9 },
     { event: 'response', status: 200, ms: 50 },
   ])
-  const r = await runTerminalTest({ store, ctx, paths, fetchImpl: fetchConnections([]), probe }, { target: 'www.baidu.com', port: 80 })
+  const r = await runTerminalTest({ store, ctx, paths, fetchImpl: fetchConnections([]), probe, logTap: noTap }, { target: 'www.baidu.com', port: 80 })
   assert.equal(r.entry.kind, 'unknown')
   assert.equal(r.entry.reason, 'no-conntrack')
   assert.equal(r.exit.forward, undefined)
@@ -149,7 +152,7 @@ test('DNS 解析失败:不去连,exit 记 dns 错误,入口 not-connected', asyn
     { event: 'dns', server: '10.0.0.1', ok: false, answers: [], ms: 5000, error: 'queryA ETIMEOUT nope.invalid' },
     { event: 'error', stage: 'dns', error: 'queryA ETIMEOUT nope.invalid', ms: 5001 },
   ])
-  const r = await runTerminalTest({ store, ctx, paths, fetchImpl: fetchConnections([]), probe }, { target: 'nope.invalid' })
+  const r = await runTerminalTest({ store, ctx, paths, fetchImpl: fetchConnections([]), probe, logTap: noTap }, { target: 'nope.invalid' })
   assert.equal(r.dns.ok, false)
   assert.match(r.exit.error, /^dns: /)
   assert.deepEqual([r.entry.kind, r.entry.reason], ['unknown', 'not-connected'])
@@ -186,4 +189,74 @@ test('HTTP 路由:非法目标 400;capability 接口回能力;POST 返回测试�
   } finally {
     server.close()
   }
+})
+
+test('域名目标:清内核 DNS 缓存、接内核日志流,截出内核侧的解析过程(规则、解析器、经哪个节点、应答),叶子以日志为准', async () => {
+  const cfg = { ...config, dns: { servers: [{ type: 'udp', tag: 'dns-direct', server: '211.139.29.150' }, { type: 'tcp', tag: 'dns-policy-4', server: '1.1.1.1', detour: 'AI' }] } }
+  const ctx = createMockContext({
+    files: { [paths.configPath]: JSON.stringify(cfg), [configMetaPath(paths)]: JSON.stringify({ firstLayer: { dnsMode: 'hijack', dnsForward: '' } }), [lanProbe.CONNTRACK_PATH]: CT_REDIRECT },
+    execResults: { 'ip -4 -o addr': { stdout: ADDRS }, 'ip -6 -o addr': { stdout: '' }, 'ip route get 8.8.8.8 from 10.0.0.160 iif br-lan': { stdout: '8.8.8.8 from 10.0.0.160 via 192.168.3.1 dev eth0' }, 'nft list set inet sing-box inet4_route_exclude_address_set': { code: 1 } },
+  })
+  const calls = []
+  const fetchImpl = async (url, init = {}) => {
+    calls.push(`${init.method || 'GET'} ${url}`)
+    if (url.endsWith('/proxies')) return { ok: true, status: 200, json: async () => ({ proxies: { AI: { now: '美国-故转' }, '美国-故转': { now: '__fo:lane' }, '__fo:lane': { now: 'VW | 英国-HOME-01' } } }) }
+    return { ok: true, status: 204, json: async () => ({ connections: [] }) }
+  }
+  const lines = [
+    '[1 0ms] inbound/direct[dns-in]: inbound packet connection from 10.0.0.160:40000', '[1 0ms] dns: exchange chatgpt.com. IN A', '[1 0ms] dns: match[9] rule_set=geosite-category-ai-!cn => route(dns-policy-4)',
+    '[1 0ms] outbound/tuic[VW | 英国-HOME-02]: outbound connection to 1.1.1.1:53', '[1 270ms] dns: exchanged chatgpt.com NOERROR 300', '[1 270ms] dns: exchanged A chatgpt.com. 300 IN A 104.18.32.47',
+    '[2 0ms] inbound/direct[dns-in]: inbound packet connection from 10.0.0.160:40001', '[2 0ms] dns: exchange chatgpt.com. IN AAAA', '[2 0ms] dns: match[9] rule_set=geosite-category-ai-!cn => route(dns-policy-4)', '[2 0ms] dns: strategy rejected',
+  ]
+  const probe = makeProbe([
+    { event: 'dns', server: '10.0.0.1', ok: true, answers: ['104.18.32.47'], ms: 275 },
+    { event: 'connected', localAddress: '10.0.0.160', localPort: 42174, remoteAddress: '8.8.8.8', remotePort: 443, ms: 300 },
+    { event: 'response', status: 403, ms: 518 },
+  ])
+  const r = await runTerminalTest({ store, ctx, paths, fetchImpl, probe, logTap: tapOf(lines) }, { target: 'chatgpt.com' })
+  assert.ok(calls.includes('POST http://127.0.0.1:9095/cache/dns/flush'), '先清内核 DNS 缓存')
+  const k = r.kernelDns
+  assert.equal(k.seen, true)
+  assert.equal(k.source, '10.0.0.160')
+  assert.equal(k.ruleIndex, 9)
+  assert.equal(k.ruleText, 'rule_set=geosite-category-ai-!cn')
+  assert.deepEqual(k.server, { tag: 'dns-policy-4', type: 'tcp', server: '1.1.1.1', port: null, detour: 'AI' })
+  assert.equal(k.viaProxy, true)
+  assert.equal(k.rewrite, false)
+  assert.equal(k.outbound, 'VW | 英国-HOME-02')
+  // selector 推算的叶子是 HOME-01,日志里实际拨号的是 HOME-02:以日志为准
+  assert.deepEqual(k.chain, ['AI', '美国-故转', '__fo:lane', 'VW | 英国-HOME-02'])
+  assert.equal(k.result, 'exchanged'); assert.equal(k.rcode, 'NOERROR'); assert.equal(k.ttl, 300); assert.equal(k.ms, 270)
+  assert.deepEqual(k.answers, ['104.18.32.47']); assert.equal(k.fakeIp, false); assert.equal(k.fakeIpLocal, false)
+  // hijack 模式不碰 dnsmasq
+  assert.ok(!ctx.calls.some((c) => c.cmd === 'kill'))
+  assert.deepEqual(k.v6, { result: 'rejected', rcode: '', answers: [], ms: 0, error: '' })
+  // 日志里没有这条查询 / 连不上日志流:如实说,不推算
+  const none = await runTerminalTest({ store, ctx, paths, fetchImpl, probe, logTap: tapOf(['[3 0ms] dns: exchange other.example. IN A']) }, { target: 'chatgpt.com' })
+  assert.deepEqual(none.kernelDns, { seen: false, reason: 'not-seen' })
+  const nolog = await runTerminalTest({ store, ctx, paths, fetchImpl, probe, logTap: noTap }, { target: 'chatgpt.com' })
+  assert.deepEqual(nolog.kernelDns, { seen: false, reason: 'no-log', error: 'connect ECONNREFUSED 127.0.0.1:9095' })
+  // IP 目标不接日志流、不清缓存
+  calls.length = 0
+  const ip = await runTerminalTest({ store, ctx, paths, fetchImpl, probe: makeProbe([{ event: 'connected', localAddress: '10.0.0.160', localPort: 42174, remoteAddress: '8.8.8.8', remotePort: 443, ms: 3 }, { event: 'response', status: 200, ms: 9 }]), logTap: () => { throw new Error('should not tap') } }, { target: '8.8.8.8' })
+  assert.equal(ip.kernelDns, undefined)
+  assert.ok(!calls.some((c) => c.includes('/cache/dns/flush')))
+})
+
+test('dnsmasq 转发模式:探测前给 dnsmasq 发 SIGHUP 清它的缓存(不然命中缓存内核就收不到查询);内核自己的 FakeIP 占位地址标 fakeIpLocal', async () => {
+  const cfg = { ...config, dns: { servers: [{ type: 'fakeip', tag: 'dns-fakeip', inet4_range: '198.18.0.0/15' }, { type: 'tcp', tag: 'dns-policy-4', server: '1.1.1.1', detour: 'AI' }] } }
+  const ctx = createMockContext({
+    files: { [paths.configPath]: JSON.stringify(cfg), [configMetaPath(paths)]: JSON.stringify({ firstLayer: { dnsMode: 'dnsmasq', dnsForward: 'all' } }), [lanProbe.CONNTRACK_PATH]: CT_REDIRECT },
+    execResults: { 'ip -4 -o addr': { stdout: ADDRS }, 'ip -6 -o addr': { stdout: '' }, 'pidof dnsmasq': { stdout: '16107\n' }, 'nft list set inet sing-box inet4_route_exclude_address_set': { code: 1 } },
+  })
+  const lines = ['[1 0ms] inbound/direct[dns-in]: inbound packet connection from 127.0.0.1:5', '[1 0ms] dns: exchange chatgpt.com. IN A', '[1 0ms] dns: match[5] query_type=A rule_set=geosite-category-ai-!cn => route(dns-fakeip)',
+    '[1 0ms] dns: exchanged chatgpt.com NOERROR 600', '[1 0ms] dns: exchanged A chatgpt.com. 600 IN A 198.18.0.6']
+  const probe = makeProbe([{ event: 'dns', server: '10.0.0.1', ok: true, answers: ['198.18.0.6'], ms: 3 }, { event: 'connected', localAddress: '10.0.0.160', localPort: 42174, remoteAddress: '198.18.0.6', remotePort: 443, ms: 20 }, { event: 'response', status: 200, ms: 700 }])
+  const r = await runTerminalTest({ store, ctx, paths, fetchImpl: fetchConnections([]), probe, logTap: tapOf(lines) }, { target: 'chatgpt.com' })
+  assert.deepEqual(ctx.calls.filter((c) => c.cmd === 'kill').map((c) => c.args), [['-HUP', '16107']])
+  assert.ok(ctx.calls.findIndex((c) => c.cmd === 'kill') < ctx.calls.findIndex((c) => c.cmd === 'ip' && c.args[0] === '-4'), '清缓存在探测之前')
+  const k = r.kernelDns
+  assert.equal(k.seen, true)
+  assert.equal(k.server.type, 'fakeip'); assert.equal(k.viaProxy, false); assert.equal(k.fakeIp, true); assert.equal(k.fakeIpLocal, true)
+  assert.deepEqual(k.answers, ['198.18.0.6']); assert.equal(k.ruleIndex, 5)
 })

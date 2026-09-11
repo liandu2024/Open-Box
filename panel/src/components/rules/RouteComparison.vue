@@ -512,6 +512,17 @@
               class="text-xs"
               :class="actualDns.v6.tone === 'pending' ? 'text-base-content/80 font-medium' : actualDns.v6.tone === 'good' ? 'text-success' : 'text-base-content/60'"
             >· {{ actualDns.v6.text }}</span>
+            <!-- 模拟终端:LAN DNS 只是第一层,下一层(进内核后交给谁、经哪个节点问的)从内核日志截出来单独一行 -->
+            <span
+              v-if="actualDns.kernelLine"
+              class="basis-full"
+              aria-hidden="true"
+            />
+            <span
+              v-if="actualDns.kernelLine"
+              class="text-xs"
+              :class="actualDns.kernelWarn ? 'text-warning font-medium' : 'text-base-content/80'"
+            >{{ actualDns.kernelLine }}</span>
           </template>
           <template
             v-if="actualDns.kind === 'decision'"
@@ -522,7 +533,7 @@
               class="route-note"
             >{{ actualDns.stale }}</p>
             <p v-if="actualDns.v6 && !actualDns.v6.queried">{{ actualDns.v6.text }}</p>
-            <p v-if="!actualDns.lan"><span class="text-base-content/50">{{ $t('routeDnsResolver') }}</span> <span class="font-mono">{{ actualDns.tag }}</span></p>
+            <p v-if="actualDns.tag"><span class="text-base-content/50">{{ $t('routeDnsResolver') }}</span> <span class="font-mono">{{ actualDns.tag }}</span></p>
             <div
               v-if="actualDns.chain?.length"
               class="flex flex-wrap items-center gap-x-1.5 gap-y-1"
@@ -804,6 +815,9 @@ interface DnsView {
   v6?: { text: string; tone: Tone; queried: boolean }
   notes?: Array<{ text: string; warn?: boolean }>
   chain?: string[]
+  // 模拟终端:内核侧的解析过程一句话(从内核日志截的),放在主行第三行
+  kernelLine?: string
+  kernelWarn?: boolean
   answers?: string[]
   answers6?: string[]
   stale?: string
@@ -1089,14 +1103,48 @@ const termDns = computed<DnsView>(() => {
     else if (f.forward === 'kernel') notes.push({ text: t('routeTermDnsForwardKernel', { suffix: f.suffix || '', to: f.to || '' }) })
     else if (f.forward === 'upstream') notes.push({ text: t('routeTermDnsForwardUpstream') })
   }
+  // 下一层:进内核之后的实际处理(内核日志实录)。没截到就说清楚为什么看不到,不推算
+  const k = tr.kernelDns
+  let kernelLine = ''
+  let kernelWarn = false
+  let tag = ''
+  let chain: string[] = []
+  if (k && k.seen) {
+    tag = k.server?.tag || ''
+    chain = k.viaProxy ? (k.chain.length ? k.chain : [k.server?.detour || '']).filter(Boolean) : []
+    const server = serverLineOf(k.server ? { tag: k.server.tag, type: k.server.type, server: k.server.server } : undefined) || tag
+    if (k.result === 'action') kernelLine = t('routeTermKdnsLineAction', { action: k.action })
+    else if (k.fakeIpLocal) kernelLine = t('routeTermKdnsLineFakeIpLocal', { ip: k.answers[0] || '' })
+    else if (k.fakeIp && k.viaProxy) { kernelLine = t('routeTermKdnsLineFakeIp', { node: k.outbound || chain[chain.length - 1] || '' }); kernelWarn = true }
+    else if (k.rewrite) kernelLine = t('routeTermKdnsLineRewrite')
+    else if (k.viaProxy) kernelLine = k.outbound ? t('routeTermKdnsLineProxy', { server, node: k.outbound }) : t('routeTermKdnsLineProxyGroup', { server, detour: k.server?.detour || '' })
+    else kernelLine = t('routeTermKdnsLineDirect', { server })
+    notes.push({ text: k.ruleIndex === null ? t('routeTermKdnsFinal') : t('routeTermKdnsRule', { index: k.ruleIndex + 1, cond: k.ruleText }) })
+    if (k.fakeIpLocal) notes.push({ text: t('routeTestFakeIpLocal') })
+    else if (k.result === 'exchanged') notes.push({ text: t('routeTermKdnsExchanged', { rcode: k.rcode, ttl: k.ttl ?? '?', ms: k.ms ?? '?' }) })
+    else if (k.result === 'cached') notes.push({ text: t('routeTermKdnsCached', { ttl: k.ttl ?? '?' }), warn: true })
+    else if (k.result === 'optimistic') notes.push({ text: t('routeTermKdnsOptimistic'), warn: true })
+    else if (k.result === 'failed') notes.push({ text: t('routeTermKdnsFailed', { message: k.error }), warn: true })
+    else if (k.result === 'pending') notes.push({ text: t('routeTermKdnsPending'), warn: true })
+    if (k.fakeIp && !k.viaProxy && !k.fakeIpLocal) notes.push({ text: t('routeTestFakeIpUpstream'), warn: true })
+    if (k.v6) {
+      if (k.v6.result === 'rejected') notes.push({ text: t('routeTermKdnsV6Rejected') })
+      else if (k.v6.result === 'failed') notes.push({ text: t('routeTermKdnsFailed', { message: k.v6.error }), warn: true })
+      else if (k.v6.answers.length) notes.push({ text: t('routeTermKdnsV6Ok', { count: k.v6.answers.length }) })
+    }
+  } else if (k) {
+    if (k.reason === 'no-log') notes.push({ text: t('routeTermKdnsNoLog', { error: k.error || '' }), warn: true })
+    else if (f && f.forward === 'upstream') notes.push({ text: t('routeTermKdnsNotEntered') })
+    else notes.push({ text: t('routeTermKdnsNotSeen'), warn: true })
+  }
   const failed = !answers.length && !answers6.length
   return {
     kind: 'decision',
     state: failed ? 'pending' : 'ok',
     badge: `${d.ms} ms`,
     tone: failed ? 'pending' : 'good',
-    lan: true, serverLine: `UDP ${d.server}`, tag: '',
-    v4, v6, notes, chain: [], answers, answers6,
+    lan: true, serverLine: `UDP ${d.server}`, tag,
+    v4, v6, notes, chain, kernelLine, kernelWarn, answers, answers6,
   }
 })
 // ③ 模拟终端的入口:按系统证据判(见 server/system/lan-probe.mjs 的 classifyEntry)
