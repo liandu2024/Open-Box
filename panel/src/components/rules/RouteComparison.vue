@@ -490,7 +490,7 @@
           </template>
           <template v-else>
             <!-- 模拟终端问的是 LAN 的 DNS(DHCP 发下来的那台);内核诊断是内核自己的直连 / 代理解析器 -->
-            <span class="font-medium">{{ actualDns.lan ? $t('routeTermDnsLan') : actualDns.rewrite ? $t('routeDnsRewrite') : actualDns.viaProxy ? $t('routeTestDnsProxy') : $t('routeTestDnsDirect') }}</span>
+            <span class="font-medium">{{ actualDns.label || (actualDns.lan ? $t('routeTermDnsLan') : actualDns.rewrite ? $t('routeDnsRewrite') : actualDns.viaProxy ? $t('routeTestDnsProxy') : $t('routeTestDnsDirect')) }}</span>
             <span class="text-base-content/60 font-mono text-xs">{{ actualDns.serverLine }}</span>
             <span
               v-if="actualDns.rewrite"
@@ -815,7 +815,9 @@ interface DnsView {
   v6?: { text: string; tone: Tone; queried: boolean }
   notes?: Array<{ text: string; warn?: boolean }>
   chain?: string[]
-  // 模拟终端:内核侧的解析过程一句话(从内核日志截的),放在主行第三行
+  // 模拟终端:主行标签按内核实际用的解析器写(代理 DNS / 直连 DNS / FakeIP …),截不到内核过程时才是 LAN DNS
+  label?: string
+  // 模拟终端:内核侧的解析流程一句(从内核日志截的):节点(X) → TCP 1.1.1.1 / 10.0.0.1 → UDP 上游
   kernelLine?: string
   kernelWarn?: boolean
   answers?: string[]
@@ -1103,22 +1105,25 @@ const termDns = computed<DnsView>(() => {
     else if (f.forward === 'kernel') notes.push({ text: t('routeTermDnsForwardKernel', { suffix: f.suffix || '', to: f.to || '' }) })
     else if (f.forward === 'upstream') notes.push({ text: t('routeTermDnsForwardUpstream') })
   }
-  // 下一层:进内核之后的实际处理(内核日志实录)。没截到就说清楚为什么看不到,不推算
+  // 下一层:进内核之后的实际处理(内核日志实录)。主行标签和地址按内核实际用的解析器写,第二行一句流程:
+  // 节点(自建 | 美国-TUD-01) → TCP 1.1.1.1 / 10.0.0.1 → UDP 211.139.29.150。没截到就说清楚为什么看不到,不推算
   const k = tr.kernelDns
   let kernelLine = ''
   let kernelWarn = false
   let tag = ''
   let chain: string[] = []
+  let label = ''
+  let serverLine = `UDP ${d.server}`
   if (k && k.seen) {
     tag = k.server?.tag || ''
     chain = k.viaProxy ? (k.chain.length ? k.chain : [k.server?.detour || '']).filter(Boolean) : []
-    const server = serverLineOf(k.server ? { tag: k.server.tag, type: k.server.type, server: k.server.server } : undefined) || tag
-    if (k.result === 'action') kernelLine = t('routeTermKdnsLineAction', { action: k.action })
-    else if (k.fakeIpLocal) kernelLine = t('routeTermKdnsLineFakeIpLocal', { ip: k.answers[0] || '' })
-    else if (k.fakeIp && k.viaProxy) { kernelLine = t('routeTermKdnsLineFakeIp', { node: k.outbound || chain[chain.length - 1] || '' }); kernelWarn = true }
-    else if (k.rewrite) kernelLine = t('routeTermKdnsLineRewrite')
-    else if (k.viaProxy) kernelLine = k.outbound ? t('routeTermKdnsLineProxy', { server, node: k.outbound }) : t('routeTermKdnsLineProxyGroup', { server, detour: k.server?.detour || '' })
-    else kernelLine = t('routeTermKdnsLineDirect', { server })
+    const server = k.server && k.server.server ? `${(k.server.type || '').toUpperCase()} ${k.server.server}${k.server.port ? `:${k.server.port}` : ''}`.trim() : tag
+    if (k.result === 'action') { label = t('routeTermKdnsLabelAction'); serverLine = ''; kernelLine = t('routeTermKdnsFlowAction', { action: k.action }) }
+    else if (k.fakeIpLocal) { label = t('routeTermKdnsLabelFakeIp'); serverLine = ''; kernelLine = t('routeTermKdnsFlowFakeIpLocal', { ip: k.answers[0] || '' }) }
+    else if (k.fakeIp && k.viaProxy) { label = t('routeTestDnsProxy'); serverLine = server; kernelLine = t('routeTermKdnsFlowFakeIp', { node: k.outbound || chain[chain.length - 1] || '', server }); kernelWarn = true }
+    else if (k.rewrite) { label = t('routeDnsRewrite'); serverLine = server; kernelLine = t('routeTermKdnsFlowRewrite', { server }) }
+    else if (k.viaProxy) { label = t('routeTestDnsProxy'); serverLine = server; kernelLine = k.outbound ? t('routeTermKdnsFlowProxy', { node: k.outbound, server }) : t('routeTermKdnsFlowProxyGroup', { detour: k.server?.detour || '', server }) }
+    else { label = t('routeTestDnsDirect'); serverLine = server; kernelLine = t('routeTermKdnsFlowDirect', { lan: d.server, server }) }
     notes.push({ text: k.ruleIndex === null ? t('routeTermKdnsFinal') : t('routeTermKdnsRule', { index: k.ruleIndex + 1, cond: k.ruleText }) })
     if (k.fakeIpLocal) notes.push({ text: t('routeTestFakeIpLocal') })
     else if (k.result === 'exchanged') notes.push({ text: t('routeTermKdnsExchanged', { rcode: k.rcode, ttl: k.ttl ?? '?', ms: k.ms ?? '?' }) })
@@ -1143,7 +1148,7 @@ const termDns = computed<DnsView>(() => {
     state: failed ? 'pending' : 'ok',
     badge: `${d.ms} ms`,
     tone: failed ? 'pending' : 'good',
-    lan: true, serverLine: `UDP ${d.server}`, tag,
+    lan: true, label, serverLine, tag,
     v4, v6, notes, chain, kernelLine, kernelWarn, answers, answers6,
   }
 })
