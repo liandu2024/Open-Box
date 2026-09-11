@@ -14,14 +14,9 @@
           >{{ $t('dfDisconnected') }}</span>
         </p>
       </div>
-      <RouterLink
-        to="/settings?tab=dns"
-        class="text-primary text-xs hover:underline"
-        >{{ $t('dfManage') }}</RouterLink
-      >
     </div>
     <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-      <div class="border-base-300/60 flex flex-col rounded-xl border p-4">
+      <div class="bg-base-100 border-base-300/60 flex flex-col rounded-xl border p-4">
         <div class="text-base-content/60 text-xs">{{ $t('dfQueries') }}</div>
         <div class="my-2 text-3xl tabular-nums">{{ data.queries.toLocaleString() }}</div>
         <DnsSparkline
@@ -29,7 +24,7 @@
           class="mt-auto text-sky-500"
         />
       </div>
-      <div class="border-base-300/60 flex flex-col rounded-xl border p-4">
+      <div class="bg-base-100 border-base-300/60 flex flex-col rounded-xl border p-4">
         <div class="text-base-content/60 flex justify-between text-xs">
           <span>{{ $t('dfBlocked') }}</span
           ><span class="text-orange-500"
@@ -44,7 +39,7 @@
           class="mt-auto text-orange-500"
         />
       </div>
-      <div class="border-base-300/60 rounded-xl border p-4">
+      <div class="bg-base-100 border-base-300/60 rounded-xl border p-4">
         <div class="text-base-content/60 mb-3 text-xs">{{ $t('dfTop') }}</div>
         <div
           v-if="!data.topDomains.length"
@@ -71,7 +66,7 @@
             /></div
         ></RouterLink>
       </div>
-      <div class="border-base-300/60 flex flex-col rounded-xl border p-4">
+      <div class="bg-base-100 border-base-300/60 flex flex-col rounded-xl border p-4">
         <div class="text-base-content/60 text-xs">{{ $t('dfAverage') }}</div>
         <div class="my-2 text-3xl tabular-nums">
           {{ data.averageMs === null ? '—' : Math.round(data.averageMs)
