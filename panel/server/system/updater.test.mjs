@@ -6,9 +6,9 @@ import { refreshRulesets } from './updater.mjs'
 
 const paths = createPaths('/opt/open-box')
 
-// 审查第 11 项:「规则集链接」编出来的 list-* / list-*-ip 不在 MetaCubeX 上,Geo 更新不该去下它,
-// 更不该把它记成失败——以前配置里只要有一条规则集链接,每次 Geo 更新界面就持续报错。
-test('refreshRulesets 只更新 geoip-/geosite-,规则集链接的 list-* 既不下载也不算失败、不计入 total', async () => {
+// 「规则集链接」编出来的 list-* / list-*-ip 与 DNS 过滤运行时生成的 dns-filter-* 不在
+// MetaCubeX 上，Geo 更新不该去下它们，更不该把它们记成失败。
+test('refreshRulesets 只更新 geoip-/geosite-,非 Geo 本地规则集既不下载也不算失败', async () => {
   const dir = paths.rulesetDir
   const config = {
     route: {
@@ -16,6 +16,9 @@ test('refreshRulesets 只更新 geoip-/geosite-,规则集链接的 list-* 既不
         { type: 'local', tag: 'geosite-cn', format: 'binary', path: `${dir}/geosite-cn.srs` },
         { type: 'local', tag: 'list-934d523f', format: 'binary', path: `${dir}/list-934d523f.srs` },
         { type: 'local', tag: 'list-934d523f-ip', format: 'binary', path: `${dir}/list-934d523f-ip.srs` },
+        { type: 'local', tag: 'dns-filter-allow-abcd1234', format: 'binary', path: `${dir}/dns-filter-allow-abcd1234.srs` },
+        { type: 'local', tag: 'dns-filter-anti-ad-block-efgh5678', format: 'binary', path: `${dir}/dns-filter-anti-ad-block-efgh5678.srs` },
+        { type: 'local', tag: 'custom-local-rule', format: 'binary', path: `${dir}/custom-local-rule.srs` },
         { type: 'local', tag: 'geoip-cn', format: 'binary', path: `${dir}/geoip-cn.srs` },
       ],
     },
@@ -31,7 +34,7 @@ test('refreshRulesets 只更新 geoip-/geosite-,规则集链接的 list-* 既不
   assert.deepEqual(r.updated.sort(), ['geoip-cn', 'geosite-cn'])
   assert.equal(r.total, 2)
   assert.ok(urls.length > 0)
-  assert.ok(urls.every((u) => !u.includes('list-')), `不该去下规则集链接:${urls.join(', ')}`)
+  assert.ok(urls.every((u) => !u.includes('list-') && !u.includes('dns-filter-')), `不该去下非 Geo 规则集:${urls.join(', ')}`)
   // 规则集链接的文件不动,Geo 的写进去了
   assert.equal(await ctx.exists(`${dir}/list-934d523f.srs`), false)
   assert.equal(await ctx.exists(`${dir}/geosite-cn.srs`), true)

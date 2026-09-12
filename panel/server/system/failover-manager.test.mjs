@@ -409,12 +409,12 @@ test('没部署过(meta 不存在)→ 没有组可管,不报错;stop 后不再�
   assert.equal(mgr.status().running, false)
 })
 
-test('测速地址是 http:// 的:单节点探测和子组重选发给内核的都升成 https://(内核不认 http,会换成 gstatic 去测)', async () => {
+test('测速地址是 http:// 的:单节点探测和子组重选都保留 HTTP 地址', async () => {
   const { k, mgr } = setup({ failover: [mapping({ settings: { ...mapping().settings, testUrl: 'http://cp.cloudflare.com/generate_204' } })] })
   await mgr.tick()
   const delayCalls = k.calls.filter((c) => c.includes('/delay?'))
   assert.ok(delayCalls.length >= 5, delayCalls.join('\n'))
-  assert.ok(delayCalls.every((c) => c.includes('url=https%3A%2F%2Fcp.cloudflare.com%2Fgenerate_204&')), delayCalls.join('\n'))
+  assert.ok(delayCalls.every((c) => c.includes('url=http%3A%2F%2Fcp.cloudflare.com%2Fgenerate_204&')), delayCalls.join('\n'))
 })
 
 // ---------- 用户改了页签顺序(主备优先级)之后的重选 ----------

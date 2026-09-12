@@ -1,4 +1,4 @@
-# sing-box 1.14.0 TCP DNS 空闲连接兼容补丁
+# sing-box 1.14.0 Open-Box 兼容补丁
 
 这是 Open-Box 的兼容补丁，不是 sing-box 官方版本；不更改 Open-Box 的 DNS 协议、规则顺序、解析器地址、策略出口、FakeIP 或旁路配置。完整发布构建保留上游全部默认功能（包括 Naive），采用 CGO 和静态 musl 链接。
 
@@ -29,9 +29,22 @@ arm64 将编译器 target 改为 `aarch64-openwrt-linux-musl`、使用相应 sys
 
 本次构建工具链与上游 cronet-go 的 musl 方案相同：Chromium Clang `llvmorg-23-init-10931-g20b6ec66-11`，OpenWrt `23.05.5` / GCC `12.3.0` 的 x86_64、aarch64 musl sysroot；Naive 使用 go.sum 固定的 Cronet 静态库。二进制归档中的 `BUILD-INFO.json` 记录源码、工具链、构建标签和哈希，发布附件另含修改后的 sing-box 源码、补丁、测试和构建脚本。
 
-补丁版本标识为 `1.14.0-openbox-tcp1`。回归覆盖空闲连接无回应、同步/异步查询、A/AAAA/HTTPS 类型、查询 ID 和 NXDOMAIN 保留、查询取消后关闭连接。相同回归针对未修改源码运行时，在空闲后的第三次查询失败；补丁通过。
+TCP DNS 补丁最初版本为 `1.14.0-openbox-tcp1`。回归覆盖空闲连接无回应、同步/异步查询、A/AAAA/HTTPS 类型、查询 ID 和 NXDOMAIN 保留、查询取消后关闭连接。相同回归针对未修改源码运行时，在空闲后的第三次查询失败；补丁通过。
 
 代价：缓存未命中的 TCP DNS 查询不再共享一条 TCP 连接，每次需要新建连接。正常 DNS 应答缓存保留，HTTP/QUIC 的业务连接复用不变。
+
+## HTTP 测速（tcp2）
+
+`1.14.0-openbox-tcp2` 保留 TCP DNS 补丁，并应用 `http-latency.patch`：
+
+- Clash API 的 `/proxies/:name/delay` 和 `/group/:name/delay` 接受原样的 HTTP 地址，不再丢弃后回落到 gstatic HTTPS。
+- 原生 URLTest 的空地址默认改为 HTTP。成功不足 1 ms 时返回 1 ms，避免客户端把成功的零延迟误判成不可用。
+- 保留原生 HEAD 请求、不跟随重定向、节点出站拨号、历史记录和 URLTest 重选逻辑。URLTest 组使用其配置中的地址；手动组和单节点使用 API 指定的地址。
+- HTTP 是默认值，自定义 HTTPS 仍然受支持。
+
+`build.sh` 同时运行 TCP DNS 和 HTTP/HTTPS 探测回归。面板的 `server/system/http-latency.integration.test.mjs` 启动真实内核、三个本地 HTTP CONNECT 节点和一个 204 服务，覆盖指定地址、直连、手动选择、批量检测、自动优选、定时调度、主备失败阈值、全部失败及恢复回切。测试不使用真实订阅或路由器配置。
+
+本机可以设置 `OPENBOX_TEST_SINGBOX=/path/to/new/sing-box` 运行集成测试；发布 CI 使用本次从源码构建的完整内核。内核和面板必须一起更新，旧版内核仍会丢弃 HTTP 测速地址。
 
 ## 交付边界
 

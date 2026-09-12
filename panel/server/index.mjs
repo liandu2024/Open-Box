@@ -170,9 +170,9 @@ try {
 } catch (err) {
   console.log(`[dns-rewrite] 初始化默认规则失败:${err instanceof Error ? err.message : err}`)
 }
-// 测速地址还是老的 http 默认值的换成 https 默认(内核的 clash API 不认 http,见 engine/test-url.mjs)
+// 把旧版内置测速默认地址迁移为 HTTP，自定义地址保留(见 engine/test-url.mjs)
 try {
-  if (ensureTestUrlDefaults(store)) console.log('[profile] 测速地址从老的 http 默认值换成 https 默认值')
+  if (ensureTestUrlDefaults(store)) console.log('[profile] 内置测速默认地址已更新为 HTTP')
 } catch (err) {
   console.log(`[profile] 迁移测速地址失败:${err instanceof Error ? err.message : err}`)
 }

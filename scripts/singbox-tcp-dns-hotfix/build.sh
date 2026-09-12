@@ -38,13 +38,15 @@ fi
 tar -xzf "$hotfix_work/source.tar.gz" -C "$hotfix_work"
 cd "$hotfix_work/sing-box-$SINGBOX_UPSTREAM_VERSION"
 patch -p1 < "$hotfix_dir/tcp-dns-short-connections.patch"
+patch -p1 < "$hotfix_dir/http-latency.patch"
 cp "$hotfix_dir/tcp_short_connection_test.go" dns/transport/openbox_tcp_test.go
+cp "$hotfix_dir/http_latency_test.go" common/urltest/openbox_http_test.go
 
 # Preserve the upstream complete feature set, including Naive's static Cronet
 # library. Never fall back to CGO=0 or DEFAULT_BUILD_TAGS_OTHERS for a release.
 hotfix_tags="$(cat release/DEFAULT_BUILD_TAGS),with_musl"
 CGO_ENABLED=0 GOMAXPROCS=2 "$hotfix_go" test -p 2 -count=1 -timeout 30s \
-  ./dns/transport -run '^TestOpenBoxTCPDNS' -v
+  ./dns/transport ./common/urltest -run '^TestOpenBox(TCPDNS|HTTP)' -v
 hotfix_bundle="$hotfix_output/sing-box-$hotfix_version-linux-$hotfix_arch-musl"
 mkdir -p "$hotfix_bundle"
 hotfix_binary="$hotfix_bundle/sing-box"

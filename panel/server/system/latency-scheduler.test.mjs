@@ -165,7 +165,7 @@ test('到点按成员算:共用的成员刚被前一个组测过就不算,组里
   assert.equal(history.get()['hk-1'].length, 2)
 })
 
-test('组配置里的测速地址是 http:// 的,发给内核的组测速请求升成 https://(内核不认 http,会悄悄换成 gstatic)', async () => {
+test('组配置里的测速地址是 http:// 的,发给内核的组测速请求保留 HTTP', async () => {
   const httpConfig = { outbounds: [
     { type: 'urltest', tag: 'CF', url: 'http://cp.cloudflare.com/generate_204', interval: '5m', outbounds: ['cf-1'] },
     { type: 'urltest', tag: '旧默认', url: 'http://www.gstatic.com/generate_204', interval: '5m', outbounds: ['cf-2'] },
@@ -185,7 +185,7 @@ test('组配置里的测速地址是 http:// 的,发给内核的组测速请求�
   await s.tick()
   const groupCalls = calls.filter((u) => u.includes('/group/'))
   assert.equal(groupCalls.length, 2)
-  assert.ok(groupCalls.some((u) => u.includes('/group/CF/delay?url=https%3A%2F%2Fcp.cloudflare.com%2Fgenerate_204&')), groupCalls.join('\n'))
-  assert.ok(groupCalls.some((u) => u.includes('url=https%3A%2F%2Fwww.gstatic.com%2Fgenerate_204&')), groupCalls.join('\n'))
-  assert.ok(!groupCalls.some((u) => u.includes('url=http%3A%2F%2F')))
+  assert.ok(groupCalls.some((u) => u.includes('/group/CF/delay?url=http%3A%2F%2Fcp.cloudflare.com%2Fgenerate_204&')), groupCalls.join('\n'))
+  assert.ok(groupCalls.some((u) => u.includes('url=http%3A%2F%2Fwww.gstatic.com%2Fgenerate_204&')), groupCalls.join('\n'))
+  assert.ok(groupCalls.every((u) => u.includes('url=http%3A%2F%2F')))
 })

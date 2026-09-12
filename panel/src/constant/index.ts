@@ -13,12 +13,12 @@ import {
 export const IS_APPLE_DEVICE = /Mac|iPod|iPhone|iPad/.test(navigator.platform)
 
 export const GLOBAL = 'GLOBAL'
-// 都是 https:内核的 clash API 不认 http 的测速地址(见 helper/testUrl.ts)
-export const TEST_URL = 'https://www.gstatic.com/generate_204'
+// 默认使用 HTTP，减少探测时的 TLS 握手；仍支持用户自定义 HTTPS 地址
+export const TEST_URL = 'http://www.gstatic.com/generate_204'
 // 直连出站专用的测速地址。默认那个是 Google 的域名,从国内直连去测,量出来的是"直连到
-// Google 有多远",不是直连线路本身的质量。微软的 NCSI 地址国内外都能通、返回一小段文本。
-export const DIRECT_TEST_URL = 'https://connectivitycheck.platform.hicloud.com/generate_204'
-export const IPV6_TEST_URL = 'https://ipv6.google.com/generate_204'
+// Google 有多远",不是直连线路本身的质量。直连默认使用华为的连通性检测地址。
+export const DIRECT_TEST_URL = 'http://connectivitycheck.platform.hicloud.com/generate_204'
+export const IPV6_TEST_URL = 'http://ipv6.google.com/generate_204'
 export const NOT_CONNECTED = 0
 export enum LANG {
   EN_US = 'en-US',

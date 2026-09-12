@@ -190,8 +190,7 @@ export const createFailoverManager = ({
   }
   // 单个节点的端到端探测。内核用这个节点出站访问测速地址:200 = 通过;503 / 504 = 这个节点失败
   // (超时 / 出错);别的情况(接口不可达、404、5xx)是探测基础设施的问题,记未知,不算节点失败。
-  // 注意 sing-box 的这个接口对 http:// 的测速地址不认(内核会换成它内置的 https://www.gstatic.com/generate_204
-  // 去测),所以传进来之前先过 kernelTestUrl 升成 https(runRound 里做);内部子组自己的定时测速用的才是配置里那个 url
+  // 随包内核的 Clash API 保留 HTTP / HTTPS 地址，与内部子组的定时探测使用同一配置。
   const probeNode = async (tag, url, timeoutMs) => {
     const at = now()
     try {

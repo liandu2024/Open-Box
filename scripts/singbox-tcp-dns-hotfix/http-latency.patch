@@ -1,0 +1,61 @@
+--- a/experimental/clashapi/proxies.go
++++ b/experimental/clashapi/proxies.go
+@@ -5,7 +5,6 @@
+ 	"net/http"
+ 	"sort"
+ 	"strconv"
+-	"strings"
+ 	"time"
+ 
+ 	"github.com/sagernet/sing-box/adapter"
+@@ -212,9 +211,6 @@
+ 	return func(w http.ResponseWriter, r *http.Request) {
+ 		query := r.URL.Query()
+ 		url := query.Get("url")
+-		if strings.HasPrefix(url, "http://") {
+-			url = ""
+-		}
+ 		timeout, err := strconv.ParseInt(query.Get("timeout"), 10, 16)
+ 		if err != nil {
+ 			render.Status(r, http.StatusBadRequest)
+--- a/experimental/clashapi/api_meta_group.go
++++ b/experimental/clashapi/api_meta_group.go
+@@ -4,7 +4,6 @@
+ 	"context"
+ 	"net/http"
+ 	"strconv"
+-	"strings"
+ 	"time"
+ 
+ 	"github.com/sagernet/sing-box/adapter"
+@@ -65,9 +64,6 @@
+ 
+ 		query := r.URL.Query()
+ 		url := query.Get("url")
+-		if strings.HasPrefix(url, "http://") {
+-			url = ""
+-		}
+ 		timeout, err := strconv.ParseInt(query.Get("timeout"), 10, 32)
+ 		if err != nil {
+ 			render.Status(r, http.StatusBadRequest)
+--- a/common/urltest/urltest.go
++++ b/common/urltest/urltest.go
+@@ -91,7 +91,7 @@
+ 
+ func urlTest(ctx context.Context, link string, detour N.Dialer) (t uint16, err error) {
+ 	if link == "" {
+-		link = "https://www.gstatic.com/generate_204"
++		link = "http://www.gstatic.com/generate_204"
+ 	}
+ 	linkURL, err := url.Parse(link)
+ 	if err != nil {
+@@ -142,6 +142,8 @@
+ 		return
+ 	}
+ 	resp.Body.Close()
+-	t = uint16(time.Since(start) / time.Millisecond)
++	// A successful sub-millisecond HTTP probe must not look unavailable to
++	// Clash API clients, which reserve zero for failed tests.
++	t = uint16(max(1, time.Since(start)/time.Millisecond))
+ 	return
+ }

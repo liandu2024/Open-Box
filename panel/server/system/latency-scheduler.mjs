@@ -63,8 +63,7 @@ export const createLatencyScheduler = ({
     // 不重复发起同一批检查
     return (cfg.outbounds || [])
       .filter((o) => o && o.type === 'urltest' && o.tag && !isInternalTag(o.tag))
-      // 组配置里的 url 可能是 http 的(内核自己定时测认),但 /group/:tag/delay 不认 http——会悄悄换成
-      // gstatic 去测,用户改的地址等于没改;先升成 https(engine/test-url.mjs)
+      // 保留组配置的检测地址；随包内核的 Clash API 和原生定时探测均支持 HTTP / HTTPS。
       .map((o) => ({ tag: o.tag, url: kernelTestUrl(o.url || ''), intervalMs: parseDuration(o.interval) || DEFAULT_INTERVAL_MS, members: Array.isArray(o.outbounds) ? o.outbounds : [] }))
   }
 

@@ -4,7 +4,6 @@
 // /tmp/openbox-update.status 报进度),面板只负责:读版本、探最新版、发起/取消、
 // 读进度。这样 LuCI 兜底页和面板用的是同一条升级路径,不会各有一套坑。
 import { downloadRuleset, RULESET_MIRRORS, SOURCE_MARKER, RULESET_SOURCE } from './rulesets.mjs'
-import { isRuleListTag } from '../engine/rule-list.mjs'
 
 export const REPO = 'liandu2024/Open-Box'
 
@@ -14,6 +13,10 @@ export const GEO_REPOS = Object.freeze([
   { key: 'geosite', prefix: 'geosite-' },
   { key: 'geoip', prefix: 'geoip-' },
 ])
+
+// Geo 更新器只处理 MetaCubeX 的两类规则集。运行时生成的 dns-filter-*、
+// 用户名单编译出的 list-* 以及其他本地规则集都不属于这个仓库，必须跳过。
+export const isGeoRuleTag = (tag) => GEO_REPOS.some(({ prefix }) => String(tag || '').startsWith(prefix))
 
 // 下载通道 → 来源前缀顺序('' 是直连):
 //   direct 只直连;mirror 只走镜像(安装时用过的那个排最前);
@@ -218,10 +221,11 @@ export const refreshRulesets = async (ctx, paths, { fetchImpl = globalThis.fetch
   } catch {
     return { updated: [], failed: [], versions: {}, message: '还没有生成过配置,没有可更新的规则集' }
   }
-  // 只管 Geo 那几份(geoip-* / geosite-*)。list-* 是「规则集链接」:由 system/rule-lists.mjs 从
-  // 用户填的网址下载、编译,不在 MetaCubeX 上——部署路径(rulesets.mjs 的 ensureRulesets)早就
-  // 跳过了它,这条更新路径以前漏了,每次 Geo 更新都给它记一条"只认识 geoip-/geosite- 前缀"的失败。
-  const entries = ((config.route && config.route.rule_set) || []).filter((e) => e && e.type === 'local' && e.tag && e.path && !isRuleListTag(e.tag))
+  // 严格只管 Geo 那几份(geoip-* / geosite-*)。list-* 是「规则集链接」:由
+  // system/rule-lists.mjs 从用户填的网址下载、编译,不在 MetaCubeX 上；dns-filter-*
+  // 是 DNS 过滤运行时生成的本地规则集，也不在 MetaCubeX 上。两者以及其他 local
+  // 规则集都必须跳过，否则会被误报成“只认识 geoip-/geosite- 前缀”的更新失败。
+  const entries = ((config.route && config.route.rule_set) || []).filter((e) => e && e.type === 'local' && e.tag && e.path && isGeoRuleTag(e.tag))
   const mirrors = geoSources(channel, await readChannel(ctx, paths))
   let versions = latest && typeof latest === 'object' ? { ...latest } : null
   if (!versions) {

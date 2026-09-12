@@ -58,7 +58,7 @@ watch(
   },
 )
 
-// 空就回落到默认;http:// 升成 https://(内核的延迟测试不认 http,见 helper/testUrl.ts);存进档案的同时
+// 空就回落到 HTTP 默认值；自定义地址保留原协议；存进档案的同时
 // 更新面板那份,延迟测试立刻按新地址走,不用刷新
 const save = async (key: 'testUrl' | 'directTestUrl', raw: string) => {
   const value = kernelTestUrl(raw) || (key === 'testUrl' ? TEST_URL : DIRECT_TEST_URL)

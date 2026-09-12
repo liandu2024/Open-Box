@@ -1548,7 +1548,7 @@ const saveDraft = async (typeChangeConfirmed = false) => {
 
   saving.value = true
   try {
-    // 组自己的测速地址 http:// 升成 https://(内核的延迟测试不认 http,见 helper/testUrl.ts)
+    // 组自己的测速地址保留用户选择的 HTTP / HTTPS 协议
     const base: OpenboxUserGroup = { ...draft.value, name, id: draft.value.id || `g-${Date.now()}`, testUrl: kernelTestUrl(draft.value.testUrl) }
     let item: OpenboxUserGroup
     if (isFailover.value) {

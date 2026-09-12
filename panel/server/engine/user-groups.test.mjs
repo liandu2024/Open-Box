@@ -355,7 +355,7 @@ test('url-test 组的测速地址:组里填了用组的,没填用档案里的全
   const withGlobal = userOnly(emitUserGroups(groups, nodes, { testUrl: 'http://global.test/204' }).outbounds)
   assert.deepEqual(withGlobal.map((o) => o.url), ['http://a.test/204', 'http://global.test/204'])
   const noGlobal = userOnly(emitUserGroups(groups, nodes).outbounds)
-  assert.equal(noGlobal[1].url, 'https://www.gstatic.com/generate_204')
+  assert.equal(noGlobal[1].url, 'http://www.gstatic.com/generate_204')
 })
 
 test('自动择优组带 idle_timeout:内核默认 30 分钟不用就停止健康检查,停了就一直挂在失效的线路上', () => {
