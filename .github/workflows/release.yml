@@ -6,6 +6,13 @@ on:
   push:
     tags:
       - 'v*'
+  # 手动补发:通过 API 创建的标签不会触发 push 事件,所以需要时能手动跑一次。
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '要发布的标签,例如 v2.05;留空则用当前 ref 名'
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -128,7 +135,7 @@ jobs:
 
       - name: Build release tarball
         env:
-          OPENBOX_VERSION: ${{ github.ref_name }}
+          OPENBOX_VERSION: ${{ github.event.inputs.tag || github.ref_name }}
           OPENBOX_KERNEL_BUILD_DIR: ${{ github.workspace }}/kernel-build
         run: bash scripts/build-release.sh ${{ matrix.arch }} dist-release
 
@@ -185,7 +192,7 @@ jobs:
           NODE_VERSION=$(grep -m1 '^NODE_VERSION=' scripts/build-release.sh | sed -E 's/^NODE_VERSION="([^"]+)"/\1/')
           . scripts/singbox-tcp-dns-hotfix/versions.sh
           {
-            echo "## Open-Box ${{ github.ref_name }}"
+            echo "## Open-Box ${{ github.event.inputs.tag || github.ref_name }}"
             echo ""
             echo "- sing-box 内核版本:\`$SINGBOX_VERSION\`(从本次仓库源码补丁构建，完整 CGO/musl 静态链接)"
             echo "- Node 运行时版本:\`$NODE_VERSION\`(musl 构建,glibc 版本在 OpenWrt 上无法运行)"
@@ -214,8 +221,8 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: Open-Box ${{ github.ref_name }}
-          tag_name: ${{ github.ref_name }}
+          name: Open-Box ${{ github.event.inputs.tag || github.ref_name }}
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
           body_path: release-notes.md
           fail_on_unmatched_files: true
           files: |
