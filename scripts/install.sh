@@ -436,6 +436,16 @@ if [ ! -f "$_ACL_DST" ] || ! cmp -s "$_ACL_SRC" "$_ACL_DST"; then
 fi
 cp "$_ACL_SRC" "$_ACL_DST" || die "无法安装 rpcd ACL 文件。"
 
+# 三个 LuCI 文件的权限必须显式归一:tar 包里带出来的 mode 不受控(iStoreOS 等固件上
+# 实测出现过解包后是 600 的情况),而 LuCI / rpcd 读这些文件一旦没有读权限,表现为
+# 菜单项消失或页面空白,且不报任何错,极难定位。这里统一改成 644。
+chmod 644 /www/luci-static/resources/view/openbox/status.js \
+  || warn "无法修正 LuCI 视图文件权限,LuCI 页面可能打不开。"
+chmod 644 /usr/share/luci/menu.d/luci-app-openbox.json \
+  || warn "无法修正 LuCI 菜单文件权限,LuCI 菜单项可能不显示。"
+chmod 644 /usr/share/rpcd/acl.d/luci-app-openbox.json \
+  || warn "无法修正 rpcd ACL 文件权限,LuCI 页面权限可能异常。"
+
 # 不清缓存的话,新菜单/视图不会立即生效(P5 review 记录过的坑);这一步与 ACL 无关,
 # 无条件做。
 # 用 -rf 而不是 -f:OpenWrt <=22.03 的 Lua 版 LuCI 里 /tmp/luci-modulecache 是
