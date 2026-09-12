@@ -112,6 +112,16 @@
           <button
             type="button"
             class="btn btn-ghost btn-square btn-xs"
+            :aria-label="`${$t('dfUpdateList')} ${list.name}`"
+            :title="$t('dfUpdateList')"
+            :disabled="busy || saving || !list.enabled"
+            @click="$emit('update', list)"
+          >
+            <ArrowPathIcon class="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            class="btn btn-ghost btn-square btn-xs"
             :aria-label="`${$t('dfEdit')} ${list.name}`"
             :disabled="busy || saving"
             @click="edit(list)"
@@ -277,10 +287,10 @@ import {
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import DnsFilterPreviewDialog from '@/components/dns/DnsFilterPreviewDialog.vue'
 import { showNotification } from '@/helper/notification'
-import { ChevronDownIcon, EyeIcon, PencilSquareIcon, TrashIcon } from '@heroicons/vue/24/outline'
+import { ArrowPathIcon, ChevronDownIcon, EyeIcon, PencilSquareIcon, TrashIcon } from '@heroicons/vue/24/outline'
 import { ref, watch } from 'vue'
 const props = defineProps<{ status: DnsFilterStatus; busy: boolean }>()
-const emit = defineEmits<{ saved: []; update: [] }>()
+const emit = defineEmits<{ saved: []; update: [list?: DnsFilterList] }>()
 const saving = ref(false)
 const allowText = ref('')
 const allowExpanded = ref(false)

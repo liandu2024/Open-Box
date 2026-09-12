@@ -33,13 +33,15 @@
         <DnsRewriteCard
           :profile="profile"
           :patch-profile="patchProfile"
+          :restart-pending="restartPending"
+          :busy="busy"
           @needs-restart="restartPending = true"
         />
         <DnsFilterCard
           :status="status"
           :busy="busy"
           @saved="load"
-          @update="apply(true)"
+          @update="apply(true, $event?.id)"
         />
         <DnsFilterRecords
           :connected="status.connected"
@@ -93,7 +95,7 @@ const patchProfile = async (patch: Record<string, unknown>) => {
   profile.value = await saveProfile(patch)
   return profile.value
 }
-const apply = async (update: boolean) => {
+const apply = async (update: boolean, listId = '') => {
   busy.value = true
   showNotification({
     content: update ? 'dfUpdating' : 'dfApplying',
@@ -102,7 +104,7 @@ const apply = async (update: boolean) => {
     timeout: 0,
   })
   try {
-    await applyDnsFilter(update)
+    await applyDnsFilter(update, listId)
     await load()
     restartPending.value = false
     showNotification({ content: 'dfApplied', key: 'dns-settings-apply', type: 'alert-success' })

@@ -161,7 +161,8 @@ export const deployConfig = async (ctx, paths, { config, profile, userGroups, fe
     const clientRoutes = normalizeClientRoutes(profile.clientRoutes)
     // 计划阶段(纯函数)→ 展开阶段(把走代理的规则集解码成域名,展不开就降成 all)→ 应用阶段
     // (可能再降级)。元数据记的是最终实际执行的那份;计划阶段的模式另存一份,选择同步时按同口径比
-    const dnsRewrite = normalizeDnsRewrite(profile.dns).rules
+    const dnsRewriteConfig = normalizeDnsRewrite(profile.dns)
+    const dnsRewrite = dnsRewriteConfig.enabled ? dnsRewriteConfig.rules : []
     const dnsPlanned = filterForwardPlan(profile, dnsmasqForwardPlan(profile.routing, policyMembers, builtin, selections || {}, { rewriteDomains: rewriteForwardDomains(dnsRewrite) }))
     let dnsForward = dnsMode === 'dnsmasq' ? await expandDnsForward(ctx, paths, dnsPlanned) : dnsPlanned
     const bypassPlanned = nativeBypassPlan(profile.routing, { members: policyMembers, builtin, selections: selections || {}, clientRoutes, fakeIp: dnsFakeIpEnabled(profile), dnsMode })

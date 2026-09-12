@@ -271,7 +271,8 @@ export const createDnsRewriteServer = ({
     const t = now()
     if (cache && t - cache.at < 2000) return cache
     const profile = store.getProfile ? store.getProfile() : {}
-    cache = { at: t, rules: normalizeDnsRewrite(profile.dns).rules, ipv6: Boolean(profile.ipv6), proxyV4Only: ipv6ProxyMode(profile) === 'ipv4' }
+    const rewrite = normalizeDnsRewrite(profile.dns)
+    cache = { at: t, rules: rewrite.enabled ? rewrite.rules : [], ipv6: Boolean(profile.ipv6), proxyV4Only: ipv6ProxyMode(profile) === 'ipv4' }
     return cache
   }
   // 源域名走不走代理:按域名缓存,规则集匹配要 exec 内核,不能每条查询都算

@@ -76,13 +76,14 @@ export const normalizeRule = (raw, index = 0) => {
 export const normalizeDnsRewrite = (dns) => {
   const rw = dns && typeof dns === 'object' && dns.rewrite && typeof dns.rewrite === 'object' ? dns.rewrite : null
   const rules = (Array.isArray(rw?.rules) ? rw.rules : []).map(normalizeRule).filter((r) => r.source && (r.domain || r.addresses.length))
-  return { initialized: Boolean(rw && rw.initialized), rules }
+  return { enabled: rw?.enabled !== false, initialized: Boolean(rw && rw.initialized), rules }
 }
 
 // 写入前校验(api/profile.mjs):形状、每条的源 / 目标、重复源;不合法的不静默丢掉
 export const validateDnsRewrite = (raw) => {
   if (raw === null || raw === undefined) return ''
   if (typeof raw !== 'object' || Array.isArray(raw)) return 'dns.rewrite must be an object'
+  if ('enabled' in raw && typeof raw.enabled !== 'boolean') return 'dns.rewrite.enabled must be a boolean'
   if ('rules' in raw) {
     if (!Array.isArray(raw.rules)) return 'dns.rewrite.rules must be an array'
     if (raw.rules.length > DNS_REWRITE_MAX_RULES) return `DNS 重写最多 ${DNS_REWRITE_MAX_RULES} 条`

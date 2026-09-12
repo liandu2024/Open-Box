@@ -147,7 +147,8 @@ export const firstLayerChanged = async (ctx, paths, store, selections) => {
     if (prev.dnsMode === 'dnsmasq') {
       // 这里只能算到计划阶段(规则集要到部署时才展开),所以和元数据里计划阶段的模式比;老元数据
       // 没有这个字段时退回和实际模式比
-      const forward = filterForwardPlan(profile, dnsmasqForwardPlan(profile.routing, members, builtin, selections || {}, { rewriteDomains: rewriteForwardDomains(normalizeDnsRewrite(profile.dns).rules) }))
+      const rewrite = normalizeDnsRewrite(profile.dns)
+      const forward = filterForwardPlan(profile, dnsmasqForwardPlan(profile.routing, members, builtin, selections || {}, { rewriteDomains: rewrite.enabled ? rewriteForwardDomains(rewrite.rules) : [] }))
       if (forward.mode !== (prev.dnsForwardPlanned || prev.dnsForward)) return true
     }
     return false

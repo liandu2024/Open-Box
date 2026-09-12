@@ -13,7 +13,8 @@ export const dnsFilterEn = {
   dfDescription:
     'Off by default. When enabled, forwarded DNS queries are checked before normal resolution. DNS rewrites take priority. Supports domain, Hosts and basic Adblock rules; unsupported syntax is counted. Enabled lists refresh daily. Downloads that fail keep the last valid list.',
   dfAdd: 'Add list',
-  dfUpdate: 'Update and apply',
+  dfUpdate: 'Update lists',
+  dfUpdateList: 'Update this list',
   dfSwitch: 'Enabled',
   dfName: 'Name',
   dfUrl: 'List URL',
@@ -89,8 +90,9 @@ export const dnsFilterZh: Record<keyof typeof dnsFilterEn, string> = {
   dfApplied: '内核已重启,DNS 设置已生效。',
   dfDescription:
     '默认关闭。开启后,转发的 DNS 查询先经过过滤,通过后仍按原 DNS 策略解析;DNS 重写优先。支持域名、Hosts 和基础 Adblock 语法,不支持的条目会显示跳过数量。启用的名单每天自动更新,下载失败沿用上一次有效名单。',
-  dfAdd: '添加名单',
-  dfUpdate: '更新并应用',
+  dfAdd: '添加',
+  dfUpdate: '更新名单',
+  dfUpdateList: '更新此名单',
   dfSwitch: '启用',
   dfName: '名称',
   dfUrl: '名单网址',
@@ -166,7 +168,8 @@ export const dnsFilterTw: Record<keyof typeof dnsFilterEn, string> = {
   dfDescription:
     '預設關閉。啟用後,轉送的 DNS 查詢先經過過濾,通過後仍按原 DNS 策略解析;DNS 重寫優先。支援網域、Hosts 和基礎 Adblock 語法,不支援的項目會顯示略過數量。啟用的清單每天自動更新,下載失敗沿用上一次有效清單。',
   dfAdd: '新增清單',
-  dfUpdate: '更新並套用',
+  dfUpdate: '更新名單',
+  dfUpdateList: '更新此名單',
   dfSwitch: '啟用',
   dfName: '名稱',
   dfUrl: '清單網址',

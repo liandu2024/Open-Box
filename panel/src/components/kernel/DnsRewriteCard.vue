@@ -1,12 +1,22 @@
 <template>
-  <!-- DNS 重写:把一个域名的解析答案改成别的域名或固定 IP(服务端 engine/dns-rewrite.mjs + system/dns-rewrite-server.mjs)。
-       规则存在档案 dns.rewrite 里;改了源域名要重启内核(内核的 DNS 规则按源域名生成),目标改了面板侧两秒内生效 -->
+  <!-- DNS 重写:布局和域名过滤卡统一;规则存在档案 dns.rewrite 里 -->
   <div class="card bg-base-100 border-base-300/60 border">
     <div class="card-body gap-3 p-4 text-sm">
-      <div class="flex items-center justify-between gap-2">
-        <div>
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div class="flex flex-wrap items-center gap-2">
           <h2 class="text-base font-semibold">{{ $t('dnsRewriteTitle') }}</h2>
-          <p class="text-base-content/60 text-xs">{{ $t('dnsRewriteDescription') }}</p>
+          <input
+            type="checkbox"
+            class="toggle toggle-sm shrink-0"
+            :aria-label="$t('dnsRewriteTitle')"
+            :checked="rewriteEnabled"
+            :disabled="saving || busy"
+            @change="toggleMaster"
+          />
+          <span
+            class="badge badge-sm"
+            :class="pending ? 'badge-warning' : rewriteEnabled ? 'badge-success' : ''"
+          >{{ $t(pending ? 'dfPending' : rewriteEnabled ? 'dfEnabled' : 'dfDisabled') }}</span>
         </div>
         <div class="flex shrink-0 items-center gap-1">
           <button
@@ -27,6 +37,8 @@
           </button>
         </div>
       </div>
+
+      <p class="text-base-content/60 text-xs leading-relaxed">{{ $t('dnsRewriteDescription') }}</p>
 
       <p
         v-if="!rules.length"
@@ -186,17 +198,23 @@ import { fetchDnsRewriteDefaults } from '@/api/openbox'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import { showNotification } from '@/helper/notification'
 import { PencilSquareIcon, TrashIcon } from '@heroicons/vue/24/outline'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{
   profile: OpenboxProfile
   patchProfile: (patch: Record<string, unknown>) => Promise<OpenboxProfile>
+  restartPending?: boolean
+  busy?: boolean
 }>()
 const { t } = useI18n()
 
 const rules = computed<OpenboxDnsRewriteRule[]>(() => props.profile.dns?.rewrite?.rules ?? [])
+const rewriteEnabled = computed(() => props.profile.dns?.rewrite?.enabled !== false)
 const saving = ref(false)
+const localPending = ref(false)
+const pending = computed(() => Boolean(props.restartPending || localPending.value))
+watch(() => props.restartPending, (value) => { if (!value) localPending.value = false })
 
 const targetText = (rule: OpenboxDnsRewriteRule) => (rule.domain ? rule.domain : (rule.addresses ?? []).join(', '))
 
@@ -211,13 +229,16 @@ const needsRestart = (before: OpenboxDnsRewriteRule[], after: OpenboxDnsRewriteR
   return key(before) !== key(after)
 }
 // 整份规则表一次写回(数组是整体替换的,不会被默认值合并回来);服务端校验不过会报错回来
-const persist = async (next: OpenboxDnsRewriteRule[]) => {
+const persist = async (next: OpenboxDnsRewriteRule[], enabled = rewriteEnabled.value) => {
   saving.value = true
-  const restart = needsRestart(rules.value, next)
+  const restart = needsRestart(rules.value, next) || enabled !== rewriteEnabled.value
   try {
-    await props.patchProfile({ dns: { rewrite: { initialized: 1, rules: next } } })
+    await props.patchProfile({ dns: { rewrite: { enabled, initialized: 1, rules: next } } })
     showNotification({ content: restart ? 'dnsRewriteSavedRestart' : 'dnsRewriteSavedLive', type: 'alert-success' })
-    if (restart) emit('needsRestart')
+    if (restart) {
+      localPending.value = true
+      emit('needsRestart')
+    }
     return true
   } catch (err) {
     notifyError(err)
@@ -229,6 +250,9 @@ const persist = async (next: OpenboxDnsRewriteRule[]) => {
 
 const toggleRule = (rule: OpenboxDnsRewriteRule, enabled: boolean) =>
   persist(rules.value.map((r) => (r.id === rule.id ? { ...r, enabled } : r)))
+
+const toggleMaster = (event: Event) =>
+  persist(rules.value, (event.target as HTMLInputElement).checked)
 
 // ---- 编辑弹窗 ----
 // 弹窗只定义规则本身(源 / 目标);启用与否在列表的开关上,备注不在这里改

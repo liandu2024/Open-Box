@@ -24,11 +24,11 @@ export const registerDnsFilterRoutes = (app, { store, ctx, paths, data, observer
     store.setProfile({ dns: { filter: settings } })
     res.json({ settings: filterSettings(store.getProfile()) })
   })
-  const apply = async (force) => {
+  const apply = async (force, listId = '') => {
     if (busy) throw new Error('DNS 设置正在应用,请稍后重试')
     busy = true
     try {
-      const result = await deploy({ store, ctx, paths, refreshDnsFilter: force })
+      const result = await deploy({ store, ctx, paths, refreshDnsFilter: force ? (listId || true) : false })
       if (!result.ok) throw new Error(result.message || 'DNS 设置应用失败')
       await runExclusive(store, () => cleanupDnsFilterCache({ store, ctx, paths })).catch(() => {})
       await observer.tick()
@@ -36,7 +36,9 @@ export const registerDnsFilterRoutes = (app, { store, ctx, paths, data, observer
     } finally { busy = false }
   }
   router.post('/apply', async (req, res) => {
-    try { res.json({ result: await apply(req.body?.update === true), ...await status() }) }
+    const listId = typeof req.body?.listId === 'string' ? req.body.listId.trim() : ''
+    if (listId && !filterSettings(store.getProfile()).lists.some((l) => l.id === listId && l.enabled)) return res.status(400).json({ error: '只能更新已启用的过滤名单' })
+    try { res.json({ result: await apply(req.body?.update === true, listId), ...await status() }) }
     catch (error) { res.status(400).json({ error: error.message }) }
   })
   router.get('/summary', (_req, res) => res.json({ enabled: filterSettings(store.getProfile()).enabled, ...observer.status(), ...data.summary() }))

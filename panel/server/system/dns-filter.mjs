@@ -71,12 +71,15 @@ export const prepareDnsFilter = async ({ store, ctx, paths, force = false, fetch
   const dir = `${paths.dataDir}/dns-filter`
   await ctx.mkdirp(dir)
   const parsed = []
+  const forceAll = force === true
+  const forceListId = typeof force === 'string' ? force : ''
   let total = 0
   for (const list of settings.lists.filter((l) => l.enabled)) {
     let entry = state[list.id]
     let body
     try {
-      if (!force && entry?.url === list.url && await ctx.exists(entry.path)) body = await ctx.readFile(entry.path)
+      const refresh = forceAll || list.id === forceListId
+      if (!refresh && entry?.url === list.url && await ctx.exists(entry.path)) body = await ctx.readFile(entry.path)
       else body = (await fetchRuleList(fetchImpl, list.url)).toString('utf8')
       const result = parseDnsFilter(body)
       if (!result.count) throw new Error('名单没有可用的 DNS 规则(不接受网页或空正文)')
@@ -97,7 +100,7 @@ export const prepareDnsFilter = async ({ store, ctx, paths, force = false, fetch
       if (validate.code !== 0) throw new Error(`名单正则无效: ${(validate.stderr || '').slice(0, 250)}`)
       const path = `${dir}/${list.id}-${hash}.txt`
       await ctx.writeFile(path, body)
-      entry = { url: list.url, path, hash, count: result.count, unsupported: result.unsupported, unsupportedExamples: result.unsupportedExamples, updatedAt: !force && entry?.hash === hash ? entry.updatedAt : now(), error: '' }
+      entry = { url: list.url, path, hash, count: result.count, unsupported: result.unsupported, unsupportedExamples: result.unsupportedExamples, updatedAt: !refresh && entry?.hash === hash ? entry.updatedAt : now(), error: '' }
       state[list.id] = entry
       parsed.push({ list, result })
     } catch (error) {

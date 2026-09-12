@@ -114,7 +114,8 @@ export const buildDnsWithResolvers = (profile, options = {}) => {
   const resolvers = { policies: {}, custom: [], clients: [], fallback: 'dns-direct' }
   // DNS 重写(engine/dns-rewrite.mjs):命中源域名的查询交给面板进程在 127.0.0.1:7854 上开的重写服务,排在所有
   // 规则最前面——先定命中哪条重写,再谈别的
-  const rewriteRules = rewriteDnsRules(normalizeDnsRewrite(profile.dns).rules)
+  const rewrite = normalizeDnsRewrite(profile.dns)
+  const rewriteRules = rewrite.enabled ? rewriteDnsRules(rewrite.rules) : []
   const filterRules = options.filterRules || []
   const rewriteServers = rewriteRules.length ? [rewriteDnsServer()] : []
   if (!profile.dns.split) {

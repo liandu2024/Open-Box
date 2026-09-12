@@ -37,6 +37,7 @@ test('validateDnsRewrite:源 / 目标 / 地址 / 重复 / 二选一 都要拦;�
   assert.match(validateDnsRewrite({ rules: [{ source: 'a.cn', addresses: ['1.2.3'] }] }), /地址不合法/)
   assert.match(validateDnsRewrite({ rules: [{ source: 'a.cn', domain: 'a.cn' }] }), /不能是它自己/)
   assert.match(validateDnsRewrite({ rules: [{ source: 'a.cn', domain: 'b.com', enabled: 'yes' }] }), /enabled/)
+  assert.match(validateDnsRewrite({ enabled: 'yes' }), /enabled/)
 })
 
 test('matchRewrite:精确优先,泛域名只匹配子域、按标签边界、后缀最长的赢;停用的不算', () => {
@@ -85,6 +86,9 @@ test('buildDns:重写规则排在所有 DNS 规则最前面,服务器在列表�
   const none = buildDns({ ...profile, dns: { ...profile.dns, rewrite: { initialized: 1, rules: [] } } })
   assert.ok(!none.rules.some((r) => r.server === 'dns-rewrite'))
   assert.ok(!none.servers.some((s) => s.tag === 'dns-rewrite'))
+  const disabled = buildDns({ ...profile, dns: { ...profile.dns, rewrite: { enabled: false, initialized: 1, rules: profile.dns.rewrite.rules } } })
+  assert.ok(!disabled.rules.some((r) => r.server === 'dns-rewrite'))
+  assert.ok(!disabled.servers.some((s) => s.tag === 'dns-rewrite'))
   // 不分流(split=false)的精简配置同样带上
   const only = buildDns({ ...profile, dns: { ...profile.dns, split: false } })
   assert.deepEqual(only.rules[0], { domain: ['services.googleapis.cn'], server: 'dns-rewrite' })

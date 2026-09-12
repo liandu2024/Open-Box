@@ -464,7 +464,8 @@ export const registerPenetrationRoutes = (app, { store, ctx, paths, fetchImpl = 
     } else {
       try {
         const config = JSON.parse(await ctx.readFile(paths.configPath))
-        body.dns = await decideDnsServer(ctx, paths, config, target.toLowerCase(), { sourceIp, rewriteRules: typeof store?.getProfile === 'function' ? normalizeDnsRewrite(store.getProfile().dns).rules : [] })
+        const rewrite = typeof store?.getProfile === 'function' ? normalizeDnsRewrite(store.getProfile().dns) : { enabled: true, rules: [] }
+        body.dns = await decideDnsServer(ctx, paths, config, target.toLowerCase(), { sourceIp, rewriteRules: rewrite.enabled ? rewrite.rules : [] })
       } catch (err) {
         body.dns = { error: `还没有生成过配置,无法判断 DNS(${errorMessage(err)})` }
       }

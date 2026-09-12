@@ -204,7 +204,8 @@ export const registerRouteTestRoutes = (app, { store, ctx, paths, fetchImpl = gl
     } else {
       try {
         const sourceIp = req.body && typeof req.body.sourceIp === 'string' && net.isIP(req.body.sourceIp.trim()) ? req.body.sourceIp.trim() : ''
-        out.dns = await decideDnsServer(ctx, paths, config, target, { sourceIp, rewriteRules: typeof store?.getProfile === 'function' ? normalizeDnsRewrite(store.getProfile().dns).rules : [] })
+        const rewrite = typeof store?.getProfile === 'function' ? normalizeDnsRewrite(store.getProfile().dns) : { enabled: true, rules: [] }
+        out.dns = await decideDnsServer(ctx, paths, config, target, { sourceIp, rewriteRules: rewrite.enabled ? rewrite.rules : [] })
         // 下面的解析和访问都是面板自己发起的:内核的 DNS 查询接口(clash API /dns/query)不带原终端来源,
         // 回环 mixed 入站的探测来源也是本机——指定终端的来源规则在这两步里没有生效,不能把它们画成
         // "该终端的实测"(复审 S4)

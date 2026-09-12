@@ -106,7 +106,7 @@ export interface OpenboxProfileDns {
   // 走代理的域名由内核发占位地址(FakeIP 原型):域名交给选中的节点解析,解析和连接落在同一个节点
   fakeIpForProxy?: boolean
   // DNS 重写:initialized 记「默认规则补过了」,rules 是整份规则表(空数组 = 用户不要任何重写)
-  rewrite?: { initialized?: number; rules: OpenboxDnsRewriteRule[] }
+  rewrite?: { enabled?: boolean; initialized?: number; rules: OpenboxDnsRewriteRule[] }
 }
 
 export interface DnsFilterList { id: string; name: string; url: string; enabled: boolean }
@@ -136,7 +136,7 @@ export interface DnsFilterPreview {
 }
 export const fetchDnsFilter = () => requestJson<DnsFilterStatus>('/api/openbox/dns-filter')
 export const saveDnsFilter = (settings: DnsFilterSettings) => requestJson('/api/openbox/dns-filter', { method: 'PUT', body: JSON.stringify(settings) })
-export const applyDnsFilter = (update = false) => requestJson<DnsFilterStatus>('/api/openbox/dns-filter/apply', { method: 'POST', body: JSON.stringify({ update }) })
+export const applyDnsFilter = (update = false, listId = '') => requestJson<DnsFilterStatus>('/api/openbox/dns-filter/apply', { method: 'POST', body: JSON.stringify({ update, ...(listId ? { listId } : {}) }) })
 export const fetchDnsFilterSummary = () => requestJson<DnsFilterSummary>('/api/openbox/dns-filter/summary')
 export const fetchDnsFilterRecords = (search: string, result: string, page: number, pageSize = 20) => requestJson<{ rows: DnsFilterRecord[]; total: number; page: number; pageSize: number }>(`/api/openbox/dns-filter/records?${new URLSearchParams({ search, result, page: String(page), pageSize: String(pageSize) })}`)
 export const fetchDnsFilterPreview = (url: string, search: string, page: number, pageSize = 20, action: DnsFilterPreviewAction = 'all') => requestJson<DnsFilterPreview>(`/api/openbox/dns-filter/preview?${new URLSearchParams({ url, search, action, page: String(page), pageSize: String(pageSize) })}`)
