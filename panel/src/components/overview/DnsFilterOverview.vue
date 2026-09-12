@@ -80,7 +80,6 @@
           :values="data.hourly.map((h) => (h.timed ? h.elapsed / h.timed : 0))"
           class="mt-auto text-emerald-500"
         />
-        <div class="text-base-content/40 mt-1 text-[10px]">{{ $t('dfTimingHint') }}</div>
       </div>
     </div>
   </section>
