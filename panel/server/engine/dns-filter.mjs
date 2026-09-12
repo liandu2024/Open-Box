@@ -5,8 +5,8 @@ export const DNS_FILTER_DEFAULT = {
   enabled: false,
   lists: [{ id: 'anti-ad', name: 'anti-AD', url: 'https://anti-ad.net/easylist.txt', enabled: true }],
   allowDomains: [],
-  // 名单自动更新沿用 Open-Box / Geo 的计划形状;旧档案默认保持原本的每日更新行为。
-  autoUpdate: { enabled: true, days: 1, hour: 4 },
+  // 名单自动更新沿用 Open-Box / Geo 的计划形状,默认关闭但保留用户选择。
+  autoUpdate: { enabled: false, days: 1, hour: 4 },
 }
 export const DNS_FILTER_RUNTIME = 'openbox/dns-filter-runtime'
 export const filterSettings = (profile) => ({

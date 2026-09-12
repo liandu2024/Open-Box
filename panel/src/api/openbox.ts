@@ -995,7 +995,7 @@ export interface OpenboxRouteTest {
     // runtimeChain:代理侧解析时查询实际经过的线路,detour 的站点集 → 节点组 → 节点(按内核此刻的选择);runtimeLeaf 是它的末尾
     // fakeIpRule:内核自己的 fakeip 规则(FakeIP 原型)先命中,A / AAAA 拿占位地址;server 是其它查询类型走的真解析器
     | { ruleIndex: number | null; rejected?: boolean; server?: { tag: string; type?: string; server?: string; detour?: string }; viaProxy?: boolean; stale?: 'direct' | 'proxy'; runtimeLeaf?: string; runtimeChain?: string[]; fakeIpRule?: number; assumed?: OpenboxDnsAssumption[]; rewrite?: OpenboxDnsRewriteHit }
-  // fakeIp:答案落在 fake-ip 段(198.18.0.0/15),不是配置里那台 DNS 答的;fakeIpFrom 是代理侧解析时
+  // fakeIp:答案落在 fake-ip 段(198.15.0.0/15),不是配置里那台 DNS 答的;fakeIpFrom 是代理侧解析时
   // 截下查询并应答的那个节点(detour 此刻落到的节点),直连解析回 fake-ip 时没有这个字段;
   // fakeIpLocal:占位地址是内核自己发的(FakeIP 原型),连接时按它找回域名交给选中的节点解析
   // ttl:答案的剩余 TTL(秒);cached:代理侧解析几毫秒就回来了,是内核缓存里的答案,这次没有经线路去问

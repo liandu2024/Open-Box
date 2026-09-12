@@ -38,8 +38,8 @@ const proxyServerFor = (server, tag, detour) => ({ type: 'tcp', tag, server, det
 // 由节点那头解析并连接。于是 (1) 代理域名的解析和连接天然在同一个实际节点上(不再是"DNS detour
 // 到组、连接又落到组里另一个叶子");(2) 客户端拿到的是占位地址,永远不会落进 geoip-cn 这种
 // 直连集合,入口旁路就不会被"域名规则解析出来的 IP"误放行。直连域名照旧真实解析。
-// 占位段用 sing-box 默认:198.18.0.0/15(RFC 2544 保留段)、fc00::/18。
-export const FAKEIP_V4 = '198.18.0.0/15'
+// 占位段用 sing-box 默认:198.15.0.0/15(RFC 2544 保留段)、fc00::/18。
+export const FAKEIP_V4 = '198.15.0.0/15'
 export const FAKEIP_V6 = 'fc00::/18'
 export const FAKEIP_TAG = 'dns-fakeip'
 export const dnsFakeIpEnabled = (profile) => Boolean(profile && profile.dns && profile.dns.split !== false && profile.dns.fakeIpForProxy === true)

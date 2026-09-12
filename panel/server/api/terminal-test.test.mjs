@@ -244,19 +244,19 @@ test('域名目标:清内核 DNS 缓存、接内核日志流,截出内核侧的�
 })
 
 test('dnsmasq 转发模式:探测前给 dnsmasq 发 SIGHUP 清它的缓存(不然命中缓存内核就收不到查询);内核自己的 FakeIP 占位地址标 fakeIpLocal', async () => {
-  const cfg = { ...config, dns: { servers: [{ type: 'fakeip', tag: 'dns-fakeip', inet4_range: '198.18.0.0/15' }, { type: 'tcp', tag: 'dns-policy-4', server: '1.1.1.1', detour: 'AI' }] } }
+  const cfg = { ...config, dns: { servers: [{ type: 'fakeip', tag: 'dns-fakeip', inet4_range: '198.15.0.0/15' }, { type: 'tcp', tag: 'dns-policy-4', server: '1.1.1.1', detour: 'AI' }] } }
   const ctx = createMockContext({
     files: { [paths.configPath]: JSON.stringify(cfg), [configMetaPath(paths)]: JSON.stringify({ firstLayer: { dnsMode: 'dnsmasq', dnsForward: 'all' } }), [lanProbe.CONNTRACK_PATH]: CT_REDIRECT },
     execResults: { 'ip -4 -o addr': { stdout: ADDRS }, 'ip -6 -o addr': { stdout: '' }, 'pidof dnsmasq': { stdout: '16107\n' }, 'nft list set inet sing-box inet4_route_exclude_address_set': { code: 1 } },
   })
   const lines = ['[1 0ms] inbound/direct[dns-in]: inbound packet connection from 127.0.0.1:5', '[1 0ms] dns: exchange chatgpt.com. IN A', '[1 0ms] dns: match[5] query_type=A rule_set=geosite-category-ai-!cn => route(dns-fakeip)',
-    '[1 0ms] dns: exchanged chatgpt.com NOERROR 600', '[1 0ms] dns: exchanged A chatgpt.com. 600 IN A 198.18.0.6']
-  const probe = makeProbe([{ event: 'dns', server: '10.0.0.1', ok: true, answers: ['198.18.0.6'], ms: 3 }, { event: 'connected', localAddress: '10.0.0.160', localPort: 42174, remoteAddress: '198.18.0.6', remotePort: 443, ms: 20 }, { event: 'response', status: 200, ms: 700 }])
+    '[1 0ms] dns: exchanged chatgpt.com NOERROR 600', '[1 0ms] dns: exchanged A chatgpt.com. 600 IN A 198.15.0.6']
+  const probe = makeProbe([{ event: 'dns', server: '10.0.0.1', ok: true, answers: ['198.15.0.6'], ms: 3 }, { event: 'connected', localAddress: '10.0.0.160', localPort: 42174, remoteAddress: '198.15.0.6', remotePort: 443, ms: 20 }, { event: 'response', status: 200, ms: 700 }])
   const r = await runTerminalTest({ store, ctx, paths, fetchImpl: fetchConnections([]), probe, logTap: tapOf(lines) }, { target: 'chatgpt.com' })
   assert.deepEqual(ctx.calls.filter((c) => c.cmd === 'kill').map((c) => c.args), [['-HUP', '16107']])
   assert.ok(ctx.calls.findIndex((c) => c.cmd === 'kill') < ctx.calls.findIndex((c) => c.cmd === 'ip' && c.args[0] === '-4'), '清缓存在探测之前')
   const k = r.kernelDns
   assert.equal(k.seen, true)
   assert.equal(k.server.type, 'fakeip'); assert.equal(k.viaProxy, false); assert.equal(k.fakeIp, true); assert.equal(k.fakeIpLocal, true)
-  assert.deepEqual(k.answers, ['198.18.0.6']); assert.equal(k.ruleIndex, 5)
+  assert.deepEqual(k.answers, ['198.15.0.6']); assert.equal(k.ruleIndex, 5)
 })

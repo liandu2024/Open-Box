@@ -4,8 +4,10 @@ import { buildFilterConfig, DNS_FILTER_DEFAULT, filterForwardPlan, filterKey, fi
 
 test('DNS filtering defaults off; empty list stays empty; forward changes only while enabled', () => {
   assert.equal(DNS_FILTER_DEFAULT.enabled, false)
+  assert.equal(DNS_FILTER_DEFAULT.autoUpdate.enabled, false)
   assert.equal(DNS_FILTER_DEFAULT.lists[0].url, 'https://anti-ad.net/easylist.txt')
-  assert.deepEqual(filterSettings({ dns: { filter: { enabled: true, autoUpdate: { days: 7 } } } }).autoUpdate, { enabled: true, days: 7, hour: 4 })
+  assert.deepEqual(filterSettings({ dns: { filter: { enabled: true, autoUpdate: { days: 7 } } } }).autoUpdate, { enabled: false, days: 7, hour: 4 })
+  assert.equal(filterSettings({ dns: { filter: { autoUpdate: { enabled: true } } } }).autoUpdate.enabled, true)
   const plan = { mode: 'domains', domains: ['proxy.test'] }
   assert.equal(filterForwardPlan({}, plan), plan)
   assert.equal(filterForwardPlan({ dns: { filter: { enabled: true } } }, plan).mode, 'all')

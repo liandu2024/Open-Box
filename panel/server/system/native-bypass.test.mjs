@@ -92,7 +92,7 @@ test('resolveNativeBypass:pending 的候选集合和前面带 IP 条件的规则
 
 test('resolveNativeBypass + FakeIP 试验:候选集合和占位地址池有交集就不旁路(第四轮 T4);真实 IP 基准下不看这个', async () => {
   const plan = { enabled: true, sets: ['geoip-user'], pending: [], fakeIp: true, reason: '' }
-  const ctx = () => withDecoded({ 'geoip-user': cidrs('1.0.1.0/24', '198.18.0.0/15', 'fc00::/18') })
+  const ctx = () => withDecoded({ 'geoip-user': cidrs('1.0.1.0/24', '198.15.0.0/15', 'fc00::/18') })
   const fake = await resolveNativeBypass(ctx(), paths, plan)
   assert.equal(fake.enabled, false)
   assert.match(fake.reason, /FakeIP 占位地址池有交集/)

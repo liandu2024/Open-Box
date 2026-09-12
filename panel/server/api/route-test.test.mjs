@@ -165,9 +165,9 @@ test('DNS 规则过期:内核里的选择和配置里定死的判断对不上就
   assert.equal(staleProxy.stale, 'proxy')
 })
 
-test('fake-ip:代理侧解析回 198.18.x.x 就标出是 detour 此刻落到的那个节点答的;直连解析回 fake-ip 不带节点', async () => {
-  assert.equal(isFakeIp('198.18.0.55'), true)
-  assert.equal(isFakeIp('198.19.255.1'), true)
+test('fake-ip:代理侧解析回 198.15.x.x 就标出是 detour 此刻落到的那个节点答的;直连解析回 fake-ip 不带节点', async () => {
+  assert.equal(isFakeIp('198.15.0.55'), true)
+  assert.equal(isFakeIp('198.16.255.1'), true)
   assert.equal(isFakeIp('198.17.0.1'), false)
   assert.equal(isFakeIp('142.250.66.4'), false)
   assert.equal(isFakeIp('fc00::1'), true)
@@ -204,7 +204,7 @@ test('fake-ip:代理侧解析回 198.18.x.x 就标出是 detour 此刻落到的�
       await new Promise((r) => server.close(r))
     }
   }
-  const viaProxy = await run('www.google.com', '198.18.0.55')
+  const viaProxy = await run('www.google.com', '198.15.0.55')
   assert.equal(viaProxy.fakeIp, true)
   assert.equal(viaProxy.fakeIpFrom, 'VW | 香港-HOME-01')
   assert.deepEqual(viaProxy.chain, ['Google', '香港-自动', 'VW | 香港-HOME-01'])
@@ -214,7 +214,7 @@ test('fake-ip:代理侧解析回 198.18.x.x 就标出是 detour 此刻落到的�
   // 代理侧解析几毫秒就回来 = 命中内核缓存;TTL 原样带回去
   assert.equal(real.ttl, 287)
   assert.equal(real.cached, true)
-  const direct = await run('www.example.org', '198.18.1.2')
+  const direct = await run('www.example.org', '198.15.1.2')
   assert.equal(direct.fakeIp, true)
   assert.equal(direct.fakeIpFrom, undefined)
   assert.equal(direct.chain, undefined)
@@ -360,7 +360,7 @@ test('decideDnsServer:内核自己的 fakeip 规则先命中时记成 fakeIpRule
       servers: [
         { type: 'udp', tag: 'dns-direct', server: '192.168.3.5' },
         { type: 'tcp', tag: 'dns-policy-0', server: '1.1.1.1', detour: 'Google' },
-        { type: 'fakeip', tag: 'dns-fakeip', inet4_range: '198.18.0.0/15' },
+        { type: 'fakeip', tag: 'dns-fakeip', inet4_range: '198.15.0.0/15' },
       ],
       rules: [
         { domain_suffix: ['google.com'], query_type: ['A', 'AAAA'], server: 'dns-fakeip' },
@@ -384,7 +384,7 @@ test('decideDnsServer:内核自己的 fakeip 规则先命中时记成 fakeIpRule
   const store = { getClashSecret: () => 's', getGroups: () => [], getProfile: () => ({ routing: {} }) }
   const fetchImpl = async (url) => {
     if (url.includes('/proxies')) return { ok: true, status: 200, json: async () => ({ proxies: { Google: { now: 'HK-01' } } }) }
-    if (url.includes('/dns/query')) return { ok: true, status: 200, json: async () => ({ Answer: [{ data: '198.18.0.9', TTL: 1 }] }) }
+    if (url.includes('/dns/query')) return { ok: true, status: 200, json: async () => ({ Answer: [{ data: '198.15.0.9', TTL: 1 }] }) }
     if (url.includes('/connections')) return { ok: true, status: 200, json: async () => ({ connections: [] }) }
     throw new Error('unexpected fetch ' + url)
   }

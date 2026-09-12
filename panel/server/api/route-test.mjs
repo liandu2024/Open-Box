@@ -27,10 +27,10 @@ export const targetUrl = (host, port, secure) => {
   const defaultPort = secure ? 443 : 80
   return `${secure ? 'https' : 'http'}://${h}${port === defaultPort ? '' : `:${port}`}/`
 }
-// fake-ip 的地址段:sing-box / Clash / OpenClash 默认都在 198.18.0.0/15(RFC 2544 保留段,公网上
+// fake-ip 的地址段:sing-box / Clash / OpenClash 默认都在 198.15.0.0/15(RFC 2544 保留段,公网上
 // 不会有),sing-box 的 IPv6 默认 fc00::/18。解析结果落在这里面,只可能是某个做 fake-ip 的
 // 客户端替真正的 DNS 答的:查询是往 1.1.1.1 发的,却在半路(线路对端的透明代理)被截下来。
-export const isFakeIp = (ip) => /^198\.1[89]\.\d{1,3}\.\d{1,3}$/.test(String(ip)) || /^fc[0-3][0-9a-f]:/i.test(String(ip))
+export const isFakeIp = (ip) => /^198\.1[56]\.\d{1,3}\.\d{1,3}$/.test(String(ip)) || /^fc[0-3][0-9a-f]:/i.test(String(ip))
 const errorMessage = (err) => (err instanceof Error ? err.message : String(err))
 
 const fetchWithTimeout = async (fetchImpl, url, init = {}, timeoutMs = 8000) => {

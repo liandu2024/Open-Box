@@ -146,7 +146,7 @@
           type="checkbox"
           class="toggle toggle-sm"
           :checked="autoPlan.enabled"
-          :disabled="busy || saving"
+          :disabled="!props.status.settings.enabled || busy || saving"
           @change="saveAutoPlan({ enabled: ($event.target as HTMLInputElement).checked })"
         />
         <template v-if="autoPlan.enabled">
@@ -154,7 +154,7 @@
           <select
             class="select select-sm w-24"
             :value="autoPlan.days"
-            :disabled="busy || saving"
+            :disabled="!props.status.settings.enabled || busy || saving"
             @change="saveAutoPlan({ days: Number(($event.target as HTMLSelectElement).value) })"
           >
             <option
@@ -167,7 +167,7 @@
           <select
             class="select select-sm w-24"
             :value="autoPlan.hour"
-            :disabled="busy || saving"
+            :disabled="!props.status.settings.enabled || busy || saving"
             @change="saveAutoPlan({ hour: Number(($event.target as HTMLSelectElement).value) })"
           >
             <option
@@ -345,7 +345,8 @@ const showDelete = ref(false)
 const deleting = ref<DnsFilterList | null>(null)
 const editing = ref<DnsFilterList | null>(null)
 const autoPlan = computed(() => ({
-  enabled: props.status.settings.enabled && props.status.settings.autoUpdate?.enabled !== false,
+  // 保留用户选择;过滤总开关关闭时只禁用控件,重新开启后恢复原状态。
+  enabled: props.status.settings.autoUpdate?.enabled === true,
   days: props.status.settings.autoUpdate?.days ?? 1,
   hour: props.status.settings.autoUpdate?.hour ?? 4,
 }))

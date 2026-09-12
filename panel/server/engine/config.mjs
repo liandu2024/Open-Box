@@ -185,7 +185,7 @@ export const buildConfig = ({ nodes, profile, userGroups, systemDns, localSubnet
   // 重启后内核自启立刻复现(v0.1.65–v0.1.70 的「禁用」模式,正式路由器和开发路由器都实测)。
   const holes = autoRedirect && dnsMode === 'hijack' ? [...localSubnets, TUN_V4_NET, TUN_V6_NET] : [TUN_V4_NET, TUN_V6_NET]
   // FakeIP 的 v6 占位段 fc00::/18 落在排除表的 fc00::/7 里,不挖出来的话走代理域名的 v6 连接在入口就被
-  // 放走了(v4 的 198.18.0.0/15 不在排除表里,不用挖)
+  // 放走了(v4 的 198.15.0.0/15 不在排除表里,不用挖)
   const fakeIp = dnsFakeIpEnabled(profile)
   if (fakeIp && ipv6ProxyMode(profile) === 'node') holes.push(FAKEIP_V6)
   // 用户明确要送去节点的私网段(前置自定义分流的 ip_cidr 行,出口不是直连 / 拒绝)也要挖出来:
