@@ -22,5 +22,7 @@ export const createPaths = (root = '/opt/open-box') => ({
   updateLogPath: '/tmp/openbox-update.log',
   geoUpdateStatePath: `${root}/data/geo-update.json`,
   scheduleStatePath: `${root}/data/schedule-state.json`,
+  // DNS 过滤名单自己的计划状态,避免和 Open-Box / Geo / 订阅调度同时写共享 JSON 时互相覆盖。
+  dnsFilterScheduleStatePath: `${root}/data/dns-filter-schedule.json`,
   initd: { core: '/etc/init.d/openbox', panel: '/etc/init.d/openbox-panel' },
 })

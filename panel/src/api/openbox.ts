@@ -110,7 +110,12 @@ export interface OpenboxProfileDns {
 }
 
 export interface DnsFilterList { id: string; name: string; url: string; enabled: boolean }
-export interface DnsFilterSettings { enabled: boolean; lists: DnsFilterList[]; allowDomains: string[] }
+export interface DnsFilterSettings {
+  enabled: boolean
+  lists: DnsFilterList[]
+  allowDomains: string[]
+  autoUpdate?: { enabled?: boolean; days?: number; hour?: number }
+}
 export interface DnsFilterStatus {
   settings: DnsFilterSettings
   lists: Record<string, { count: number; unsupported: number; unsupportedExamples?: string[]; updatedAt: number; error?: string }>

@@ -48,20 +48,32 @@ export const registerDnsFilterRoutes = (app, { store, ctx, paths, data, observer
     catch (error) { res.status(400).json({ error: error.message }) }
   })
   app.use('/api/openbox/dns-filter', router)
-  // Existing lists update once per day while enabled. Failures retain the cached list and wait
-  // before retrying; disabled installations do not download anything.
-  let lastAttempt = Date.now()
+  // 名单自动更新和 Open-Box / Geo 使用同一套计划算法:到点、今天只处理一次、按间隔天数判断。
+  // 状态写入统一的 schedule-state.json,面板重启后不会重复下载;失败保留上次有效名单。
+  const dayKey = (d) => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
   return {
     updateIfDue: async () => {
-      if (busy || Date.now() - lastAttempt < 3600000) return
+      if (busy) return
       const settings = filterSettings(store.getProfile())
-      if (!settings.enabled) return
-      const state = readFilterListState(store)
-      const active = settings.lists.filter((l) => l.enabled)
-      if (!active.some((l) => !state[l.id]?.updatedAt || Date.now() - state[l.id].updatedAt > 86400000)) return
-      lastAttempt = Date.now()
+      const plan = settings.autoUpdate || {}
+      if (!settings.enabled || plan.enabled !== true) return
+      const now = new Date()
+      if (Number(plan.hour) !== now.getHours()) return
+      let schedule
+      const schedulePath = paths.dnsFilterScheduleStatePath || paths.scheduleStatePath
+      try { schedule = JSON.parse(await ctx.readFile(schedulePath)) || {} } catch { schedule = {} }
+      const today = dayKey(now)
+      if (schedule.dnsFilterDay === today) return
+      schedule.dnsFilterDay = today
+      const days = Math.max(1, Number(plan.days) || 1)
+      const last = schedule.dnsFilterLastAt ? new Date(schedule.dnsFilterLastAt) : null
+      const due = !last || now - last >= (days - 0.5) * 24 * 3600 * 1000
+      try { await ctx.writeFile(schedulePath, JSON.stringify(schedule, null, 2)) } catch { /* next tick can retry */ }
+      if (!due) return
       const current = await status()
       if (current.pending || !current.applied?.enabled) return
+      schedule.dnsFilterLastAt = now.toISOString()
+      try { await ctx.writeFile(schedulePath, JSON.stringify(schedule, null, 2)) } catch { /* update still runs */ }
       await apply(true)
     },
   }

@@ -1,10 +1,11 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { buildFilterConfig, DNS_FILTER_DEFAULT, filterForwardPlan, filterKey, parseDnsFilter, validateDnsFilter } from './dns-filter.mjs'
+import { buildFilterConfig, DNS_FILTER_DEFAULT, filterForwardPlan, filterKey, filterSettings, parseDnsFilter, validateDnsFilter } from './dns-filter.mjs'
 
 test('DNS filtering defaults off; empty list stays empty; forward changes only while enabled', () => {
   assert.equal(DNS_FILTER_DEFAULT.enabled, false)
   assert.equal(DNS_FILTER_DEFAULT.lists[0].url, 'https://anti-ad.net/easylist.txt')
+  assert.deepEqual(filterSettings({ dns: { filter: { enabled: true, autoUpdate: { days: 7 } } } }).autoUpdate, { enabled: true, days: 7, hour: 4 })
   const plan = { mode: 'domains', domains: ['proxy.test'] }
   assert.equal(filterForwardPlan({}, plan), plan)
   assert.equal(filterForwardPlan({ dns: { filter: { enabled: true } } }, plan).mode, 'all')
@@ -37,4 +38,6 @@ test('filter configuration validates IDs, URL schemes, duplicate lists and domai
   for (const change of [{ lists: [{ id: '../a', enabled: true, name: 'bad', url: 'https://example.com' }] }, { lists: [{ id: 'a', enabled: true, name: 'bad', url: 'file:///etc/passwd' }] }, { allowDomains: ['*example.com'] }, { enabled: 'yes' }]) {
     assert.ok(validateDnsFilter({ ...structuredClone(DNS_FILTER_DEFAULT), ...change }))
   }
+  assert.ok(validateDnsFilter({ ...structuredClone(DNS_FILTER_DEFAULT), autoUpdate: { enabled: 'yes' } }))
+  assert.ok(validateDnsFilter({ ...structuredClone(DNS_FILTER_DEFAULT), autoUpdate: { days: 0 } }))
 })

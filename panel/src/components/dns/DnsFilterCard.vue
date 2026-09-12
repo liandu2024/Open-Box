@@ -44,6 +44,46 @@
         </div>
       </div>
       <p class="text-base-content/60 text-xs leading-relaxed">{{ $t('dfDescription') }}</p>
+      <div class="bg-base-content/10 h-px" />
+      <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <span class="font-medium">{{ $t('dfAuto') }}</span>
+        <input
+          type="checkbox"
+          class="toggle toggle-sm"
+          :checked="autoPlan.enabled"
+          :disabled="busy || saving"
+          @change="saveAutoPlan({ enabled: ($event.target as HTMLInputElement).checked })"
+        />
+        <template v-if="autoPlan.enabled">
+          <span class="text-base-content/70">{{ $t('dfAutoEvery') }}</span>
+          <select
+            class="select select-sm w-24"
+            :value="autoPlan.days"
+            :disabled="busy || saving"
+            @change="saveAutoPlan({ days: Number(($event.target as HTMLSelectElement).value) })"
+          >
+            <option
+              v-for="d in [1, 3, 7, 14, 30]"
+              :key="d"
+              :value="d"
+            >{{ $t('dfAutoDays', { days: d }) }}</option>
+          </select>
+          <span class="text-base-content/70">{{ $t('dfAutoAt') }}</span>
+          <select
+            class="select select-sm w-24"
+            :value="autoPlan.hour"
+            :disabled="busy || saving"
+            @change="saveAutoPlan({ hour: Number(($event.target as HTMLSelectElement).value) })"
+          >
+            <option
+              v-for="h in 24"
+              :key="h - 1"
+              :value="h - 1"
+            >{{ String(h - 1).padStart(2, '0') }}:00</option>
+          </select>
+        </template>
+        <span class="text-base-content/50 text-xs">{{ $t('dfAutoHint') }}</span>
+      </div>
       <p
         v-if="!status.settings.lists.length"
         class="text-base-content/50 text-xs"
@@ -288,7 +328,7 @@ import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import DnsFilterPreviewDialog from '@/components/dns/DnsFilterPreviewDialog.vue'
 import { showNotification } from '@/helper/notification'
 import { ArrowPathIcon, ChevronDownIcon, EyeIcon, PencilSquareIcon, TrashIcon } from '@heroicons/vue/24/outline'
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 const props = defineProps<{ status: DnsFilterStatus; busy: boolean }>()
 const emit = defineEmits<{ saved: []; update: [list?: DnsFilterList] }>()
 const saving = ref(false)
@@ -304,6 +344,11 @@ const preview = (list: DnsFilterList) => {
 const showDelete = ref(false)
 const deleting = ref<DnsFilterList | null>(null)
 const editing = ref<DnsFilterList | null>(null)
+const autoPlan = computed(() => ({
+  enabled: props.status.settings.enabled && props.status.settings.autoUpdate?.enabled !== false,
+  days: props.status.settings.autoUpdate?.days ?? 1,
+  hour: props.status.settings.autoUpdate?.hour ?? 4,
+}))
 watch(
   () => props.status.settings.allowDomains.join('\n'),
   (v) => {
@@ -336,6 +381,11 @@ const changeList = (list: DnsFilterList, patch: Partial<DnsFilterList>) =>
   save({
     ...props.status.settings,
     lists: props.status.settings.lists.map((l) => (l.id === list.id ? { ...l, ...patch } : l)),
+  })
+const saveAutoPlan = (patch: Partial<typeof autoPlan.value>) =>
+  save({
+    ...props.status.settings,
+    autoUpdate: { ...autoPlan.value, ...patch },
   })
 const askDelete = (list: DnsFilterList) => {
   deleting.value = list

@@ -1,10 +1,25 @@
 import { createHash } from 'node:crypto'
 import { domainToASCII } from 'node:url'
 
-export const DNS_FILTER_DEFAULT = { enabled: false, lists: [{ id: 'anti-ad', name: 'anti-AD', url: 'https://anti-ad.net/easylist.txt', enabled: true }], allowDomains: [] }
+export const DNS_FILTER_DEFAULT = {
+  enabled: false,
+  lists: [{ id: 'anti-ad', name: 'anti-AD', url: 'https://anti-ad.net/easylist.txt', enabled: true }],
+  allowDomains: [],
+  // 名单自动更新沿用 Open-Box / Geo 的计划形状;旧档案默认保持原本的每日更新行为。
+  autoUpdate: { enabled: true, days: 1, hour: 4 },
+}
 export const DNS_FILTER_RUNTIME = 'openbox/dns-filter-runtime'
-export const filterSettings = (profile) => ({ ...structuredClone(DNS_FILTER_DEFAULT), ...profile?.dns?.filter })
-export const filterKey = (settings) => createHash('sha256').update(JSON.stringify(settings)).digest('hex').slice(0, 16)
+export const filterSettings = (profile) => ({
+  ...structuredClone(DNS_FILTER_DEFAULT),
+  ...profile?.dns?.filter,
+  autoUpdate: { ...DNS_FILTER_DEFAULT.autoUpdate, ...profile?.dns?.filter?.autoUpdate },
+})
+// 自动更新计划只影响调度,不影响内核规则;从产物 key 排除它,改时间不会造成待应用状态。
+export const filterKey = (settings) => {
+  const { autoUpdate, ...rulesSettings } = settings || {}
+  void autoUpdate
+  return createHash('sha256').update(JSON.stringify(rulesSettings)).digest('hex').slice(0, 16)
+}
 export const filterForwardPlan = (profile, plan) => profile?.dns?.filter?.enabled
   ? { mode: 'all', domains: [], reason: '域名过滤已开启:DNS 查询统一交给内核检查,通过后仍按原 DNS 策略解析' }
   : plan
@@ -23,6 +38,13 @@ export const allowDomainCondition = (value) => {
 export const validateDnsFilter = (value) => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return 'dns.filter must be an object'
   if (typeof value.enabled !== 'boolean') return 'dns.filter.enabled must be a boolean'
+  if ('autoUpdate' in value) {
+    const plan = value.autoUpdate
+    if (!plan || typeof plan !== 'object' || Array.isArray(plan)) return 'dns.filter.autoUpdate must be an object'
+    if ('enabled' in plan && typeof plan.enabled !== 'boolean') return 'dns.filter.autoUpdate.enabled must be a boolean'
+    if ('days' in plan && !(Number.isInteger(plan.days) && plan.days >= 1 && plan.days <= 30)) return 'dns.filter.autoUpdate.days must be an integer 1-30'
+    if ('hour' in plan && !(Number.isInteger(plan.hour) && plan.hour >= 0 && plan.hour <= 23)) return 'dns.filter.autoUpdate.hour must be an integer 0-23'
+  }
   if (!Array.isArray(value.lists) || value.lists.length > 8) return '最多添加 8 份过滤名单'
   const ids = new Set()
   for (const list of value.lists) {
