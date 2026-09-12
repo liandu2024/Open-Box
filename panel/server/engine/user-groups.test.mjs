@@ -101,15 +101,74 @@ test('故障转移:失效节点不算有效成员;页签全空的组只剩兜底
   assert.ok(!outbounds.some((o) => o.tag === '拒绝'), '停用的内置拒绝不会被故障转移拉回配置')
 })
 
-test('故障转移:两个单节点页签引用同一个节点时父组成员去重;页签只引用节点,写了组名不算有效', () => {
+test('故障转移:两个单节点页签引用同一个节点时父组成员去重', () => {
   const { outbounds, failover } = emitUser([...defaultGroups(), failoverGroup({ lanes: [
     { id: 'A', members: ['香港-01'] },
     { id: 'B', members: ['香港-01'] },
-    { id: 'C', members: ['所有-自动'] },
   ] })], nodes)
   const parent = outbounds.find((o) => o.tag === '主备')
   assert.deepEqual(parent.outbounds, ['香港-01', '拒绝'])
-  assert.deepEqual(failover[0].lanes.map((l) => l.mode), ['single', 'single', 'empty'])
+  assert.deepEqual(failover[0].lanes.map((l) => l.mode), ['single', 'single'])
+})
+
+// 自动分组生成的「香港-故转」:主用 = 香港-手动,备用 = 香港-自动
+const countryFailover = () => ([
+  ...defaultGroups(),
+  { id: 'hk-manual', name: '香港-手动', type: 'selector', mode: 'dynamic', keywords: ['香港'], members: [] },
+  { id: 'hk-auto', name: '香港-自动', type: 'urltest', mode: 'dynamic', keywords: ['香港'], members: [], interval: '5m', tolerance: 100 },
+  failoverGroup({ id: 'hk-fo', name: '香港-故转', lanes: [
+    { id: 'P', name: '主用', members: ['香港-手动'] },
+    { id: 'B', name: '备用 1', members: ['香港-自动'] },
+  ] }),
+])
+
+test('故障转移:页签可以引用别的组(主用=香港-手动,备用=香港-自动),不生成内部子组', () => {
+  const { outbounds, failover, internalTags } = emitUser(countryFailover(), nodes)
+  const parent = outbounds.find((o) => o.tag === '香港-故转')
+  assert.deepEqual(parent.outbounds, ['香港-手动', '香港-自动', '拒绝'])
+  assert.equal(parent.default, '香港-手动')
+  const fo = failover.find((f) => f.tag === '香港-故转')
+  assert.deepEqual(fo.lanes.map((l) => [l.mode, l.ref, l.valid, l.groupRef]), [
+    ['single', '香港-手动', ['香港-手动'], true],
+    ['single', '香港-自动', ['香港-自动'], true],
+  ])
+  // 引用组时页签直接用那个组,不再包一层内部 urltest 子组
+  assert.deepEqual(internalTags, [])
+  assert.ok(!outbounds.some((o) => o.tag.startsWith('__fo:')))
+})
+
+test('故障转移:一个页签只走一条路——引用了组就按组走,同页签里的节点不算有效成员', () => {
+  const { failover } = emitUser([...defaultGroups(), failoverGroup({ lanes: [
+    { id: 'A', members: ['香港-01', '所有-手动'] },
+    { id: 'B', members: ['所有-手动', '所有-自动'] },
+  ] })], nodes)
+  assert.deepEqual(failover[0].lanes.map((l) => [l.mode, l.valid, l.groupRef]), [
+    ['single', ['所有-手动'], true],
+    ['single', ['所有-手动'], true],
+  ])
+})
+
+test('故障转移:页签自引用被剔除(不能把自己挂进主备)', () => {
+  const { failover } = emitUser([...defaultGroups(), failoverGroup({ lanes: [
+    { id: 'A', members: ['主备', '香港-01'] },
+    { id: 'B', members: ['香港-02'] },
+  ] })], nodes)
+  assert.deepEqual(failover[0].lanes.map((l) => [l.mode, l.valid]), [
+    ['single', ['香港-01']],
+    ['single', ['香港-02']],
+  ])
+})
+
+test('故障转移:页签引用组与组互相引用成环时整对丢弃,不生成运行时打转的配置', () => {
+  const groups = [
+    ...defaultGroups(),
+    { id: 'hk-manual', name: '香港-手动', type: 'selector', mode: 'static', members: ['香港-故转'] },
+    failoverGroup({ id: 'hk-fo', name: '香港-故转', lanes: [{ id: 'P', members: ['香港-手动'] }, { id: 'B', members: ['香港-01'] }] }),
+  ]
+  const { outbounds, dropped } = emitUser(groups, nodes)
+  assert.deepEqual(dropped.map((d) => d.name).sort(), ['香港-手动', '香港-故转'])
+  assert.ok(!outbounds.some((o) => o.tag === '香港-故转'))
+  assert.ok(!outbounds.some((o) => o.tag === '香港-手动'))
 })
 
 test('故障转移:别的组可以把故障转移父组当成员,但拿不到内部子组', () => {

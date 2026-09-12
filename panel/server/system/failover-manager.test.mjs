@@ -684,3 +684,146 @@ test('验收 A:用户把某个页签排到第一位(C/A/B)→ 第一次确认它
   assert.equal(group(mgr).currentLaneId, 'B', '关着「恢复后切回」:主用恢复不切回')
   assert.equal(k.calls.filter((c) => c.startsWith('PUT')).length, 3)
 })
+
+// ---------- 引用组的页签:「香港-故转」主用 = 香港-手动,备用 = 香港-自动 ----------
+// 假内核里手动组是 selector(now 固定在用户挑的节点上),自动组是 urltest(自己挑最快的可用节点)
+const groupRefKernel = (clock) => {
+  const down = new Set()
+  const delays = { '香港-01': 80, '香港-02': 120 }
+  const all = ['香港-01', '香港-02']
+  const manual = { type: 'Selector', all: [...all], now: '香港-01', history: [] }
+  const auto = { type: 'URLTest', all: [...all], now: '香港-01', history: [] }
+  const parent = { type: 'Selector', all: ['香港-手动', '香港-自动', '拒绝'], now: '香港-手动', history: [] }
+  const proxies = {
+    '香港-01': { type: 'ss', history: [] },
+    '香港-02': { type: 'ss', history: [] },
+    '香港-手动': manual, '香港-自动': auto, '香港-故转': parent,
+    '拒绝': { type: 'Reject', history: [] },
+    // 这个国家一个节点都没有时,动态组在内核里挂的是直连占位
+    '直连': { type: 'direct', history: [] },
+  }
+  const calls = []
+  // urltest 组自己按当前可用性挑节点(内核定时检测做的就是这个)
+  let reselect = true
+  const reselectAuto = () => {
+    if (!reselect) return
+    const alive = all.filter((n) => !down.has(n))
+    auto.now = alive.length ? alive.sort((a, b) => delays[a] - delays[b])[0] : '香港-01'
+  }
+  const json = (status, body) => ({ ok: status >= 200 && status < 300, status, json: async () => body })
+  const fetchImpl = async (url, init = {}) => {
+    const path = decodeURIComponent(String(url).replace('http://127.0.0.1:9095', ''))
+    calls.push(`${init.method || 'GET'} ${path}`)
+    if (path === '/proxies') { reselectAuto(); return json(200, { proxies: JSON.parse(JSON.stringify(proxies)) }) }
+    let m
+    if ((m = path.match(/^\/proxies\/([^/?]+)\/delay\?/))) {
+      const tag = m[1]
+      if (!proxies[tag]) return json(404, { message: 'Proxy not found' })
+      if (down.has(tag)) { proxies[tag].history = []; return json(504, { message: 'Timeout' }) }
+      proxies[tag].history = [{ time: iso(clock()), delay: delays[tag] ?? 100 }]
+      return json(200, { delay: delays[tag] ?? 100 })
+    }
+    if ((m = path.match(/^\/proxies\/([^/?]+)$/))) {
+      const key = m[1]
+      const p = proxies[key]
+      if (!p) return json(404, { message: 'Proxy not found' })
+      if (init.method === 'PUT') {
+        const name = JSON.parse(init.body).name
+        if (!p.all || !p.all.includes(name)) return json(400, { message: 'Proxy does not exist' })
+        p.now = name
+        return json(204, {})
+      }
+      if (key === '香港-自动') reselectAuto()
+      return json(200, JSON.parse(JSON.stringify(p)))
+    }
+    throw new Error('unexpected ' + path)
+  }
+  return { proxies, calls, down, fetchImpl, now: () => parent.now, setReselect: (v) => { reselect = v } }
+}
+
+const groupRefMapping = () => ({
+  id: 'hk', tag: '香港-故转', rejectTag: '拒绝',
+  lanes: [
+    { id: 'P', name: '主用', index: 0, members: ['香港-手动'], valid: ['香港-手动'], mode: 'single', ref: '香港-手动', subTag: null, groupRef: true },
+    { id: 'B', name: '备用 1', index: 1, members: ['香港-自动'], valid: ['香港-自动'], mode: 'single', ref: '香港-自动', subTag: null, groupRef: true },
+  ],
+  settings: { interval: '30s', intervalMs: 30_000, tolerance: 100, testUrl: URL, timeoutMs: 5000, failureThreshold: 2, restorePrimary: true, recoveryHoldMs: 60_000 },
+})
+
+const setupGroupRef = (over = {}) => {
+  let clock = T0
+  const k = groupRefKernel(() => clock)
+  const store = memStore()
+  const ctx = createMockContext({ files: { [configMetaPath(paths)]: metaJson('v1', [groupRefMapping()]) }, execResults: { 'pidof sing-box': { code: 1, stdout: '' } } })
+  const mgr = createFailoverManager({ store, ctx, paths, fetchImpl: k.fetchImpl, now: () => clock, log: () => {}, ...over })
+  const round = async (ms = 30_000) => { clock += ms; return mgr.tick() }
+  return { k, mgr, round }
+}
+
+test('引用组的页签:探的是组里此刻选中的节点,不是组本身', async () => {
+  const { k, mgr } = setupGroupRef()
+  await mgr.tick()
+  assert.equal(group(mgr).status, 'ok')
+  assert.equal(group(mgr).currentLaneId, 'P')
+  assert.equal(k.now(), '香港-手动')
+  const probeCalls = k.calls.filter((c) => /\/proxies\/[^/]+\/delay/.test(c))
+  assert.equal(probeCalls.length, 1, '手动组和自动组此刻都选中香港-01,去重后只探一次')
+  assert.ok(probeCalls[0].includes('/proxies/香港-01/delay'), '探的是组里选中的节点')
+  assert.ok(!k.calls.some((c) => c.includes('/proxies/香港-手动/delay')), '组自己不能被当节点探')
+  assert.ok(!k.calls.some((c) => c.includes('/proxies/香港-自动/delay')), '组自己不能被当节点探')
+  // 运行状态如实反映:页签引用的是组,这轮实际探的是组里选中的节点
+  const lanes0 = group(mgr).lanes
+  assert.equal(lanes0[0].groupRef, true)
+  assert.deepEqual(lanes0[0].valid, ['香港-手动'])
+  assert.deepEqual(lanes0[0].probe, ['香港-01'])
+  assert.equal(lanes0[0].refNode, '香港-01')
+  assert.equal(lanes0[0].kernelNow, '香港-01')
+  assert.equal(lanes0[0].nodes['香港-01'].ok, true)
+})
+
+test('引用组的页签:手动组挑的节点挂了 → 主用失效,到阈值后切到备用的自动组', async () => {
+  const { k, mgr, round } = setupGroupRef()
+  await mgr.tick()
+  k.down.add('香港-01')
+  let r = await round()
+  assert.equal(lanes(mgr).P, 'down')
+  assert.equal(r.ran['香港-故转'].switched, null, '第 1 轮失败还没到阈值')
+  assert.equal(k.now(), '香港-手动')
+  r = await round()
+  assert.deepEqual(r.ran['香港-故转'].switched, { from: '香港-手动', to: '香港-自动', reason: 'lane-failed' })
+  assert.equal(k.now(), '香港-自动')
+  assert.equal(group(mgr).status, 'backup')
+  // 自动组自己挑了还活着的香港-02
+  assert.equal(group(mgr).lanes[1].refNode, '香港-02')
+  assert.equal(lanes(mgr).B, 'up')
+})
+
+test('引用组的页签:组里选中的是直连占位(这个国家还没节点)→ 记未知,不把父组推到兜底拒绝', async () => {
+  const { k, mgr, round } = setupGroupRef()
+  await mgr.tick()
+  // 手动组 / 自动组都空了:内核里它们挂着直连占位,用户「选中」的就是它
+  k.setReselect(false)
+  k.proxies['香港-手动'].now = '直连'
+  k.proxies['香港-自动'].now = '直连'
+  for (let i = 0; i < 4; i++) await round()
+  assert.deepEqual(lanes(mgr), { P: 'unknown', B: 'unknown' }, '占位不是能探的节点:记未知')
+  assert.equal(k.now(), '香港-手动', '不切换:切到兜底拒绝反而把流量掐了')
+  assert.ok(!k.calls.some((c) => c.includes('/proxies/直连/delay')), '不探内置出站')
+})
+
+test('引用组的页签:手动组恢复后按「主用恢复后切回」切回主用', async () => {
+  const { k, mgr, round } = setupGroupRef()
+  await mgr.tick()
+  k.down.add('香港-01')
+  await round(); await round()
+  assert.equal(k.now(), '香港-自动')
+  k.down.delete('香港-01')
+  let r = await round()
+  assert.equal(lanes(mgr).P, 'up')
+  assert.equal(r.ran['香港-故转'].switched, null, '刚恢复,还没满恢复等待')
+  let switched = null
+  for (let i = 0; i < 5 && !switched; i++) switched = (await round()).ran['香港-故转'].switched
+  assert.deepEqual(switched, { from: '香港-自动', to: '香港-手动', reason: 'restore-primary' })
+  assert.equal(k.now(), '香港-手动')
+  assert.equal(group(mgr).status, 'ok')
+})

@@ -11,7 +11,8 @@
 // 一轮检测(每个组按自己的 interval 到点跑):
 //   1. GET /proxies 确认内核可达、父组和页签引用都在(部署到一半、内核正在重启时不动手);
 //   2. 组内所有有效节点各测一次 GET /proxies/<节点>/delay(内核用这个节点出站真去访问测速地址,
-//      端到端;有界并发;同一节点被几个页签共用只测一次,同轮结果复用);
+//      端到端;有界并发;同一节点被几个页签共用只测一次,同轮结果复用);页签引用的是**别的组**时
+//      (「香港-故转」的主用 =「香港-手动」),探的是那个组此刻选中的节点——它通就算这个页签可用;
 //   3. 多节点页签有节点通过时调 GET /group/<子组>/delay 让内核按刚才的结果重选,再读回 now 确认
 //      内核实际选中的是通过检测的节点——确认不了的页签这轮算「未知」,不算恢复也不算失败;
 //   4. 页签健康:通过 = 有节点通过;失败 = 所有有效节点都明确失败;其余 = 未知(有节点没测到 /
@@ -104,6 +105,10 @@ export const createFailoverManager = ({
   const freshLane = (lane) => ({
     id: lane.id, name: lane.name || '', index: lane.index, mode: lane.mode, ref: lane.ref, subTag: lane.subTag,
     members: [...(lane.members || [])], valid: [...(lane.valid || [])],
+    // 页签引用的是别的组(「香港-故转」的主用 =「香港-手动」),不是节点
+    groupRef: Boolean(lane.groupRef),
+    // 这轮实际探测的节点:组引用页签是那个组此刻选中的节点,其余就是页签自己的有效成员
+    probe: [], refNode: null,
     health: lane.mode === 'empty' ? 'down' : 'unknown', failStreak: 0, upSince: null, kernelNow: null, confirmed: null,
   })
   const loadMap = (meta) => {
@@ -252,14 +257,55 @@ export const createFailoverManager = ({
     if (expectedRefs.some((r) => !parent.all.includes(r) || !proxies[r])) return { skipped: 'kernel-mismatch' }
     if (state.rejectTag && !parent.all.includes(state.rejectTag)) return { skipped: 'kernel-mismatch' }
 
-    // 1. 节点探测(去重、有界并发)
-    const tags = [...new Set(state.lanes.flatMap((l) => l.valid))]
+    const stale = () => stopped || version !== roundVersion || states.get(state.id) !== state
+
+    // 1. 先定这轮要探哪些节点。
+    //    引用组的页签探的是那个组**此刻选中的节点**:「香港-故转」的主用是「香港-手动」,
+    //    用户在手动组里挑了哪个节点,主用通不通就取决于那个节点——手动组选中的节点挂了才算主用
+    //    失效、才轮到备用的自动组;手动组恢复(那个节点又通了)就切回主用。
+    //    (组套组也跟着往下追,最多 8 层;追不到就这轮不探,算未知)
+    const isGroupTag = (tag) => Boolean(proxies[tag] && Array.isArray(proxies[tag].all) && proxies[tag].all.length)
+    // 直连 / 拒绝 / DNS 这类内置出站不是能探的节点:这个国家还没有节点时,动态组会挂一个直连占位,
+    // 用户在手动组里「选中」的就是它。探它只会得到失败,把父组一路推到兜底拒绝——那反而是错的。
+    const NON_PROBE = ['direct', 'block', 'reject', 'dns']
+    const isProbeable = (tag) => {
+      const p = proxies[tag]
+      if (!p) return true                       // 快照里没有:照旧探,探不出来算未知
+      const t = String(p.type || '').toLowerCase()
+      return !NON_PROBE.some((x) => t.includes(x))
+    }
+    const resolveGroupNow = async (tag) => {
+      let cur = tag
+      for (let depth = 0; depth < 8; depth++) {
+        if (!isGroupTag(cur)) return cur
+        let p = proxies[cur]
+        try { p = (await fetchProxy(cur)) || p } catch { /* 读不到就用快照里的 */ }
+        const next = p && typeof p.now === 'string' ? p.now : ''
+        if (!next || next === cur) return ''
+        cur = next
+      }
+      return ''
+    }
+    for (const lane of state.lanes) {
+      lane.refNode = null
+      if (lane.mode === 'empty') { lane.probe = []; continue }
+      if (lane.groupRef && lane.ref) {
+        const node = await resolveGroupNow(lane.ref)
+        lane.refNode = node && !isGroupTag(node) && isProbeable(node) ? node : null
+        lane.probe = lane.refNode ? [lane.refNode] : []
+        continue
+      }
+      lane.probe = [...lane.valid]
+    }
+    if (stale()) return { skipped: 'stale' }
+
+    // 2. 节点探测(去重、有界并发)
+    const tags = [...new Set(state.lanes.flatMap((l) => l.probe))]
     const results = new Map()
     if (url && tags.length) {
       const list = await mapLimit(tags, probeConcurrency, (tag) => probeNode(tag, url, timeoutMs))
       list.forEach((r, i) => results.set(tags[i], r))
     }
-    const stale = () => stopped || version !== roundVersion || states.get(state.id) !== state
     if (stale()) return { skipped: 'stale' }
     for (const [tag, r] of results) state.nodes[tag] = { ...r, round: roundId }
     // 探测结果进公共延迟历史(失败的记一笔超时,通过的内核自己已经记了,scheduler 同步时会看到)
@@ -270,7 +316,7 @@ export const createFailoverManager = ({
       } catch { /* 历史记不上不影响决策 */ }
     }
 
-    // 2. 页签健康(先确认内核还在)
+    // 3. 页签健康(先确认内核还在)
     try { await fetchProxies() } catch { return { skipped: 'kernel' } }
     if (stale()) return { skipped: 'stale' }
     for (const lane of state.lanes) {
@@ -278,11 +324,14 @@ export const createFailoverManager = ({
       lane.confirmed = null
       if (lane.mode === 'empty') { lane.health = 'down'; continue }
       if (!url) { lane.health = 'unknown'; continue }
-      const rs = lane.valid.map((t) => results.get(t))
-      const okNodes = lane.valid.filter((t, i) => rs[i] && rs[i].ok === true)
+      const rs = lane.probe.map((t) => results.get(t))
+      const okNodes = lane.probe.filter((t, i) => rs[i] && rs[i].ok === true)
       const allFailed = rs.length > 0 && rs.every((r) => r && r.ok === false)
-      if (lane.mode === 'single') {
+      // 单节点页签、以及引用组的页签:探的那个节点通过就是可用,明确失败就是不可用
+      if (lane.mode === 'single' || lane.groupRef) {
         lane.health = okNodes.length ? 'up' : allFailed ? 'down' : 'unknown'
+        // 组引用页签:内核此刻在这个组里选中的节点(给用户看"主用现在走的是哪个节点")
+        if (lane.groupRef) lane.kernelNow = lane.refNode
         continue
       }
       // 多节点页签:有通过的节点就让内核重选,再确认它实际选中的是通过的节点
@@ -521,7 +570,9 @@ export const createFailoverManager = ({
         id: l.id, name: l.name, index: l.index, role: laneRole(l.index), mode: l.mode, ref: l.ref, subTag: l.subTag,
         members: l.members, valid: l.valid, health: l.health, failStreak: l.failStreak, upSince: l.upSince,
         kernelNow: l.kernelNow, confirmed: l.confirmed,
-        nodes: Object.fromEntries(l.valid.map((t) => [t, g.nodes[t] ? { ok: g.nodes[t].ok, delay: g.nodes[t].delay ?? null, at: g.nodes[t].at, reason: g.nodes[t].reason || null } : null])),
+        groupRef: l.groupRef, probe: l.probe, refNode: l.refNode,
+        // 组引用页签按实际探的节点给结果(页签成员记的是组名,探测结果记的是组里选中的节点)
+        nodes: Object.fromEntries((l.probe.length ? l.probe : l.valid).map((t) => [t, g.nodes[t] ? { ok: g.nodes[t].ok, delay: g.nodes[t].delay ?? null, at: g.nodes[t].at, reason: g.nodes[t].reason || null } : null])),
       })),
     })),
   })

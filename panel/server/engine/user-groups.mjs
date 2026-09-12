@@ -21,6 +21,8 @@ import { parseDuration } from './duration.mjs'
 
 // failover(故障转移)是应用层类型:内核里生成的是一个 selector(父组)+ 每个多节点页签一个私有 urltest
 // 子组,主备决策由面板服务端的 system/failover-manager.mjs 做,不向内核写 type: failover / fallback
+// 页签的成员既可以是节点,也可以是别的组(「香港-故转」的主用 =「香港-手动」、备用 =「香港-自动」);
+// 引用组时,主备看的是那个组此刻选中的节点通不通,而不是把组的成员展开一遍。
 export const GROUP_TYPES = Object.freeze(['urltest', 'selector', 'failover'])
 
 // 故障转移的内部出站(页签子组、内置拒绝停用时的兜底拒绝)都带这个前缀:它们要进内核配置、要能被链路
@@ -290,6 +292,15 @@ const resolveMembers = (group, nodeTags, groupNameSet, matchText = new Map()) =>
 // 去环:按依赖顺序逐个接纳组,只允许引用"已经被接纳的组"或真实节点。
 // 这样任何环里的组都会因为它依赖的另一半还没被接纳而暂时留下,直到某一轮不再有
 // 新组被接纳为止——剩下的就是环,整组丢弃。
+// 依赖 = 成员里引用了别的组。故障转移的页签可以引用组(「香港-故转」的主用就是
+// 「香港-手动」),所以它的依赖要从页签成员里算,不能像以前那样一律当成无依赖。
+const groupDepsOf = (g, allGroupNames) => {
+  if (g.mode === 'dynamic') return []
+  const raw = g.type === 'failover'
+    ? (Array.isArray(g.lanes) ? g.lanes : []).flatMap((l) => (Array.isArray(l?.members) ? l.members : []))
+    : (Array.isArray(g.members) ? g.members : [])
+  return [...new Set(raw)].filter((m) => m !== g.name && allGroupNames.has(m))
+}
 const dropCycles = (groups) => {
   // 只有"引用别的组"才构成依赖。引用节点不算;引用一个既不是节点也不是组的名字
   // (悬空)同样不算——那种成员由 resolveMembers 过滤掉即可,不该连累整个组被当成环。
@@ -303,10 +314,7 @@ const dropCycles = (groups) => {
     for (let i = 0; i < pending.length; i++) {
       const g = pending[i]
       // 动态组只挑节点,不引用别的组,所以永远没有依赖,也就不可能成环
-      // 动态组只挑节点;故障转移的页签也只引用真实节点——都没有组依赖,不可能成环
-      const groupDeps = g.mode === 'dynamic' || g.type === 'failover'
-        ? []
-        : g.members.filter((m) => m !== g.name && allGroupNames.has(m))
+      const groupDeps = groupDepsOf(g, allGroupNames)
       if (groupDeps.some((d) => !acceptedNames.has(d))) continue
       accepted.push(g)
       acceptedNames.add(g.name)
@@ -355,14 +363,22 @@ export const emitUserGroups = (groups, nodes, options = {}) => {
     const lanes = []
     const refs = []
     g.lanes.forEach((lane, index) => {
-      // 只认真实节点:引用组 / 已删掉的节点一律不算有效成员(失效引用留在 members 里给界面显示)
-      const valid = lane.members.filter((m) => nodeTagSet.has(m))
+      // 页签的成员可以是节点,也可以是别的组:「香港-故转」的主用就是「香港-手动」这个组,
+      // 用户在那边挑哪个节点,主用就走哪个——这是故障转移要的语义(手动组失效才切自动组)。
+      // 一个页签只走一条路:引用了组就按组走,同页签里的节点不算有效成员;反过来只放节点就照旧。
+      // 指向不存在的组 / 已删掉的节点一律不算有效成员(失效引用留在 members 里给界面显示)。
+      const groupRefs = [...new Set(lane.members.filter((m) => m !== g.name && groupNameSet.has(m)))]
+      const nodeRefs = [...new Set(lane.members.filter((m) => nodeTagSet.has(m)))]
+      const valid = groupRefs.length ? [groupRefs[0]] : nodeRefs
+      // 引用组时组自己会在成员里挑节点,后台探测的是它此刻选中的那个节点(见 system/failover-manager.mjs)
+      const groupRef = groupRefs.length > 0
+      const meta = { id: lane.id, name: lane.name, icon: lane.icon || '', index, members: lane.members, valid, groupRef }
       if (!valid.length) {
-        lanes.push({ id: lane.id, name: lane.name, icon: lane.icon || '', index, members: lane.members, valid, mode: 'empty', ref: null, subTag: null })
+        lanes.push({ ...meta, mode: 'empty', ref: null, subTag: null })
         return
       }
       if (valid.length === 1) {
-        lanes.push({ id: lane.id, name: lane.name, icon: lane.icon || '', index, members: lane.members, valid, mode: 'single', ref: valid[0], subTag: null })
+        lanes.push({ ...meta, mode: 'single', ref: valid[0], subTag: null })
         refs.push(valid[0])
         return
       }
@@ -376,7 +392,7 @@ export const emitUserGroups = (groups, nodes, options = {}) => {
         url: g.testUrl || testUrl, interval: g.interval || FAILOVER_DEFAULTS.interval, tolerance: g.tolerance ?? FAILOVER_DEFAULTS.tolerance,
         idle_timeout: idleTimeoutFor(DEFAULT_IDLE_TIMEOUT, g.interval || FAILOVER_DEFAULTS.interval),
       })
-      lanes.push({ id: lane.id, name: lane.name, icon: lane.icon || '', index, members: lane.members, valid, mode: 'urltest', ref: subTag, subTag })
+      lanes.push({ ...meta, mode: 'urltest', ref: subTag, subTag })
       refs.push(subTag)
     })
     // 不同单节点页签引用同一个节点:父 selector 的成员去重,页签定义不合并

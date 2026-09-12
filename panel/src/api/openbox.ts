@@ -506,7 +506,9 @@ export const testNodeLatency = async (payload: {
 export type OpenboxGroupType = 'urltest' | 'selector' | 'failover'
 
 // 故障转移的主备页签:顺序即优先级(第一个主用,后面依次备用),id 稳定(拖拽、保存、运行状态都按它认),
-// name 可选(不决定主备顺序),members 只放真实节点名
+// name 可选(不决定主备顺序)。
+// members 放**节点名**或**一个组名**——引用组时走的是那个组此刻选中的节点(「香港-故转」的主用就是
+// 「香港-手动」);一个页签只走一条路:要么若干节点(多节点时组内自动择优),要么一个组,不混放。
 export interface OpenboxFailoverLane {
   id: string
   name: string
@@ -573,6 +575,11 @@ export interface OpenboxFailoverLaneStatus {
   subTag: string | null
   members: string[]
   valid: string[]
+  // 页签引用的是别的组(不是节点):valid 里记的是组名,探测的是那个组此刻选中的节点
+  groupRef?: boolean
+  // 这轮实际探测的节点(组引用页签 = 组里选中的那个节点)
+  probe?: string[]
+  refNode?: string | null
   health: OpenboxFailoverLaneHealth
   failStreak: number
   upSince: number | null

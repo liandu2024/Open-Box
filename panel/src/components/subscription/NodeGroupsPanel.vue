@@ -433,7 +433,7 @@
                 <BulkPick
                   v-model:subscription="memberSub"
                   :subscriptions="subscriptionOptions"
-                  :nodes-only="isFailover"
+                  :nodes-only="!candidates.some((c) => c.kind === 'group')"
                   @select-all="tickAll('available')"
                   @invert="tickInvert('available')"
                   @clear="tickNone('available')"
@@ -581,7 +581,7 @@
                 <BulkPick
                   v-model:subscription="selectedSub"
                   :subscriptions="subscriptionOptions"
-                  :nodes-only="isFailover"
+                  :nodes-only="!candidates.some((c) => c.kind === 'group')"
                   @select-all="tickAll('selected')"
                   @invert="tickInvert('selected')"
                   @clear="tickNone('selected')"
@@ -613,10 +613,15 @@
                   >
                     <ChevronLeftIcon class="text-base-content/30 h-4 w-4" />
                   </button>
-                  <span :class="['truncate', isFailover && !nodeNameSet.has(name) && 'line-through opacity-60']">{{ name }}</span>
-                  <!-- 订阅更新后已经不存在的节点:留着给用户看,不算有效节点、不进配置 -->
+                  <span :class="['truncate', isFailover && !candidateNameSet.has(name) && 'line-through opacity-60']">{{ name }}</span>
+                  <!-- 页签引用的是组:标一下,和普通节点区分开 -->
                   <span
-                    v-if="isFailover && !nodeNameSet.has(name)"
+                    v-if="isFailover && groupNameSet.has(name)"
+                    class="badge badge-ghost badge-xs shrink-0"
+                  >{{ $t('groupsTab') }}</span>
+                  <!-- 订阅更新后已经不存在的节点 / 组:留着给用户看,不算有效成员、不进配置 -->
+                  <span
+                    v-if="isFailover && !candidateNameSet.has(name)"
                     class="badge badge-ghost badge-xs shrink-0"
                   >{{ $t('failoverInvalid') }}</span>
                 </label>
@@ -804,7 +809,21 @@
               />
               {{ $t('groupType_selector') }}
             </label>
+            <label class="flex cursor-pointer items-center gap-2 text-sm">
+              <input
+                v-model="autoTypes"
+                type="checkbox"
+                value="failover"
+                class="checkbox checkbox-sm"
+              />
+              {{ $t('groupType_failover_short') }}
+            </label>
           </div>
+          <!-- 故障转移得有主备两个组才能工作,所以勾了它一定连「手动 / 自动」一起建 -->
+          <p
+            v-if="autoTypes.includes('failover')"
+            class="text-base-content/50 text-xs"
+          >{{ $t('groupAutoFailoverHint') }}</p>
         </div>
 
         <div class="flex flex-col gap-1">
@@ -893,7 +912,7 @@
               v-if="autoSaving"
               class="loading loading-spinner loading-xs"
             />
-            {{ $t('groupAutoCreate', { count: autoCountries.length * autoTypes.length }) }}
+            {{ $t('groupAutoCreate', { count: autoCountries.length * autoEffectiveTypes.length }) }}
           </button>
         </div>
       </div>
@@ -1072,7 +1091,15 @@ const showAdvanced = ref(false)
 const activeLaneId = ref('')
 const activeLane = computed(() => draft.value?.lanes?.find((l) => l.id === activeLaneId.value) ?? null)
 const nodeNameSet = computed(() => new Set(availableNodes.value.map((n) => n.name)))
-const validCount = (lane: OpenboxFailoverLane) => lane.members.filter((m) => nodeNameSet.value.has(m)).length
+// 能被页签/静态组引用的组:内置直连、拒绝不在这份里(它们不是用户组,服务端也不认)
+const groupNameSet = computed(() => new Set(groups.value.filter((g) => !g.kind).map((g) => g.name)))
+// 页签成员里"还指向一个真实存在的出站"的那些(节点或组,排除自引用)
+const candidateNameSet = computed(() => {
+  const out = new Set(nodeNameSet.value)
+  for (const name of groupNameSet.value) if (name !== draft.value?.name) out.add(name)
+  return out
+})
+const validCount = (lane: OpenboxFailoverLane) => lane.members.filter((m) => candidateNameSet.value.has(m)).length
 const laneRoleLabel = (index: number) => (index === 0 ? t('failoverPrimary') : t('failoverBackupN', { n: index }))
 const laneLabelOf = (lane: OpenboxFailoverLane) => {
   const index = draft.value?.lanes?.findIndex((l) => l.id === lane.id) ?? 0
@@ -1174,11 +1201,26 @@ const onTypeChange = () => {
     if (failoverBackup) {
       d.lanes = failoverBackup.lanes.map((l) => ({ ...l, members: [...l.members] }))
     } else {
-      // 已有的真实节点放进主用页签;引用了组的成员不能悄悄展开或丢掉,列出来等用户处理;
-      // 只有动态规则的组进入空草稿,不自动取全量节点
-      const nodes = d.mode === 'static' ? d.members.filter((m) => nodeNameSet.value.has(m)) : []
-      blockedMembers.value = d.mode === 'static' ? d.members.filter((m) => !nodeNameSet.value.has(m)) : []
-      d.lanes = [makeLane(nodes), makeLane()]
+      // 已有的成员按「一个页签只走一条路」拆开:引用了组的进主用页签,节点进下一个页签;
+      // 只有一种就只建一个页签。动态规则的组进入空草稿,不自动取全量节点。
+      const known = d.mode === 'static' ? d.members : []
+      const groupRefs = known.filter((m) => m !== d.name && groupNameSet.value.has(m))
+      const nodes = known.filter((m) => nodeNameSet.value.has(m))
+      // 既不是节点也不是组的(订阅更新后留下的失效引用)列出来拦住保存,不能悄悄丢掉
+      blockedMembers.value = known.filter((m) => !groupRefs.includes(m) && !nodes.includes(m))
+      const lanes: OpenboxFailoverLane[] = []
+      if (groupRefs.length) {
+        const lane = makeLane([groupRefs[0]!])
+        lane.name = t('failoverPrimary')
+        lanes.push(lane)
+      }
+      if (nodes.length) {
+        const lane = makeLane(nodes)
+        if (lanes.length) lane.name = t('failoverBackupN', { n: 1 })
+        lanes.push(lane)
+      }
+      if (!lanes.length) lanes.push(makeLane())
+      d.lanes = lanes
     }
     d.members = []
     d.interval = ''
@@ -1209,13 +1251,28 @@ const members = computed<string[]>({
   },
 })
 
+// 故障转移页签可选的组:除自己以外的用户组(内置直连 / 拒绝不算)
+const failoverGroupItems = computed(() =>
+  groups.value
+    .filter((g) => !g.kind && g.name !== draft.value?.name)
+    .map((g) => ({ kind: 'group' as const, name: g.name, subscription: '' })),
+)
+
 // 候选成员 = 所有节点 + 除自己以外的其它组(组可以套组,但不能套自己)。
-// 故障转移的页签只放真实节点:候选里没有组、站点集、内置出站或别的故障转移组
+// 故障转移的页签可以放节点,也可以引用一个组——「香港-故转」的主用就是「香港-手动」这个组,
+// 用户在手动组里挑哪个节点,主用就走哪个。但一个页签只走一条路:已经引用了组就不再给候选
+// (要先移除),已经放了节点就只给节点,空的两种都给。
 const candidates = computed(() => {
   const nodeItems = availableNodes.value.map((n) => ({
     kind: 'node' as const, name: n.name, subscription: n.subscription,
   }))
-  if (isFailover.value) return nodeItems
+  if (isFailover.value) {
+    const lane = activeLane.value
+    const members = lane?.members ?? []
+    if (members.some((m) => groupNameSet.value.has(m))) return []
+    if (members.some((m) => nodeNameSet.value.has(m))) return nodeItems
+    return [...failoverGroupItems.value, ...nodeItems]
+  }
   const groupItems = groups.value
     .filter((g) => g.name !== draft.value?.name)
     .map((g) => ({ kind: 'group' as const, name: g.name, subscription: '' }))
@@ -1401,14 +1458,25 @@ const openAutoDialog = () => {
 const AUTO_SUFFIX: Record<OpenboxGroupType, string> = {
   urltest: '自动',
   selector: '手动',
-  // 自动分组只建自动 / 手动两种;故障转移要用户自己排主备,这里只是让类型表完整
-  failover: '主备',
+  failover: '故转',
 }
 
-// 同一个国家的组要挨在一起,自动排在手动前面。分两次生成(先建一批自动,过几天
-// 再补手动)的话,新的会被追加到末尾,同一个国家就被拆到列表的两头了。
+// 故障转移组要拿「手动」当主用、「自动」当备用:只勾了故障转移的话,这两个组也一并建出来
+// (已经存在就不再建,直接引用)。顺序固定成 自动 → 手动 → 故转:同一个国家的三个组挨在一起时,
+// 故转排在它引用的两个组后面。
+const autoEffectiveTypes = computed<OpenboxGroupType[]>(() => {
+  const picked = new Set(autoTypes.value)
+  if (picked.has('failover')) return ['urltest', 'selector', 'failover']
+  const out: OpenboxGroupType[] = []
+  if (picked.has('urltest')) out.push('urltest')
+  if (picked.has('selector')) out.push('selector')
+  return out
+})
+
+// 同一个国家的组要挨在一起,自动排在手动前面、故障转移排在最后(它引用前两个)。分两次生成
+// (先建一批自动,过几天再补手动)的话,新的会被追加到末尾,同一个国家就被拆到列表的两头了。
 // 认国家靠 icon 里的两位国家代码——自动分组生成时一定会写上它。
-const TYPE_ORDER: Record<string, number> = { urltest: 0, selector: 1 }
+const TYPE_ORDER: Record<string, number> = { urltest: 0, selector: 1, failover: 2 }
 const countryOf = (g: OpenboxUserGroup) =>
   g.icon && /^[A-Za-z]{2}$/.test(g.icon) ? g.icon.toUpperCase() : ''
 
@@ -1437,29 +1505,62 @@ const createAutoGroups = async () => {
   const existing = new Set(groups.value.map((g) => g.name))
   const next: OpenboxUserGroup[] = []
   let skipped = 0
+  const stamp = Date.now()
   for (const code of autoCountries.value) {
     const country = findCountry(code)
     if (!country) continue
-    for (const type of autoTypes.value) {
-      const name = `${countryName(country, locale.value)}-${AUTO_SUFFIX[type]}`
+    const base = countryName(country, locale.value)
+    const types = autoEffectiveTypes.value
+    // 手动 / 自动:动态组,关键词用国家目录里那份(和地区词典同一套),以后新订阅里这个
+    // 国家的节点自动进组
+    const makeDyn = (type: 'urltest' | 'selector', name: string): OpenboxUserGroup => ({
+      id: `auto-${code.toLowerCase()}-${type}-${stamp}-${next.length}`,
+      name,
+      type,
+      mode: 'dynamic',
+      icon: code,
+      keywords: [...country.keywords],
+      members: [],
+      ...(type === 'urltest' ? { interval: '5m', tolerance: 100 } : {}),
+    })
+    const manualName = `${base}-${AUTO_SUFFIX.selector}`
+    const autoName = `${base}-${AUTO_SUFFIX.urltest}`
+    for (const [type, name] of [['urltest', autoName], ['selector', manualName]] as const) {
+      if (!types.includes(type)) continue
       // 同名的跳过:组名就是内核里的出站名,重名会生成两个同名出站
       if (existing.has(name)) {
         skipped += 1
         continue
       }
       existing.add(name)
-      next.push({
-        id: `auto-${code.toLowerCase()}-${type}-${Date.now()}-${next.length}`,
-        name,
-        type,
-        mode: 'dynamic',
-        icon: code,
-        // 关键词直接用国家目录里的那份,和地区词典是同一套词
-        keywords: [...country.keywords],
-        members: [],
-        ...(type === 'urltest' ? { interval: '5m', tolerance: 100 } : {}),
-      })
+      next.push(makeDyn(type, name))
     }
+    if (!types.includes('failover')) continue
+    const name = `${base}-${AUTO_SUFFIX.failover}`
+    if (existing.has(name)) {
+      skipped += 1
+      continue
+    }
+    existing.add(name)
+    // 主用 = 手动组(用户自己在里面挑节点),备用 = 自动组(组内择优)。手动组挑的那个节点
+    // 不可用时切到自动组,手动组恢复后按「主用恢复后切回」的默认值切回主用。
+    const primary = makeLane([manualName])
+    primary.name = t('failoverPrimary')
+    const backup = makeLane([autoName])
+    backup.name = t('failoverBackupN', { n: 1 })
+    next.push({
+      id: `auto-${code.toLowerCase()}-failover-${stamp}-${next.length}`,
+      name,
+      type: 'failover',
+      mode: 'static',
+      icon: code,
+      keywords: [],
+      members: [],
+      lanes: [primary, backup],
+      interval: '30s',
+      tolerance: 100,
+      failover: { ...FAILOVER_DEFAULTS },
+    })
   }
 
   if (!next.length) {

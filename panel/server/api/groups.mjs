@@ -11,12 +11,17 @@ const numIn = (v, [lo, hi]) => {
 }
 
 // 故障转移组的写入校验。归一化(normalizeGroup)对老记录是宽容的——缺字段回默认;但新提交的定义
-// 不能靠这份宽容蒙混过去:动态模式、页签 id 重复、成员引用了组 / 站点集 / 内置出站、参数越界、
+// 不能靠这份宽容蒙混过去:动态模式、页签 id 重复、成员引用了站点集 / 内置出站 / 内部子组、参数越界、
 // 时长写法不对,都要明确拒绝,而不是归一化成一个看起来能用的 selector。
+// 页签里的成员可以是节点,也可以是别的用户分组(groupTags):「香港-故转」的主用就是「香港-手动」,
+// 主备看的是那个组此刻选中的节点。
 // 返回错误文案;合法返回 ''。previous 是这条组上次保存的版本:订阅变化让旧引用失效是正常的
-// (第 6 节),那些成员只要上次就在这个页签里就放行,只报告不拒绝;新加的成员必须是当前真实节点。
-export const validateFailoverGroup = (raw, { nodeTags, otherNames, previous }) => {
+// (第 6 节),那些成员只要上次就在这个页签里就放行,只报告不拒绝;新加的成员必须是当前真实节点或分组。
+export const validateFailoverGroup = (raw, { nodeTags, groupTags, otherNames, rename, previous }) => {
   const name = isStr(raw?.name) ? raw.name.trim() : ''
+  const groups = groupTags instanceof Set ? groupTags : new Set()
+  // 这次一起提交的改名:页签里可能还写着旧名字,先翻译成新名字再判断
+  const applyRename = typeof rename === 'function' ? rename : (x) => x
   if (raw.mode !== undefined && raw.mode !== null && raw.mode !== 'static') {
     return `故障转移「${name}」只支持静态成员,mode 必须是 static`
   }
@@ -37,9 +42,13 @@ export const validateFailoverGroup = (raw, { nodeTags, otherNames, previous }) =
     if (lane.members !== undefined && !Array.isArray(lane.members)) return `故障转移「${name}」第 ${i + 1} 个页签的 members 必须是数组`
     for (const m of lane.members || []) {
       if (!isStr(m)) return `故障转移「${name}」第 ${i + 1} 个页签里有不合法的成员`
-      const member = m.trim()
+      const member = applyRename(m.trim())
       if (nodeTags.has(member)) continue
-      if (otherNames.has(member) || isInternalTag(member)) return `故障转移「${name}」的页签只能放真实节点,「${member}」不是节点`
+      // 自己引用自己没有意义(生成配置时也会被剔除),明确说出来
+      if (member === name) return `故障转移「${name}」的页签不能引用它自己`
+      // 引用别的用户分组:主备跟着那个组此刻选中的节点走
+      if (groups.has(member)) continue
+      if (otherNames.has(member) || isInternalTag(member)) return `故障转移「${name}」的页签只能放节点或分组,「${member}」都不是`
       // 上次就在这个页签里的旧引用:订阅更新把节点删了,保留着给界面显示(不进配置)
       if (id && prevLaneMembers.get(id)?.has(member)) continue
       return `故障转移「${name}」的页签成员「${member}」不是当前订阅里的节点`
@@ -145,26 +154,12 @@ export const registerGroupRoutes = (app, { store } = {}) => {
       seen.add(g.name)
     }
 
-    // 故障转移组按原始提交做严格校验(见 validateFailoverGroup)
-    {
-      const nodeTags = new Set(store.getNodes().map((n) => n && n.tag).filter(Boolean))
-      const previous = new Map(store.getGroups().map((g) => [g.id, g]))
-      const submittedNames = new Set(body.groups.map((g) => (typeof g?.name === 'string' ? g.name.trim() : '')))
-      for (const raw of body.groups) {
-        if (raw.type !== 'failover') continue
-        const otherNames = new Set([...submittedNames, ...previous.values()].map((x) => (typeof x === 'string' ? x : x.name)))
-        for (const p of policyNames) otherNames.add(p)
-        otherNames.add(FALLBACK_TAG); otherNames.add(routing.fallback.name); otherNames.add(DNSMASQ_OUTBOUND_TAG)
-        const prevSelf = isStr(raw.id) ? previous.get(raw.id.trim()) : undefined
-        const err = validateFailoverGroup(raw, { nodeTags, otherNames, previous: prevSelf?.type === 'failover' ? prevSelf : undefined })
-        if (err) { res.status(400).json({ error: err }); return }
-      }
-    }
-
     // 组之间、站点集的默认出口、终端分流都是按组名引用的,组名一改这些引用就悬空:
     // 以前只改当前这一条,引用它的组静默丢掉这个成员(空了就填直连占位),站点集的默认出口
     // 落到成员表第一项——保存返回 200、dropped 也是空的,用户完全不知道。
     // 现在按 id 认出改名,把所有引用一并原子迁移(整份 PUT 本来就是原子的)。
+    // 改名要算在写入校验之前:故障转移的页签可能正引用着这次被改名的组(「香港-故转」引用
+    // 「香港-手动」),校验看到的是页签里的旧名字,得先翻译成新名字再判断,否则改个名就存不下。
     const previous = new Map(store.getGroups().map((g) => [g.id, g]))
     const renames = new Map()
     for (const g of normalized) {
@@ -172,9 +167,31 @@ export const registerGroupRoutes = (app, { store } = {}) => {
       if (old && old.name !== g.name) renames.set(old.name, g.name)
     }
     const rename = (name) => (renames.has(name) ? renames.get(name) : name)
-    const migrated = renames.size
-      ? normalized.map((g) => ({ ...g, members: g.members.map(rename) }))
-      : normalized
+
+    // 故障转移组按原始提交做严格校验(见 validateFailoverGroup)
+    {
+      const nodeTags = new Set(store.getNodes().map((n) => n && n.tag).filter(Boolean))
+      const submittedNames = new Set(body.groups.map((g) => (typeof g?.name === 'string' ? g.name.trim() : '')))
+      for (const raw of body.groups) {
+        if (raw.type !== 'failover') continue
+        // 「真实的用户分组」和「不能当成员的站点集 / 内置名字」分开:前者可以被引进页签,后者照旧拒绝。
+        // 内置的直连 / 拒绝是 kind 组,不在这份名单里——它们不是能被引用的分组。
+        const groupTags = new Set([...submittedNames, ...[...previous.values()].filter((g) => !g.kind).map((g) => g.name)])
+        const otherNames = new Set([...submittedNames, ...previous.values()].map((x) => (typeof x === 'string' ? x : x.name)))
+        for (const p of policyNames) otherNames.add(p)
+        otherNames.add(FALLBACK_TAG); otherNames.add(routing.fallback.name); otherNames.add(DNSMASQ_OUTBOUND_TAG)
+        const prevSelf = isStr(raw.id) ? previous.get(raw.id.trim()) : undefined
+        const err = validateFailoverGroup(raw, { nodeTags, groupTags, otherNames, rename, previous: prevSelf?.type === 'failover' ? prevSelf : undefined })
+        if (err) { res.status(400).json({ error: err }); return }
+      }
+    }
+
+    // 故障转移组的引用挂在页签上,改名也要一并迁移,否则「香港-手动」一改名,「香港-故转」
+    // 的主用就悬空了——保存返回 200、dangling 也不提它,用户完全不知道。
+    const migrateOne = (g) => (g.type === 'failover'
+      ? { ...g, members: g.members.map(rename), lanes: (g.lanes || []).map((l) => ({ ...l, members: l.members.map(rename) })) }
+      : { ...g, members: g.members.map(rename) })
+    const migrated = renames.size ? normalized.map(migrateOne) : normalized
 
     store.setGroups(migrated)
 
@@ -203,8 +220,8 @@ export const registerGroupRoutes = (app, { store } = {}) => {
     const dangling = migrated
       .filter((g) => !g.kind && g.mode !== 'dynamic')
       .map((g) => (g.type === 'failover'
-        // 故障转移:失效的是页签里已经不存在的节点(订阅更新删掉的),按页签报
-        ? { name: g.name, members: g.lanes.flatMap((l) => l.members.filter((m) => !nodeTags.has(m))) }
+        // 故障转移:失效的是页签里已经不存在的名字(订阅更新删掉的节点 / 删掉的组),按页签报
+        ? { name: g.name, members: g.lanes.flatMap((l) => l.members.filter((m) => !nodeTags.has(m) && !groupNames.has(m))) }
         : { name: g.name, members: g.members.filter((m) => m !== g.name && !nodeTags.has(m) && !groupNames.has(m)) }))
       .filter((d) => d.members.length)
     res.json({ ok: true, groups: store.getGroups(), dropped, dangling, renamed: [...renames].map(([from, to]) => ({ from, to })) })

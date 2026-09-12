@@ -150,10 +150,9 @@ test('PUT /groups(failover):动态模式、页签 id 重复、成员是组 / 站
     [fo({ lanes: undefined }), /缺少主备页签/],
     [fo({ lanes: [{ id: 'L1', members: ['n1'] }, { id: 'L1', members: ['n2'] }] }), /页签 id 重复/],
     [fo({ lanes: [{ id: 'L1', members: ['n1'] }, { id: 'L2', members: ['n2'] }, { id: 'L3', members: ['n3'] }, { id: 'L4', members: ['n1'] }] }), /最多 3 个页签/],
-    [fo({ lanes: [{ id: 'L1', members: ['A'] }] }), /只能放真实节点/],
-    [fo({ lanes: [{ id: 'L1', members: ['Video'] }] }), /只能放真实节点/],
-    [fo({ lanes: [{ id: 'L1', members: ['__fo:g-fo:L2'] }] }), /只能放真实节点/],
-    [fo({ lanes: [{ id: 'L1', members: ['主备'] }] }), /只能放真实节点/],
+    [fo({ lanes: [{ id: 'L1', members: ['Video'] }] }), /只能放节点或分组/],
+    [fo({ lanes: [{ id: 'L1', members: ['__fo:g-fo:L2'] }] }), /只能放节点或分组/],
+    [fo({ lanes: [{ id: 'L1', members: ['主备'] }] }), /不能引用它自己/],
     [fo({ lanes: [{ id: 'L1', members: ['ghost'] }] }), /不是当前订阅里的节点/],
     [fo({ interval: '1s' }), /检测间隔/],
     [fo({ interval: 'abc' }), /检测间隔/],
@@ -202,4 +201,43 @@ test('PUT /groups(failover):普通组可以引用故障转移父组;父组改名
   assert.deepEqual(r.body.renamed, [{ from: '主备', to: '主备2' }])
   assert.deepEqual(store.getGroups().find((g) => g.id === 'g-b').members, ['主备2', 'n1'])
   assert.deepEqual(r.body.dangling, [])
+})
+
+// 自动分组生成的「香港-故转」:主用 = 香港-手动,备用 = 香港-自动,两个页签都是引用分组
+const countryFo = (over = {}) => ({
+  id: 'g-hk', name: '香港-故转', type: 'failover',
+  lanes: [{ id: 'P', name: '主用', members: ['香港-手动'] }, { id: 'B', name: '备用 1', members: ['香港-自动'] }],
+  ...over,
+})
+
+test('PUT /groups(failover):页签可以引用别的用户分组(主用 = 手动组,备用 = 自动组)', async () => {
+  const store = memStore()
+  foSeed(store)
+  const manual = { id: 'g-hk-m', name: '香港-手动', type: 'selector', mode: 'dynamic', keywords: ['香港'], members: [] }
+  const auto = { id: 'g-hk-a', name: '香港-自动', type: 'urltest', mode: 'dynamic', keywords: ['香港'], members: [] }
+  const r = await putFo(store, [manual, auto, countryFo()])
+  assert.equal(r.status, 200, JSON.stringify(r.body))
+  assert.deepEqual(r.body.dangling, [])
+  const saved = store.getGroups().find((g) => g.id === 'g-hk')
+  assert.deepEqual(saved.lanes.map((l) => l.members), [['香港-手动'], ['香港-自动']])
+})
+
+test('PUT /groups(failover):被页签引用的组改名 / 被删,页签引用一并迁移或点名', async () => {
+  const store = memStore()
+  foSeed(store)
+  const manual = { id: 'g-hk-m', name: '香港-手动', type: 'selector', mode: 'dynamic', keywords: ['香港'], members: [] }
+  const auto = { id: 'g-hk-a', name: '香港-自动', type: 'urltest', mode: 'dynamic', keywords: ['香港'], members: [] }
+  const first = await putFo(store, [manual, auto, countryFo()])
+  assert.equal(first.status, 200, JSON.stringify(first.body))
+  // 手动组改名:主用页签跟着改,不能静默悬空
+  const renamed = await putFo(store, [{ ...manual, name: '香港-手动2' }, auto, countryFo()])
+  assert.equal(renamed.status, 200, JSON.stringify(renamed.body))
+  assert.deepEqual(renamed.body.renamed, [{ from: '香港-手动', to: '香港-手动2' }])
+  assert.deepEqual(store.getGroups().find((g) => g.id === 'g-hk').lanes.map((l) => l.members), [['香港-手动2'], ['香港-自动']])
+  // 自动组被删:备用页签的旧引用保留(订阅 / 组变动不算错),在 dangling 里点名
+  const kept = { ...manual, name: '香港-手动2' }
+  const gone = await putFo(store, [kept, countryFo({ lanes: [{ id: 'P', name: '主用', members: ['香港-手动2'] }, { id: 'B', name: '备用 1', members: ['香港-自动'] }] })])
+  assert.equal(gone.status, 200, JSON.stringify(gone.body))
+  assert.deepEqual(gone.body.dangling, [{ name: '香港-故转', members: ['香港-自动'] }])
+  assert.deepEqual(store.getGroups().find((g) => g.id === 'g-hk').lanes[1].members, ['香港-自动'])
 })

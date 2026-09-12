@@ -94,6 +94,8 @@ export interface FailoverLaneView {
   valid: string[]
   invalid: string[]
   kernelNow: string | null
+  // 页签引用的是别的组(「香港-故转」的主用 =「香港-手动」),不是节点
+  groupRef: boolean
   // 页签图标(短码;已按「自己的 → 继承父组」算好),iconScale 跟父组
   icon: string
   iconScale: number
@@ -106,11 +108,13 @@ export const failoverLanesOf = (
   if (!group || group.type !== 'failover') return null
   const status = failoverGroupByTag.value.get(groupName)
   const statusLanes = new Map((status?.lanes ?? []).map((l) => [l.id, l]))
-  const isNode = (name: string) => Boolean(proxies[name]) && !proxies[name]?.all?.length
+  // 页签成员可以是节点,也可以是别的组:只要内核里真有这个出站就算有效
+  const isKnown = (name: string) => Boolean(proxies[name])
+  const isGroup = (name: string) => Boolean(proxies[name]?.all?.length)
   const parentAll = proxies[groupName]?.all ?? []
   return (group.lanes ?? []).map((lane, index) => {
     const st = statusLanes.get(lane.id)
-    const valid = st ? st.valid : lane.members.filter(isNode)
+    const valid = st ? st.valid : lane.members.filter(isKnown)
     const invalid = lane.members.filter((m) => !valid.includes(m))
     let subTag = st?.subTag ?? null
     if (!st && valid.length > 1) {
@@ -118,8 +122,12 @@ export const failoverLanesOf = (
       subTag = parentAll.find((m) => m === head || (m.startsWith(head) && /^~+$/.test(m.slice(head.length)))) ?? null
     }
     const ref = st ? st.ref : valid.length === 1 ? valid[0]! : subTag
-    const kernelNow = subTag ? (proxies[subTag]?.now ?? null) : valid.length === 1 ? valid[0]! : null
-    return { id: lane.id, index, label: lane.name || failoverRoleLabel(index), ref, subTag, valid, invalid, kernelNow, icon: lane.icon || group.icon || '', iconScale: group.iconScale || 0 }
+    const groupRef = st ? Boolean(st.groupRef) : Boolean(ref && isGroup(ref))
+    // 引用组的页签:内核此刻在这个组里选中的节点(而不是组名本身)
+    const kernelNow = subTag ? (proxies[subTag]?.now ?? null)
+      : groupRef && ref ? (proxies[ref]?.now ?? null)
+        : valid.length === 1 ? valid[0]! : null
+    return { id: lane.id, index, label: lane.name || failoverRoleLabel(index), ref, subTag, valid, invalid, kernelNow, groupRef, icon: lane.icon || group.icon || '', iconScale: group.iconScale || 0 }
   })
 }
 // 「最近切换:主用 → 备用 1(页签失效)· 14:20:05」这一句(没切换过就是空串)

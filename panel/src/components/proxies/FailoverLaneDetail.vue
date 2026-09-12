@@ -147,11 +147,13 @@ const lanes = computed(() => failoverLanesOf(props.groupName, proxyMap.value) ??
 const lane = computed(() => lanes.value.find((l) => l.id === props.laneId) ?? null)
 const iconUrl = computed(() => iconUrlFor(lane.value?.icon))
 const titleIconSize = computed(() => Math.max(proxyGroupIconSize.value, 46))
-// 类型只写「单节点 / 自动择优」,节点数在后面的 (有效/总数) 里
+// 类型只写「单节点 / 自动择优 / 引用分组」,节点数在后面的 (有效/总数) 里
 const modeText = computed(() => {
   const l = lane.value
   if (!l) return ''
   if (!l.valid.length) return t('failoverModeEmpty')
+  // 引用的是别的组:走那个组此刻选中的节点(「香港-故转」的主用就是「香港-手动」)
+  if (l.groupRef) return t('failoverModeGroup')
   if (l.valid.length === 1) return t('failoverModeSingle')
   return t('failoverModeAuto')
 })
