@@ -60,26 +60,41 @@
         <div class="flex items-center gap-2">
           <span class="font-medium">{{ $t('kernelCoreLabel') }}</span>
           <StatusBadge
-            :on="Boolean(serviceStatus?.core.running)"
+            v-if="serviceStatus"
+            :on="serviceStatus.core.running"
             :on-text="$t('kernelStatusRunning')"
             :off-text="$t('kernelStatusStopped')"
           />
+          <span
+            v-else
+            class="badge badge-sm"
+          >—</span>
         </div>
         <div class="flex items-center gap-2">
           <span class="font-medium">{{ $t('kernelPanelLabel') }}</span>
           <StatusBadge
-            :on="Boolean(serviceStatus?.panel.running)"
+            v-if="serviceStatus"
+            :on="serviceStatus.panel.running"
             :on-text="$t('kernelStatusRunning')"
             :off-text="$t('kernelStatusStopped')"
           />
+          <span
+            v-else
+            class="badge badge-sm"
+          >—</span>
         </div>
         <div class="flex items-center gap-2">
           <span class="font-medium">{{ $t('kernelAutostartLabel') }}</span>
           <StatusBadge
-            :on="Boolean(serviceStatus?.core.autostart)"
+            v-if="serviceStatus"
+            :on="Boolean(serviceStatus.core.autostart)"
             :on-text="$t('kernelAutostartOn')"
             :off-text="$t('kernelAutostartOff')"
           />
+          <span
+            v-else
+            class="badge badge-sm"
+          >—</span>
         </div>
       </div>
 

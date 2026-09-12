@@ -5,15 +5,7 @@
       :style="padding"
     >
       <div class="flex flex-col gap-2 px-2 md:py-2">
-        <div
-          v-if="loading && !status"
-          class="flex justify-center py-14"
-        >
-          <span class="loading loading-spinner loading-md" />
-        </div>
-
         <KernelServiceCard
-          v-else
           :status="status"
           :kernel-version="kernelVersion"
           @refresh="loadStatus"
@@ -87,7 +79,6 @@ const { padding } = usePaddingForViews({
 const status = ref<OpenboxServiceStatus | null>(null)
 const kernelVersion = ref<OpenboxKernelVersion | null>(null)
 const profile = ref<OpenboxProfile | null>(null)
-const loading = ref(true)
 
 // 首次加载和每个动作(启动/停止/重启/自启开关)之后的刷新都走这里
 const loadStatus = async () => {
@@ -131,8 +122,6 @@ const patchProfile = async (patch: Record<string, unknown>): Promise<OpenboxProf
 const onImported = () => Promise.all([loadStatus(), loadProfile()])
 
 onMounted(async () => {
-  loading.value = true
   await Promise.all([loadStatus(), loadProfile()])
-  loading.value = false
 })
 </script>

@@ -24,21 +24,23 @@ const ACTION_LABEL_KEYS: Record<OpenboxServiceAction, string> = {
 export const isStartDisabled = computed(
   () =>
     pendingAction.value !== null ||
+    serviceStatus.value === null ||
     Boolean(serviceStatus.value?.core.running) ||
     Boolean(serviceStatus.value?.conflicts.length),
 )
-export const isStopDisabled = computed(() => pendingAction.value !== null || !serviceStatus.value?.core.running)
+export const isStopDisabled = computed(() => pendingAction.value !== null || serviceStatus.value === null || !serviceStatus.value.core.running)
 export const isRestartDisabled = computed(
   () =>
     pendingAction.value !== null ||
+    serviceStatus.value === null ||
     !serviceStatus.value?.core.running ||
     Boolean(serviceStatus.value?.conflicts.length),
 )
 export const isEnableDisabled = computed(
-  () => pendingAction.value !== null || serviceStatus.value?.core.autostart === true,
+  () => pendingAction.value !== null || serviceStatus.value === null || serviceStatus.value.core.autostart === true,
 )
 export const isDisableDisabled = computed(
-  () => pendingAction.value !== null || serviceStatus.value?.core.autostart === false,
+  () => pendingAction.value !== null || serviceStatus.value === null || serviceStatus.value.core.autostart === false,
 )
 
 // 只采纳最后一次发出的刷新:定时刷新和动作后的刷新会交错,先发后回的旧响应不能把新状态盖回去
