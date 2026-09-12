@@ -44,46 +44,6 @@
         </div>
       </div>
       <p class="text-base-content/60 text-xs leading-relaxed">{{ $t('dfDescription') }}</p>
-      <div class="bg-base-content/10 h-px" />
-      <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <span class="font-medium">{{ $t('dfAuto') }}</span>
-        <input
-          type="checkbox"
-          class="toggle toggle-sm"
-          :checked="autoPlan.enabled"
-          :disabled="busy || saving"
-          @change="saveAutoPlan({ enabled: ($event.target as HTMLInputElement).checked })"
-        />
-        <template v-if="autoPlan.enabled">
-          <span class="text-base-content/70">{{ $t('dfAutoEvery') }}</span>
-          <select
-            class="select select-sm w-24"
-            :value="autoPlan.days"
-            :disabled="busy || saving"
-            @change="saveAutoPlan({ days: Number(($event.target as HTMLSelectElement).value) })"
-          >
-            <option
-              v-for="d in [1, 3, 7, 14, 30]"
-              :key="d"
-              :value="d"
-            >{{ $t('dfAutoDays', { days: d }) }}</option>
-          </select>
-          <span class="text-base-content/70">{{ $t('dfAutoAt') }}</span>
-          <select
-            class="select select-sm w-24"
-            :value="autoPlan.hour"
-            :disabled="busy || saving"
-            @change="saveAutoPlan({ hour: Number(($event.target as HTMLSelectElement).value) })"
-          >
-            <option
-              v-for="h in 24"
-              :key="h - 1"
-              :value="h - 1"
-            >{{ String(h - 1).padStart(2, '0') }}:00</option>
-          </select>
-        </template>
-        <span class="text-base-content/50 text-xs">{{ $t('dfAutoHint') }}</span>
-      </div>
       <p
         v-if="!status.settings.lists.length"
         class="text-base-content/50 text-xs"
@@ -178,6 +138,46 @@
             <TrashIcon class="h-4 w-4" />
           </button>
         </div>
+      </div>
+      <div class="bg-base-content/10 h-px" />
+      <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <span class="font-medium">{{ $t('dfAuto') }}</span>
+        <input
+          type="checkbox"
+          class="toggle toggle-sm"
+          :checked="autoPlan.enabled"
+          :disabled="busy || saving"
+          @change="saveAutoPlan({ enabled: ($event.target as HTMLInputElement).checked })"
+        />
+        <template v-if="autoPlan.enabled">
+          <span class="text-base-content/70">{{ $t('dfAutoEvery') }}</span>
+          <select
+            class="select select-sm w-24"
+            :value="autoPlan.days"
+            :disabled="busy || saving"
+            @change="saveAutoPlan({ days: Number(($event.target as HTMLSelectElement).value) })"
+          >
+            <option
+              v-for="d in [1, 3, 7, 14, 30]"
+              :key="d"
+              :value="d"
+            >{{ $t('dfAutoDays', { days: d }) }}</option>
+          </select>
+          <span class="text-base-content/70">{{ $t('dfAutoAt') }}</span>
+          <select
+            class="select select-sm w-24"
+            :value="autoPlan.hour"
+            :disabled="busy || saving"
+            @change="saveAutoPlan({ hour: Number(($event.target as HTMLSelectElement).value) })"
+          >
+            <option
+              v-for="h in 24"
+              :key="h - 1"
+              :value="h - 1"
+            >{{ String(h - 1).padStart(2, '0') }}:00</option>
+          </select>
+        </template>
+        <span class="text-base-content/50 text-xs">{{ $t('dfAutoHint') }}</span>
       </div>
       <div class="border-base-300/50 border-t pt-3">
         <button
