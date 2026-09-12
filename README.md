@@ -9,6 +9,12 @@ Open-Box 是面向 OpenWrt 路由器的一体化透明代理面板。安装包�
 
 [观看 Open-Box 使用说明视频（YouTube）](https://youtu.be/G_7AmjfSRQ8)
 
+## 推荐服务
+
+- 优惠购买 AI 接口、机场、VPS、住宅 IP：[**安格超市**](https://blog.angeworld.cc/market)
+- AI 中转站：[**SUPERDOOR 订阅服务**](https://ai.superdoor.top/)
+- 按需付费 AI 服务：[**OPENDOOR**](https://ai.opendoor.sbs/)
+
 ## 界面
 
 **代理 · 策略**：每个站点集一张卡片，直接看到当前线路和节点健康状态。
