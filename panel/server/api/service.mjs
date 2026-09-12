@@ -15,11 +15,13 @@ export const registerServiceRoutes = (app, { store, ctx, paths, stopWaitMs = 800
 
   // GET /api/openbox/service/status
   router.get('/service/status', async (_req, res) => {
-    const core = await serviceStatus(ctx, paths.initd.core)
-    // 内核页状态行要显示「开机自启:开启/关闭」
-    const autostart = await serviceEnabled(ctx, paths.initd.core)
-    const panel = await serviceStatus(ctx, paths.initd.panel)
-    const { conflicts } = await detectConflicts(ctx)
+    // 这些检查彼此独立,并行执行;冲突检测或某个 init 脚本较慢时不拖住整张卡片。
+    const [core, autostart, panel, { conflicts }] = await Promise.all([
+      serviceStatus(ctx, paths.initd.core),
+      serviceEnabled(ctx, paths.initd.core),
+      serviceStatus(ctx, paths.initd.panel),
+      detectConflicts(ctx),
+    ])
     // 侧边栏底部要显示「运行时长」
     const uptimeSeconds = core.running ? await processUptime(ctx, 'sing-box') : null
     res.json({ core: { ...core, autostart, uptimeSeconds }, panel, conflicts })

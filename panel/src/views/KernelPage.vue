@@ -91,12 +91,16 @@ const loading = ref(true)
 
 // 首次加载和每个动作(启动/停止/重启/自启开关)之后的刷新都走这里
 const loadStatus = async () => {
-  try {
-    // 走共享状态的刷新(带序号保护),卡片和侧边栏看到的是同一份
-    const [fetchedStatus, fetchedVersion] = await Promise.all([refreshServiceStatus(), fetchKernelVersion()])
+  // 服务状态和版本并行请求,但先把服务状态交给卡片;版本命令较慢时不再拖住整张卡片。
+  const statusRequest = refreshServiceStatus().then((fetchedStatus) => {
     status.value = fetchedStatus ?? null
+  })
+  const versionRequest = fetchKernelVersion().then((fetchedVersion) => {
     kernelVersion.value = fetchedVersion
-  } catch (error) {
+  })
+  const results = await Promise.allSettled([statusRequest, versionRequest])
+  const error = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')?.reason
+  if (error) {
     showNotification({
       content: 'kernelLoadFailed',
       params: { message: error instanceof Error ? error.message : String(error) },
