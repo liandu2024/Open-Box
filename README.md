@@ -32,6 +32,7 @@ Open-Box 分两部分：**路由器端**装在路由器 / 主机上，是一体�
 4. [Open-Box 客户端 Android 来啦！真一键配置 + 完美分流，绝无DNS泄露，是时候卸载 Karing/ClashMi 等其他代理 App 了](https://youtu.be/NVUssX8ILxE)
 5. [Windows/macOS 来了，Open-Box 客户端，真一键配置 + 完美分流，绝无DNS泄露，生产力平台哪能缺席？](https://youtu.be/A1yFmwQLES4)
 6. [Open-Box 客户端 Liunx 版上线，支持 Ubuntu/Debian，真一键配置，Android 端解决Google Play 下载问题/Geimini无网络问题，iOS 更新预告！](https://youtu.be/DfNwBbd3ECQ)
+7. [网速提升10倍！ 提前杀死比赛？Open-Box 重构 负载均衡 + 带宽择优，Youtube 双 8K60帧无压](https://youtu.be/qQhOoUOWe70)
 
 ## 推荐服务
 
