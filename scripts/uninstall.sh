@@ -317,6 +317,12 @@ fi
 # ---------- 卸载独有的系统清理:移除面板放行规则 ----------
 info "移除防火墙规则..."
 write_status firewall ""
+# A stopped core keeps only its TUN DNS egress guard for stale DNAT sessions.
+# Complete uninstall removes the remaining owned table as well.
+if command -v nft >/dev/null 2>&1; then
+  nft delete table inet openbox >/dev/null 2>&1 || true
+  nft delete table inet openbox_dns_transition >/dev/null 2>&1 || true
+fi
 if command -v uci >/dev/null 2>&1; then
   # 面板放行、内核 DNS 入站放行、v6 拦截,以及共享网络从 WAN 放行的各服务器端口
   # (firewall.openbox_srv_*)——都是我们写的,一个不留;留着的话以后任何服务占了
