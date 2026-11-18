@@ -34,6 +34,7 @@ Open-Box 分两部分：**路由器端**装在路由器 / 主机上，是一体�
 6. [Open-Box 客户端 Liunx 版上线，支持 Ubuntu/Debian，真一键配置，Android 端解决Google Play 下载问题/Geimini无网络问题，iOS 更新预告！](https://youtu.be/DfNwBbd3ECQ)
 7. [网速提升10倍！ 提前杀死比赛？Open-Box 重构 负载均衡 + 带宽择优，Youtube 双 8K60帧无压](https://youtu.be/qQhOoUOWe70)
 8. [之前更快，现在更稳！ 延时 x 带宽 x 抖动 + 业务择优 的  Open-Box 的大更新](https://youtu.be/_Y2VeP4fYkk)
+9. [Sing-Box + Mihomo 双核引擎，Open-Box 自我进化，性能依旧，内存骤降！](https://youtu.be/m4JrFPYdEMk)
 
 ## 推荐服务
 
