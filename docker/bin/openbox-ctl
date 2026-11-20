@@ -1,6 +1,8 @@
 #!/bin/sh
 # 内核生命周期由这个容器内监督进程管理。网络准备/清理由现有 Debian 脚本执行，避免两份规则漂移。
 ROOT=/opt/open-box
+OPENBOX_ROOT="$ROOT"
+. "$ROOT/openwrt/bin/openbox-kernel"
 PID=/tmp/openbox-core.pid
 SUP=/tmp/openbox-supervisor.pid
 ENABLED="$ROOT/data/container-autostart"
@@ -18,7 +20,7 @@ stop() {
 }
 start() {
  alive "$SUP" && return 0
- [ -x "$ROOT/bin/sing-box" ] && [ -s "$ROOT/etc/config.json" ] || { echo 'Kernel or configuration missing' >&2; return 1; }
+ openbox_kernel_ready || return 1
  "$0" supervise </dev/null >>"$LOG" 2>&1 &
  printf '%s\n' "$!" > "$SUP"
  count=0
@@ -51,7 +53,7 @@ case "${1:-}" in
   trap finish TERM INT
   while :; do
    if "$ROOT/debian/bin/openbox-ctl" pre-start; then
-    "$ROOT/bin/sing-box" run -D "$ROOT/data" -c "$ROOT/etc/config.json" &
+    "$ROOT/openwrt/bin/openbox-kernel" &
     child=$!
     printf '%s\n' "$child" > "$PID"
     wait "$child"

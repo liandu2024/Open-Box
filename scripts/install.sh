@@ -28,18 +28,16 @@ umask 022
 
 REPO="liandu2024/Open-Box"
 INSTALL_ROOT="/opt/open-box"
-# OpenWrt 的 /tmp 通常是 tmpfs，会把下载包直接计入运行内存。完整安装包约
-# 106MB，低内存路由器在面板/内核已经运行时下载它可能触发 OOM，表现为“死机”。
+# OpenWrt 的 /tmp 通常是 tmpfs，会把下载包直接计入运行内存。
 # 下载临时目录默认放在 /opt 所在的持久化文件系统；需要时可用 OPENBOX_TMPDIR
 # 明确指定其它可写目录（例如外接存储）。校验通过前仍不会写入安装目录本身。
 # TMP_PARENT 在下面用 openbox_pick_tmp_parent 现挑(见那一段的说明),这里先留空
 TMP_PARENT=""
-MIN_FREE_KB=$((512 * 1024))
-# 450000KB(≈440MB)而不是标称的 512*1024:512MB 设备的 /proc/meminfo MemTotal 实测
-# 只有约 480-500MB(内核保留了一部分),用 524288 卡阈值会把 README 宣称支持的
-# 最低配机器自己拒之门外。README 的"≥512MB 内存"说的是标称容量,不是这里的检测
-# 阈值,两者故意不一致(P6 终审 Important 2)。
-MIN_MEM_KB=450000
+MIN_FREE_KB=$((256 * 1024))
+# 210000KB(≈205MB)而不是标称的 256*1024:256MB 设备的 /proc/meminfo MemTotal 实测
+# 只有约 220-248MB(内核保留了一部分),用 262144 卡阈值会把 README 宣称支持的
+# 最低配机器自己拒之门外。README 的"≥256MB 内存"说的是标称容量,不是这里的检测阈值。
+MIN_MEM_KB=210000
 
 CHANNEL="direct"
 MIRROR_PREFIX=""
@@ -374,7 +372,7 @@ check_storage() {
     ''|*[!0-9]*) die "无法检测可用存储空间(df 命令输出异常)。" ;;
   esac
   if [ "$kb" -lt "$MIN_FREE_KB" ]; then
-    die "可用存储不足:检测到约 $((kb / 1024))MB,Open-Box 至少需要 512MB 可用空间。请清理存储后重试。"
+    die "可用存储不足:检测到约 $((kb / 1024))MB,Open-Box 至少需要 256MB 可用空间。请清理存储后重试。"
   fi
 }
 
@@ -385,7 +383,7 @@ check_memory() {
     ''|*[!0-9]*) die "无法解析 /proc/meminfo 中的内存信息。" ;;
   esac
   if [ "$mem_kb" -lt "$MIN_MEM_KB" ]; then
-    die "内存不足:检测到约 $((mem_kb / 1024))MB,Open-Box 至少需要 512MB 内存。"
+    die "内存不足:检测到约 $((mem_kb / 1024))MB,Open-Box 至少需要 256MB 内存。"
   fi
 }
 
@@ -465,7 +463,6 @@ ENV_REPORT_ON=1
 info "开始预检..."
 check_root
 detect_platform
-[ "$PLATFORM" = "systemd" ] || ! openbox_musl_too_old || die "$(openbox_old_firmware_message)"
 map_arch
 check_storage
 check_memory
@@ -532,9 +529,8 @@ dep_ok() {
     kmod-veth) [ -d "$DEP_SYS_MODULE/veth" ] || modprobe veth >/dev/null 2>&1 ;;
     ip-full) ip netns list >/dev/null 2>&1 ;;
     ca-bundle) [ -s "$DEP_CA_BUNDLE" ] ;;
-    # 下面两个只在 Debian / Ubuntu 上检查:nft 命令装 Open-Box 自己的表,xz 解 nodejs.org 的 Node 包
+    # 下面这项只在 Debian / Ubuntu 上检查:nft 命令装 Open-Box 自己的表
     nftables) command -v nft >/dev/null 2>&1 ;;
-    xz-utils) command -v xz >/dev/null 2>&1 ;;
     *) return 0 ;;
   esac
 }
@@ -560,7 +556,6 @@ dep_effect() {
     kmod-veth|ip-full) echo "规则页不能模拟 LAN 终端(可改用内核诊断)" ;;
     ca-bundle) echo "HTTPS 订阅和更新下载会因证书校验失败" ;;
     nftables) echo "起内核前装不上 Open-Box 自己的 nft 表(进内核前放行 / 直连应答放行不生效)" ;;
-    xz-utils) echo "解不开 nodejs.org 的 Node 压缩包,面板跑不起来" ;;
   esac
 }
 # 各包管理器的软件源配置在哪(提示用)
@@ -578,7 +573,7 @@ ensure_dependencies() {
     return 0
   fi
   _dep_all="kmod-tun kmod-nft-queue kmod-nft-nat kmod-veth ip-full ca-bundle"
-  [ "${PLATFORM:-openwrt}" = "systemd" ] && _dep_all="$_dep_all nftables xz-utils"
+  [ "${PLATFORM:-openwrt}" = "systemd" ] && _dep_all="$_dep_all nftables"
   _dep_missing=""
   for _d in $_dep_all; do dep_ok "$_d" || _dep_missing="$_dep_missing $_d"; done
   if [ -z "$_dep_missing" ]; then
@@ -1152,25 +1147,46 @@ openbox_node_smoke() {
 }
 # ---- openbox-node-smoke:end ----
 
-# 校验、解包都已完成,此时读取的版本号就是实际装上的版本号(见上面 Important 5 的
-# 说明:不再从 GitHub API 的 tag_name 提前拿版本号)。
+# ---- openbox-panel-smoke:start ----
+# 这一段在 install.sh / update.sh 两份里一模一样:
+# 纯静态 Go 面板(bin/openbox-panel)直接执行 version 冒烟;兼容老版 Node 安装包(无 bin/openbox-panel 但有 node/bin/node)时走 Node 冒烟。
+openbox_panel_smoke() {
+  _ob_root="${1:-$INSTALL_ROOT}"
+  if [ -x "$_ob_root/bin/openbox-panel" ]; then
+    _ob_out=$("$_ob_root/bin/openbox-panel" version 2>&1) || {
+      echo "$_ob_out" | head -n 5
+      return 1
+    }
+    case "$_ob_out" in
+      "openbox-panel "*) return 0 ;;
+    esac
+    echo "$_ob_out" | head -n 5
+    return 1
+  fi
+  openbox_node_smoke "$_ob_root"
+}
+# ---- openbox-panel-smoke:end ----
+
+# 校验、解包都已完成,此时读取的版本号就是实际装上的版本号
 VERSION=$(sed -n 's/.*"version" *: *"\([^"]*\)".*/\1/p' "$INSTALL_ROOT/meta.json" 2>/dev/null | head -n 1)
 [ -n "$VERSION" ] || VERSION="未知版本"
 
-if [ "$PLATFORM" = "systemd" ]; then
-  info "Debian / Ubuntu:下载 glibc 版 Node 运行时(发布包里的是 OpenWrt 用的 musl 版)..."
+if [ ! -x "$INSTALL_ROOT/bin/openbox-panel" ] && [ -d "$INSTALL_ROOT/node" ] && [ "$PLATFORM" = "systemd" ]; then
+  info "Debian / Ubuntu:下载 glibc 版 Node 运行时(旧版发布包)..."
   if ! _gn_err=$(openbox_glibc_node "$INSTALL_ROOT"); then
     [ -n "$_gn_err" ] && printf '%s\n' "$_gn_err" >&2
     die "glibc 版 Node 没装上,面板跑不起来,安装中止。请检查能否访问 nodejs.org 或 npmmirror.com 后重新运行安装脚本。"
   fi
 fi
 
-info "检查随包 Node 能否运行..."
-if ! _ob_node_err=$(openbox_node_smoke); then
-  warn "随包的 Node 在这台设备上起不来:"
-  [ -n "$_ob_node_err" ] && printf '%s\n' "$_ob_node_err" >&2
-  case "$_ob_node_err" in *"symbol not found"*) die "$(openbox_old_firmware_message)" ;; esac
-  openbox_musl_too_old && die "$(openbox_old_firmware_message)"
+info "检查面板程序能否运行..."
+if ! _ob_panel_err=$(openbox_panel_smoke "$INSTALL_ROOT"); then
+  warn "随包的面板程序在这台设备上起不来:"
+  [ -n "$_ob_panel_err" ] && printf '%s\n' "$_ob_panel_err" >&2
+  if [ ! -x "$INSTALL_ROOT/bin/openbox-panel" ]; then
+    case "$_ob_panel_err" in *"symbol not found"*) die "$(openbox_old_firmware_message)" ;; esac
+    openbox_musl_too_old && die "$(openbox_old_firmware_message)"
+  fi
   die "面板跑不起来,安装中止。请把上面几行连同 \`uname -a\`、\`cat /etc/openwrt_release\`、\`head -3 /proc/meminfo\` 一起发到 GitHub issue。"
 fi
 
