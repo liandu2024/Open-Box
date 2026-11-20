@@ -68,13 +68,12 @@ https://gh.llkk.cc
 # /opt 所在持久化分区，仍可通过 OPENBOX_TMPDIR 指定外接存储等其它目录。
 # TMP_PARENT 在下面用 openbox_pick_tmp_parent 现挑(见那一段的说明),这里先留空
 TMP_PARENT=""
-# 升级要在安装目录所在分区暂存一份新的(两阶段换文件,新旧并存才能原子切换),装好的一份
-# 约 213MB,所以升级本身只需要约 213MB 空闲——不是安装那个 512MB(那是"装完还要留得下
-# 以后升级"的总量)。以前照抄 512MB 把只剩 495MB 的用户挡在升级门外(GitHub #11)。
-MIN_FREE_KB=$((300 * 1024))
-# 临时目录默认在持久化分区,这里只放下载下来的压缩包(实测约 106MB);
+# 升级要在安装目录所在分区暂存一份新的(两阶段换文件,新旧并存才能原子切换),纯 Go 版装好的一份
+# 约 72MB(带可选 mihomo 约 117MB),升级本身保留 120MB 可用空间即可。
+MIN_FREE_KB=$((120 * 1024))
+# 临时目录默认在持久化分区,这里只放下载下来的压缩包(纯 Go 轻量包约 31MB,按需组件更小);
 # 解包目标不在这里(见下方 Important 3),所以这个阈值不需要覆盖解包后的体积。
-MIN_TMP_DOWNLOAD_KB=$((100 * 1024))
+MIN_TMP_DOWNLOAD_KB=$((45 * 1024))
 
 # ---------- 进度/取消状态文件 ----------
 # 供 LuCI 兜底页轮询展示进度,以及 --cancel 判断当前处于哪个阶段。纯文本
@@ -250,6 +249,26 @@ openbox_node_smoke() {
   return 1
 }
 # ---- openbox-node-smoke:end ----
+
+# ---- openbox-panel-smoke:start ----
+# 这一段在 install.sh / update.sh 两份里一模一样:
+# 纯静态 Go 面板(bin/openbox-panel)直接执行 version 冒烟;兼容老版 Node 安装包(无 bin/openbox-panel 但有 node/bin/node)时走 Node 冒烟。
+openbox_panel_smoke() {
+  _ob_root="${1:-$INSTALL_ROOT}"
+  if [ -x "$_ob_root/bin/openbox-panel" ]; then
+    _ob_out=$("$_ob_root/bin/openbox-panel" version 2>&1) || {
+      echo "$_ob_out" | head -n 5
+      return 1
+    }
+    case "$_ob_out" in
+      "openbox-panel "*) return 0 ;;
+    esac
+    echo "$_ob_out" | head -n 5
+    return 1
+  fi
+  openbox_node_smoke "$_ob_root"
+}
+# ---- openbox-panel-smoke:end ----
 
 # ---- openbox-tmp-parent:start ----
 # 这一段在 install.sh / update.sh / uninstall.sh 三份里**一模一样**(三个脚本各自单独 curl 下来跑,
@@ -1283,7 +1302,7 @@ check_storage() {
     ''|*[!0-9]*) die "无法检测可用存储空间(df 命令输出异常)。" ;;
   esac
   if [ "$kb" -lt "$MIN_FREE_KB" ]; then
-    die "可用存储不足:检测到约 $((kb / 1024))MB,升级至少需要 300MB 可用空间。"
+    die "可用存储不足:检测到约 $((kb / 1024))MB,升级至少需要 120MB 可用空间。"
   fi
 }
 
@@ -1496,7 +1515,6 @@ ENV_REPORT_ON=1
 info "预检..."
 check_root
 detect_platform
-[ "$PLATFORM" = "systemd" ] || ! openbox_musl_too_old || die "$(openbox_old_firmware_message)现有安装未改动。"
 check_installed
 map_arch
 cleanup_stale_stage_dirs
@@ -1530,9 +1548,8 @@ dep_ok() {
     kmod-veth) [ -d "$DEP_SYS_MODULE/veth" ] || modprobe veth >/dev/null 2>&1 ;;
     ip-full) ip netns list >/dev/null 2>&1 ;;
     ca-bundle) [ -s "$DEP_CA_BUNDLE" ] ;;
-    # 下面两个只在 Debian / Ubuntu 上检查:nft 命令装 Open-Box 自己的表,xz 解 nodejs.org 的 Node 包
+    # 下面这项只在 Debian / Ubuntu 上检查:nft 命令装 Open-Box 自己的表
     nftables) command -v nft >/dev/null 2>&1 ;;
-    xz-utils) command -v xz >/dev/null 2>&1 ;;
     *) return 0 ;;
   esac
 }
@@ -1558,7 +1575,6 @@ dep_effect() {
     kmod-veth|ip-full) echo "规则页不能模拟 LAN 终端(可改用内核诊断)" ;;
     ca-bundle) echo "HTTPS 订阅和更新下载会因证书校验失败" ;;
     nftables) echo "起内核前装不上 Open-Box 自己的 nft 表(进内核前放行 / 直连应答放行不生效)" ;;
-    xz-utils) echo "解不开 nodejs.org 的 Node 压缩包,面板跑不起来" ;;
   esac
 }
 # 各包管理器的软件源配置在哪(提示用)
@@ -1576,7 +1592,7 @@ ensure_dependencies() {
     return 0
   fi
   _dep_all="kmod-tun kmod-nft-queue kmod-nft-nat kmod-veth ip-full ca-bundle"
-  [ "${PLATFORM:-openwrt}" = "systemd" ] && _dep_all="$_dep_all nftables xz-utils"
+  [ "${PLATFORM:-openwrt}" = "systemd" ] && _dep_all="$_dep_all nftables"
   _dep_missing=""
   for _d in $_dep_all; do dep_ok "$_d" || _dep_missing="$_dep_missing $_d"; done
   if [ -z "$_dep_missing" ]; then
@@ -1887,15 +1903,159 @@ if [ "$ROLLBACK_MODE" = "0" ] && [ -n "$EXPECT_VERSION" ] && [ -n "$OLD_VERSION"
   exit 0
 fi
 
-# 组件升级要用装着的 Node 核对清单:它自己跑不起来(文件坏了、换过固件、缺库……)时直接改用完整安装包,
-# 不然清单那一步就中止了,连 --rollback 都用不了(审查第八、十四项)
-if [ -f "$INSTALL_ROOT/panel/server/system/update-components.sh" ]; then
-  if [ "$(openbox_node_try "$INSTALL_ROOT" "$(cat "$INSTALL_ROOT/data/node-preload" 2>/dev/null || true)")" = "ok" ]; then
-    . "$INSTALL_ROOT/panel/server/system/update-components.sh"
-    if prepare_component_update; then _COMPONENT_PREPARED=1; fi
+# 使用本机 Go 面板内置的 component-update 执行 schema:2 按需组件升级。
+# 绝不 source 老版 Node 的 panel/server/system/update-components.sh(老版脚本会强制要求
+# runtime/node 与 schema:1,导致从 Node 旧版跨代升级到纯 Go 新版直接报错)。
+prepare_go_component_update() {
+  _go_panel="$INSTALL_ROOT/bin/openbox-panel"
+  [ -x "$_go_panel" ] || return 1
+  if [ -n "$EXPECT_VERSION" ]; then
+    _manifest_name="open-box-${EXPECT_VERSION}-linux-${ARCH}-components.json"
+    _manifest_base="https://github.com/$REPO/releases/download/$EXPECT_VERSION"
   else
-    warn "当前安装的 Node 跑不起来,改用完整安装包升级。"
+    _manifest_name="open-box-linux-${ARCH}-components.json"
+    _manifest_base="https://github.com/$REPO/releases/latest/download"
   fi
+  info "读取 Open-Box 组件版本清单..."
+  if ! fetch_to_file_trusted "$_manifest_base/$_manifest_name" "$TMP_DL/components.json"; then
+    warn "未取到组件清单,改用完整安装包升级。"
+    return 1
+  fi
+  if fetch_to_file_trusted "$_manifest_base/$_manifest_name.sha256" "$TMP_DL/components.json.sha256" sha; then
+    _cm_want=$(awk 'NR==1{print $1}' "$TMP_DL/components.json.sha256" 2>/dev/null || true)
+    if command -v sha256sum >/dev/null 2>&1; then
+      _cm_have=$(sha256sum "$TMP_DL/components.json" | awk '{print $1}')
+    else
+      _cm_have=$(shasum -a 256 "$TMP_DL/components.json" | awk '{print $1}')
+    fi
+    [ -n "$_cm_want" ] && [ "$_cm_want" = "$_cm_have" ] || die "组件清单校验失败(SHA256 不匹配),现有安装未改动。"
+  else
+    warn "未取到组件清单的校验文件,只按清单内容校验。"
+  fi
+  check_cancel_and_abort
+  # 老版 schema:1 清单(仅在 --rollback 到旧版 Node Release 时出现)退回完整安装包流程
+  if grep -q '"schema"[[:space:]]*:[[:space:]]*1\b' "$TMP_DL/components.json" 2>/dev/null; then
+    info "目标版本为旧版组件结构,改用完整安装包处理。"
+    return 1
+  fi
+  "$_go_panel" component-update plan "$TMP_DL/components.json" "$INSTALL_ROOT" "$ARCH" "$EXPECT_VERSION" \
+    > "$TMP_DL/components.plan" || return 1
+  _cm_ver=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$TMP_DL/components.json" | head -n 1)
+  [ -n "$_cm_ver" ] || return 1
+  _cm_base="https://github.com/$REPO/releases/download/$_cm_ver"
+  STAGE_DIR="$INSTALL_ROOT/.update-stage.$$"
+  safe_rm_rf "$STAGE_DIR"
+  mkdir -p "$STAGE_DIR/bin" || die "无法创建升级暂存目录。"
+  while read -r _kind _action _name _hash _size; do
+    [ -n "$_kind" ] || continue
+    check_cancel_and_abort
+    case "$_kind" in
+      app|kernel|kernel-mihomo|geo) ;;
+      *) die "未知更新组件:${_kind}" ;;
+    esac
+    if [ "$_action" = "reuse" ]; then
+      info "${_kind} 版本及文件校验一致,复用本地文件,不下载。"
+      case "$_kind" in
+        kernel)
+          for _kf in sing-box sing-box.LICENSE sing-box.BUILD-INFO.json; do
+            if [ -f "$INSTALL_ROOT/bin/$_kf" ]; then
+              ln "$INSTALL_ROOT/bin/$_kf" "$STAGE_DIR/bin/$_kf" 2>/dev/null || cp -p "$INSTALL_ROOT/bin/$_kf" "$STAGE_DIR/bin/$_kf" || die "无法复用 sing-box。"
+            fi
+          done
+          ;;
+        kernel-mihomo)
+          for _kf in mihomo mihomo.LICENSE mihomo.SOURCE.txt; do
+            if [ -f "$INSTALL_ROOT/bin/$_kf" ]; then
+              ln "$INSTALL_ROOT/bin/$_kf" "$STAGE_DIR/bin/$_kf" 2>/dev/null || cp -p "$INSTALL_ROOT/bin/$_kf" "$STAGE_DIR/bin/$_kf" || die "无法复用 mihomo。"
+            fi
+          done
+          ;;
+        geo)
+          mkdir -p "$STAGE_DIR/panel/server/resources"
+          cp -pR "$INSTALL_ROOT/panel/server/resources/geodata" "$STAGE_DIR/panel/server/resources/geodata" \
+            || die "无法复用 Geo 数据。"
+          ;;
+        *) die "无法复用程序组件:${_kind}" ;;
+      esac
+      continue
+    fi
+    info "下载 ${_kind} 更新:${_name}"
+    download_with_progress "$(build_url "$_cm_base/$_name")" "$TMP_DL/$_name" "$_size" \
+      || die "下载组件 ${_kind} 失败。现有安装未改动。"
+    check_cancel_and_abort
+    printf '%s  %s\n' "$_hash" "$_name" > "$TMP_DL/$_name.sha256"
+    if command -v sha256sum >/dev/null 2>&1; then
+      (cd "$TMP_DL" && sha256sum -c "$_name.sha256" >/dev/null) || die "${_kind} SHA256 校验失败。"
+    else
+      (cd "$TMP_DL" && shasum -a 256 -c "$_name.sha256" >/dev/null) || die "${_kind} SHA256 校验失败。"
+    fi
+    write_status extracting "" "" "正在解包 ${_kind}"
+    extract_tgz "$TMP_DL/$_name" "$STAGE_DIR" || die "组件 ${_kind} 解包失败。"
+    rm -f "$TMP_DL/$_name" "$TMP_DL/$_name.sha256"
+  done < "$TMP_DL/components.plan"
+  "$_go_panel" component-update verify "$TMP_DL/components.json" "$STAGE_DIR" "$ARCH" \
+    || die "组合后的安装包校验失败,现有安装未改动。"
+  UPDATE_COMPONENTS="node panel bin openwrt debian"
+  return 0
+}
+
+# 从带 mihomo 的旧版跨代升级到纯 Go 轻量包时:如果本机已安装或正在使用 mihomo,自动按新版本清单复用或升级 mihomo 组件。
+preserve_optional_mihomo_in_stage() {
+  [ -x "$STAGE_DIR/bin/openbox-panel" ] || return 0
+  [ ! -x "$STAGE_DIR/bin/mihomo" ] || return 0
+  _need_mihomo=0
+  [ -x "$INSTALL_ROOT/bin/mihomo" ] && _need_mihomo=1
+  if [ -f "$INSTALL_ROOT/etc/router-kernel" ] && [ "$(tr -d ' \r\n' < "$INSTALL_ROOT/etc/router-kernel" 2>/dev/null || true)" = "mihomo" ]; then
+    _need_mihomo=1
+  fi
+  [ "$_need_mihomo" = "1" ] || return 0
+
+  _pm_ver=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$STAGE_DIR/meta.json" 2>/dev/null | head -n 1)
+  _pm_mf="open-box-${_pm_ver}-linux-${ARCH}-components.json"
+  _pm_base="https://github.com/$REPO/releases/download/$_pm_ver"
+  if [ -n "$_pm_ver" ] && fetch_to_file_trusted "$_pm_base/$_pm_mf" "$TMP_DL/mihomo-components.json"; then
+    _pm_line=$("$STAGE_DIR/bin/openbox-panel" component-update plan "$TMP_DL/mihomo-components.json" "$INSTALL_ROOT" "$ARCH" "$_pm_ver" 2>/dev/null | awk '$1 == "kernel-mihomo" { print; exit }' || true)
+    if [ -n "$_pm_line" ]; then
+      set -- $_pm_line
+      _pm_act="${2:-}"
+      _pm_asset="${3:-}"
+      _pm_sha="${4:-}"
+      _pm_size="${5:-}"
+      if [ "$_pm_act" = "reuse" ] && [ -x "$INSTALL_ROOT/bin/mihomo" ]; then
+        info "已检测到本机 Mihomo 与新版本一致,自动保留本地 Mihomo。"
+        for _kf in mihomo mihomo.LICENSE mihomo.SOURCE.txt; do
+          [ -f "$INSTALL_ROOT/bin/$_kf" ] && cp -p "$INSTALL_ROOT/bin/$_kf" "$STAGE_DIR/bin/$_kf" 2>/dev/null || true
+        done
+        return 0
+      elif [ "$_pm_act" = "download" ] && [ -n "$_pm_asset" ] && [ -n "$_pm_sha" ]; then
+        info "检测到本机正在使用 Mihomo,同步下载新版本 Mihomo 组件:${_pm_asset}"
+        if download_with_progress "$(build_url "$_pm_base/$_pm_asset")" "$TMP_DL/$_pm_asset" "$_pm_size"; then
+          printf '%s  %s\n' "$_pm_sha" "$_pm_asset" > "$TMP_DL/$_pm_asset.sha256"
+          _sha_ok=0
+          if command -v sha256sum >/dev/null 2>&1; then
+            (cd "$TMP_DL" && sha256sum -c "$_pm_asset.sha256" >/dev/null) && _sha_ok=1
+          else
+            (cd "$TMP_DL" && shasum -a 256 -c "$_pm_asset.sha256" >/dev/null) && _sha_ok=1
+          fi
+          if [ "$_sha_ok" = "1" ] && extract_tgz "$TMP_DL/$_pm_asset" "$STAGE_DIR"; then
+            rm -f "$TMP_DL/$_pm_asset" "$TMP_DL/$_pm_asset.sha256"
+            return 0
+          fi
+          rm -f "$TMP_DL/$_pm_asset" "$TMP_DL/$_pm_asset.sha256"
+        fi
+        warn "按需下载新版 Mihomo 组件失败,回退保留本机现有 Mihomo。"
+      fi
+    fi
+  fi
+  if [ -x "$INSTALL_ROOT/bin/mihomo" ]; then
+    for _kf in mihomo mihomo.LICENSE mihomo.SOURCE.txt; do
+      [ -f "$INSTALL_ROOT/bin/$_kf" ] && cp -p "$INSTALL_ROOT/bin/$_kf" "$STAGE_DIR/bin/$_kf" 2>/dev/null || true
+    done
+  fi
+}
+
+if [ -x "$INSTALL_ROOT/bin/openbox-panel" ]; then
+  if prepare_go_component_update; then _COMPONENT_PREPARED=1; fi
 fi
 if [ "$_COMPONENT_PREPARED" = "0" ]; then
 _dl_round=0
@@ -1960,10 +2120,12 @@ STAGE_DIR="$INSTALL_ROOT/.update-stage.$$"
 safe_rm_rf "$STAGE_DIR"
 mkdir -p "$STAGE_DIR" || die "无法在 $INSTALL_ROOT 下创建暂存目录(权限或空间不足?)。现有安装未改动。"
 extract_tgz "$TMP_DL/$ASSET" "$STAGE_DIR" || die "解包失败。现有安装未改动。"
+preserve_optional_mihomo_in_stage
 fi # 完整包 / 按需组件均已在 STAGE_DIR 准备好
-for must in node panel bin openwrt meta.json; do
+for must in panel bin openwrt meta.json; do
   [ -e "$STAGE_DIR/$must" ] || die "升级包内容不完整,缺少 ${must}。现有安装未改动。"
 done
+[ -x "$STAGE_DIR/bin/openbox-panel" ] || [ -e "$STAGE_DIR/node" ] || die "升级包内容不完整,缺少面板运行程序。现有安装未改动。"
 
 # 这是最后一个可以安全取消的检查点:再往下就要读版本号、决定是否进入停服务/
 # 换文件的 committing 阶段——一旦过了这里,取消标志不再被检查(见下方 committing
@@ -1990,23 +2152,23 @@ else
   info "升级到 $NEW_VERSION"
 fi
 
-# ---------- 新版本的 Node 先在暂存目录里试(现有安装和服务都还没动)----------
-# 以前是换完文件、删掉旧版本之后才试,新 Node 起不来(固件太老、缺库、页大小不对)就只能停在半路,回也回不去
-# (审查第八项)。Debian / Ubuntu 的 glibc 版 Node 也在这里换进暂存目录:运行时组件没变时暂存目录里的 node
-# 就是装着的那份(链接),openbox_glibc_node 看到版本对得上什么都不做
-if [ "$PLATFORM" = "systemd" ]; then
-  info "Debian / Ubuntu:检查 glibc 版 Node 运行时..."
+# ---------- 新版本的面板先在暂存目录里试(现有安装和服务都还没动)----------
+# 纯静态 Go 面板无需 glibc Node 或 madvise 兼容库;仅在回退到老版 Node 安装包时保留 glibc Node 替换与 musl 诊断。
+if [ ! -x "$STAGE_DIR/bin/openbox-panel" ] && [ -d "$STAGE_DIR/node" ] && [ "$PLATFORM" = "systemd" ]; then
+  info "Debian / Ubuntu:检查 glibc 版 Node 运行时(旧版发布包)..."
   if ! _gn_err=$(openbox_glibc_node "$STAGE_DIR"); then
     [ -n "$_gn_err" ] && printf '%s\n' "$_gn_err" >&2
     die "glibc 版 Node 没装上(请检查能否访问 nodejs.org 或 npmmirror.com)。现有安装未改动。"
   fi
 fi
-info "检查新版本的 Node 能否运行..."
-if ! _ob_node_err=$(openbox_node_smoke "$STAGE_DIR"); then
-  warn "新版本随包的 Node 在这台设备上起不来:"
-  [ -n "$_ob_node_err" ] && printf '%s\n' "$_ob_node_err" >&2
-  case "$_ob_node_err" in *"symbol not found"*) die "$(openbox_old_firmware_message)现有安装未改动。" ;; esac
-  openbox_musl_too_old && die "$(openbox_old_firmware_message)现有安装未改动。"
+info "检查新版本的面板能否运行..."
+if ! _ob_panel_err=$(openbox_panel_smoke "$STAGE_DIR"); then
+  warn "新版本随包的面板在这台设备上起不来:"
+  [ -n "$_ob_panel_err" ] && printf '%s\n' "$_ob_panel_err" >&2
+  if [ ! -x "$STAGE_DIR/bin/openbox-panel" ]; then
+    case "$_ob_panel_err" in *"symbol not found"*) die "$(openbox_old_firmware_message)现有安装未改动。" ;; esac
+    openbox_musl_too_old && die "$(openbox_old_firmware_message)现有安装未改动。"
+  fi
   die "新版本的面板在这台设备上跑不起来,升级中止,现有安装未改动。请把上面几行连同 uname -a、cat /etc/openwrt_release、head -3 /proc/meminfo 的输出发到 GitHub issue。"
 fi
 
@@ -2118,29 +2280,37 @@ restart_core() {
     CORE_MSG="面板尚未应答,内核未自动重启;请在面板恢复后手动启动。"
     return 0
   fi
+  PANEL_GO_BIN="$INSTALL_ROOT/bin/openbox-panel"
   DEPLOY_CLI="$INSTALL_ROOT/panel/server/cli/deploy.mjs"
-  if [ -x "$INSTALL_ROOT/node/bin/node" ] && [ -f "$DEPLOY_CLI" ]; then
-    # 面板这时已经起来了,前端能重新读到状态文件:给内核重启单独一个阶段,否则弹窗
-    # 一直停在"正在替换文件,面板即将重启…",用户不知道后面还有一次内核重启(约 20 秒)。
+  _deploy_mode=""
+  if [ -x "$PANEL_GO_BIN" ]; then
+    _deploy_mode="go"
+  elif [ -x "$INSTALL_ROOT/node/bin/node" ] && [ -f "$DEPLOY_CLI" ]; then
+    _deploy_mode="node"
+  fi
+  if [ -n "$_deploy_mode" ]; then
     write_status restarting_core "" "" "面板已重启,正在重新生成配置并启动内核"
     info "升级前内核在运行,重新生成配置并启动内核..."
-    # LD_PRELOAD:内核缺 madvise 的设备上 Node 要带兼容库(冒烟测试记在 data/node-preload,没有就是空)
-    # 部署的输出留在 $_deploy_out:以前整个丢进 /dev/null,升级后内核没起来时用户和我们都看不到原因
-    # (#354 #369 #376 #378;失败的那次连部署状态都没写,面板里也查不到)。失败时把最后几行带进升级日志
     _deploy_out="${TMPDIR:-/tmp}/openbox-update-deploy.log"
-    # 先 cd /:升级是在 panel/ 里发起的话(比如在那个目录下敲 open-box update),当前目录已经随旧版本删掉,
-    # Node 加载依赖时 process.cwd() 直接 ENOENT 崩掉,部署一步没走(开发路由器上复现过)
-    # 部署脚本和刚起来的面板抢同一个数据库的写锁、没抢到(输出里有 database is locked)时隔几秒再试,最多 3 次(#535:
-    # 以前失败一次就放弃,内核停到有人手动启动);别的失败照旧只跑一次
     _deploy_try=1
     while :; do
-      if (cd / && OPENBOX_ROOT="$INSTALL_ROOT" ZASHBOARD_DB_PATH="$INSTALL_ROOT/data/openbox.sqlite" \
-         LD_PRELOAD="$(cat "$INSTALL_ROOT/data/node-preload" 2>/dev/null)" \
-         OPENSSL_CONF=/dev/null LD_LIBRARY_PATH="$INSTALL_ROOT/node/lib" "$INSTALL_ROOT/node/bin/node" "$DEPLOY_CLI") >"$_deploy_out" 2>&1; then
-        CORE_MSG="内核已重新生成配置并启动。"
-        break
+      if [ "$_deploy_mode" = "go" ]; then
+        if (cd / && OPENBOX_ROOT="$INSTALL_ROOT" ZASHBOARD_DB_PATH="$INSTALL_ROOT/data/openbox.sqlite" \
+           "$PANEL_GO_BIN" deploy) >"$_deploy_out" 2>&1; then
+          CORE_MSG="内核已重新生成配置并启动。"
+          break
+        else
+          _deploy_rc=$?
+        fi
       else
-        _deploy_rc=$?
+        if (cd / && OPENBOX_ROOT="$INSTALL_ROOT" ZASHBOARD_DB_PATH="$INSTALL_ROOT/data/openbox.sqlite" \
+           LD_PRELOAD="$(cat "$INSTALL_ROOT/data/node-preload" 2>/dev/null)" \
+           OPENSSL_CONF=/dev/null LD_LIBRARY_PATH="$INSTALL_ROOT/node/lib" "$INSTALL_ROOT/node/bin/node" "$DEPLOY_CLI") >"$_deploy_out" 2>&1; then
+          CORE_MSG="内核已重新生成配置并启动。"
+          break
+        else
+          _deploy_rc=$?
+        fi
       fi
       if [ "$_deploy_try" -lt 3 ] && grep -q "database is locked" "$_deploy_out" 2>/dev/null; then
         warn "起内核时数据库正被面板占用,5 秒后重试(第 $_deploy_try 次失败)..."
@@ -2178,8 +2348,10 @@ for comp in $COMPONENTS; do
   fi
 done
 for comp in $COMPONENTS; do
-  SWAPPED_NEW="$SWAPPED_NEW $comp"
-  mv "$STAGE_DIR/$comp" "$INSTALL_ROOT/$comp" || swap_failed "替换 $comp 失败(可能是磁盘空间不足)。"
+  if [ -e "$STAGE_DIR/$comp" ]; then
+    SWAPPED_NEW="$SWAPPED_NEW $comp"
+    mv "$STAGE_DIR/$comp" "$INSTALL_ROOT/$comp" || swap_failed "替换 $comp 失败(可能是磁盘空间不足)。"
+  fi
 done
 # meta.json 也留一份:回退后版本号要跟组件一致,不能旧组件挂着新版本号
 mkdir -p "$STAGE_DIR/initd-backup" || swap_failed "无法创建备份目录。"
@@ -2287,7 +2459,7 @@ fi
 info "启动面板..."
 if [ "$PLATFORM" = "openwrt" ]; then
   RETRY_HINT="可稍后在 LuCI → 服务 → Open-Box 中重试"
-  PANEL_LOG_HINT="logread | grep node"
+  PANEL_LOG_HINT="logread | grep openbox-panel"
 else
   RETRY_HINT="可稍后用 systemctl status openbox-panel 查看原因"
   PANEL_LOG_HINT="journalctl -u openbox-panel -n 50"
@@ -2314,6 +2486,7 @@ fi
 for comp in $COMPONENTS; do
   [ -e "$INSTALL_ROOT/$comp.old" ] && safe_rm_rf "$INSTALL_ROOT/$comp.old"
 done
+[ -x "$INSTALL_ROOT/bin/openbox-panel" ] && rm -f "$INSTALL_ROOT/data/node-preload" 2>/dev/null || true
 
 restart_core
 

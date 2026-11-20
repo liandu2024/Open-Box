@@ -1,14 +1,13 @@
 #!/bin/sh
-# 由 entrypoint 加载；V8 参数和 RSS 自检必须使用同一份环境设置。
-# 堆上限默认按启动时的实际可用内存动态算（和 OpenWrt / Debian 同一套公式），不写死。
-# 显式设置 OPENBOX_PANEL_HEAP_MB 时以显式值为准（单机覆盖）。
+# 由 entrypoint 加载；按宿主 / cgroup 实际有效内存动态计算 Go 面板的 GOMEMLIMIT 与 GOGC，
+# 同时保留兼容 OPENBOX_PANEL_HEAP_MB / OPENBOX_PANEL_RSS_LIMIT_MB 校验。
 meminfo=${OPENBOX_MEMINFO_PATH:-/proc/meminfo}
 mem_total_kb=$(awk '/^MemTotal:/ {print $2}' "$meminfo" 2>/dev/null)
 mem_avail_kb=$(awk '/^MemAvailable:/ {print $2}' "$meminfo" 2>/dev/null)
 [ -n "$mem_total_kb" ] || mem_total_kb=1048576
 [ -n "$mem_avail_kb" ] || mem_avail_kb=$mem_total_kb
 # /proc/meminfo reports the host, even when this container has a smaller limit.
-# Clamp both the total and remaining memory to cgroup v2 or v1 before sizing V8.
+# Clamp both the total and remaining memory to cgroup v2 or v1 before sizing limits.
 cgroup_root=${OPENBOX_CGROUP_ROOT:-/sys/fs/cgroup}
 cgroup_limit_kb=0
 for cgroup_file in "$cgroup_root/memory.max" "$cgroup_root/memory/memory.limit_in_bytes" "$cgroup_root/memory.limit_in_bytes"; do
@@ -30,6 +29,21 @@ for cgroup_file in "$cgroup_root/memory.max" "$cgroup_root/memory/memory.limit_i
  [ "$remaining_kb" -gt 0 ] || remaining_kb=0
  [ "$mem_avail_kb" -le "$remaining_kb" ] || mem_avail_kb=$remaining_kb
 done
+
+# Go 面板内存档位(按有效内存总量自动收紧,同时允许 GOMEMLIMIT / GOGC 显式覆盖)
+if [ "$mem_total_kb" -lt 393216 ]; then
+ auto_go_mem="24MiB"
+ auto_go_gc="35"
+elif [ "$mem_total_kb" -lt 786432 ]; then
+ auto_go_mem="40MiB"
+ auto_go_gc="50"
+else
+ auto_go_mem="64MiB"
+ auto_go_gc="60"
+fi
+export OPENBOX_PANEL_GOMEMLIMIT="${OPENBOX_PANEL_GOMEMLIMIT:-${GOMEMLIMIT:-$auto_go_mem}}"
+export OPENBOX_PANEL_GOGC="${OPENBOX_PANEL_GOGC:-${GOGC:-$auto_go_gc}}"
+
 reserve_kb=$(( mem_total_kb / 8 ))
 [ "$reserve_kb" -lt 196608 ] && reserve_kb=196608
 floor_mb=$(( mem_total_kb / 1024 / 8 ))
@@ -57,7 +71,6 @@ if [ -n "${OPENBOX_PANEL_RSS_LIMIT_MB:-}" ]; then
  case "$OPENBOX_PANEL_RSS_LIMIT_MB" in
   *[!0-9]*|0*) echo 'Invalid OPENBOX_PANEL_RSS_LIMIT_MB' >&2; exit 1;;
  esac
- # 留出 Node 堆外空间，防止 RSS 上限比正常 V8 水位还低造成反复重启。
  if [ "${#OPENBOX_PANEL_RSS_LIMIT_MB}" -gt 5 ] || [ "$OPENBOX_PANEL_RSS_LIMIT_MB" -lt 120 ] || [ "$OPENBOX_PANEL_RSS_LIMIT_MB" -lt "$((OPENBOX_PANEL_HEAP_MB + 64))" ]; then
   echo 'OPENBOX_PANEL_RSS_LIMIT_MB must be at least 120 and at least heap + 64' >&2
   exit 1

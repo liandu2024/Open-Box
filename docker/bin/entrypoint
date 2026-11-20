@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 ROOT=/opt/open-box
-export OPENBOX_PLATFORM=container OPENBOX_ROOT="$ROOT" OPENSSL_CONF=/dev/null
-export LD_LIBRARY_PATH="$ROOT/node/lib" ZASHBOARD_DB_PATH="$ROOT/data/openbox.sqlite"
+export OPENBOX_PLATFORM=container OPENBOX_ROOT="$ROOT"
+export ZASHBOARD_DB_PATH="$ROOT/data/openbox.sqlite"
 export HOST=0.0.0.0
 . "$ROOT/docker/bin/panel-port"
 . "$ROOT/docker/bin/panel-env"
@@ -48,11 +48,29 @@ shutdown() {
  exit 0
 }
 trap shutdown TERM INT
+legacy_geodata_config() {
+ [ -f "$ROOT/panel/server/resources/geodata/geodata.tar.gz" ] \
+  && [ -s "$ROOT/etc/config.json" ] \
+  && grep -qF 'panel/server/resources/geodata/' "$ROOT/etc/config.json" 2>/dev/null
+}
+redeploy_kernel() {
+ redeploy_output=$(GOMEMLIMIT="${OPENBOX_PANEL_GOMEMLIMIT}" GOGC="${OPENBOX_PANEL_GOGC}" "$ROOT/bin/openbox-panel" deploy 2>&1) || {
+  echo "Kernel autostart rebuild failed: $redeploy_output" >&2
+  return 1
+ }
+ return 0
+}
 if "$ROOT/docker/bin/openbox-ctl" enabled; then
- "$ROOT/docker/bin/openbox-ctl" start || echo 'Kernel autostart failed; use panel to repair configuration' >&2
+ if legacy_geodata_config; then
+  echo 'Migrating legacy geodata paths in router config before kernel start' >&2
+  redeploy_kernel || echo 'Kernel autostart failed; use panel to repair configuration' >&2
+ elif ! "$ROOT/docker/bin/openbox-ctl" start; then
+  echo 'Kernel autostart failed; attempting to rebuild configuration' >&2
+  redeploy_kernel || echo 'Kernel autostart failed; use panel to repair configuration' >&2
+ fi
 fi
 while :; do
- "$ROOT/node/bin/node" "--max-old-space-size=$OPENBOX_PANEL_HEAP_MB" "$ROOT/panel/server/index.mjs" &
+ GOMEMLIMIT="${OPENBOX_PANEL_GOMEMLIMIT}" GOGC="${OPENBOX_PANEL_GOGC}" "$ROOT/bin/openbox-panel" serve &
  panel_pid=$!
  printf '%s\n' "$panel_pid" > /tmp/openbox-panel.pid
  wait "$panel_pid" || true
