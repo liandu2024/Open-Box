@@ -91,16 +91,6 @@ python3 scripts/release-verify/release-maintenance.py --apply
 
 维护脚本的无网络测试：`python3 scripts/release-verify/release-maintenance.test.py`。
 
-## 业务优选真实内核验收
-
-业务优选变更除配置、模型和并发回归外，还运行以下隔离验收。脚本只监听回环地址，用三个本地 HTTP 代理模拟节点，不使用真实订阅、不修改路由器配置或路由表：
-
-```sh
-OPENBOX_TEST_SINGBOX=/path/to/candidate/sing-box node scripts/release-verify/business-preference.mjs
-```
-
-验收覆盖：拨号失败的有界备用、建连后首响应前 EOF 不重放已发送数据但影响下一条连接、目标故障不污染其他目标、实际出口与组默认节点分离，以及负载均衡在节点评分开关两种状态下仍将并发连接分散到空闲节点。业务统计应包含自动优选与负载均衡，且不泄露目标域名。三套发布验证环境运行同一脚本和同一候选内核，记录结果；模型的时间推进、候选轮换、公平试用和租约竞态由内核专项测试验证。
-
 ## 内存与吞吐基准
 
 基准脚本仅用于测试，不进入面板运行流程。`bench-net/main.go` 是标准库实现的本地 HTTP/DNS 数据源和计数客户端，需用 Go 编译为目标 Linux 架构；它不访问外网。

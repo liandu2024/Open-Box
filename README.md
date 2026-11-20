@@ -155,13 +155,13 @@ curl -fsSL https://gh-proxy.com/raw.githubusercontent.com/liandu2024/Open-Box/ma
 
 安装过程中会问一次面板端口（默认 **3036**，直接回车即可）。端口会先检查是否可用——被别的程序占用、或与 Open-Box 自己和系统的端口冲突时，会说明原因并让你重填。也可以用 `--port` 直接指定，例如在上面的命令末尾加 ` --port 3080`。装完之后还能改，见[修改面板端口](#修改面板端口)。
 
-安装要求：OpenWrt（推荐 OpenWrt 24 / iStoreOS 24 及以上；面板与内核均为纯静态二进制，无外部 libc / Node 运行时依赖）、x86_64 或 aarch64、至少 256MB 可用存储空间和 256MB 内存（低内存设备默认推荐 `sing-box` 内核；Mihomo 内核可在面板切换时按需自动下载）。安装 / 升级脚本会检查并尝试用 opkg 或 apk 补齐系统依赖（kmod-tun、kmod-nft-queue、kmod-nft-nat、kmod-veth、ip-full、ca-bundle）；软件源不通时只提示、不中断，可稍后按提示手动安装，设 `OPENBOX_SKIP_DEPS=1` 可跳过这一步。安装完成后，用浏览器打开脚本提示的 `http://<路由器局域网 IP>:<面板端口>` 地址，首次访问设置管理密码。
+安装要求：OpenWrt（iStoreOS 22.03、OpenWrt 22.03 及更早的固件太老装不了，请先升级到 iStoreOS 24 / OpenWrt 24 以上）、x86_64 或 aarch64、至少 512MB 存储空间和 512MB 内存。安装 / 升级脚本会检查并尝试用 opkg 或 apk 补齐系统依赖（kmod-tun、kmod-nft-queue、kmod-nft-nat、kmod-veth、ip-full、ca-bundle）；软件源不通时只提示、不中断，可稍后按提示手动安装，设 `OPENBOX_SKIP_DEPS=1` 可跳过这一步。安装完成后，用浏览器打开脚本提示的 `http://<路由器局域网 IP>:<面板端口>` 地址，首次访问设置管理密码。
 
 安装完成后，用浏览器打开 `http://<路由器 LAN 地址>:<面板端口>`（安装脚本结束时会打印这个地址），**首次打开时设置面板密码**。以后忘了密码不用重装，见下面的[忘记面板密码](#忘记面板密码)。
 
 #### Debian / Ubuntu
 
-同样的安装、升级、卸载命令也适用于 Debian / Ubuntu（需要 systemd；在 Ubuntu 24.04 上验证过），以 root 或 `sudo` 执行即可。脚本会识别系统：服务交给 systemd（`openbox.service` 内核、`openbox-panel.service` 面板），命令行 `open-box` 放在 `/usr/local/bin`；面板与内核均为纯静态二进制，直接原生运行，不再需要额外下载 Node 运行时。依赖用 apt 补齐（nftables、iproute2、ca-certificates），tun / nftables 内核模块随发行版内核自带。
+同样的安装、升级、卸载命令也适用于 Debian / Ubuntu（需要 systemd；在 Ubuntu 24.04 上验证过），以 root 或 `sudo` 执行即可。脚本会识别系统：服务交给 systemd（`openbox.service` 内核、`openbox-panel.service` 面板），命令行 `open-box` 放在 `/usr/local/bin`，随包的 Node 是 OpenWrt 用的 musl 版，安装时会从 nodejs.org（不通时换 npmmirror）下载同版本的官方 glibc 版替换，所以安装机器要能访问其中之一。依赖用 apt 补齐（nftables、xz-utils、iproute2、ca-certificates），tun / nftables 内核模块随发行版内核自带。
 
 和 OpenWrt 的差别：
 
