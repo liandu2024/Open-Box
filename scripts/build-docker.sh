@@ -5,7 +5,7 @@ set -eu
 ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 ARCH=${1:?Expected x64 or arm64}
 DIR=$(CDPATH= cd -- "${2:?Expected release directory}" && pwd)
-TAG=${3:-open-box:0.1.464}
+TAG=${3:-open-box:0.1.465}
 case "$ARCH" in x64) PLATFORM=linux/amd64;; arm64) PLATFORM=linux/arm64;; *) echo 'Expected x64 or arm64' >&2; exit 1;; esac
 ASSET=open-box-linux-$ARCH.tar.gz
 if command -v sha256sum >/dev/null 2>&1; then

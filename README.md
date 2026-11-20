@@ -3,13 +3,13 @@
   <img src="docs/pic/logo.png" alt="Open-Box" height="72">
 </picture>
 
-Open-Box 分两部分：**路由器端**装在路由器 / 主机上，是一体化透明代理——安装包内置 Open-Box、sing-box 内核、Node 运行时以及完整 GeoSite / GeoIP 数据，安装后通过浏览器完成订阅、节点、分流、DNS 和防火墙设置，不需要手写配置文件；**客户端**是手机、电脑上的 Open-Box App，和家里的路由器端配对，在外面也按同一套规则分流。
+Open-Box 分两部分：**路由器端**装在路由器 / 主机上，是一体化透明代理——安装包内置纯静态 Go 面板、sing-box 内核以及完整 GeoSite / GeoIP 数据（Mihomo 内核可按需切换下载），安装后通过浏览器完成订阅、节点、分流、DNS 和防火墙设置，不需要手写配置文件；**客户端**是手机、电脑上的 Open-Box App，和家里的路由器端配对，在外面也按同一套规则分流。
 
 **Open-Box 自有程序为闭源专有软件，并非开源项目。未经许可禁止复制传播自有代码、再分发、反编译及绕过授权。** 正常安装、离线使用、升级、备份和恢复允许；第三方开源组件保留原许可。详见 [LICENSE](LICENSE) 和 [版权范围](COPYRIGHT.md)。
 
-**支持的平台**
+**支持的平台与硬件要求**
 
-路由器端（同一份安装包、同一条安装命令，脚本自己识别系统），见[路由器端](#路由器端)：
+路由器端（同一份安装包、同一条安装命令，脚本自己识别系统；**最低硬件要求：256 MB 内存、256 MB 可用存储空间**），见[路由器端](#路由器端)：
 
 - **OpenWrt**（含 iStoreOS、ImmortalWrt 等衍生固件）：x86_64、aarch64；主路由或旁路由都行，带 LuCI 页面
 - **Debian / Ubuntu**（需要 systemd；Ubuntu 24.04 验证过）：x86_64、aarch64；作为旁路由或只给本机用，没有 LuCI 和 dnsmasq 分流，见[安装](#安装)里的 Debian / Ubuntu 一节
@@ -39,6 +39,7 @@ Open-Box 分两部分：**路由器端**装在路由器 / 主机上，是一体�
 ## 推荐服务
 
 - 优惠购买 AI 接口、机场、VPS、住宅 IP：[**安格超市**](https://blog.angeworld.cc/market)
+- 住宅 IP：[**TOPIP**](https://topip.sbs)（https://topip.sbs）
 - AI 中转站：[**SUPERDOOR 订阅服务**](https://ai.superdoor.top/)
 - 按需付费 AI 服务：[**OPENDOOR**](https://ai.opendoor.sbs/)
 
@@ -133,7 +134,7 @@ Open-Box 分两部分：**路由器端**装在路由器 / 主机上，是一体�
 
 同一份安装包既能装在 OpenWrt 上，也能装在 Debian / Ubuntu（systemd）上，安装脚本会自行识别（见[安装](#安装)末尾）。
 
-完整安装包包含 Open-Box、sing-box、Node 运行时和全部 GeoSite / GeoIP 数据。每个资产旁边都有 SHA256 校验文件。
+完整安装包包含纯静态 Go 面板、sing-box 内核和全部 GeoSite / GeoIP 数据（最低要求 256 MB 内存、256 MB 可用存储空间）。每个资产旁边都有 SHA256 校验文件。
 
 作为旁路由使用（把终端的网关 / DNS 指向 Open-Box 所在设备）时，旁路由的 LAN 区域要打开「IP 动态伪装」（MASQUERADE），否则直连站点的回包不经旁路由、连接对不上，表现为只能上国外、打不开大陆网站。
 
