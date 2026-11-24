@@ -45,3 +45,10 @@ if docker buildx version >/dev/null 2>&1; then
 else
  docker build --platform "$PLATFORM" -t "$TAG" "$STAGE"
 fi
+if [ "${OPENBOX_KEEP_BUILD_CACHE:-0}" != "1" ]; then
+ if docker buildx version >/dev/null 2>&1; then
+  docker buildx prune -f >/dev/null 2>&1 || true
+ else
+  docker builder prune -f >/dev/null 2>&1 || true
+ fi
+fi
