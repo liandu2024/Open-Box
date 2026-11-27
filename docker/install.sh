@@ -12,17 +12,38 @@ Open-Box Docker 一键安装（新装默认端口 3036）
   --interface 网卡  --subnet 网段/CIDR  --gateway 主路由IP
   --driver macvlan|ipvlan  --network 网络名  --name 容器名
   --port 3036  --dir /opt/open-box-docker  --version latest|v0.1.330
+  --direct 强制仅直连 GitHub  --mirror [前缀] 内置镜像优先或指定单源镜像前缀
   --image 已加载镜像  --archive 离线镜像（必须附带同名.sha256）
   --offline 禁止下载；已有配置、数据、端口在重复安装时保留。
 HELP
 }
+REPO=liandu2024/Open-Box
+BUILTIN_MIRRORS="https://ghfast.top https://gh-proxy.com https://gh.llkk.cc"
 DIR=/opt/open-box-docker NAME=open-box NETWORK=open-box-lan DRIVER=macvlan
 INTERFACE= SUBNET= GATEWAY= LAN_IP= PANEL_PORT= IMAGE= VERSION=latest ARCHIVE= OFFLINE=0
+CHANNEL=auto MIRROR_PREFIX= ADOPTED_SOURCE= channel_set=0
 name_set=0 network_set=0 driver_set=0
 while [ "$#" -gt 0 ]; do
  case "$1" in
   --help|-h) help; exit 0;;
   --offline) OFFLINE=1; shift; continue;;
+  --direct)
+   [ "$channel_set" = 0 ] || die '--direct 与 --mirror 不能同时使用。'
+   CHANNEL=direct; MIRROR_PREFIX=; channel_set=1; shift; continue;;
+  --mirror)
+   [ "$channel_set" = 0 ] || die '--mirror 与 --direct 不能同时使用。'
+   CHANNEL=mirror; MIRROR_PREFIX=; channel_set=1; shift
+   if [ "$#" -ge 1 ]; then
+    case "$1" in
+     --*) ;;
+     *)
+      MIRROR_PREFIX=$1
+      [ -n "$MIRROR_PREFIX" ] || die '--mirror 的值不能为空。'
+      case "$MIRROR_PREFIX" in *[!A-Za-z0-9._:/-]*) die '--mirror 包含非法字符。';; esac
+      shift;;
+    esac
+   fi
+   continue;;
   --dir|--name|--network|--driver|--interface|--subnet|--gateway|--ip|--port|--image|--version|--archive)
    [ "$#" -ge 2 ] && [ -n "$2" ] || die "$1 缺少值。";;
   *) die "未知选项 $1；使用 --help 查看用法。";;
@@ -107,25 +128,150 @@ if docker container inspect "$NAME" >/dev/null 2>&1; then
  old_network=$(docker inspect --format '{{index .Config.Labels "com.openbox.network"}}' "$NAME")
  old_ip=$(docker inspect --format '{{index .Config.Labels "com.openbox.ip"}}' "$NAME")
 fi
-fetch() { curl -fL --connect-timeout 15 --max-time 600 --retry 2 "$1" -o "$2"; }
+download_sources() {
+ if [ "$CHANNEL" = "mirror" ] && [ -n "$MIRROR_PREFIX" ]; then
+  printf '%s\n' "$MIRROR_PREFIX"
+  return 0
+ fi
+ if [ "$CHANNEL" = "direct" ]; then
+  printf 'direct\n'
+  return 0
+ fi
+ if [ "$CHANNEL" = "mirror" ]; then
+  _ds_base="$BUILTIN_MIRRORS direct"
+ else
+  _ds_base="direct $BUILTIN_MIRRORS"
+ fi
+ if [ -n "$ADOPTED_SOURCE" ]; then
+  printf '%s\n' "$ADOPTED_SOURCE"
+  for _ds_s in $_ds_base; do [ "$_ds_s" = "$ADOPTED_SOURCE" ] || printf '%s\n' "$_ds_s"; done
+ else
+  for _ds_s in $_ds_base; do printf '%s\n' "$_ds_s"; done
+ fi
+}
+prefix_url() {
+ case "$1" in
+  direct) printf '%s\n' "$2" ;;
+  http://*|https://*) printf '%s/%s\n' "${1%/}" "$2" ;;
+  *) printf 'https://%s/%s\n' "${1%/}" "$2" ;;
+ esac
+}
+adopt_source() {
+ if [ "$CHANNEL" = "mirror" ] && [ -n "$MIRROR_PREFIX" ]; then return 0; fi
+ [ "$CHANNEL" = "direct" ] && return 0
+ ADOPTED_SOURCE=$1
+}
+check_curl_ca() {
+ [ "${1:-0}" = 60 ] && die 'HTTPS 证书校验失败（curl 退出码 60，缺少 CA 证书或系统时间异常）。'
+ return 0
+}
+fetch_text() {
+ _ft_rc=0
+ _ft_out=$(curl -fsSL --connect-timeout 5 --max-time "${2:-10}" "$1" 2>/dev/null) || _ft_rc=$?
+ check_curl_ca "$_ft_rc"
+ [ "$_ft_rc" = 0 ] || return "$_ft_rc"
+ printf '%s\n' "$_ft_out"
+}
+head_release_tag() {
+ _ht_rc=0
+ _ht_out=$(curl -sI --connect-timeout 5 --max-time 10 "$1" 2>/dev/null) || _ht_rc=$?
+ check_curl_ca "$_ht_rc"
+ [ "$_ht_rc" = 0 ] || return "$_ht_rc"
+ printf '%s\n' "$_ht_out" | sed -n 's/^[Ll]ocation: .*\/releases\/tag\/\(v[0-9][0-9A-Za-z._-]*\).*/\1/p' | head -n 1
+}
+docker_release_available() {
+ printf '%s\n' "$2" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' || return 1
+ _dra_sha=$(fetch_text "$1/releases/download/$2/update.sh.sha256" 10) || return 1
+ printf '%s\n' "$_dra_sha" | awk '
+  NR == 1 { name = $2; sub(/^\*/, "", name); ok = NF == 2 && length($1) == 64 && $1 !~ /[^0-9a-fA-F]/ && name == "update.sh" }
+  NR > 1 && NF { ok = 0 }
+  END { exit !ok }'
+}
+resolve_docker_release_tag() {
+ _rdr_latest_url="https://github.com/$REPO/releases/latest"
+ for _rdr_src in $(download_sources); do
+  _rdr_url=$(prefix_url "$_rdr_src" "$_rdr_latest_url")
+  _rdr_base=${_rdr_url%/releases/latest}
+  _rdr_latest=$(head_release_tag "$_rdr_url") || _rdr_latest=''
+  if [ -n "$_rdr_latest" ] && docker_release_available "$_rdr_base" "$_rdr_latest"; then
+   adopt_source "$_rdr_src"
+   printf '%s\n' "$_rdr_latest"
+   return 0
+  fi
+  _rdr_feed=$(fetch_text "$_rdr_base/releases.atom" 12) || continue
+  _rdr_tags=$(printf '%s\n' "$_rdr_feed" | tr '"' '\n' \
+   | sed -n 's|.*/releases/tag/\(v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)$|\1|p' \
+   | awk '!seen[$0]++' \
+   | awk -F. '{ printf "%010d.%010d.%010d %s\n", substr($1, 2), $2, $3, $0 }' \
+   | sort -r | awk '{ print $2 }')
+  for _rdr_tag in $_rdr_tags; do
+   [ "$_rdr_tag" != "$_rdr_latest" ] || continue
+   if docker_release_available "$_rdr_base" "$_rdr_tag"; then
+    adopt_source "$_rdr_src"
+    printf '%s\n' "$_rdr_tag"
+    return 0
+   fi
+  done
+ done
+ return 1
+}
+valid_sha_file() {
+ awk 'NR==1{ok=(NF>=1 && length($1)==64 && $1 !~ /[^0-9a-fA-F]/)} NR>1&&NF{ok=0} END{exit !ok}' "$1" 2>/dev/null
+}
+fetch_sha_across_sources() {
+ _fsa_url=$1 _fsa_out=$2
+ for _fsa_src in $(download_sources); do
+  _fsa_full=$(prefix_url "$_fsa_src" "$_fsa_url")
+  rm -f "$_fsa_out"
+  _fsa_rc=0
+  curl -fsSL --connect-timeout 5 --max-time 10 "$_fsa_full" -o "$_fsa_out" 2>/dev/null || _fsa_rc=$?
+  check_curl_ca "$_fsa_rc"
+  if [ "$_fsa_rc" = 0 ] && valid_sha_file "$_fsa_out"; then
+   return 0
+  fi
+  rm -f "$_fsa_out"
+ done
+ return 1
+}
+fetch_archive_verified() {
+ _fav_url=$1 _fav_out=$2 _fav_want=$3
+ for _fav_src in $(download_sources); do
+  _fav_full=$(prefix_url "$_fav_src" "$_fav_url")
+  rm -f "$_fav_out"
+  _fav_rc=0
+  curl -fL --connect-timeout 10 --speed-limit 30720 --speed-time 20 "$_fav_full" -o "$_fav_out" 2>/dev/null || _fav_rc=$?
+  check_curl_ca "$_fav_rc"
+  if [ "$_fav_rc" = 0 ] && [ -s "$_fav_out" ]; then
+   _fav_have=$(sha256sum -- "$_fav_out" | awk '{print $1}' | tr A-F a-f)
+   if [ "$_fav_have" = "$_fav_want" ]; then
+    adopt_source "$_fav_src"
+    return 0
+   fi
+  fi
+  rm -f "$_fav_out"
+ done
+ return 1
+}
 if [ -n "$ARCHIVE" ]; then
  [ -f "$ARCHIVE" ] && [ -f "$ARCHIVE.sha256" ] || die '离线镜像和同名 .sha256 文件必须同时存在。'
 fi
 if [ -z "$IMAGE" ] && [ -z "$ARCHIVE" ]; then
  [ "$OFFLINE" = 0 ] || die '离线安装请指定 --image 或 --archive。'
  command -v curl >/dev/null 2>&1 || die '在线下载需要 curl。'
+ command -v sha256sum >/dev/null 2>&1 || die '校验镜像需要 sha256sum。'
  TEMP=$(mktemp -d)
  if [ "$VERSION" = latest ]; then
-  fetch 'https://api.github.com/repos/liandu2024/Open-Box/releases/latest' "$TEMP/release.json"
-  VERSION=$(sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$TEMP/release.json" | head -n 1)
+  VERSION=$(resolve_docker_release_tag) || die '获取最新 Release 版本号失败。'
  fi
  printf '%s\n' "$VERSION" | awk '/^v[0-9]+\.[0-9]+\.[0-9]+([.-][a-zA-Z0-9.-]+)?$/ {ok=1} END{exit !ok}' || die 'Release 版本号无效。'
  IMAGE="open-box:${VERSION#v}"
  if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
   file="open-box-$VERSION-docker-linux-$ARCH.tar.gz"
+  base_dl="https://github.com/$REPO/releases/download/$VERSION/$file"
   printf '下载并校验 %s 镜像…\n' "$ARCH"
-  fetch "https://github.com/liandu2024/Open-Box/releases/download/$VERSION/$file" "$TEMP/$file"
-  fetch "https://github.com/liandu2024/Open-Box/releases/download/$VERSION/$file.sha256" "$TEMP/$file.sha256"
+  fetch_sha_across_sources "$base_dl.sha256" "$TEMP/$file.sha256" || die '下载镜像校验文件失败。'
+  want=$(awk 'NR==1{print $1}' "$TEMP/$file.sha256" | tr A-F a-f)
+  fetch_archive_verified "$base_dl" "$TEMP/$file" "$want" || die '下载或校验 Docker 镜像失败。'
   ARCHIVE="$TEMP/$file"
  fi
 fi

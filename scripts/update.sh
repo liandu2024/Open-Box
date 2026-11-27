@@ -3,11 +3,10 @@
 # 系统相关的分叉见 detect_platform。
 #
 # 用法:
-#   sh update.sh                    # 沿用安装时选择的通道(记录在 data/channel)
-#   sh update.sh --direct           # 强制直连 GitHub,忽略安装时记录的通道
-#   sh update.sh --mirror           # 强制走代理加速,依次探测内置镜像列表,
-#                                    # 选中第一个探测通过的(见下方 BUILTIN_MIRRORS)
-#   sh update.sh --mirror <前缀>     # 强制走代理加速,使用给定的镜像前缀
+#   sh update.sh                    # 全自动模式(优先 GitHub 直连,不通或过慢自动轮询内置镜像)
+#   sh update.sh --direct           # 强制仅直连 GitHub,不回退镜像
+#   sh update.sh --mirror           # 内置镜像优先,全部失败后回退直连
+#   sh update.sh --mirror <前缀>     # 严格仅使用指定镜像前缀(不回退真实 GitHub 或内置镜像)
 #   sh update.sh --detach           # 派生一个后台子进程去真正执行升级,自己立即返回;
 #                                    # 输出被子进程重定向到 ${TMPDIR:-/tmp}/openbox-update.log。
 #                                    # 供 LuCI 兜底页一键升级调用——rpcd 的 fs.exec 有超时,
@@ -63,6 +62,10 @@ https://ghfast.top
 https://gh-proxy.com
 https://gh.llkk.cc
 "
+OPENBOX_DL_CONNECT_SECS="${OPENBOX_DL_CONNECT_SECS:-15}"
+OPENBOX_DL_LOW_SECS="${OPENBOX_DL_LOW_SECS:-20}"
+OPENBOX_DL_MIN_SPEED="${OPENBOX_DL_MIN_SPEED:-30720}"
+ADOPTED_SOURCE=""
 # /tmp 是 tmpfs，升级包当前约 106MB；在内核和面板运行时把它下载到 /tmp
 # 会额外消耗同等大小的运行内存，512MB 设备可能被 OOM killer 杀掉。默认改用
 # /opt 所在持久化分区，仍可通过 OPENBOX_TMPDIR 指定外接存储等其它目录。
@@ -87,6 +90,11 @@ MIN_TMP_DOWNLOAD_KB=$((70 * 1024))
 STATUS_PATH="${TMPDIR:-/tmp}/openbox-update.status"
 CANCEL_FLAG="${TMPDIR:-/tmp}/openbox-update.cancel"
 STATUS_PID=""
+STATUS_SOURCE=""
+STATUS_SOURCE_LABEL=""
+STATUS_SPEED=""
+STATUS_ITEM=""
+STATUS_ATTEMPTS=""
 
 info() { echo "[open-box] $*"; }
 warn() { echo "[open-box] 警告:$*" >&2; }
@@ -218,7 +226,7 @@ openbox_node_smoke() {
   _ob_root="${1:-$INSTALL_ROOT}"
   _ob_preload_file="$INSTALL_ROOT/data/node-preload"
   [ -x "$_ob_root/node/bin/node" ] || { echo "缺少 $_ob_root/node/bin/node"; return 1; }
-  _ob_out=$(openbox_node_try "$_ob_root" "")
+  _ob_out=$(openbox_node_try "$_ob_root" "") || true
   if [ "$_ob_out" = "ok" ]; then
     rm -f "$_ob_preload_file"
     return 0
@@ -323,22 +331,51 @@ drain_stdin() {
 
 die() {
   [ "${CORE_HELPERS_READY:-0}" != "1" ] || restore_core_if_suspended || true
-  echo "[open-box] 错误:$*" >&2
-  write_status failed "" "" "$*"
+  _die_msg="$*"
+  if [ -n "${STATUS_ATTEMPTS:-}" ]; then
+    case "$_die_msg" in
+      *"$STATUS_ATTEMPTS"*) ;;
+      *) _die_msg="${_die_msg} [尝试记录: ${STATUS_ATTEMPTS}]" ;;
+    esac
+  fi
+  echo "[open-box] 错误:$_die_msg" >&2
+  STATUS_SPEED=""
+  write_status failed "" "" "$_die_msg"
   openbox_env_report
   drain_stdin
   exit 1
 }
 
+append_attempt() {
+  _aa_entry=$(printf '%s(%s)' "$1" "$2" | tr '\r\n' '  ')
+  if [ -n "${STATUS_ATTEMPTS:-}" ]; then
+    STATUS_ATTEMPTS="${STATUS_ATTEMPTS} | ${_aa_entry}"
+  else
+    STATUS_ATTEMPTS="$_aa_entry"
+  fi
+}
+
 # 供 write_status() 内部使用,写临时文件后原子 mv 到位;args: stage [bytes] [total]
-# [message]。stage 取值见文件头用法说明:starting/probing/downloading/verifying/
-# extracting/committing/done/failed/cancelled。
+# [message]。stage 取值:starting/probing/downloading/verifying/
+# extracting/committing/restarting_core/done/failed/cancelled。
+# 扩展键值:source / source_label / speed(纯整数 B/s,非下载置空) / item / attempts(全部单行清洗)
 write_status() {
   [ -n "$STATUS_PID" ] || return 0
-  _ws_stage="$1"
-  _ws_bytes="${2:-}"
-  _ws_total="${3:-}"
-  _ws_message="${4:-}"
+  _ws_stage=$(printf '%s' "$1" | tr '\r\n' '  ')
+  _ws_bytes=$(printf '%s' "${2:-}" | tr '\r\n' '  ')
+  _ws_total=$(printf '%s' "${3:-}" | tr '\r\n' '  ')
+  _ws_message=$(printf '%s' "${4:-}" | tr '\r\n' '  ')
+  _ws_source=$(printf '%s' "${STATUS_SOURCE:-}" | tr '\r\n' '  ')
+  _ws_source_label=$(printf '%s' "${STATUS_SOURCE_LABEL:-}" | tr '\r\n' '  ')
+  _ws_speed=""
+  if [ "$_ws_stage" = "downloading" ]; then
+    case "${STATUS_SPEED:-}" in
+      ''|*[!0-9]*) _ws_speed="" ;;
+      *) _ws_speed="$STATUS_SPEED" ;;
+    esac
+  fi
+  _ws_item=$(printf '%s' "${STATUS_ITEM:-}" | tr '\r\n' '  ')
+  _ws_attempts=$(printf '%s' "${STATUS_ATTEMPTS:-}" | tr '\r\n' '  ')
   _ws_tmp="$STATUS_PATH.$$.tmp"
   {
     echo "pid=$STATUS_PID"
@@ -346,6 +383,11 @@ write_status() {
     echo "bytes=$_ws_bytes"
     echo "total=$_ws_total"
     echo "message=$_ws_message"
+    echo "source=$_ws_source"
+    echo "source_label=$_ws_source_label"
+    echo "speed=$_ws_speed"
+    echo "item=$_ws_item"
+    echo "attempts=$_ws_attempts"
   } > "$_ws_tmp" 2>/dev/null && mv -f "$_ws_tmp" "$STATUS_PATH" 2>/dev/null
   # /tmp 被下载顶满时这里会失败:状态没更新是小事,set -e 把 worker 无声杀掉才是大事
   return 0
@@ -447,23 +489,146 @@ detect_downloader() {
   fi
 }
 
-fetch_to_stdout() {
+openbox_is_direct_url() {
+  case "$1" in
+    https://github.com/*|https://raw.githubusercontent.com/*|https://api.github.com/*|https://nodejs.org/*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+openbox_file_size() {
+  [ -f "$1" ] || { echo 0; return 0; }
+  _ofs_sz=$(ls -ln -- "$1" 2>/dev/null | awk 'NR==1{print $5}')
+  case "$_ofs_sz" in
+    ''|*[!0-9]*)
+      _ofs_sz=$(wc -c < "$1" 2>/dev/null | awk '{print $1}')
+      case "$_ofs_sz" in ''|*[!0-9]*) _ofs_sz=0 ;; esac
+      ;;
+  esac
+  printf '%s\n' "$_ofs_sz"
+}
+
+openbox_kill_pid() {
+  _kd_pid="$1"
+  kill "$_kd_pid" 2>/dev/null || true
+  _kd_w=0
+  while kill -0 "$_kd_pid" 2>/dev/null && [ "$_kd_w" -lt 3 ]; do
+    sleep 1
+    _kd_w=$((_kd_w + 1))
+  done
+  kill -9 "$_kd_pid" 2>/dev/null || true
+  wait "$_kd_pid" 2>/dev/null || true
+}
+
+openbox_sha256() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum -- "$1" 2>/dev/null | awk '{print $1}' | tr 'A-F' 'a-f'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 -- "$1" 2>/dev/null | awk '{print $1}' | tr 'A-F' 'a-f'
+  else
+    return 1
+  fi
+}
+
+openbox_looks_like_html() {
+  _lh_head=$(LC_ALL=C dd if="$1" bs=64 count=1 2>/dev/null | LC_ALL=C tr -d '\000\r\n\t ')
+  case "$_lh_head" in
+    '<'*) return 0 ;;
+  esac
+  return 1
+}
+
+DL_FAIL_REASON=""
+openbox_verify_download() {
+  _vd_file="$1"
+  _vd_want=$(printf '%s' "${2:-}" | tr 'A-F' 'a-f')
+  if [ ! -s "$_vd_file" ]; then
+    DL_FAIL_REASON="空文件"
+    return 1
+  fi
+  if openbox_looks_like_html "$_vd_file"; then
+    DL_FAIL_REASON="返回 HTML 错误页"
+    return 1
+  fi
+  if [ -n "$_vd_want" ]; then
+    _vd_have=$(openbox_sha256 "$_vd_file") || { DL_FAIL_REASON="缺少 sha256sum/shasum"; return 1; }
+    if [ "$_vd_have" != "$_vd_want" ]; then
+      DL_FAIL_REASON="SHA256 不匹配"
+      return 1
+    fi
+    return 0
+  fi
+  case "$_vd_file" in
+    *.tar.gz|*.tgz)
+      if command -v gzip >/dev/null 2>&1 && ! gzip -t "$_vd_file" >/dev/null 2>&1; then
+        DL_FAIL_REASON="非有效 gzip 压缩包"
+        return 1
+      fi
+      ;;
+  esac
+  return 0
+}
+
+_fetch_stdout_with_proxy() {
+  _fsp_url="$1"
+  _fsp_px="${2:-}"
+  _fsp_np="${3:-}"
   case "$DOWNLOADER" in
-    curl) env http_proxy="${OPENBOX_FETCH_PROXY:-${http_proxy:-}}" https_proxy="${OPENBOX_FETCH_PROXY:-${https_proxy:-}}" no_proxy="${OPENBOX_FETCH_NO_PROXY:-${no_proxy:-}}" curl -fsSL --connect-timeout 15 --max-time 60 "$1" ;;
-    wget) env http_proxy="${OPENBOX_FETCH_PROXY:-${http_proxy:-}}" https_proxy="${OPENBOX_FETCH_PROXY:-${https_proxy:-}}" no_proxy="${OPENBOX_FETCH_NO_PROXY:-${no_proxy:-}}" wget -q --timeout=60 -O - "$1" ;;
+    curl) env http_proxy="$_fsp_px" https_proxy="$_fsp_px" HTTP_PROXY="$_fsp_px" HTTPS_PROXY="$_fsp_px" all_proxy="" ALL_PROXY="" no_proxy="$_fsp_np" curl -fsSL --noproxy "$_fsp_np" --connect-timeout 5 --max-time 15 "$_fsp_url" ;;
+    wget) env http_proxy="$_fsp_px" https_proxy="$_fsp_px" HTTP_PROXY="$_fsp_px" HTTPS_PROXY="$_fsp_px" all_proxy="" ALL_PROXY="" no_proxy="$_fsp_np" wget -q --timeout=15 -O - "$_fsp_url" ;;
+  esac
+}
+
+fetch_to_stdout() {
+  if openbox_is_direct_url "$1"; then
+    if [ -n "${OPENBOX_FETCH_PROXY:-}" ]; then
+      _ftso_rc=0
+      _fetch_stdout_with_proxy "$1" "$OPENBOX_FETCH_PROXY" "${OPENBOX_FETCH_NO_PROXY:-localhost,127.0.0.1,::1}" || _ftso_rc=$?
+      [ "$_ftso_rc" = "0" ] && return 0
+      [ "$_ftso_rc" = "60" ] && return 60
+      _ftso_rc=0
+      _fetch_stdout_with_proxy "$1" "" "*" || _ftso_rc=$?
+      return "$_ftso_rc"
+    fi
+    _ftso_rc=0
+    _fetch_stdout_with_proxy "$1" "${http_proxy:-}" "${no_proxy:-}" || _ftso_rc=$?
+    return "$_ftso_rc"
+  fi
+  _fetch_stdout_with_proxy "$1" "" "*"
+}
+
+_fetch_file_with_proxy() {
+  _ffp_url="$1"
+  _ffp_out="$2"
+  _ffp_px="${3:-}"
+  _ffp_np="${4:-}"
+  case "$DOWNLOADER" in
+    curl) env http_proxy="$_ffp_px" https_proxy="$_ffp_px" HTTP_PROXY="$_ffp_px" HTTPS_PROXY="$_ffp_px" all_proxy="" ALL_PROXY="" no_proxy="$_ffp_np" curl -fsSL --noproxy "$_ffp_np" --connect-timeout 10 --speed-limit 30720 --speed-time 20 -o "$_ffp_out" "$_ffp_url" ;;
+    wget) env http_proxy="$_ffp_px" https_proxy="$_ffp_px" HTTP_PROXY="$_ffp_px" HTTPS_PROXY="$_ffp_px" all_proxy="" ALL_PROXY="" no_proxy="$_ffp_np" wget -q --timeout=20 -O "$_ffp_out" "$_ffp_url" ;;
   esac
 }
 
 fetch_to_file() {
-  case "$DOWNLOADER" in
-    curl) env http_proxy="${OPENBOX_FETCH_PROXY:-${http_proxy:-}}" https_proxy="${OPENBOX_FETCH_PROXY:-${https_proxy:-}}" no_proxy="${OPENBOX_FETCH_NO_PROXY:-${no_proxy:-}}" curl -fsSL --connect-timeout 15 --max-time 300 -o "$2" "$1" ;;
-    wget) env http_proxy="${OPENBOX_FETCH_PROXY:-${http_proxy:-}}" https_proxy="${OPENBOX_FETCH_PROXY:-${https_proxy:-}}" no_proxy="${OPENBOX_FETCH_NO_PROXY:-${no_proxy:-}}" wget -q --timeout=60 -O "$2" "$1" ;;
-  esac
+  if openbox_is_direct_url "$1"; then
+    if [ -n "${OPENBOX_FETCH_PROXY:-}" ]; then
+      _ftf_rc=0
+      _fetch_file_with_proxy "$1" "$2" "$OPENBOX_FETCH_PROXY" "${OPENBOX_FETCH_NO_PROXY:-localhost,127.0.0.1,::1}" || _ftf_rc=$?
+      [ "$_ftf_rc" = "0" ] && return 0
+      [ "$_ftf_rc" = "60" ] && return 60
+      _ftf_rc=0
+      _fetch_file_with_proxy "$1" "$2" "" "*" || _ftf_rc=$?
+      return "$_ftf_rc"
+    fi
+    _ftf_rc=0
+    _fetch_file_with_proxy "$1" "$2" "${http_proxy:-}" "${no_proxy:-}" || _ftf_rc=$?
+    return "$_ftf_rc"
+  fi
+  _fetch_file_with_proxy "$1" "$2" "" "*"
 }
 
 build_url() {
   url="$1"
-  if [ "$CHANNEL" = "mirror" ]; then
+  if [ "$CHANNEL" = "mirror" ] && [ -n "$MIRROR_PREFIX" ]; then
     case "$MIRROR_PREFIX" in
       http://*|https://*) printf '%s/%s\n' "${MIRROR_PREFIX%/}" "$url" ;;
       *) printf 'https://%s/%s\n' "${MIRROR_PREFIX%/}" "$url" ;;
@@ -472,6 +637,99 @@ build_url() {
     printf '%s\n' "$url"
   fi
 }
+
+# ---- openbox-download-sources:start ----
+# 这一段在 install.sh / update.sh 里一模一样。
+#   - CHANNEL=mirror 且 MIRROR_PREFIX 非空(--mirror <自定义前缀>):严格单源,绝不回退真实 GitHub 或内置镜像
+#   - CHANNEL=direct(--direct):强制仅直连
+#   - CHANNEL=mirror 且 MIRROR_PREFIX 为空(--mirror):内置镜像优先,失败再直连
+#   - CHANNEL=auto(默认):GitHub 直连优先,失败/过慢自动轮询内置镜像
+# 每行一个「来源 完整地址」,来源是 direct 或镜像前缀;BUILTIN_MIRRORS 在调用时已定义
+openbox_download_sources() {
+  _ds_ifs=$IFS
+  IFS='
+	 '
+  _ds_list=""
+  if [ "$CHANNEL" = "mirror" ] && [ -n "${MIRROR_PREFIX:-}" ]; then
+    _ds_list="$MIRROR_PREFIX"
+  elif [ "$CHANNEL" = "direct" ]; then
+    _ds_list="direct"
+  else
+    if [ "$CHANNEL" = "mirror" ]; then
+      _ds_base=""
+      for _ds_m in $BUILTIN_MIRRORS; do
+        [ -n "$_ds_m" ] && _ds_base="$_ds_base $_ds_m"
+      done
+      _ds_base="$_ds_base direct"
+    else
+      _ds_base="direct"
+      for _ds_m in $BUILTIN_MIRRORS; do
+        [ -n "$_ds_m" ] && _ds_base="$_ds_base $_ds_m"
+      done
+    fi
+    if [ -n "${ADOPTED_SOURCE:-}" ]; then
+      _ds_list="$ADOPTED_SOURCE"
+      for _ds_m in $_ds_base; do
+        [ "$_ds_m" = "$ADOPTED_SOURCE" ] || _ds_list="$_ds_list $_ds_m"
+      done
+    else
+      _ds_list="$_ds_base"
+    fi
+  fi
+  for _ds_src in $_ds_list; do
+    [ -n "$_ds_src" ] || continue
+    case "$_ds_src" in
+      direct) printf 'direct %s\n' "$1" ;;
+      http://*|https://*) printf '%s %s/%s\n' "$_ds_src" "${_ds_src%/}" "$1" ;;
+      *) printf '%s https://%s/%s\n' "$_ds_src" "${_ds_src%/}" "$1" ;;
+    esac
+  done
+  IFS=$_ds_ifs
+}
+# 拼好镜像前缀的地址还原成原始地址(升级时组件脚本传进来的就是拼好的)
+openbox_unmirror_url() {
+  _uu="$1"
+  _uu_ifs=$IFS
+  IFS='
+	 '
+  for _uu_cand in ${MIRROR_PREFIX:+"$MIRROR_PREFIX"} ${ADOPTED_SOURCE:+"$ADOPTED_SOURCE"} $BUILTIN_MIRRORS; do
+    [ -n "$_uu_cand" ] || continue
+    case "$_uu_cand" in
+      http://*|https://*) _uu_p="${_uu_cand%/}/" ;;
+      *) _uu_p="https://${_uu_cand%/}/" ;;
+    esac
+    case "$_uu" in
+      "$_uu_p"*)
+        _uu="${_uu#"$_uu_p"}"
+        break
+        ;;
+    esac
+  done
+  IFS=$_uu_ifs
+  printf '%s\n' "$_uu"
+}
+# 哪个来源下载成功就优先用它(仅 auto / 无前缀 --mirror 生效,不破坏 --direct 或 --mirror <自定义前缀>)
+openbox_adopt_source() {
+  if [ "$CHANNEL" = "mirror" ] && [ -n "${MIRROR_PREFIX:-}" ]; then
+    return 0
+  fi
+  [ "$CHANNEL" = "direct" ] && return 0
+  ADOPTED_SOURCE="$1"
+}
+openbox_source_label() {
+  case "$1" in direct) echo "GitHub 直连" ;; *) echo "$1" ;; esac
+}
+openbox_short_source_label() {
+  case "$1" in
+    direct) echo "GitHub 直连" ;;
+    *)
+      _sl="${1#https://}"
+      _sl="${_sl#http://}"
+      printf '%s\n' "${_sl%/}"
+      ;;
+  esac
+}
+# ---- openbox-download-sources:end ----
 
 # 下载和校验沿用当前可用网络：FakeIP 应答和代理出网依赖正在运行的内核，
 # 不能在获取脚本或升级包之前停掉它。只在全部校验通过、进入替换阶段时停服务。
@@ -572,72 +830,188 @@ CORE_HELPERS_READY=1
 # 探测专用的下载函数:比 fetch_to_file 多加连接/总时长上限,避免探测阶段卡在一个
 # 已经死掉、只是不返回错误而是一直不响应的加速站上——真正下载 106MB 正文时仍用不
 # 限时的 fetch_to_file,不希望网络慢的用户被这里的短超时误伤。
-fetch_to_file_probe() {
+_fetch_probe_with_proxy() {
+  _fp_url="$1"
+  _fp_out="$2"
+  _fp_px="${3:-}"
+  _fp_np="${4:-}"
   case "$DOWNLOADER" in
-    curl) env http_proxy="${OPENBOX_FETCH_PROXY:-${http_proxy:-}}" https_proxy="${OPENBOX_FETCH_PROXY:-${https_proxy:-}}" no_proxy="${OPENBOX_FETCH_NO_PROXY:-${no_proxy:-}}" curl -fsSL --connect-timeout 8 --max-time 20 -o "$2" "$1" ;;
-    wget) env http_proxy="${OPENBOX_FETCH_PROXY:-${http_proxy:-}}" https_proxy="${OPENBOX_FETCH_PROXY:-${https_proxy:-}}" no_proxy="${OPENBOX_FETCH_NO_PROXY:-${no_proxy:-}}" wget -q --timeout=20 -O "$2" "$1" ;;
+    curl) env http_proxy="$_fp_px" https_proxy="$_fp_px" HTTP_PROXY="$_fp_px" HTTPS_PROXY="$_fp_px" all_proxy="" ALL_PROXY="" no_proxy="$_fp_np" curl -fsSL --noproxy "$_fp_np" --connect-timeout 5 --max-time 10 -o "$_fp_out" "$_fp_url" ;;
+    wget) env http_proxy="$_fp_px" https_proxy="$_fp_px" HTTP_PROXY="$_fp_px" HTTPS_PROXY="$_fp_px" all_proxy="" ALL_PROXY="" no_proxy="$_fp_np" wget -q --timeout=10 -O "$_fp_out" "$_fp_url" ;;
   esac
 }
 
-# 校验文件(.sha256、组件清单,几十字节到几 KB)先直连 GitHub 取,取不到才走镜像:正文走镜像没关系,只要校验和
-# 来自 GitHub 本身,镜像就没法同时换掉正文和校验和(以前两样都从同一个镜像拿,审查第七项)。直连一次不通就记下来,
-# 后面的小文件不再先试直连,免得每个都白等一次超时。$1 是 GitHub 原始地址(不带镜像前缀);$3 可选,给了就按它
-# 核对内容格式(sha = 一行 64 位十六进制哈希),不像样的当没取到(有的网络对直连回一页 HTML)
+fetch_to_file_probe() {
+  if openbox_is_direct_url "$1"; then
+    if [ -n "${OPENBOX_FETCH_PROXY:-}" ]; then
+      _ffp_rc=0
+      _fetch_probe_with_proxy "$1" "$2" "$OPENBOX_FETCH_PROXY" "${OPENBOX_FETCH_NO_PROXY:-localhost,127.0.0.1,::1}" || _ffp_rc=$?
+      [ "$_ffp_rc" = "0" ] && return 0
+      [ "$_ffp_rc" = "60" ] && return 60
+      _ffp_rc=0
+      _fetch_probe_with_proxy "$1" "$2" "" "*" || _ffp_rc=$?
+      return "$_ffp_rc"
+    fi
+    _ffp_rc=0
+    _fetch_probe_with_proxy "$1" "$2" "${http_proxy:-}" "${no_proxy:-}" || _ffp_rc=$?
+    return "$_ffp_rc"
+  fi
+  _fetch_probe_with_proxy "$1" "$2" "" "*"
+}
+
+valid_sha_file() {
+  awk '
+    NR == 1 { ok = (NF >= 1 && length($1) == 64 && $1 !~ /[^0-9a-fA-F]/) }
+    NR > 1 && NF { ok = 0 }
+    END { exit !ok }' "$1" 2>/dev/null
+}
+
+valid_json_file() {
+  [ -s "$1" ] || return 1
+  openbox_looks_like_html "$1" && return 1
+  awk '
+    {
+      for (i = 1; i <= length($0); i++) {
+        c = substr($0, i, 1)
+        if (c != " " && c != "\t" && c != "\r" && c != "\n") {
+          if (first == "") first = c
+          last = c
+        }
+      }
+    }
+    END {
+      if ((first == "{" && last == "}") || (first == "[" && last == "]")) exit 0
+      exit 1
+    }' "$1" 2>/dev/null
+}
+
+valid_trusted_file() {
+  _vtf_file="$1"
+  _vtf_kind="${2:-}"
+  [ -s "$_vtf_file" ] || return 1
+  case "$_vtf_kind" in
+    sha) valid_sha_file "$_vtf_file" ;;
+    json) valid_json_file "$_vtf_file" ;;
+    *) ! openbox_looks_like_html "$_vtf_file" ;;
+  esac
+}
+
+# 校验文件(.sha256 / components.json):auto 模式下优先直连取作信任锚,不通或返回 HTML 时置
+# TRUSTED_DIRECT_BROKEN=1 后轮询内置镜像并严格校验格式;curl 60(缺 CA 证书)立即报错
 TRUSTED_DIRECT_BROKEN=0
 fetch_to_file_trusted() {
-  if [ "$CHANNEL" = "mirror" ] && [ "$TRUSTED_DIRECT_BROKEN" = "0" ]; then
-    if fetch_to_file_probe "$1" "$2" 2>/dev/null && { [ "${3:-}" != "sha" ] || valid_sha_file "$2"; }; then
+  _ftt_url="$1"
+  _ftt_out="$2"
+  _ftt_kind="${3:-}"
+  if [ -z "$_ftt_kind" ]; then
+    case "$_ftt_url" in
+      *.sha256) _ftt_kind="sha" ;;
+      *.json) _ftt_kind="json" ;;
+    esac
+  fi
+  if [ "$CHANNEL" = "mirror" ] && [ -n "$MIRROR_PREFIX" ]; then
+    rm -f "$_ftt_out"
+    _ftt_rc=0
+    fetch_to_file_probe "$(build_url "$_ftt_url")" "$_ftt_out" 2>/dev/null || _ftt_rc=$?
+    [ "$_ftt_rc" = "60" ] && die "HTTPS 证书校验失败(curl 退出码 60，缺少 CA 证书或系统时间异常)。请先安装 ca-bundle / ca-certificates 或校准系统时间后重试。"
+    [ "$_ftt_rc" = "0" ] && valid_trusted_file "$_ftt_out" "$_ftt_kind" && return 0
+    rm -f "$_ftt_out"
+    return 1
+  fi
+  if [ "$CHANNEL" = "direct" ]; then
+    rm -f "$_ftt_out"
+    _ftt_rc=0
+    fetch_to_file_probe "$_ftt_url" "$_ftt_out" 2>/dev/null || _ftt_rc=$?
+    [ "$_ftt_rc" = "60" ] && die "HTTPS 证书校验失败(curl 退出码 60，缺少 CA 证书或系统时间异常)。请先安装 ca-bundle / ca-certificates 或校准系统时间后重试。"
+    [ "$_ftt_rc" = "0" ] && valid_trusted_file "$_ftt_out" "$_ftt_kind" && return 0
+    rm -f "$_ftt_out"
+    return 1
+  fi
+  if [ "$CHANNEL" = "auto" ] && [ "$TRUSTED_DIRECT_BROKEN" = "0" ]; then
+    rm -f "$_ftt_out"
+    _ftt_rc=0
+    fetch_to_file_probe "$_ftt_url" "$_ftt_out" 2>/dev/null || _ftt_rc=$?
+    if [ "$_ftt_rc" = "60" ]; then
+      rm -f "$_ftt_out"
+      die "HTTPS 证书校验失败(curl 退出码 60，缺少 CA 证书或系统时间异常)。请先安装 ca-bundle / ca-certificates 或校准系统时间后重试。"
+    fi
+    if [ "$_ftt_rc" = "0" ] && valid_trusted_file "$_ftt_out" "$_ftt_kind"; then
       return 0
     fi
     TRUSTED_DIRECT_BROKEN=1
+    rm -f "$_ftt_out"
   fi
-  fetch_to_file "$(build_url "$1")" "$2"
-}
-valid_sha_file() {
-  _vs_hash=$(awk 'NR==1{print $1}' "$1" 2>/dev/null)
-  [ "${#_vs_hash}" = 64 ] || return 1
-  case "$_vs_hash" in *[!0-9a-fA-F]*) return 1 ;; esac
-  return 0
+  _ftt_ifs=$IFS
+  IFS='
+'
+  for _ftt_line in $(openbox_download_sources "$_ftt_url"); do
+    IFS=$_ftt_ifs
+    _ftt_src=${_ftt_line%% *}
+    _ftt_full=${_ftt_line#* }
+    if [ "$_ftt_src" = "direct" ] && { [ "$CHANNEL" = "auto" ] || [ "$TRUSTED_DIRECT_BROKEN" = "1" ]; }; then
+      IFS='
+'
+      continue
+    fi
+    rm -f "$_ftt_out"
+    _ftt_rc=0
+    fetch_to_file_probe "$_ftt_full" "$_ftt_out" 2>/dev/null || _ftt_rc=$?
+    if [ "$_ftt_rc" = "60" ]; then
+      rm -f "$_ftt_out"
+      die "HTTPS 证书校验失败(curl 退出码 60，缺少 CA 证书或系统时间异常)。请先安装 ca-bundle / ca-certificates 或校准系统时间后重试。"
+    fi
+    if [ "$_ftt_rc" = "0" ] && valid_trusted_file "$_ftt_out" "$_ftt_kind"; then
+      return 0
+    fi
+    [ "$_ftt_src" = "direct" ] && TRUSTED_DIRECT_BROKEN=1
+    rm -f "$_ftt_out"
+    IFS='
+'
+  done
+  IFS=$_ftt_ifs
+  return 1
 }
 
-# 探测目标 URL 的 Content-Length(HEAD 请求,带超时,不下载正文),供下载进度的
-# "总字节数"使用。拿不到就打印空字符串——调用方据此退化成"只显示已下载字节数,
-# 不算百分比",不编造一个假的总量。用 tr 把响应头统一转小写后再用 awk 精确匹配
-# "content-length:"这一行,而不是靠 gawk 的 IGNORECASE(OpenWrt 上是 busybox
-# awk,不支持这个扩展)。GitHub 发布资产的直链会经过一到多跳 302 重定向到最终的
-# S3 直链,-L 会让 curl/wget 把每一跳的响应头都打印出来;这里故意不取第一个匹配
-# 而是取最后一个(循环覆盖 v,不在匹配处提前退出),这样拿到的是最终资源那一跳的
-# Content-Length,不是中间跳转页的。
-probe_content_length() {
+_probe_content_length_with_proxy() {
   _pcl_url="$1"
+  _pcl_px="${2:-}"
+  _pcl_np="${3:-}"
   case "$DOWNLOADER" in
     curl)
-      env http_proxy="${OPENBOX_FETCH_PROXY:-${http_proxy:-}}" https_proxy="${OPENBOX_FETCH_PROXY:-${https_proxy:-}}" no_proxy="${OPENBOX_FETCH_NO_PROXY:-${no_proxy:-}}" curl -sIL --connect-timeout 8 --max-time 20 "$_pcl_url" 2>/dev/null \
+      env http_proxy="$_pcl_px" https_proxy="$_pcl_px" HTTP_PROXY="$_pcl_px" HTTPS_PROXY="$_pcl_px" all_proxy="" ALL_PROXY="" no_proxy="$_pcl_np" curl -sIL --noproxy "$_pcl_np" --connect-timeout 5 --max-time 10 "$_pcl_url" 2>/dev/null \
         | tr -d '\r' | tr 'A-Z' 'a-z' \
         | awk '/^content-length:/{v=$2} END{if (v != "") print v}'
       ;;
     wget)
-      # uclient-fetch 没有 -S,拿不到响应头;进度就没有百分比(只显示已下载字节数)
       ;;
   esac
 }
 
-# 带进度上报、可取消的下载:把真正的下载子进程(curl/wget 本体,不是套一层
-# subshell——这样 $! 拿到的就是它自己的 PID,kill 才打得准)放到后台,前台每秒
-# 醒一次,拿正在写的目标文件当前大小去更新状态文件(bytes/total),同时检查取消
-# 标志。这个循环是"下载阶段响应取消"的唯一实现——106MB 在慢网络上要跑很久,不能
-# 等它整个 fetch_to_file() 跑完才有机会检查取消。
-#
-# 参数:$1 = URL,$2 = 目标文件路径,$3 = 总字节数(可能是空字符串,即未知)。
-# 返回:下载成功且未被取消 → 0;下载命令本身失败(网络错误等)→ 透传其退出码,
-# 调用方按老逻辑 die();被取消 → 直接 write_status cancelled 并 exit 0,不返回
-# (与 check_cancel_and_abort() 一致的收尾方式,复用同一个 cleanup() trap)。
-# 下载失败时换来源再试(openbox_download_sources)。组件升级走的是装着的老 update-components.sh,传进来的地址已经拼好
-# 镜像前缀,所以先还原成原始地址再排来源;第一个就是刚才失败的那个,跳过。成功的来源留给后面的下载
+probe_content_length() {
+  if openbox_is_direct_url "$1"; then
+    if [ -n "${OPENBOX_FETCH_PROXY:-}" ]; then
+      _pcl_res=$(_probe_content_length_with_proxy "$1" "$OPENBOX_FETCH_PROXY" "${OPENBOX_FETCH_NO_PROXY:-localhost,127.0.0.1,::1}") || _pcl_res=""
+      [ -n "$_pcl_res" ] && { printf '%s\n' "$_pcl_res"; return 0; }
+      _pcl_rc=0
+      _probe_content_length_with_proxy "$1" "" "*" || _pcl_rc=$?
+      return "$_pcl_rc"
+    fi
+    _pcl_rc=0
+    _probe_content_length_with_proxy "$1" "${http_proxy:-}" "${no_proxy:-}" || _pcl_rc=$?
+    return "$_pcl_rc"
+  fi
+  _probe_content_length_with_proxy "$1" "" "*"
+}
+
+# 带进度上报、可取消、3秒滑窗看门狗与校验闭环的下载:
+# 参数:$1 = URL,$2 = 目标文件路径,$3 = 总字节数(可为空),$4 = 期望 SHA256(可为空)。
 download_with_progress() {
-  download_with_progress_once "$1" "$2" "$3" && return 0
   _dwf_orig=$(openbox_unmirror_url "$1")
-  if [ "$CHANNEL" = "mirror" ] && [ -n "$MIRROR_PREFIX" ]; then _dwf_prev=$(openbox_source_label "$MIRROR_PREFIX"); else _dwf_prev=$(openbox_source_label direct); fi
+  _dwf_out="$2"
+  _dwf_total="${3:-}"
+  _dwf_sha="${4:-}"
+  _dwf_prev=""
+  STATUS_ATTEMPTS=""
   _dwf_ifs=$IFS
   IFS='
 '
@@ -645,70 +1019,159 @@ download_with_progress() {
     IFS=$_dwf_ifs
     _dwf_src=${_dwf_line%% *}
     _dwf_full=${_dwf_line#* }
-    [ "$_dwf_full" = "$1" ] && continue
-    warn "从 ${_dwf_prev} 下载失败,换 $(openbox_source_label "$_dwf_src") 再试..."
-    if download_with_progress_once "$_dwf_full" "$2" "$3"; then
+    if [ -n "$_dwf_prev" ]; then
+      warn "从 ${_dwf_prev} 失败(${DL_FAIL_REASON:-网络错误}),换 $(openbox_source_label "$_dwf_src") 再试..."
+    fi
+    STATUS_SOURCE="$_dwf_src"
+    STATUS_SOURCE_LABEL="$(openbox_short_source_label "$_dwf_src")"
+    STATUS_SPEED=""
+    _dwf_ok=0
+    if [ "$_dwf_src" = "direct" ] && [ -n "${OPENBOX_FETCH_PROXY:-}" ]; then
+      _dwf_rc=0
+      download_with_progress_once "$_dwf_full" "$_dwf_out" "$_dwf_total" "$OPENBOX_FETCH_PROXY" "${OPENBOX_FETCH_NO_PROXY:-localhost,127.0.0.1,::1}" || _dwf_rc=$?
+      [ "$_dwf_rc" = "60" ] && die "HTTPS 证书校验失败(curl 退出码 60，缺少 CA 证书或系统时间异常)。请先安装 ca-bundle / ca-certificates 或校准系统时间后重试。"
+      if [ "$_dwf_rc" = "0" ] && openbox_verify_download "$_dwf_out" "$_dwf_sha"; then
+        _dwf_ok=1
+      else
+        [ "$_dwf_rc" = "0" ] || append_attempt "${STATUS_SOURCE_LABEL}(7891)" "${DL_FAIL_REASON:-下载失败(rc=${_dwf_rc})}"
+        [ "$_dwf_rc" != "0" ] || append_attempt "${STATUS_SOURCE_LABEL}(7891)" "${DL_FAIL_REASON:-校验失败}"
+        rm -f "$_dwf_out"
+        _dwf_rc=0
+        download_with_progress_once "$_dwf_full" "$_dwf_out" "$_dwf_total" "" "*" || _dwf_rc=$?
+        [ "$_dwf_rc" = "60" ] && die "HTTPS 证书校验失败(curl 退出码 60，缺少 CA 证书或系统时间异常)。请先安装 ca-bundle / ca-certificates 或校准系统时间后重试。"
+        if [ "$_dwf_rc" = "0" ] && openbox_verify_download "$_dwf_out" "$_dwf_sha"; then
+          _dwf_ok=1
+        else
+          append_attempt "${STATUS_SOURCE_LABEL}(裸连)" "${DL_FAIL_REASON:-下载失败(rc=${_dwf_rc})}"
+        fi
+      fi
+    elif [ "$_dwf_src" = "direct" ]; then
+      _dwf_rc=0
+      download_with_progress_once "$_dwf_full" "$_dwf_out" "$_dwf_total" "${http_proxy:-}" "${no_proxy:-}" || _dwf_rc=$?
+      [ "$_dwf_rc" = "60" ] && die "HTTPS 证书校验失败(curl 退出码 60，缺少 CA 证书或系统时间异常)。请先安装 ca-bundle / ca-certificates 或校准系统时间后重试。"
+      if [ "$_dwf_rc" = "0" ] && openbox_verify_download "$_dwf_out" "$_dwf_sha"; then
+        _dwf_ok=1
+      else
+        append_attempt "$STATUS_SOURCE_LABEL" "${DL_FAIL_REASON:-下载失败(rc=${_dwf_rc})}"
+      fi
+    else
+      _dwf_rc=0
+      download_with_progress_once "$_dwf_full" "$_dwf_out" "$_dwf_total" "" "*" || _dwf_rc=$?
+      [ "$_dwf_rc" = "60" ] && die "HTTPS 证书校验失败(curl 退出码 60，缺少 CA 证书或系统时间异常)。请先安装 ca-bundle / ca-certificates 或校准系统时间后重试。"
+      if [ "$_dwf_rc" = "0" ] && openbox_verify_download "$_dwf_out" "$_dwf_sha"; then
+        _dwf_ok=1
+      else
+        append_attempt "$STATUS_SOURCE_LABEL" "${DL_FAIL_REASON:-下载失败(rc=${_dwf_rc})}"
+      fi
+    fi
+    if [ "$_dwf_ok" = "1" ]; then
+      STATUS_SPEED=""
+      append_attempt "$STATUS_SOURCE_LABEL" "成功"
       openbox_adopt_source "$_dwf_src"
       return 0
     fi
+    rm -f "$_dwf_out"
     _dwf_prev=$(openbox_source_label "$_dwf_src")
+    IFS='
+'
   done
   IFS=$_dwf_ifs
+  STATUS_SPEED=""
   return 1
 }
+
 download_with_progress_once() {
   _dwp_url="$1"
   _dwp_out="$2"
   _dwp_total="$3"
+  if [ "$#" -ge 5 ]; then
+    _dwp_px="$4"
+    _dwp_np="$5"
+  elif openbox_is_direct_url "$_dwp_url"; then
+    _dwp_px="${OPENBOX_FETCH_PROXY:-${http_proxy:-}}"
+    _dwp_np="${OPENBOX_FETCH_NO_PROXY:-${no_proxy:-}}"
+  else
+    _dwp_px=""
+    _dwp_np="*"
+  fi
   rm -f "$_dwp_out"
-  # 同 install.sh 的 fetch_to_file:不限总时长,卡住不动 60 秒就失败(以前会一直挂在「下载中」)
   case "$DOWNLOADER" in
-    curl) env http_proxy="${OPENBOX_FETCH_PROXY:-${http_proxy:-}}" https_proxy="${OPENBOX_FETCH_PROXY:-${https_proxy:-}}" no_proxy="${OPENBOX_FETCH_NO_PROXY:-${no_proxy:-}}" curl -fsSL --connect-timeout 15 --speed-limit 1024 --speed-time 60 -o "$_dwp_out" "$_dwp_url" & ;;
-    wget) env http_proxy="${OPENBOX_FETCH_PROXY:-${http_proxy:-}}" https_proxy="${OPENBOX_FETCH_PROXY:-${https_proxy:-}}" no_proxy="${OPENBOX_FETCH_NO_PROXY:-${no_proxy:-}}" wget -q --timeout=60 -O "$_dwp_out" "$_dwp_url" & ;;
+    curl) env http_proxy="$_dwp_px" https_proxy="$_dwp_px" HTTP_PROXY="$_dwp_px" HTTPS_PROXY="$_dwp_px" all_proxy="" ALL_PROXY="" no_proxy="$_dwp_np" curl -fsSL --noproxy "$_dwp_np" --connect-timeout 10 --speed-limit 30720 --speed-time 20 -o "$_dwp_out" "$_dwp_url" & ;;
+    wget) env http_proxy="$_dwp_px" https_proxy="$_dwp_px" HTTP_PROXY="$_dwp_px" HTTPS_PROXY="$_dwp_px" all_proxy="" ALL_PROXY="" no_proxy="$_dwp_np" wget -q --timeout=20 -O "$_dwp_out" "$_dwp_url" & ;;
   esac
   _dwp_pid=$!
+  _dwp_elapsed=0
+  _dwp_low=0
+  _dwp_b1=0
+  _dwp_b2=0
+  _dwp_b3=0
+  STATUS_SPEED=""
+  DL_FAIL_REASON=""
   write_status downloading 0 "$_dwp_total" ""
   while kill -0 "$_dwp_pid" 2>/dev/null; do
     if cancel_requested; then
-      # 协作式取消只作用于"我们自己派生的下载子进程",不是升级进程本身——先礼后
-      # 兵:发 TERM 给它几秒钟自己退出,还没退再 KILL,避免留下一个不吃 TERM 的
-      # 悬空 curl/wget。之后一定 wait 到它真正退出,再删掉可能残留的部分下载
-      # 文件——不留下一个体积不对、校验肯定失败的半成品占着 /tmp 空间。
-      kill "$_dwp_pid" 2>/dev/null || true
-      _dwp_waited=0
-      while kill -0 "$_dwp_pid" 2>/dev/null && [ "$_dwp_waited" -lt 5 ]; do
-        sleep 1
-        _dwp_waited=$((_dwp_waited + 1))
-      done
-      kill -9 "$_dwp_pid" 2>/dev/null || true
-      wait "$_dwp_pid" 2>/dev/null || true
+      openbox_kill_pid "$_dwp_pid"
       rm -f "$_dwp_out"
       info "收到取消请求,已终止下载并清理。"
+      STATUS_SPEED=""
       write_status cancelled "" "" "已取消(用户请求)"
       exit 0
     fi
-    _dwp_bytes=0
-    [ -f "$_dwp_out" ] && _dwp_bytes=$(wc -c < "$_dwp_out" 2>/dev/null | awk '{print $1}')
-    case "$_dwp_bytes" in ''|*[!0-9]*) _dwp_bytes=0 ;; esac
-    write_status downloading "$_dwp_bytes" "$_dwp_total" ""
     sleep 1
+    kill -0 "$_dwp_pid" 2>/dev/null || break
+    _dwp_elapsed=$((_dwp_elapsed + 1))
+    _dwp_bytes=$(openbox_file_size "$_dwp_out")
+    if [ "$_dwp_elapsed" -ge 3 ]; then
+      _dwp_delta=$((_dwp_bytes - _dwp_b3))
+      [ "$_dwp_delta" -lt 0 ] && _dwp_delta=0
+      _dwp_speed=$((_dwp_delta / 3))
+    else
+      _dwp_speed=$((_dwp_bytes / _dwp_elapsed))
+    fi
+    _dwp_b3=$_dwp_b2
+    _dwp_b2=$_dwp_b1
+    _dwp_b1=$_dwp_bytes
+    STATUS_SPEED="$_dwp_speed"
+    write_status downloading "$_dwp_bytes" "$_dwp_total" ""
+    if [ "$_dwp_bytes" -eq 0 ] && [ "$_dwp_elapsed" -ge "$OPENBOX_DL_CONNECT_SECS" ]; then
+      DL_FAIL_REASON="首字节停滞超过${OPENBOX_DL_CONNECT_SECS}s"
+      warn "下载停滞(${DL_FAIL_REASON}),终止当前连接..."
+      openbox_kill_pid "$_dwp_pid"
+      rm -f "$_dwp_out"
+      STATUS_SPEED=""
+      return 1
+    fi
+    if [ "$_dwp_elapsed" -ge 5 ]; then
+      if [ "$_dwp_speed" -lt "$OPENBOX_DL_MIN_SPEED" ]; then
+        _dwp_low=$((_dwp_low + 1))
+      else
+        _dwp_low=0
+      fi
+      if [ "$_dwp_low" -ge "$OPENBOX_DL_LOW_SECS" ]; then
+        DL_FAIL_REASON="持续低速(<$((OPENBOX_DL_MIN_SPEED / 1024))KB/s达${OPENBOX_DL_LOW_SECS}s)"
+        warn "下载过慢(${DL_FAIL_REASON}),终止当前连接..."
+        openbox_kill_pid "$_dwp_pid"
+        rm -f "$_dwp_out"
+        STATUS_SPEED=""
+        return 1
+      fi
+    fi
   done
-  wait "$_dwp_pid"
-  _dwp_rc=$?
+  _dwp_rc=0
+  wait "$_dwp_pid" || _dwp_rc=$?
+  STATUS_SPEED=""
   if [ "$_dwp_rc" -ne 0 ]; then
+    rm -f "$_dwp_out"
+    DL_FAIL_REASON="下载失败(rc=${_dwp_rc})"
     return "$_dwp_rc"
   fi
-  # 下载子进程已经正常退出,但轮询窗口是 1 秒一次:存在"下载恰好在这 1 秒内自然
-  # 完成,同时取消请求也在这 1 秒内到达"的极小概率窗口,收尾前再确认一次。
   if cancel_requested; then
     rm -f "$_dwp_out"
     info "收到取消请求,已终止下载并清理。"
     write_status cancelled "" "" "已取消(用户请求)"
     exit 0
   fi
-  _dwp_final=0
-  [ -f "$_dwp_out" ] && _dwp_final=$(wc -c < "$_dwp_out" 2>/dev/null | awk '{print $1}')
-  case "$_dwp_final" in ''|*[!0-9]*) _dwp_final=0 ;; esac
+  _dwp_final=$(openbox_file_size "$_dwp_out")
   write_status downloading "$_dwp_final" "$_dwp_total" ""
   return 0
 }
@@ -716,63 +1179,217 @@ download_with_progress_once() {
 # ---- openbox-router-release:start ----
 # GitHub Latest 可能是仅发布客户端的版本。只接受带独立升级脚本校验文件的
 # 路由器正式版；Latest 不符合时，从公开 Release feed 中按版本倒序查找。
-# 使用 github.com 页面及资产，镜像无需支持 api.github.com，也不依赖 JSON 工具。
-resolve_latest_tag_from() {
+# auto 模式下优先直连 GitHub，不通或超时自动轮询内置镜像；--mirror <前缀> 仅查该前缀。
+_rr_is_direct() {
+  case "$1" in
+    https://github.com/*|https://raw.githubusercontent.com/*|https://api.github.com/*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+_rr_ver_lt() {
+  awk -v a="${1#v}" -v b="${2#v}" '
+    BEGIN {
+      na = split(a, aa, "."); nb = split(b, bb, ".");
+      for (i = 1; i <= 3; i++) {
+        av = (i <= na ? aa[i] + 0 : 0); bv = (i <= nb ? bb[i] + 0 : 0);
+        if (av < bv) exit 0;
+        if (av > bv) exit 1;
+      }
+      exit 1;
+    }'
+}
+_rr_head_tag() {
+  _rht_url="$1"
+  _rht_px="${2:-}"
+  _rht_np="${3:-}"
   case "$DOWNLOADER" in
-    curl) env http_proxy="${OPENBOX_FETCH_PROXY:-${http_proxy:-}}" https_proxy="${OPENBOX_FETCH_PROXY:-${https_proxy:-}}" no_proxy="${OPENBOX_FETCH_NO_PROXY:-${no_proxy:-}}" curl -sI --connect-timeout 8 --max-time 12 "$1" 2>/dev/null ;;
-    wget) env http_proxy="${OPENBOX_FETCH_PROXY:-${http_proxy:-}}" https_proxy="${OPENBOX_FETCH_PROXY:-${https_proxy:-}}" no_proxy="${OPENBOX_FETCH_NO_PROXY:-${no_proxy:-}}" wget -q -O - --timeout=12 "$1" 2>/dev/null | sed -n 's|.*/releases/tag/\(v[0-9][0-9A-Za-z._-]*\).*|\1|p' | head -n 1 ;;
+    curl) env http_proxy="$_rht_px" https_proxy="$_rht_px" HTTP_PROXY="$_rht_px" HTTPS_PROXY="$_rht_px" all_proxy="" ALL_PROXY="" no_proxy="$_rht_np" curl -sI --noproxy "$_rht_np" --connect-timeout 5 --max-time 10 "$_rht_url" 2>/dev/null ;;
+    wget) env http_proxy="$_rht_px" https_proxy="$_rht_px" HTTP_PROXY="$_rht_px" HTTPS_PROXY="$_rht_px" all_proxy="" ALL_PROXY="" no_proxy="$_rht_np" wget -q -O - --timeout=10 "$_rht_url" 2>/dev/null | sed -n 's|.*/releases/tag/\(v[0-9][0-9A-Za-z._-]*\).*|\1|p' | head -n 1 ;;
   esac | sed -n 's/^[Ll]ocation: .*\/releases\/tag\/\(v[0-9][0-9A-Za-z._-]*\).*/\1/p; /^v[0-9][0-9A-Za-z._-]*$/p' | head -n 1
 }
-router_release_text() {
+resolve_latest_tag_from() {
+  if _rr_is_direct "$1"; then
+    if [ -n "${OPENBOX_FETCH_PROXY:-}" ]; then
+      _rlt_tag=$(_rr_head_tag "$1" "$OPENBOX_FETCH_PROXY" "${OPENBOX_FETCH_NO_PROXY:-localhost,127.0.0.1,::1}") || _rlt_tag=""
+      [ -n "$_rlt_tag" ] && { printf '%s\n' "$_rlt_tag"; return 0; }
+      _rlt_rc=0
+      _rr_head_tag "$1" "" "*" || _rlt_rc=$?
+      return "$_rlt_rc"
+    fi
+    _rlt_rc=0
+    _rr_head_tag "$1" "${http_proxy:-}" "${no_proxy:-}" || _rlt_rc=$?
+    return "$_rlt_rc"
+  fi
+  _rr_head_tag "$1" "" "*"
+}
+_rr_get_text() {
+  _rgt_url="$1"
+  _rgt_to="${2:-10}"
+  _rgt_px="${3:-}"
+  _rgt_np="${4:-}"
   case "$DOWNLOADER" in
-    curl) env http_proxy="${OPENBOX_FETCH_PROXY:-${http_proxy:-}}" https_proxy="${OPENBOX_FETCH_PROXY:-${https_proxy:-}}" no_proxy="${OPENBOX_FETCH_NO_PROXY:-${no_proxy:-}}" curl -fsSL --connect-timeout 8 --max-time 20 "$1" ;;
-    wget) env http_proxy="${OPENBOX_FETCH_PROXY:-${http_proxy:-}}" https_proxy="${OPENBOX_FETCH_PROXY:-${https_proxy:-}}" no_proxy="${OPENBOX_FETCH_NO_PROXY:-${no_proxy:-}}" wget -q -O - --timeout=20 "$1" ;;
+    curl) env http_proxy="$_rgt_px" https_proxy="$_rgt_px" HTTP_PROXY="$_rgt_px" HTTPS_PROXY="$_rgt_px" all_proxy="" ALL_PROXY="" no_proxy="$_rgt_np" curl -fsSL --noproxy "$_rgt_np" --connect-timeout 5 --max-time "$_rgt_to" "$_rgt_url" ;;
+    wget) env http_proxy="$_rgt_px" https_proxy="$_rgt_px" HTTP_PROXY="$_rgt_px" HTTPS_PROXY="$_rgt_px" all_proxy="" ALL_PROXY="" no_proxy="$_rgt_np" wget -q -O - --timeout="$_rgt_to" "$_rgt_url" ;;
   esac
+}
+ROUTER_RELEASE_LAST_RC=0
+router_release_text() {
+  _rrt_to="${2:-10}"
+  ROUTER_RELEASE_LAST_RC=0
+  if _rr_is_direct "$1"; then
+    if [ -n "${OPENBOX_FETCH_PROXY:-}" ]; then
+      if _rr_out=$(_rr_get_text "$1" "$_rrt_to" "$OPENBOX_FETCH_PROXY" "${OPENBOX_FETCH_NO_PROXY:-localhost,127.0.0.1,::1}" 2>/dev/null); then
+        printf '%s\n' "$_rr_out"
+        return 0
+      else
+        ROUTER_RELEASE_LAST_RC=$?
+      fi
+      [ "$ROUTER_RELEASE_LAST_RC" = "60" ] && return 60
+      if _rr_out=$(_rr_get_text "$1" "$_rrt_to" "" "*" 2>/dev/null); then
+        printf '%s\n' "$_rr_out"
+        return 0
+      else
+        ROUTER_RELEASE_LAST_RC=$?
+      fi
+      return "$ROUTER_RELEASE_LAST_RC"
+    fi
+    if _rr_out=$(_rr_get_text "$1" "$_rrt_to" "${http_proxy:-}" "${no_proxy:-}" 2>/dev/null); then
+      printf '%s\n' "$_rr_out"
+      return 0
+    else
+      ROUTER_RELEASE_LAST_RC=$?
+    fi
+    return "$ROUTER_RELEASE_LAST_RC"
+  fi
+  if _rr_out=$(_rr_get_text "$1" "$_rrt_to" "" "*" 2>/dev/null); then
+    printf '%s\n' "$_rr_out"
+    return 0
+  else
+    ROUTER_RELEASE_LAST_RC=$?
+  fi
+  return "$ROUTER_RELEASE_LAST_RC"
 }
 router_release_available() {
   printf '%s\n' "$2" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' || return 1
-  _rr_sha=$(router_release_text "$1/releases/download/$2/update.sh.sha256" 2>/dev/null) || return 1
+  _rr_sha=$(router_release_text "$1/releases/download/$2/update.sh.sha256" 10 2>/dev/null) || return 1
   printf '%s\n' "$_rr_sha" | awk '
     NR == 1 { name = $2; sub(/^\*/, "", name); ok = NF == 2 && length($1) == 64 && $1 !~ /[^0-9a-fA-F]/ && name == "update.sh" }
     NR > 1 && NF { ok = 0 }
     END { exit !ok }'
 }
-resolve_router_release_tag() {
+_rr_resolve_single() {
   _rr_base=${1%/releases/latest}
-  _rr_latest=$(resolve_latest_tag_from "$1")
-  if router_release_available "$_rr_base" "$_rr_latest"; then
-    printf '%s\n' "$_rr_latest"
+  _rr_latest=$(resolve_latest_tag_from "$1") || _rr_latest=""
+  _rr_cand=""
+  if [ -n "$_rr_latest" ]; then
+    if router_release_available "$_rr_base" "$_rr_latest"; then
+      _rr_cand="$_rr_latest"
+    else
+      [ "${ROUTER_RELEASE_LAST_RC:-0}" = "60" ] && return 60
+    fi
+  fi
+  _rr_need_atom=0
+  if [ -z "$_rr_cand" ]; then
+    _rr_need_atom=1
+  elif [ -n "${ROUTER_MIN_VERSION:-}" ] && ! _rr_ver_lt "$ROUTER_MIN_VERSION" "$_rr_cand"; then
+    _rr_need_atom=1
+  fi
+  if [ "$_rr_need_atom" = "1" ]; then
+    if _rr_feed=$(router_release_text "$_rr_base/releases.atom" 12 2>/dev/null); then
+      :
+    else
+      _rr_rc=$?
+      [ "$_rr_rc" = "60" ] && return 60
+      [ -n "$_rr_cand" ] && { printf '%s\n' "$_rr_cand"; return 0; }
+      return 1
+    fi
+    _rr_tags=$(printf '%s\n' "$_rr_feed" | tr '"' '\n' \
+      | sed -n 's|.*/releases/tag/\(v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)$|\1|p' \
+      | awk '!seen[$0]++' \
+      | awk -F. '{ printf "%010d.%010d.%010d %s\n", substr($1, 2), $2, $3, $0 }' \
+      | sort -r | awk '{ print $2 }')
+    for _rr_tag in $_rr_tags; do
+      [ "$_rr_tag" != "$_rr_latest" ] || continue
+      if [ -n "$_rr_cand" ] && ! _rr_ver_lt "$_rr_cand" "$_rr_tag"; then
+        break
+      fi
+      if router_release_available "$_rr_base" "$_rr_tag"; then
+        _rr_cand="$_rr_tag"
+        break
+      fi
+      [ "${ROUTER_RELEASE_LAST_RC:-0}" = "60" ] && return 60
+    done
+  fi
+  [ -n "$_rr_cand" ] || return 1
+  printf '%s\n' "$_rr_cand"
+}
+ROUTER_RELEASE_SOURCE=""
+resolve_router_release_tag() {
+  ROUTER_RELEASE_SOURCE=""
+  if ! _rr_is_direct "$1"; then
+    _rr_rc=0
+    _rr_resolve_single "$1" || _rr_rc=$?
+    return "$_rr_rc"
+  fi
+  if [ "$CHANNEL" = "mirror" ] && [ -n "${MIRROR_PREFIX:-}" ]; then
+    _rr_rc=0
+    _rr_resolve_single "$(build_url "$1")" || _rr_rc=$?
+    return "$_rr_rc"
+  fi
+  if [ "$CHANNEL" = "direct" ]; then
+    _rr_rc=0
+    _rr_res=$(_rr_resolve_single "$1") || _rr_rc=$?
+    [ "$_rr_rc" = "0" ] && ROUTER_RELEASE_SOURCE="direct"
+    [ -n "$_rr_res" ] && printf '%s\n' "$_rr_res"
+    return "$_rr_rc"
+  fi
+  _rr_stale=""
+  _rr_ifs=$IFS
+  IFS='
+'
+  for _rr_line in $(openbox_download_sources "$1"); do
+    IFS=$_rr_ifs
+    _rr_src=${_rr_line%% *}
+    _rr_u=${_rr_line#* }
+    _rr_rc=0
+    _rr_res=$(_rr_resolve_single "$_rr_u") || _rr_rc=$?
+    if [ "$_rr_rc" = "60" ]; then
+      return 60
+    fi
+    if [ -z "$_rr_res" ]; then
+      [ "$_rr_src" = "direct" ] && TRUSTED_DIRECT_BROKEN=1
+      IFS='
+'
+      continue
+    fi
+    if [ -n "${ROUTER_MIN_VERSION:-}" ] && ! _rr_ver_lt "$ROUTER_MIN_VERSION" "$_rr_res"; then
+      if [ -z "$_rr_stale" ] || _rr_ver_lt "$_rr_stale" "$_rr_res"; then
+        _rr_stale="$_rr_res"
+      fi
+      IFS='
+'
+      continue
+    fi
+    ROUTER_RELEASE_SOURCE="$_rr_src"
+    printf '%s\n' "$_rr_res"
+    return 0
+  done
+  IFS=$_rr_ifs
+  if [ -n "$_rr_stale" ]; then
+    printf '%s\n' "$_rr_stale"
     return 0
   fi
-  _rr_feed=$(router_release_text "$_rr_base/releases.atom" 2>/dev/null) || return 1
-  _rr_tags=$(printf '%s\n' "$_rr_feed" | tr '"' '\n' \
-    | sed -n 's|.*/releases/tag/\(v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)$|\1|p' \
-    | awk '!seen[$0]++' \
-    | awk -F. '{ printf "%010d.%010d.%010d %s\n", substr($1, 2), $2, $3, $0 }' \
-    | sort -r | awk '{ print $2 }')
-  for _rr_tag in $_rr_tags; do
-    [ "$_rr_tag" != "$_rr_latest" ] || continue
-    if router_release_available "$_rr_base" "$_rr_tag"; then
-      printf '%s\n' "$_rr_tag"
-      return 0
-    fi
-  done
   return 1
 }
 # ---- openbox-router-release:end ----
 
-# 探测单个"渠道"是否真的可用:candidate 为 "direct" 时探测 GitHub 直连,其它值当
-# 镜像前缀探测。请求发布资产的 .sha256 文件(几十字节,不是 106MB 正文),并连内容
-# 一起校验格式(64 位十六进制哈希 + 空白 + 资产名)——失效的加速站经常返回 200
-# 状态的 HTML 错误页而不是网络层错误,只看 curl/wget 的退出码不够,必须验证内容,
-# 否则会把"死了但仍应答"的镜像误判为可用。
-# 两处调用方共用这一份判定逻辑:select_builtin_mirror()(--mirror 不带前缀时的
-# 自动选择)与下方的 --probe 分发(LuCI 渠道选择器)——"复用探测逻辑、不重新发明"
-# 落地在这个函数上,不要为 --probe 另写一份。
+# 探测单个"渠道"是否真的可用(--probe 保留向后兼容):direct 测直连,其它当镜像前缀。
 probe_mirror_prefix() {
   candidate="$1"
   probe_file="$TMP_DL/.mirror-probe"
   rm -f "$probe_file"
+  _pm_old_ch="$CHANNEL"
+  _pm_old_mp="$MIRROR_PREFIX"
   if [ "$candidate" = "direct" ]; then
     CHANNEL="direct"
     MIRROR_PREFIX=""
@@ -783,19 +1400,22 @@ probe_mirror_prefix() {
   _pm_sha_url="$SHA_URL"
   case "$_pm_sha_url" in
     */releases/latest/download/*)
-      _pm_tag=$(resolve_router_release_tag "$(build_url "https://github.com/$REPO/releases/latest")") || return 1
+      _pm_tag=$(resolve_router_release_tag "$(build_url "https://github.com/$REPO/releases/latest")") || {
+        CHANNEL="$_pm_old_ch"; MIRROR_PREFIX="$_pm_old_mp"; return 1;
+      }
       _pm_sha_url="https://github.com/$REPO/releases/download/$_pm_tag/$ASSET.sha256"
       ;;
   esac
   probe_url=$(build_url "$_pm_sha_url")
   if ! fetch_to_file_probe "$probe_url" "$probe_file" 2>/dev/null; then
-    # 失败只说明这个来源不可用；不能丢弃当前内核代理或改动正在使用的 DNS。
     rm -f "$probe_file"
+    CHANNEL="$_pm_old_ch"; MIRROR_PREFIX="$_pm_old_mp"
     return 1
   fi
   hash=$(awk 'NR==1{print $1}' "$probe_file" 2>/dev/null)
   name=$(awk 'NR==1{print $2}' "$probe_file" 2>/dev/null)
   rm -f "$probe_file"
+  CHANNEL="$_pm_old_ch"; MIRROR_PREFIX="$_pm_old_mp"
   name=${name#\*}
   if [ "$name" != "$ASSET" ] || [ "${#hash}" != 64 ]; then
     return 1
@@ -1094,14 +1714,14 @@ if [ "$CANCEL_MODE" = "1" ]; then
     echo "none"
     exit 0
   fi
-  _c_stage=$(status_field stage)
+  _c_stage=$(status_field stage) || _c_stage=""
   case "$_c_stage" in
     committing)
       echo "committing"
       exit 0
       ;;
     starting|probing|downloading|verifying|extracting)
-      _c_pid=$(status_field pid)
+      _c_pid=$(status_field pid) || _c_pid=""
       # 状态文件里记录了 PID 却已经不在了:说明那次更新是崩溃退出的(断电、
       # OOM-kill),不是真的还在跑,不应该假装"已请求取消"糊弄用户——如实报告
       # 没有更新在运行。PID 字段本身为空(--detach 派发进程同步预写、子进程还
@@ -1244,7 +1864,7 @@ check_installed() {
   if [ ! -d "$INSTALL_ROOT" ] || [ ! -f "$INSTALL_ROOT/meta.json" ]; then
     # 同上:给能直接照抄的命令,别只说"请使用 install.sh"
     die "未检测到现有 Open-Box 安装($INSTALL_ROOT)。首次安装请复制下面这条命令运行:
-       curl -fsSL https://raw.githubusercontent.com/liandu2024/Open-Box/main/scripts/install.sh | sh -s -- --mirror"
+       sh -c 'u=https://raw.githubusercontent.com/liandu2024/Open-Box/main/scripts/install.sh; for p in \"\" https://ghfast.top/ https://gh-proxy.com/ https://gh.llkk.cc/; do if command -v curl >/dev/null 2>&1; then s=\$(curl -fsSL --connect-timeout 5 --max-time 15 \"\$p\$u\" 2>/dev/null); else s=\$(wget -qO- --timeout=15 \"\$p\$u\" 2>/dev/null); fi && case \"\$s\" in \"#!/bin/sh\"*) printf \"%s\n\" \"\$s\" | sh -n 2>/dev/null && { printf \"%s\n\" \"\$s\" | sh -s -- \"\$@\"; exit \$?; };; esac; done; echo \"下载安装脚本失败\" >&2; exit 1' sh"
   fi
 }
 
@@ -1328,33 +1948,8 @@ check_tmp_space() {
   fi
 }
 
-# 通道记录格式(纯文本,不用 shell source,避免执行到里面的任意内容):
-#   第一行 direct 或 mirror
-#   第二行(仅当第一行是 mirror 时)镜像前缀
-read_channel() {
-  channel_file="$INSTALL_ROOT/data/channel"
-  CHANNEL="direct"
-  MIRROR_PREFIX=""
-  if [ ! -r "$channel_file" ]; then
-    warn "未找到安装通道记录($channel_file),按直连通道处理。"
-    return
-  fi
-  first_line=$(sed -n '1p' "$channel_file")
-  if [ "$first_line" = "mirror" ]; then
-    second_line=$(sed -n '2p' "$channel_file")
-    if [ -z "$second_line" ]; then
-      warn "通道记录已损坏(缺少镜像前缀),退回直连通道。"
-    else
-      CHANNEL="mirror"
-      MIRROR_PREFIX="$second_line"
-    fi
-  fi
-}
-
-# 决定这次升级实际使用的通道:命令行显式指定(--direct / --mirror)的优先级
-# 高于安装时记录的通道,不传参数时行为与升级前完全一致(读记录)。--mirror 不带
-# 前缀时先把 MIRROR_PREFIX 留空,交给下方 select_builtin_mirror()(在资产地址与
-# 临时目录都就绪之后)从内置列表里探测选用。
+# 决定这次升级实际使用的通道:默认全自动模式(auto:直连优先,失败自动轮询内置镜像),
+# 不再读取或依赖 data/channel 锁死来源;保留 --direct / --mirror [前缀] 覆盖。
 resolve_channel() {
   case "$CHANNEL_OVERRIDE" in
     direct)
@@ -1366,7 +1961,8 @@ resolve_channel() {
       MIRROR_PREFIX="$CLI_MIRROR_PREFIX"
       ;;
     *)
-      read_channel
+      CHANNEL="auto"
+      MIRROR_PREFIX=""
       ;;
   esac
 }
@@ -1383,44 +1979,68 @@ refresh_update_script() {
   trap 'exit 130' INT
   trap 'exit 143' TERM
   STATUS_PID=$$
+  STATUS_ITEM="script"
+  STATUS_ATTEMPTS=""
   write_status starting "" "" "正在获取最新升级脚本"
   _latest_url="https://github.com/$REPO/releases/latest"
-  _sources=""
-  if [ "$CHANNEL" = "mirror" ]; then
-    _sources="${MIRROR_PREFIX:-$BUILTIN_MIRRORS}"
-  fi
   _ready=0
   # 保持现有内核及 DNS 接管；旧入口若已暂停内核，先恢复再获取脚本。
   prepare_core_for_fetch
-  # 镜像先按这次选择的通道试,失败再直连;直连通道不擅自换镜像。
-  for _source in $_sources direct; do
+  _rus_ifs=$IFS
+  IFS='
+'
+  for _rus_line in $(openbox_download_sources "$_latest_url"); do
+    IFS=$_rus_ifs
+    _source=${_rus_line%% *}
+    _latest_src_url=${_rus_line#* }
     rm -f -- "$_fresh"
-    case "$_source" in
-      direct) _prefix="" ;;
-      http://*|https://*) _prefix="${_source%/}/" ;;
-      *) _prefix="https://${_source%/}/" ;;
-    esac
+    STATUS_SOURCE="$_source"
+    STATUS_SOURCE_LABEL="$(openbox_short_source_label "$_source")"
+    write_status starting "" "" "正在获取最新升级脚本(${STATUS_SOURCE_LABEL})"
     _refresh_tag="$EXPECT_VERSION"
     if [ -z "$_refresh_tag" ] || [ "$ROLLBACK_MODE" = "1" ]; then
-      _refresh_tag=$(resolve_router_release_tag "$_prefix$_latest_url") || continue
+      _rus_tag_rc=0
+      _refresh_tag=$(_rr_resolve_single "$_latest_src_url") || _rus_tag_rc=$?
+      if [ "$_rus_tag_rc" = "60" ]; then
+        append_attempt "$STATUS_SOURCE_LABEL" "证书校验失败(60)"
+        break
+      fi
+      if [ -z "$_refresh_tag" ]; then
+        append_attempt "$STATUS_SOURCE_LABEL" "获取版本失败"
+        IFS='
+'
+        continue
+      fi
     fi
-    _url="${_prefix}https://github.com/$REPO/releases/download/$_refresh_tag/update.sh"
-    if fetch_to_file_probe "$_url" "$_fresh" \
-      && [ "$(head -n 1 "$_fresh")" = '#!/bin/sh' ] \
-      && grep -q '^# Open-Box 升级脚本' "$_fresh" \
-      && sh -n "$_fresh"; then
-      _ready=1
-      [ -n "$EXPECT_VERSION" ] || [ "$ROLLBACK_MODE" = "1" ] || EXPECT_VERSION="$_refresh_tag"
+    _url="${_latest_src_url%/releases/latest}/releases/download/$_refresh_tag/update.sh"
+    _rus_dl_rc=0
+    fetch_to_file_probe "$_url" "$_fresh" 2>/dev/null || _rus_dl_rc=$?
+    if [ "$_rus_dl_rc" = "60" ]; then
+      append_attempt "$STATUS_SOURCE_LABEL" "证书校验失败(60)"
       break
     fi
+    if [ "$_rus_dl_rc" = "0" ] \
+      && [ "$(head -n 1 "$_fresh" 2>/dev/null)" = '#!/bin/sh' ] \
+      && grep -q '^# Open-Box 升级脚本' "$_fresh" 2>/dev/null \
+      && sh -n "$_fresh" 2>/dev/null; then
+      _ready=1
+      [ -n "$EXPECT_VERSION" ] || [ "$ROLLBACK_MODE" = "1" ] || EXPECT_VERSION="$_refresh_tag"
+      append_attempt "$STATUS_SOURCE_LABEL" "成功"
+      break
+    fi
+    append_attempt "$STATUS_SOURCE_LABEL" "脚本获取或校验失败"
+    IFS='
+'
   done
+  IFS=$_rus_ifs
   if [ "$_ready" != "1" ]; then
     # 取不到最新脚本不能把整次升级卡死:正在跑的这一份就是发布包里校验过的 update.sh
-    # (面板 / LuCI 的一键升级、手动 sh update.sh 都是它),继续用它升级,现有安装到
-    # 校验通过前仍然不动。GitHub 被墙、镜像也不通的环境(#672 的 192.168.3.1)以前
-    # 会直接失败,现在能照常升级,只是拿不到新脚本里的修正。
+    # 继续用它升级,现有安装到校验通过前仍然不动。
+    STATUS_SOURCE=""
+    STATUS_SOURCE_LABEL=""
     write_status starting "" "" "下载不到最新升级脚本,改用随包升级脚本继续"
     info "下载不到最新升级脚本,改用随包升级脚本继续"
+    STATUS_ATTEMPTS=""
     rm -f -- "$_fresh"
     return 0
   fi
@@ -1665,59 +2285,11 @@ ensure_dependencies() {
 }
 ensure_dependencies
 
-# ---- openbox-download-sources:start ----
-# 这一段在 install.sh / update.sh 里一模一样。下载正文失败时按顺序换来源再试:当前通道 → 其余内置镜像 → 直连
-# (当前是镜像时)。以前一次失败就退出——同一个镜像每次都在同一处断开的用户永远装不上(GitHub #330:Debian 13 +
-# ghfast.top,每次 SSL unexpected eof)。每行一个「来源 完整地址」,来源是 direct 或镜像前缀;BUILTIN_MIRRORS 在调用时已定义
-openbox_download_sources() {
-  # 调用方常把 IFS 设成只有换行(逐行读结果),这里要按空白拆
-  _ds_ifs=$IFS
-  IFS='
-	 '
-  if [ "$CHANNEL" = "mirror" ] && [ -n "$MIRROR_PREFIX" ]; then _ds_cur="$MIRROR_PREFIX"; else _ds_cur="direct"; fi
-  _ds_list="$_ds_cur"
-  for _ds_m in $BUILTIN_MIRRORS; do
-    [ "$_ds_m" = "$_ds_cur" ] || _ds_list="$_ds_list $_ds_m"
-  done
-  [ "$_ds_cur" = "direct" ] || _ds_list="$_ds_list direct"
-  for _ds_src in $_ds_list; do
-    case "$_ds_src" in
-      direct) printf 'direct %s\n' "$1" ;;
-      http://*|https://*) printf '%s %s/%s\n' "$_ds_src" "${_ds_src%/}" "$1" ;;
-      *) printf '%s https://%s/%s\n' "$_ds_src" "${_ds_src%/}" "$1" ;;
-    esac
-  done
-  IFS=$_ds_ifs
-}
-# 拼好镜像前缀的地址还原成原始地址(升级时组件脚本传进来的就是拼好的)
-openbox_unmirror_url() {
-  _uu="$1"
-  if [ "$CHANNEL" = "mirror" ] && [ -n "$MIRROR_PREFIX" ]; then
-    case "$MIRROR_PREFIX" in
-      http://*|https://*) _uu_p="${MIRROR_PREFIX%/}/" ;;
-      *) _uu_p="https://${MIRROR_PREFIX%/}/" ;;
-    esac
-    case "$_uu" in "$_uu_p"*) _uu="${_uu#"$_uu_p"}" ;; esac
-  fi
-  printf '%s\n' "$_uu"
-}
-# 哪个来源下载成功就改用它,后面的下载先从它开始
-openbox_adopt_source() {
-  case "$1" in
-    direct) CHANNEL=direct; MIRROR_PREFIX="" ;;
-    *) CHANNEL=mirror; MIRROR_PREFIX="$1" ;;
-  esac
-}
-openbox_source_label() {
-  case "$1" in direct) echo "GitHub 直连" ;; *) echo "$1" ;; esac
-}
-# ---- openbox-download-sources:end ----
-
 detect_downloader
 
 # ---------- 资产地址 ----------
 # 从 Latest / Release feed 确认包含升级脚本的路由器版本，再使用带版本号的地址。
-# 直连不通时按已选镜像查询；没有客户端 Release 的隐式降级或跨平台升级。
+# auto 模式下直连优先，不通或超时自动轮询内置镜像；无客户端 Release 的隐式降级或跨平台升级。
 LATEST_URL="https://github.com/$REPO/releases/latest"
 # Compare plain numeric semver tags without depending on sort -V (not available in
 # every BusyBox build). Returns success when $1 is older than $2.
@@ -1739,11 +2311,52 @@ version_less_than() {
 resolve_previous_tag() {
   _rpt_current="$1"
   _rpt_api="https://api.github.com/repos/$REPO/releases?per_page=100"
-  # 加速镜像一般只代理 github.com / raw 域名,不代理 api.github.com:API 先直连,直连不通再试镜像前缀
-  _rpt_json=$(fetch_to_stdout "$_rpt_api" 2>/dev/null) || _rpt_json=$(fetch_to_stdout "$(build_url "$_rpt_api")") || return 1
+  _rpt_atom="https://github.com/$REPO/releases.atom"
+  _rpt_tags=""
+  if [ "$CHANNEL" = "mirror" ] && [ -n "$MIRROR_PREFIX" ]; then
+    _rpt_json=$(fetch_to_stdout "$(build_url "$_rpt_api")" 2>/dev/null) || _rpt_json=""
+    if [ -n "$_rpt_json" ]; then
+      _rpt_tags=$(printf '%s' "$_rpt_json" | tr ',' '\n' | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\(v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)".*/\1/p')
+    fi
+    if [ -z "$_rpt_tags" ]; then
+      _rpt_feed=$(fetch_to_stdout "$(build_url "$_rpt_atom")" 2>/dev/null) || return 1
+      _rpt_tags=$(printf '%s\n' "$_rpt_feed" | tr '"' '\n' | sed -n 's|.*/releases/tag/\(v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)$|\1|p')
+    fi
+  elif [ "$CHANNEL" = "direct" ]; then
+    _rpt_json=$(fetch_to_stdout "$_rpt_api" 2>/dev/null) || _rpt_json=""
+    if [ -n "$_rpt_json" ]; then
+      _rpt_tags=$(printf '%s' "$_rpt_json" | tr ',' '\n' | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\(v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)".*/\1/p')
+    fi
+    if [ -z "$_rpt_tags" ]; then
+      _rpt_feed=$(fetch_to_stdout "$_rpt_atom" 2>/dev/null) || return 1
+      _rpt_tags=$(printf '%s\n' "$_rpt_feed" | tr '"' '\n' | sed -n 's|.*/releases/tag/\(v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)$|\1|p')
+    fi
+  else
+    _rpt_ifs=$IFS
+    IFS='
+'
+    for _rpt_line in $(openbox_download_sources "$_rpt_atom"); do
+      IFS=$_rpt_ifs
+      _rpt_src=${_rpt_line%% *}
+      _rpt_u=${_rpt_line#* }
+      if [ "$_rpt_src" = "direct" ]; then
+        _rpt_json=$(fetch_to_stdout "$_rpt_api" 2>/dev/null) || _rpt_json=""
+        if [ -n "$_rpt_json" ]; then
+          _rpt_tags=$(printf '%s' "$_rpt_json" | tr ',' '\n' | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\(v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)".*/\1/p')
+          [ -n "$_rpt_tags" ] && break
+        fi
+      fi
+      _rpt_feed=$(fetch_to_stdout "$_rpt_u" 2>/dev/null) || _rpt_feed=""
+      if [ -n "$_rpt_feed" ]; then
+        _rpt_tags=$(printf '%s\n' "$_rpt_feed" | tr '"' '\n' | sed -n 's|.*/releases/tag/\(v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)$|\1|p')
+        [ -n "$_rpt_tags" ] && break
+      fi
+      IFS='
+'
+    done
+    IFS=$_rpt_ifs
+  fi
   _rpt_best=""
-  # 先按逗号拆行:API 可能返回压成一行的 JSON,逐行 sed 只会取到最后一个 tag
-  _rpt_tags=$(printf '%s' "$_rpt_json" | tr ',' '\n' | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\(v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)".*/\1/p')
   for _rpt_tag in $_rpt_tags; do
     if version_less_than "$_rpt_tag" "$_rpt_current"; then
       if [ -z "$_rpt_best" ] || version_less_than "$_rpt_best" "$_rpt_tag"; then
@@ -1755,7 +2368,7 @@ resolve_previous_tag() {
   printf '%s\n' "$_rpt_best"
 }
 
-# 资产地址:有版本号就用带版本号的资产名。版本号要等选好镜像之后才探(见下方),探到了再重算一次
+# 资产地址:有版本号就用带版本号的资产名。
 set_asset_urls() {
   if [ -n "$EXPECT_VERSION" ]; then
     ASSET="open-box-${EXPECT_VERSION}-linux-${ARCH}.tar.gz"
@@ -1769,49 +2382,6 @@ set_asset_urls() {
 set_asset_urls
 
 OLD_VERSION=$(sed -n 's/.*"version" *: *"\([^"]*\)".*/\1/p' "$INSTALL_ROOT/meta.json" 2>/dev/null | head -n 1)
-
-# ---------- 内置镜像列表(--mirror 不带前缀时使用)----------
-# 三个都是 2026-09-01 现场验证过的:能取到与直连字节级一致的 releases/latest 资产
-# (.sha256 与 106MB tarball 均验证过),也能代理 raw.githubusercontent.com。按此顺序
-# 依次探测,选中第一个探测通过的——加速站是出了名的会挂,所以不能假设列表里第一个
-# 永远可用,必须能在探测失败时继续试下一个,而不是直接报错退出。install.sh 里维护
-# 着同一份列表(两边都是 curl | sh 单文件直跑,没有可共享的公共库文件,只能保持
-# 内容一致、各自维护一份)。LuCI 渠道选择器(status.js)同样维护着这四个渠道
-# (GitHub 直连 + 这三个),UI 侧的探测最终也是调用下面 select_builtin_mirror() 复用
-# 的同一个 probe_mirror_prefix()(定义已挪到文件靠前的位置,见该函数注释)。
-# 列表在文件开头初始化，获取最新升级脚本与这里的包下载共用。
-
-# 依次尝试内置镜像列表,选中第一个探测通过的前缀写回 MIRROR_PREFIX;全部失败则
-# 报错退出(不触碰现有安装——此时还没开始下载正文)。用户仍可以用
-# --mirror <前缀> 指定任意其它加速站,这个函数只负责"不知道用哪个"时的自动选择。
-select_builtin_mirror() {
-  info "未指定镜像前缀,依次探测内置镜像列表..."
-  tried=""
-  OLD_IFS=$IFS
-  IFS='
-'
-  for candidate in $BUILTIN_MIRRORS; do
-    IFS="$OLD_IFS"
-    [ -n "$candidate" ] || continue
-    # 探测每个内置镜像有独立的连接/总时长上限(见 fetch_to_file_probe()),最坏
-    # 情况下几个镜像连续探测下来也要几十秒——这里加一道检查点,不用等到探测全部
-    # 镜像、真正开始下载正文才响应取消。
-    check_cancel_and_abort
-    tried="$tried $candidate"
-    info "探测:$candidate"
-    if probe_mirror_prefix "$candidate"; then
-      MIRROR_PREFIX="$candidate"
-      info "已选用镜像:$MIRROR_PREFIX"
-      return 0
-    fi
-    warn "镜像探测失败,尝试下一个:$candidate"
-    IFS='
-'
-  done
-  IFS="$OLD_IFS"
-  MIRROR_PREFIX=""
-  die "内置镜像列表全部探测失败(已尝试:$tried)。可用 --mirror <前缀> 指定其它加速站,或改用 --direct 直连。现有安装未改动。"
-}
 
 # ---------- 下载到临时目录(此时仍未触碰现有安装) ----------
 # STAGE_DIR 在校验通过后才会被赋非空值并创建(见下方);清理函数统一处理两者,
@@ -1845,20 +2415,20 @@ trap 'exit 143' TERM
 # exit 0,不用担心留下未追踪的临时目录。
 check_cancel_and_abort
 
-if [ "$CHANNEL" = "mirror" ] && [ -z "$MIRROR_PREFIX" ]; then
-  write_status probing "" "" ""
-  select_builtin_mirror
-fi
-
-# 没给 --expect 就在这里探最新版本号:镜像已经选好,直连不通时可以经镜像问。直连探不到也说明直连 GitHub 不通,
-# 后面的校验文件就不先试直连了(fetch_to_file_trusted),免得每个都白等一次超时
+# 没给 --expect 就在这里探最新版本号:auto 模式下直连优先,不通/超时自动轮询内置镜像。
 if [ -z "$EXPECT_VERSION" ] && [ "$ROLLBACK_MODE" = "0" ]; then
-  EXPECT_VERSION=$(resolve_router_release_tag "$LATEST_URL") || EXPECT_VERSION=""
-  if [ -z "$EXPECT_VERSION" ]; then
-    TRUSTED_DIRECT_BROKEN=1
-    if [ "$CHANNEL" = "mirror" ] && [ -n "$MIRROR_PREFIX" ]; then
-      EXPECT_VERSION=$(resolve_router_release_tag "$(build_url "$LATEST_URL")") || EXPECT_VERSION=""
-    fi
+  STATUS_ITEM="manifest"
+  write_status probing "" "" "正在检查最新版本"
+  ROUTER_MIN_VERSION="$OLD_VERSION"
+  _rlt_rc=0
+  EXPECT_VERSION=$(resolve_router_release_tag "$LATEST_URL") || _rlt_rc=$?
+  if [ "$_rlt_rc" = "60" ]; then
+    die "HTTPS 证书校验失败(curl 退出码 60，缺少 CA 证书或系统时间异常)。请先安装 ca-bundle / ca-certificates 或校准系统时间后重试。"
+  fi
+  if [ "$_rlt_rc" != "0" ] || [ -z "$EXPECT_VERSION" ]; then
+    EXPECT_VERSION=""
+  elif [ -n "$ROUTER_RELEASE_SOURCE" ]; then
+    openbox_adopt_source "$ROUTER_RELEASE_SOURCE"
   fi
   case "$EXPECT_VERSION" in
     *[!A-Za-z0-9._-]*) EXPECT_VERSION="" ;;
@@ -1917,7 +2487,9 @@ prepare_go_component_update() {
     _manifest_base="https://github.com/$REPO/releases/latest/download"
   fi
   info "读取 Open-Box 组件版本清单..."
-  if ! fetch_to_file_trusted "$_manifest_base/$_manifest_name" "$TMP_DL/components.json"; then
+  STATUS_ITEM="manifest"
+  write_status probing "" "" "正在读取组件版本清单"
+  if ! fetch_to_file_trusted "$_manifest_base/$_manifest_name" "$TMP_DL/components.json" json; then
     warn "未取到组件清单,改用完整安装包升级。"
     return 1
   fi
@@ -1980,7 +2552,8 @@ prepare_go_component_update() {
       continue
     fi
     info "下载 ${_kind} 更新:${_name}"
-    download_with_progress "$(build_url "$_cm_base/$_name")" "$TMP_DL/$_name" "$_size" \
+    STATUS_ITEM="$_kind"
+    download_with_progress "$_cm_base/$_name" "$TMP_DL/$_name" "$_size" "$_hash" \
       || die "下载组件 ${_kind} 失败。现有安装未改动。"
     check_cancel_and_abort
     printf '%s  %s\n' "$_hash" "$_name" > "$TMP_DL/$_name.sha256"
@@ -2013,7 +2586,7 @@ preserve_optional_mihomo_in_stage() {
   _pm_ver=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$STAGE_DIR/meta.json" 2>/dev/null | head -n 1)
   _pm_mf="open-box-${_pm_ver}-linux-${ARCH}-components.json"
   _pm_base="https://github.com/$REPO/releases/download/$_pm_ver"
-  if [ -n "$_pm_ver" ] && fetch_to_file_trusted "$_pm_base/$_pm_mf" "$TMP_DL/mihomo-components.json"; then
+  if [ -n "$_pm_ver" ] && fetch_to_file_trusted "$_pm_base/$_pm_mf" "$TMP_DL/mihomo-components.json" json; then
     _pm_line=$("$STAGE_DIR/bin/openbox-panel" component-update plan "$TMP_DL/mihomo-components.json" "$INSTALL_ROOT" "$ARCH" "$_pm_ver" 2>/dev/null | awk '$1 == "kernel-mihomo" { print; exit }' || true)
     if [ -n "$_pm_line" ]; then
       set -- $_pm_line
@@ -2029,7 +2602,8 @@ preserve_optional_mihomo_in_stage() {
         return 0
       elif [ "$_pm_act" = "download" ] && [ -n "$_pm_asset" ] && [ -n "$_pm_sha" ]; then
         info "检测到本机正在使用 Mihomo,同步下载新版本 Mihomo 组件:${_pm_asset}"
-        if download_with_progress "$(build_url "$_pm_base/$_pm_asset")" "$TMP_DL/$_pm_asset" "$_pm_size"; then
+        STATUS_ITEM="kernel-mihomo"
+        if download_with_progress "$_pm_base/$_pm_asset" "$TMP_DL/$_pm_asset" "$_pm_size" "$_pm_sha"; then
           printf '%s  %s\n' "$_pm_sha" "$_pm_asset" > "$TMP_DL/$_pm_asset.sha256"
           _sha_ok=0
           if command -v sha256sum >/dev/null 2>&1; then
@@ -2062,14 +2636,18 @@ _dl_round=0
 while :; do
   _dl_round=$((_dl_round + 1))
 
+  STATUS_ITEM="package"
   fetch_to_file_trusted "$SHA_URL" "$TMP_DL/$ASSET.sha256.pre" sha || die "下载校验文件失败:${SHA_URL}。现有安装未改动。"
+  _pre_sha=$(awk 'NR==1{print $1}' "$TMP_DL/$ASSET.sha256.pre" 2>/dev/null | tr 'A-F' 'a-f')
   check_cancel_and_abort
 
   info "下载发布包:$ASSET"
-  ASSET_DL_URL=$(build_url "$ASSET_URL")
-  ASSET_TOTAL=$(probe_content_length "$ASSET_DL_URL")
+  _probe_first_line=$(openbox_download_sources "$ASSET_URL" | head -n 1)
+  ASSET_DL_URL=${_probe_first_line#* }
+  [ -n "$ASSET_DL_URL" ] || ASSET_DL_URL=$(build_url "$ASSET_URL")
+  ASSET_TOTAL=$(probe_content_length "$ASSET_DL_URL") || ASSET_TOTAL=""
   case "$ASSET_TOTAL" in ''|*[!0-9]*) ASSET_TOTAL='' ;; esac
-  download_with_progress "$ASSET_DL_URL" "$TMP_DL/$ASSET" "$ASSET_TOTAL" || die "下载升级包失败(内置镜像和直连都试过了):${ASSET_URL}。现有安装未改动。"
+  download_with_progress "$ASSET_URL" "$TMP_DL/$ASSET" "$ASSET_TOTAL" "$_pre_sha" || die "下载升级包失败(已尝试所有可用来源):${ASSET_URL}。现有安装未改动。"
 
   check_cancel_and_abort
 
@@ -2135,7 +2713,7 @@ check_cancel_and_abort
 NEW_VERSION=$(sed -n 's/.*"version" *: *"\([^"]*\)".*/\1/p' "$STAGE_DIR/meta.json" 2>/dev/null | head -n 1)
 [ -n "$NEW_VERSION" ] || die "升级包的 meta.json 无法解析版本号。现有安装未改动。"
 if [ -n "$EXPECT_VERSION" ] && [ "$NEW_VERSION" != "$EXPECT_VERSION" ]; then
-  die "下载到的包是 $NEW_VERSION,不是期望的 $EXPECT_VERSION(镜像缓存了旧包?换「GitHub 直连」通道再试)。现有安装未改动。"
+  die "下载到的包是 $NEW_VERSION,不是期望的 $EXPECT_VERSION(镜像缓存了旧包?请稍后重试或用 --direct 直连 GitHub 再试)。现有安装未改动。"
 fi
 # 没探到版本号时用的是会动的 releases/latest/download:镜像缓存的旧包连同它的校验和一起对得上,不拦就会悄悄降级
 if [ "$ROLLBACK_MODE" = "0" ] && [ -n "$OLD_VERSION" ] && version_less_than "$NEW_VERSION" "$OLD_VERSION"; then

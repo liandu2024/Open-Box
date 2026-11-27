@@ -17,11 +17,10 @@ sudo sh docker/install.sh --ip 192.168.1.2
 sudo sh docker/install.sh
 ```
 
-在 Docker 宿主直接下载运行：
+在 Docker 宿主直接下载运行（优先直连 GitHub，访问不畅或过慢时自动回退内置镜像；末尾可直接追加 `--ip` 等参数）：
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/liandu2024/Open-Box/main/docker/install.sh -o /tmp/openbox-docker-install.sh
-sudo sh /tmp/openbox-docker-install.sh --ip 192.168.1.2
+sudo sh -c 'u=https://raw.githubusercontent.com/liandu2024/Open-Box/main/docker/install.sh; for p in "" https://ghfast.top/ https://gh-proxy.com/ https://gh.llkk.cc/; do s=$(curl -fsSL --connect-timeout 5 --max-time 15 "$p$u" 2>/dev/null) && case "$s" in "#!/bin/sh"*) printf "%s\n" "$s" | sh -n 2>/dev/null && { printf "%s\n" "$s" | sh -s -- "$@"; exit $?; };; esac; done; echo "下载安装脚本失败" >&2; exit 1' sh --ip 192.168.1.2
 ```
 
 新装统一使用 `http://<容器IP>:3036`，数据保存在 `/opt/open-box-docker/etc` 和 `/opt/open-box-docker/data`。
