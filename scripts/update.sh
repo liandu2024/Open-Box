@@ -1881,28 +1881,11 @@ detect_platform() {
 check_installed() {
   if [ ! -d "$INSTALL_ROOT" ] || [ ! -f "$INSTALL_ROOT/meta.json" ]; then
     # 同上:给能直接照抄的命令,别只说"请使用 install.sh"
-    _ins_cmd=$(cat <<'EOF'
-sh -c '
-u=https://raw.githubusercontent.com/liandu2024/Open-Box/main
-u=$u/scripts/install.sh
-f=/tmp/openbox-$$.sh; s=""; rm -f "$f"
-for p in "" https://ghfast.top/ https://gh-proxy.com/ https://gh.llkk.cc/; do
-  if command -v curl >/dev/null 2>&1; then
-    curl -fsSL --connect-timeout 5 --max-time 15 -o "$f" "$p$u" 2>/dev/null
-  else
-    wget -q -T 15 -O "$f" "$p$u" 2>/dev/null
-  fi && head -n 1 "$f" | grep -q "^#!/bin/sh" && sh -n "$f" 2>/dev/null && {
-    s=${p%/}; break
-  }
-  rm -f "$f"
-done
-[ -s "$f" ] || { echo "Download failed" >&2; exit 1; }
-OPENBOX_ADOPTED_SOURCE="$s" sh "$f" "$@"; rc=$?; rm -f "$f"; exit $rc
-' sh
-EOF
-)
     die "未检测到现有 Open-Box 安装($INSTALL_ROOT)。首次安装请复制下面这条命令运行:
-$_ins_cmd"
+  curl -fsSL https://raw.githubusercontent.com/liandu2024/Open-Box/main/scripts/install.sh | sh
+如 GitHub 无法直连,可走镜像:
+  curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/liandu2024/Open-Box/main/scripts/install.sh | sh
+"
   fi
 }
 

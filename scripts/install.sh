@@ -429,28 +429,10 @@ check_existing_install() {
       return 0
     fi
     # 光说"请使用 update.sh"没用:用户照着敲 update.sh 只会得到 not found(真机反馈)。给完整命令。
-    _upd_cmd=$(cat <<'EOF'
-sh -c '
-u=https://raw.githubusercontent.com/liandu2024/Open-Box/main
-u=$u/scripts/update.sh
-f=/tmp/openbox-$$.sh; s=""; rm -f "$f"
-for p in "" https://ghfast.top/ https://gh-proxy.com/ https://gh.llkk.cc/; do
-  if command -v curl >/dev/null 2>&1; then
-    curl -fsSL --connect-timeout 5 --max-time 15 -o "$f" "$p$u" 2>/dev/null
-  else
-    wget -q -T 15 -O "$f" "$p$u" 2>/dev/null
-  fi && head -n 1 "$f" | grep -q "^#!/bin/sh" && sh -n "$f" 2>/dev/null && {
-    s=${p%/}; break
-  }
-  rm -f "$f"
-done
-[ -s "$f" ] || { echo "Download failed" >&2; exit 1; }
-OPENBOX_ADOPTED_SOURCE="$s" sh "$f" "$@"; rc=$?; rm -f "$f"; exit $rc
-' sh
-EOF
-)
     die "$INSTALL_ROOT 已存在且包含完整安装。如需升级,请复制下面这条命令运行:
-$_upd_cmd
+  curl -fsSL https://raw.githubusercontent.com/liandu2024/Open-Box/main/scripts/update.sh | sh
+如 GitHub 无法直连,可走镜像:
+  curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/liandu2024/Open-Box/main/scripts/update.sh | sh
 (也可以在面板或 LuCI → 服务 → Open-Box 页面里点升级。)"
   fi
   info "检测到保留的 $INSTALL_ROOT/data(此前卸载时选择了保留数据),安装将复用它。"
