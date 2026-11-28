@@ -56,6 +56,11 @@ while [ "$#" -gt 0 ]; do
  esac
  shift 2
 done
+if [ "$CHANNEL" = "auto" ] && [ -n "${OPENBOX_ADOPTED_SOURCE:-}" ]; then
+ for _ias_m in $BUILTIN_MIRRORS; do
+  if [ "$OPENBOX_ADOPTED_SOURCE" = "$_ias_m" ]; then ADOPTED_SOURCE=$_ias_m; break; fi
+ done
+fi
 [ "$(uname -s)" = Linux ] || die '请在 Linux Docker 宿主机上执行。'
 for command in docker ip awk; do command -v "$command" >/dev/null 2>&1 || die "缺少 $command。"; done
 [ "$(docker info --format '{{.OSType}}')" = linux ] || die '需要 Linux Docker Engine。'

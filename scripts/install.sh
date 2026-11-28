@@ -429,9 +429,29 @@ check_existing_install() {
       return 0
     fi
     # 光说"请使用 update.sh"没用:用户照着敲 update.sh 只会得到 not found(真机反馈)。给完整命令。
+    _upd_cmd=$(cat <<'EOF'
+sh -c '
+u=https://raw.githubusercontent.com/liandu2024/Open-Box/main
+u=$u/scripts/update.sh
+f=/tmp/openbox-$$.sh; s=""; rm -f "$f"
+for p in "" https://ghfast.top/ https://gh-proxy.com/ https://gh.llkk.cc/; do
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL --connect-timeout 5 --max-time 15 -o "$f" "$p$u" 2>/dev/null
+  else
+    wget -q -T 15 -O "$f" "$p$u" 2>/dev/null
+  fi && head -n 1 "$f" | grep -q "^#!/bin/sh" && sh -n "$f" 2>/dev/null && {
+    s=${p%/}; break
+  }
+  rm -f "$f"
+done
+[ -s "$f" ] || { echo "Download failed" >&2; exit 1; }
+OPENBOX_ADOPTED_SOURCE="$s" sh "$f" "$@"; rc=$?; rm -f "$f"; exit $rc
+' sh
+EOF
+)
     die "$INSTALL_ROOT 已存在且包含完整安装。如需升级,请复制下面这条命令运行:
-       sh -c 'u=https://raw.githubusercontent.com/liandu2024/Open-Box/main/scripts/update.sh; for p in \"\" https://ghfast.top/ https://gh-proxy.com/ https://gh.llkk.cc/; do if command -v curl >/dev/null 2>&1; then s=\$(curl -fsSL --connect-timeout 5 --max-time 15 \"\$p\$u\" 2>/dev/null); else s=\$(wget -qO- --timeout=15 \"\$p\$u\" 2>/dev/null); fi && case \"\$s\" in \"#!/bin/sh\"*) printf \"%s\n\" \"\$s\" | sh -n 2>/dev/null && { printf \"%s\n\" \"\$s\" | sh -s -- \"\$@\"; exit \$?; };; esac; done; echo \"下载升级脚本失败\" >&2; exit 1' sh
-     (也可以在面板或 LuCI → 服务 → Open-Box 页面里点升级。)"
+$_upd_cmd
+(也可以在面板或 LuCI → 服务 → Open-Box 页面里点升级。)"
   fi
   info "检测到保留的 $INSTALL_ROOT/data(此前卸载时选择了保留数据),安装将复用它。"
 }
@@ -765,7 +785,7 @@ _fetch_stdout_with_proxy() {
   _fsp_np="${3:-}"
   case "$DOWNLOADER" in
     curl) env http_proxy="$_fsp_px" https_proxy="$_fsp_px" HTTP_PROXY="$_fsp_px" HTTPS_PROXY="$_fsp_px" all_proxy="" ALL_PROXY="" no_proxy="$_fsp_np" curl -fsSL --noproxy "$_fsp_np" --connect-timeout 5 --max-time 15 "$_fsp_url" ;;
-    wget) env http_proxy="$_fsp_px" https_proxy="$_fsp_px" HTTP_PROXY="$_fsp_px" HTTPS_PROXY="$_fsp_px" all_proxy="" ALL_PROXY="" no_proxy="$_fsp_np" wget -q --timeout=15 -O - "$_fsp_url" ;;
+    wget) env http_proxy="$_fsp_px" https_proxy="$_fsp_px" HTTP_PROXY="$_fsp_px" HTTPS_PROXY="$_fsp_px" all_proxy="" ALL_PROXY="" no_proxy="$_fsp_np" wget -q -T 15 -O - "$_fsp_url" ;;
   esac
 }
 
@@ -794,7 +814,7 @@ _fetch_file_with_proxy() {
   _ffp_np="${4:-}"
   case "$DOWNLOADER" in
     curl) env http_proxy="$_ffp_px" https_proxy="$_ffp_px" HTTP_PROXY="$_ffp_px" HTTPS_PROXY="$_ffp_px" all_proxy="" ALL_PROXY="" no_proxy="$_ffp_np" curl -fsSL --noproxy "$_ffp_np" --connect-timeout 10 --speed-limit 30720 --speed-time 20 -o "$_ffp_out" "$_ffp_url" ;;
-    wget) env http_proxy="$_ffp_px" https_proxy="$_ffp_px" HTTP_PROXY="$_ffp_px" HTTPS_PROXY="$_ffp_px" all_proxy="" ALL_PROXY="" no_proxy="$_ffp_np" wget -q --timeout=20 -O "$_ffp_out" "$_ffp_url" ;;
+    wget) env http_proxy="$_ffp_px" https_proxy="$_ffp_px" HTTP_PROXY="$_ffp_px" HTTPS_PROXY="$_ffp_px" all_proxy="" ALL_PROXY="" no_proxy="$_ffp_np" wget -q -T 20 -O "$_ffp_out" "$_ffp_url" ;;
   esac
 }
 
@@ -901,6 +921,24 @@ openbox_unmirror_url() {
   IFS=$_uu_ifs
   printf '%s\n' "$_uu"
 }
+# 仅在全自动模式(CHANNEL=auto)下复用引导阶段命中的内置镜像,严格白名单校验防注入/劫持
+openbox_init_adopted_source() {
+  [ "$CHANNEL" = "auto" ] || return 0
+  [ -z "${ADOPTED_SOURCE:-}" ] || return 0
+  _ias_cand="${OPENBOX_ADOPTED_SOURCE:-}"
+  [ -n "$_ias_cand" ] || return 0
+  _ias_ifs=$IFS
+  IFS='
+	 '
+  for _ias_m in $BUILTIN_MIRRORS; do
+    [ -n "$_ias_m" ] || continue
+    if [ "$_ias_cand" = "$_ias_m" ]; then
+      ADOPTED_SOURCE="$_ias_m"
+      break
+    fi
+  done
+  IFS=$_ias_ifs
+}
 # 哪个来源下载成功就优先用它(仅 auto / 无前缀 --mirror 生效,不破坏 --direct 或 --mirror <自定义前缀>)
 openbox_adopt_source() {
   if [ "$CHANNEL" = "mirror" ] && [ -n "${MIRROR_PREFIX:-}" ]; then
@@ -924,6 +962,7 @@ openbox_short_source_label() {
 }
 # ---- openbox-download-sources:end ----
 
+openbox_init_adopted_source
 detect_downloader
 
 # ---------- 资产地址 ----------
@@ -955,7 +994,7 @@ _rr_head_tag() {
   _rht_np="${3:-}"
   case "$DOWNLOADER" in
     curl) env http_proxy="$_rht_px" https_proxy="$_rht_px" HTTP_PROXY="$_rht_px" HTTPS_PROXY="$_rht_px" all_proxy="" ALL_PROXY="" no_proxy="$_rht_np" curl -sI --noproxy "$_rht_np" --connect-timeout 5 --max-time 10 "$_rht_url" 2>/dev/null ;;
-    wget) env http_proxy="$_rht_px" https_proxy="$_rht_px" HTTP_PROXY="$_rht_px" HTTPS_PROXY="$_rht_px" all_proxy="" ALL_PROXY="" no_proxy="$_rht_np" wget -q -O - --timeout=10 "$_rht_url" 2>/dev/null | sed -n 's|.*/releases/tag/\(v[0-9][0-9A-Za-z._-]*\).*|\1|p' | head -n 1 ;;
+    wget) env http_proxy="$_rht_px" https_proxy="$_rht_px" HTTP_PROXY="$_rht_px" HTTPS_PROXY="$_rht_px" all_proxy="" ALL_PROXY="" no_proxy="$_rht_np" wget -q -O - -T 10 "$_rht_url" 2>/dev/null | sed -n 's|.*/releases/tag/\(v[0-9][0-9A-Za-z._-]*\).*|\1|p' | head -n 1 ;;
   esac | sed -n 's/^[Ll]ocation: .*\/releases\/tag\/\(v[0-9][0-9A-Za-z._-]*\).*/\1/p; /^v[0-9][0-9A-Za-z._-]*$/p' | head -n 1
 }
 resolve_latest_tag_from() {
@@ -980,7 +1019,7 @@ _rr_get_text() {
   _rgt_np="${4:-}"
   case "$DOWNLOADER" in
     curl) env http_proxy="$_rgt_px" https_proxy="$_rgt_px" HTTP_PROXY="$_rgt_px" HTTPS_PROXY="$_rgt_px" all_proxy="" ALL_PROXY="" no_proxy="$_rgt_np" curl -fsSL --noproxy "$_rgt_np" --connect-timeout 5 --max-time "$_rgt_to" "$_rgt_url" ;;
-    wget) env http_proxy="$_rgt_px" https_proxy="$_rgt_px" HTTP_PROXY="$_rgt_px" HTTPS_PROXY="$_rgt_px" all_proxy="" ALL_PROXY="" no_proxy="$_rgt_np" wget -q -O - --timeout="$_rgt_to" "$_rgt_url" ;;
+    wget) env http_proxy="$_rgt_px" https_proxy="$_rgt_px" HTTP_PROXY="$_rgt_px" HTTPS_PROXY="$_rgt_px" all_proxy="" ALL_PROXY="" no_proxy="$_rgt_np" wget -q -O - -T "$_rgt_to" "$_rgt_url" ;;
   esac
 }
 ROUTER_RELEASE_LAST_RC=0
@@ -1219,7 +1258,7 @@ _fetch_probe_with_proxy() {
   _fp_np="${4:-}"
   case "$DOWNLOADER" in
     curl) env http_proxy="$_fp_px" https_proxy="$_fp_px" HTTP_PROXY="$_fp_px" HTTPS_PROXY="$_fp_px" all_proxy="" ALL_PROXY="" no_proxy="$_fp_np" curl -fsSL --noproxy "$_fp_np" --connect-timeout 5 --max-time 10 -o "$_fp_out" "$_fp_url" ;;
-    wget) env http_proxy="$_fp_px" https_proxy="$_fp_px" HTTP_PROXY="$_fp_px" HTTPS_PROXY="$_fp_px" all_proxy="" ALL_PROXY="" no_proxy="$_fp_np" wget -q --timeout=10 -O "$_fp_out" "$_fp_url" ;;
+    wget) env http_proxy="$_fp_px" https_proxy="$_fp_px" HTTP_PROXY="$_fp_px" HTTPS_PROXY="$_fp_px" all_proxy="" ALL_PROXY="" no_proxy="$_fp_np" wget -q -T 10 -O "$_fp_out" "$_fp_url" ;;
   esac
 }
 
@@ -1366,7 +1405,7 @@ _download_watched_once() {
   rm -f "$_dw_out"
   case "$DOWNLOADER" in
     curl) env http_proxy="$_dw_px" https_proxy="$_dw_px" HTTP_PROXY="$_dw_px" HTTPS_PROXY="$_dw_px" all_proxy="" ALL_PROXY="" no_proxy="$_dw_np" curl -fsSL --noproxy "$_dw_np" --connect-timeout 10 --speed-limit 30720 --speed-time 20 -o "$_dw_out" "$_dw_url" & ;;
-    wget) env http_proxy="$_dw_px" https_proxy="$_dw_px" HTTP_PROXY="$_dw_px" HTTPS_PROXY="$_dw_px" all_proxy="" ALL_PROXY="" no_proxy="$_dw_np" wget -q --timeout=20 -O "$_dw_out" "$_dw_url" & ;;
+    wget) env http_proxy="$_dw_px" https_proxy="$_dw_px" HTTP_PROXY="$_dw_px" HTTPS_PROXY="$_dw_px" all_proxy="" ALL_PROXY="" no_proxy="$_dw_np" wget -q -T 20 -O "$_dw_out" "$_dw_url" & ;;
   esac
   _dw_pid=$!
   _dw_elapsed=0
