@@ -143,7 +143,23 @@ Open-Box 分两部分：**路由器端**装在路由器 / 主机上，是一体�
 SSH 以 root 登录 OpenWrt 路由器后执行（优先直连 GitHub，访问不畅或过慢时自动回退内置镜像；末尾可直接追加 `--port 3080` 等参数）：
 
 ```sh
-sh -c 'u=https://raw.githubusercontent.com/liandu2024/Open-Box/main/scripts/install.sh; for p in "" https://ghfast.top/ https://gh-proxy.com/ https://gh.llkk.cc/; do if command -v curl >/dev/null 2>&1; then s=$(curl -fsSL --connect-timeout 5 --max-time 15 "$p$u" 2>/dev/null); else s=$(wget -qO- --timeout=15 "$p$u" 2>/dev/null); fi && case "$s" in "#!/bin/sh"*) printf "%s\n" "$s" | sh -n 2>/dev/null && { printf "%s\n" "$s" | sh -s -- "$@"; exit $?; };; esac; done; echo "下载安装脚本失败" >&2; exit 1' sh
+sh -c '
+u=https://raw.githubusercontent.com/liandu2024/Open-Box/main
+u=$u/scripts/install.sh
+f=/tmp/openbox-$$.sh; s=""; rm -f "$f"
+for p in "" https://ghfast.top/ https://gh-proxy.com/ https://gh.llkk.cc/; do
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL --connect-timeout 5 --max-time 15 -o "$f" "$p$u" 2>/dev/null
+  else
+    wget -q -T 15 -O "$f" "$p$u" 2>/dev/null
+  fi && head -n 1 "$f" | grep -q "^#!/bin/sh" && sh -n "$f" 2>/dev/null && {
+    s=${p%/}; break
+  }
+  rm -f "$f"
+done
+[ -s "$f" ] || { echo "Download failed" >&2; exit 1; }
+OPENBOX_ADOPTED_SOURCE="$s" sh "$f" "$@"; rc=$?; rm -f "$f"; exit $rc
+' sh
 ```
 
 安装过程中会问一次面板端口（默认 **3036**，直接回车即可）。端口会先检查是否可用——被别的程序占用、或与 Open-Box 自己和系统的端口冲突时，会说明原因并让你重填。也可以用 `--port` 直接指定，例如在上面的命令末尾加 ` --port 3080`。装完之后还能改，见[修改面板端口](#修改面板端口)。
@@ -209,7 +225,23 @@ Open-Box v0.1.216
 面板中可以从“设置 → 后端设置”检查更新，也可以通过 SSH 执行（OpenWrt 与 Debian / Ubuntu 同一条命令，自动优先直连并按需回退内置镜像）：
 
 ```sh
-sh -c 'u=https://raw.githubusercontent.com/liandu2024/Open-Box/main/scripts/update.sh; for p in "" https://ghfast.top/ https://gh-proxy.com/ https://gh.llkk.cc/; do if command -v curl >/dev/null 2>&1; then s=$(curl -fsSL --connect-timeout 5 --max-time 15 "$p$u" 2>/dev/null); else s=$(wget -qO- --timeout=15 "$p$u" 2>/dev/null); fi && case "$s" in "#!/bin/sh"*) printf "%s\n" "$s" | sh -n 2>/dev/null && { printf "%s\n" "$s" | sh -s -- "$@"; exit $?; };; esac; done; echo "下载升级脚本失败" >&2; exit 1' sh
+sh -c '
+u=https://raw.githubusercontent.com/liandu2024/Open-Box/main
+u=$u/scripts/update.sh
+f=/tmp/openbox-$$.sh; s=""; rm -f "$f"
+for p in "" https://ghfast.top/ https://gh-proxy.com/ https://gh.llkk.cc/; do
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL --connect-timeout 5 --max-time 15 -o "$f" "$p$u" 2>/dev/null
+  else
+    wget -q -T 15 -O "$f" "$p$u" 2>/dev/null
+  fi && head -n 1 "$f" | grep -q "^#!/bin/sh" && sh -n "$f" 2>/dev/null && {
+    s=${p%/}; break
+  }
+  rm -f "$f"
+done
+[ -s "$f" ] || { echo "Download failed" >&2; exit 1; }
+OPENBOX_ADOPTED_SOURCE="$s" sh "$f" "$@"; rc=$?; rm -f "$f"; exit $rc
+' sh
 ```
 
 升级会保留订阅、规则和面板密码，并校验 Open-Box、sing-box、GeoSite / GeoIP 组件。相同且完整的组件直接复用，只有变化、缺失或损坏的组件才会从本仓库 Release 下载。
@@ -219,7 +251,23 @@ sh -c 'u=https://raw.githubusercontent.com/liandu2024/Open-Box/main/scripts/upda
 如果升级后面板或内核异常，可以用下面的命令回退：脚本会到 GitHub 查当前版本之前最近的正式 Release（直连不通自动回退内置镜像），重新下载那一版的完整安装包装回去。路由器本机不保留旧版备份，所以回退需要能访问 GitHub 或内置镜像；订阅、规则、面板密码等数据目录不会被动：
 
 ```sh
-sh -c 'u=https://raw.githubusercontent.com/liandu2024/Open-Box/main/scripts/update.sh; for p in "" https://ghfast.top/ https://gh-proxy.com/ https://gh.llkk.cc/; do if command -v curl >/dev/null 2>&1; then s=$(curl -fsSL --connect-timeout 5 --max-time 15 "$p$u" 2>/dev/null); else s=$(wget -qO- --timeout=15 "$p$u" 2>/dev/null); fi && case "$s" in "#!/bin/sh"*) printf "%s\n" "$s" | sh -n 2>/dev/null && { printf "%s\n" "$s" | sh -s -- "$@"; exit $?; };; esac; done; echo "下载升级脚本失败" >&2; exit 1' sh --rollback
+sh -c '
+u=https://raw.githubusercontent.com/liandu2024/Open-Box/main
+u=$u/scripts/update.sh
+f=/tmp/openbox-$$.sh; s=""; rm -f "$f"
+for p in "" https://ghfast.top/ https://gh-proxy.com/ https://gh.llkk.cc/; do
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL --connect-timeout 5 --max-time 15 -o "$f" "$p$u" 2>/dev/null
+  else
+    wget -q -T 15 -O "$f" "$p$u" 2>/dev/null
+  fi && head -n 1 "$f" | grep -q "^#!/bin/sh" && sh -n "$f" 2>/dev/null && {
+    s=${p%/}; break
+  }
+  rm -f "$f"
+done
+[ -s "$f" ] || { echo "Download failed" >&2; exit 1; }
+OPENBOX_ADOPTED_SOURCE="$s" sh "$f" "$@"; rc=$?; rm -f "$f"; exit $rc
+' sh --rollback
 ```
 
 命令会自动识别路由器架构，下载上一个版本的完整安装包，先校验 SHA256，再替换当前文件；校验或替换失败会保留现有安装。
@@ -229,7 +277,23 @@ sh -c 'u=https://raw.githubusercontent.com/liandu2024/Open-Box/main/scripts/upda
 默认停止服务并保留订阅和配置数据（末尾追加 `--purge` 可连数据一起删除）：
 
 ```sh
-sh -c 'u=https://raw.githubusercontent.com/liandu2024/Open-Box/main/scripts/uninstall.sh; for p in "" https://ghfast.top/ https://gh-proxy.com/ https://gh.llkk.cc/; do if command -v curl >/dev/null 2>&1; then s=$(curl -fsSL --connect-timeout 5 --max-time 15 "$p$u" 2>/dev/null); else s=$(wget -qO- --timeout=15 "$p$u" 2>/dev/null); fi && case "$s" in "#!/bin/sh"*) printf "%s\n" "$s" | sh -n 2>/dev/null && { printf "%s\n" "$s" | sh -s -- "$@"; exit $?; };; esac; done; echo "下载卸载脚本失败" >&2; exit 1' sh
+sh -c '
+u=https://raw.githubusercontent.com/liandu2024/Open-Box/main
+u=$u/scripts/uninstall.sh
+f=/tmp/openbox-$$.sh; s=""; rm -f "$f"
+for p in "" https://ghfast.top/ https://gh-proxy.com/ https://gh.llkk.cc/; do
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL --connect-timeout 5 --max-time 15 -o "$f" "$p$u" 2>/dev/null
+  else
+    wget -q -T 15 -O "$f" "$p$u" 2>/dev/null
+  fi && head -n 1 "$f" | grep -q "^#!/bin/sh" && sh -n "$f" 2>/dev/null && {
+    s=${p%/}; break
+  }
+  rm -f "$f"
+done
+[ -s "$f" ] || { echo "Download failed" >&2; exit 1; }
+OPENBOX_ADOPTED_SOURCE="$s" sh "$f" "$@"; rc=$?; rm -f "$f"; exit $rc
+' sh
 ```
 
 ## 客户端
