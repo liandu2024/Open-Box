@@ -140,29 +140,19 @@ Open-Box 分两部分：**路由器端**装在路由器 / 主机上，是一体�
 
 ### 安装
 
-SSH 以 root 登录 OpenWrt 路由器后执行（优先直连 GitHub，访问不畅或过慢时自动回退内置镜像；末尾可直接追加 `--port 3080` 等参数）：
+SSH 以 root 登录 OpenWrt 路由器后执行（脚本内部会自动优先直连 GitHub，访问不畅时自动回退内置镜像）：
 
 ```sh
-sh -c '
-u=https://raw.githubusercontent.com/liandu2024/Open-Box/main
-u=$u/scripts/install.sh
-f=/tmp/openbox-$$.sh; s=""; rm -f "$f"
-for p in "" https://ghfast.top/ https://gh-proxy.com/ https://gh.llkk.cc/; do
-  if command -v curl >/dev/null 2>&1; then
-    curl -fsSL --connect-timeout 5 --max-time 15 -o "$f" "$p$u" 2>/dev/null
-  else
-    wget -q -T 15 -O "$f" "$p$u" 2>/dev/null
-  fi && head -n 1 "$f" | grep -q "^#!/bin/sh" && sh -n "$f" 2>/dev/null && {
-    s=${p%/}; break
-  }
-  rm -f "$f"
-done
-[ -s "$f" ] || { echo "Download failed" >&2; exit 1; }
-OPENBOX_ADOPTED_SOURCE="$s" sh "$f" "$@"; rc=$?; rm -f "$f"; exit $rc
-' sh
+curl -fsSL https://raw.githubusercontent.com/liandu2024/Open-Box/main/scripts/install.sh | sh
 ```
 
-安装过程中会问一次面板端口（默认 **3036**，直接回车即可）。端口会先检查是否可用——被别的程序占用、或与 Open-Box 自己和系统的端口冲突时，会说明原因并让你重填。也可以用 `--port` 直接指定，例如在上面的命令末尾加 ` --port 3080`。装完之后还能改，见[修改面板端口](#修改面板端口)。
+如 GitHub 无法直连，可通过内置镜像拉取脚本（若 `ghfast.top` 不通，可将前缀替换为 `https://gh-proxy.com/` 或 `https://gh.llkk.cc/`；无 `curl` 可将 `curl -fsSL` 改为 `wget -qO-`）：
+
+```sh
+curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/liandu2024/Open-Box/main/scripts/install.sh | sh
+```
+
+安装过程中会问一次面板端口（默认 **3036**，直接回车即可）。端口会先检查是否可用——被别的程序占用、或与 Open-Box 自己和系统的端口冲突时，会说明原因并让你重填。也可以用 `--port` 直接指定，例如将末尾的 `| sh` 改为 `| sh -s -- --port 3080`。装完之后还能改，见[修改面板端口](#修改面板端口)。
 
 安装要求：OpenWrt（推荐 OpenWrt 24 / iStoreOS 24 及以上；面板与内核均为纯静态二进制，无外部 libc / Node 运行时依赖）、x86_64 或 aarch64、至少 256MB 可用存储空间和 256MB 内存（低内存设备默认推荐 `sing-box` 内核；Mihomo 内核可在面板切换时按需自动下载）。安装 / 升级脚本会检查并尝试用 opkg 或 apk 补齐系统依赖（kmod-tun、kmod-nft-queue、kmod-nft-nat、kmod-veth、ip-full、ca-bundle）；软件源不通时只提示、不中断，可稍后按提示手动安装，设 `OPENBOX_SKIP_DEPS=1` 可跳过这一步。安装完成后，用浏览器打开脚本提示的 `http://<路由器局域网 IP>:<面板端口>` 地址，首次访问设置管理密码。
 
@@ -222,26 +212,16 @@ Open-Box v0.1.216
 
 ### 升级
 
-面板中可以从“设置 → 后端设置”检查更新，也可以通过 SSH 执行（OpenWrt 与 Debian / Ubuntu 同一条命令，自动优先直连并按需回退内置镜像）：
+面板中可以从“设置 → 后端设置”检查更新，也可以通过 SSH 执行（OpenWrt 与 Debian / Ubuntu 同一条命令，脚本内部自动优先直连并按需回退内置镜像）：
 
 ```sh
-sh -c '
-u=https://raw.githubusercontent.com/liandu2024/Open-Box/main
-u=$u/scripts/update.sh
-f=/tmp/openbox-$$.sh; s=""; rm -f "$f"
-for p in "" https://ghfast.top/ https://gh-proxy.com/ https://gh.llkk.cc/; do
-  if command -v curl >/dev/null 2>&1; then
-    curl -fsSL --connect-timeout 5 --max-time 15 -o "$f" "$p$u" 2>/dev/null
-  else
-    wget -q -T 15 -O "$f" "$p$u" 2>/dev/null
-  fi && head -n 1 "$f" | grep -q "^#!/bin/sh" && sh -n "$f" 2>/dev/null && {
-    s=${p%/}; break
-  }
-  rm -f "$f"
-done
-[ -s "$f" ] || { echo "Download failed" >&2; exit 1; }
-OPENBOX_ADOPTED_SOURCE="$s" sh "$f" "$@"; rc=$?; rm -f "$f"; exit $rc
-' sh
+curl -fsSL https://raw.githubusercontent.com/liandu2024/Open-Box/main/scripts/update.sh | sh
+```
+
+如 GitHub 无法直连，可通过镜像拉取：
+
+```sh
+curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/liandu2024/Open-Box/main/scripts/update.sh | sh
 ```
 
 升级会保留订阅、规则和面板密码，并校验 Open-Box、sing-box、GeoSite / GeoIP 组件。相同且完整的组件直接复用，只有变化、缺失或损坏的组件才会从本仓库 Release 下载。
@@ -251,49 +231,29 @@ OPENBOX_ADOPTED_SOURCE="$s" sh "$f" "$@"; rc=$?; rm -f "$f"; exit $rc
 如果升级后面板或内核异常，可以用下面的命令回退：脚本会到 GitHub 查当前版本之前最近的正式 Release（直连不通自动回退内置镜像），重新下载那一版的完整安装包装回去。路由器本机不保留旧版备份，所以回退需要能访问 GitHub 或内置镜像；订阅、规则、面板密码等数据目录不会被动：
 
 ```sh
-sh -c '
-u=https://raw.githubusercontent.com/liandu2024/Open-Box/main
-u=$u/scripts/update.sh
-f=/tmp/openbox-$$.sh; s=""; rm -f "$f"
-for p in "" https://ghfast.top/ https://gh-proxy.com/ https://gh.llkk.cc/; do
-  if command -v curl >/dev/null 2>&1; then
-    curl -fsSL --connect-timeout 5 --max-time 15 -o "$f" "$p$u" 2>/dev/null
-  else
-    wget -q -T 15 -O "$f" "$p$u" 2>/dev/null
-  fi && head -n 1 "$f" | grep -q "^#!/bin/sh" && sh -n "$f" 2>/dev/null && {
-    s=${p%/}; break
-  }
-  rm -f "$f"
-done
-[ -s "$f" ] || { echo "Download failed" >&2; exit 1; }
-OPENBOX_ADOPTED_SOURCE="$s" sh "$f" "$@"; rc=$?; rm -f "$f"; exit $rc
-' sh --rollback
+curl -fsSL https://raw.githubusercontent.com/liandu2024/Open-Box/main/scripts/update.sh | sh -s -- --rollback
+```
+
+如 GitHub 无法直连，可通过镜像拉取：
+
+```sh
+curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/liandu2024/Open-Box/main/scripts/update.sh | sh -s -- --rollback
 ```
 
 命令会自动识别路由器架构，下载上一个版本的完整安装包，先校验 SHA256，再替换当前文件；校验或替换失败会保留现有安装。
 
 ### 卸载
 
-默认停止服务并保留订阅和配置数据（末尾追加 `--purge` 可连数据一起删除）：
+默认停止服务并保留订阅和配置数据（国内无法直连 GitHub 时，同样可在 `https://raw...` 前加 `https://ghfast.top/`）：
 
 ```sh
-sh -c '
-u=https://raw.githubusercontent.com/liandu2024/Open-Box/main
-u=$u/scripts/uninstall.sh
-f=/tmp/openbox-$$.sh; s=""; rm -f "$f"
-for p in "" https://ghfast.top/ https://gh-proxy.com/ https://gh.llkk.cc/; do
-  if command -v curl >/dev/null 2>&1; then
-    curl -fsSL --connect-timeout 5 --max-time 15 -o "$f" "$p$u" 2>/dev/null
-  else
-    wget -q -T 15 -O "$f" "$p$u" 2>/dev/null
-  fi && head -n 1 "$f" | grep -q "^#!/bin/sh" && sh -n "$f" 2>/dev/null && {
-    s=${p%/}; break
-  }
-  rm -f "$f"
-done
-[ -s "$f" ] || { echo "Download failed" >&2; exit 1; }
-OPENBOX_ADOPTED_SOURCE="$s" sh "$f" "$@"; rc=$?; rm -f "$f"; exit $rc
-' sh
+curl -fsSL https://raw.githubusercontent.com/liandu2024/Open-Box/main/scripts/uninstall.sh | sh
+```
+
+连数据一起删除：
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/liandu2024/Open-Box/main/scripts/uninstall.sh | sh -s -- --purge
 ```
 
 ## 客户端
